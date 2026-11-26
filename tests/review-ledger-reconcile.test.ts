@@ -16,6 +16,7 @@ import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { workFixture } from './helpers/work-fixture.js';
 
 // Each test is named for the proof it produces, so acceptance evidence maps to one executed
 // case per required proof: integration:review-ledger-reconcile and
@@ -47,11 +48,9 @@ function observation(candidate: { sha: string; baseSha: string }, extra: Partial
 }
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
-  return { id: 'work-64', key: 'GY-64', title: 'Reviewer ledger', description: '', type: 'feature', priority: 0, dependencies: [],
+  return workFixture({ id: 'work-64', key: 'GY-64', title: 'Reviewer ledger', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['integration:review-ledger-reconcile'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'review', revision: 7, policyRevision: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString(), ready: true, epoch: 1,
-    lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 64 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: observation(candidate), blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], violations: [], ...overrides } as unknown as Work;
+    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 64 }, observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 const moved = () => {
   const candidate = { sha: H2, baseSha: B, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };

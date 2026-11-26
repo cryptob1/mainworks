@@ -14,6 +14,7 @@ import { loadMasterConfig, selectAccount, setupMaster } from '../src/master.js';
 import { saveReviewerProfile, reviewPrompt } from '../src/reviewer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2989: the product review before merge. A feature head with passing proofs does not merge until
 // its product review approves; changes requested reworks with the findings; a reject is owed to the
@@ -28,21 +29,19 @@ const shaOf = (seed: string) => createHash('sha1').update(seed).digest('hex');
 /** A submitted, control-plane-observed candidate whose preview serves: the shape a product review is asked on. */
 function feature(key: string, head = H): Work {
   const candidate = { sha: head, baseSha: B, pr: 0, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker-1' };
-  return {
-    id: randomUUID(), key, title: `Feature ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:feature-works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'review', revision: 3, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 1, lease: null, workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }], candidate, submission: { epoch: 1, pr: 0 }, reworkRequested: false,
+  return workFixture({
+    id: randomUUID(), key, title: `Feature ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:feature-works'] }], stage: 'review', revision: 3,
+    createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }], candidate, submission: { epoch: 1, pr: 0 },
     // The control plane's evaluation marks a normal unreviewed head's review owed after merge (GY-3421).
     postMergeReview: 'owed',
-    scenarioRequirements: [], evidence: [{ id: 'e1', proof: 'e2e:feature-works', sha: head, baseSha: B, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }], blocker: null, gates: [], violations: [], implementers: ['worker-1'],
+    evidence: [{ id: 'e1', proof: 'e2e:feature-works', sha: head, baseSha: B, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }], gates: [], implementers: ['worker-1'],
     observation: {
       source: 'control-plane', at, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
       files: ['web/feature.ts'], scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(key), additions: 10, deletions: 0, binary: false }],
       baseTip: B, baseTipContained: true, mergeBase: B,
     },
     preview: { id: randomUUID(), path: `/preview/${key}`, state: 'running', runner: 'local', application: 'app', sha: head, source: 'head', origin: null, cases: [], detail: '', startedAt: at, readyAt: at, cleanedAt: null, endReason: null },
-  } as unknown as Work;
+  });
 }
 
 const review = (verdict: ProductReview['verdict'], head = H, findings = 'The wording on the settings screen is not where a user would look.'): ProductReview =>

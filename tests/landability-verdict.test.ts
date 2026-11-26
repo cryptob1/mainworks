@@ -5,6 +5,7 @@ import { LANDABILITY_VERSION, landabilityRefusals } from '../src/model/landabili
 import { evaluateLandability } from '../src/model-boundary/landability.js';
 import { stableJson } from '../src/model/stable-json.js';
 import type { Evidence, Observation, ScopeFile, Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-878. Whether a candidate can land was answered twice — by the build and acceptance gates and
 // again by the merge queue's ejection check and landing re-check — and the answers drifted apart
@@ -46,16 +47,14 @@ function item(shape: Shape, extra: Partial<Work> = {}): Work {
     scopeFiles: shape.scopeFiles ?? files.map(path => changed(path)), landing: shape.landing ?? { base: main, files: files.map(path => changed(path)) },
     at, prState: 'open', draft: false, baseTip: main, baseTree: sha('e'), baseTipContained: true,
   } as Observation;
-  return {
-    id: shape.key.toLowerCase(), key: shape.key, title: shape.key, description: '', type: 'feature', priority: 0, dependencies: [],
-    criteria: proofs.map((proof, index) => ({ id: `AC-${index + 1}`, text: 'proven', proofs: [proof] })),
-    policy: { checks: [], review: false }, stage: 'merge', revision: 4, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null, candidate,
+  return workFixture({
+    id: shape.key.toLowerCase(), key: shape.key, priority: 0, stage: 'merge', revision: 4, epoch: 1, candidate, observation, gates: [],
+    criteria: proofs.map((proof, index) => ({ id: `AC-${index + 1}`, text: 'proven', proofs: [proof] })), policy: { checks: [], review: false },
+    createdAt: at, updatedAt: at, stageEnteredAt: at,
     workspaces: shape.workspace === false ? [] : [{ host: 'machine-a', path: `/tmp/${shape.key}`, epoch: 1, owner: 'worker', branch: candidate.branch }],
-    submission: shape.submitted === false ? null : { epoch: 1, pr: candidate.pr }, reworkRequested: false, scenarioRequirements: [],
-    evidence: shape.evidence ?? proofs.map(proof => evidence(proof, head)), blocker: null, gates: [], violations: [],
-    observation, ...extra,
-  } as unknown as Work;
+    submission: shape.submitted === false ? null : { epoch: 1, pr: candidate.pr },
+    evidence: shape.evidence ?? proofs.map(proof => evidence(proof, head)), ...extra,
+  });
 }
 
 /**

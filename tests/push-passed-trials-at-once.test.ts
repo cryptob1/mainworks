@@ -10,6 +10,7 @@ import { itemLine } from '../src/cli/master-status.js';
 import { mergeRecordKinds, trialAheadOfReviewReason, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const start = Date.parse('2030-05-01T00:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
@@ -19,17 +20,13 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
 const base = sha('base');
 const item = (key: string, ageMinutes: number): Work => {
   const head = sha(`head:${key}`);
-  return {
-    id: `w-${key}`, key, title: key, type: 'feature', description: '', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-    workspaces: [], submission: { epoch: 1, pr: 7 },
-    candidate: { sha: head, baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+  return workFixture({
+    id: `w-${key}`, key, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], stage: 'build', epoch: 1, submission: { epoch: 1, pr: 7 },
+    candidate: { sha: head, baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' },
     observation: { source: 'control-plane', candidate: { sha: head, baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' }, checks: [], reviews: [], merged: false, mergeSha: null,
       mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip: base } as unknown as Observation,
-    blocker: null, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), violations: [],
-    createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - ageMinutes * 60_000),
-  } as unknown as Work;
+    gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - ageMinutes * 60_000),
+  });
 };
 
 const pass: MergeTrialRun = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: ['src/app.ts'], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } };

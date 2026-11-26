@@ -17,6 +17,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { defaultChildRun } from '../src/child-runner.js';
 import { trialAffordableFiles, trialMerge } from '../src/merge-writer/trial.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3159: a merge trial in progress when the loop restarts onto a new release reaches its own
 // verdict. The restart leaves each detached trial run alive; the next loop adopts it — the run's
@@ -64,16 +65,14 @@ class World {
     return Array.from({ length: this.count }, (_, index) => index + 1).map(n => {
       const ledger = folded[`GY-${n}`] ?? null, delivered = ledger?.state === 'reconciled';
       const candidate = { sha: this.head(n), baseSha: base, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-      return {
-        id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, type: 'feature', description: '', priority: 1, dependencies: [],
-        criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true },
-        revision: 1, policyRevision: 1, createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
-        ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false,
-        scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: ledger,
-        observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.main[0], baseTipContained: true, at: iso(start) },
+      return workFixture({
+        id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, priority: 1, epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger,
+        criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+        createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
+        observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.main[0], baseTipContained: true, at: iso(start) } as never,
         gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
         ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt!, mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),
-      } as unknown as Work;
+      });
     });
   }
   ports(options: { adopt?: boolean } = {}): MergeWriterReads {

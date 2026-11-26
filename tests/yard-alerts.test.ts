@@ -14,6 +14,7 @@ import type { Work } from '../src/model.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { AlertsLine } from '../web/pages/setup.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3101: the loop alerts the operator directly when queued work cannot start or merge —
 // one alert after the window (run.alertMinutes, default 20), repeated at most hourly, one
@@ -30,11 +31,8 @@ const base = { version: 1, url: 'https://graphyard.example', credentialFile: '/o
 const config = (run: Record<string, unknown> = {}) => masterConfigSchema.parse({ ...base, run: { alertUrl: 'https://ntfy.example/yard', ...run } }) as MasterConfig;
 const offConfig = masterConfigSchema.parse({ ...base }) as MasterConfig;
 
-const item = (fields: Record<string, unknown>) => ({
-  description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:yard'] }],
-  policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start),
-  ready: true, epoch: 0, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false, scenarioRequirements: [], evidence: [],
-  observation: null, blocker: null, violations: [], sessions: [], stage: 'ready', ...fields }) as unknown as Work;
+const item = (fields: Record<string, unknown>) => workFixture({ priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:yard'] }],
+  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), gates: undefined, sessions: [], ...fields });
 
 /** A session handle: `running` implementation sessions are the movement the alert reads. */
 const session = (fields: Partial<SessionHandle> = {}) => ({ id: 'worker-a:1', kind: 'implementation', principal: 'worker-a', epoch: 1, runtime: 'claude', host: 'machine-a',

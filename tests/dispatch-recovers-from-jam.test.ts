@@ -6,6 +6,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { profileHealth } from '../src/daemon/sessions.js';
 import { masterConfigSchema, type HerdrAgent, type MasterConfig, type WorkerProfile } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-894 AC-2: with every worker profile held by ended sessions, the next dispatch tick claims
 // and launches work instead of recording stalled actions. A session whose attempt ended but whose
@@ -31,16 +32,8 @@ const profiles = Array.from({ length: jamSize }, (_, index) => profile(index));
 const jamAgents = (): HerdrAgent[] => profiles.map(({ agentName }) => ({ name: agentName, pane_id: `pane-${agentName}`, agent_status: 'working' }));
 
 function item(key: string, overrides: Partial<Work> = {}): Work {
-  return {
-    id: `work-${key}`, key, title: `Item ${key}`, description: '', type: 'bug', priority: 0,
-    dependencies: [], criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], policy: { checks: ['test'], review: true },
-    stage: 'build', revision: 1, policyRevision: 1,
-    createdAt: at(-7_200_000), updatedAt: observedAt, stageEnteredAt: at(-600_000),
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [], violations: [], containmentQuarantine: null,
-    ...overrides,
-  } as unknown as Work;
+  return workFixture({ id: `work-${key}`, key, title: `Item ${key}`, type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
+    stage: 'build', createdAt: at(-7_200_000), updatedAt: observedAt, stageEnteredAt: at(-600_000), gates: [], containmentQuarantine: null, ...overrides });
 }
 /** Ten attempts the server ended (sent back for rework, awaiting the round's decision): they hold no lease, are not in flight under the cap (GY-2097), and their sessions still hold every profile. */
 const jamItems = () => Array.from({ length: jamSize }, (_, index) => item(`GY-${100 + index}`, { ready: false, submission: { pr: 400 + index, epoch: 1 } as Work['submission'], reworkRequested: true }));

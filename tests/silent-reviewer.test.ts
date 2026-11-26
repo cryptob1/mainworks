@@ -15,6 +15,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3164 AC-2: a review session that has posted no verdict and changed no output for
 // run.reviewSilenceMinutes (default 10) is ended and relaunched once on another reviewer profile;
@@ -43,11 +44,9 @@ function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
   const observation: Observation = { candidate: { ...candidate, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
     files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: B, baseTree: sha40('7b'), baseTipContained: true };
-  return { id: 'work-64', key: 'GY-64', title: 'Silent reviewer', description: '', type: 'feature', priority: 0, dependencies: [],
+  return workFixture({ id: 'work-64', key: 'GY-64', title: 'Silent reviewer', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:silent-reviewer-relaunched'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'review', revision: 7, policyRevision: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString(), ready: true, epoch: 1,
-    lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 64 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation, blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], violations: [], ...overrides } as unknown as Work;
+    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 64 }, observation, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 
 /** A Herdr run stub whose `agent read` answers the screen the test controls: the session's own output. */

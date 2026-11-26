@@ -24,6 +24,7 @@ import { pendingHeadless } from './helpers/pending-review.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { endRun } from '../src/runner/registry.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 const dropRun = (name: string) => endRun(name, { ok: false, reason: 'exit', detail: 'dropped', startedAt: new Date().toISOString(), endedAt: new Date().toISOString() } as any);
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -70,13 +71,10 @@ const insertWork = async (work: Work) => {
 
 function makeReviewItem(key: string, requestId: string, at: string, extra: Partial<Work> = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 11, branch: `graphyard/${key.toLowerCase()}-1`, author: 'graphyard-worker-1' };
-  return {
-    id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'bug', risk: 'sensitive', riskSource: 'operator', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: hostId, path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-worker-1' }],
-    candidate, submission: { epoch: 1, pr: 11 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-worker-1'],
+  return workFixture({
+    id: randomUUID(), key, title: `Item ${key}`, type: 'bug', risk: 'sensitive', riskSource: 'operator', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+    stage: 'review', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: hostId, path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-worker-1' }],
+    candidate, submission: { epoch: 1, pr: 11 }, gates: [], implementers: ['graphyard-worker-1'],
     autoDispatch: {
       review: { id: requestId, kind: 'review', provider: 'github', pr: 11, sha: head, baseSha: base, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'review required' },
       producers: [], history: [],
@@ -86,7 +84,7 @@ function makeReviewItem(key: string, requestId: string, at: string, extra: Parti
       files: ['src/server/auth.ts'], scopeFiles: [{ path: 'src/server/auth.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true,
     },
     ...extra,
-  } as unknown as Work;
+  });
 }
 
 test('unit:review-launch-skips-spent-accounts — first reviewer exhausted, broken, logged-out or builder is skipped and second is chosen regardless of master.json profiles', async () => {

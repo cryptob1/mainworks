@@ -10,7 +10,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { masterConfigSchema } from '../src/master.js';
 import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3531: a gate that cannot verify blocked every merge, and every fix to the gate is itself a
 // merge. The gate's run is not a merge trial: trialCap counts the merge writer's own trials only.
@@ -31,13 +31,10 @@ async function world(options: { mergeDelayMs?: number } = {}) {
   const gates = ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name !== 'merge', reasons: name !== 'merge' ? [] : ['merge refused'] }));
   const queued = (n: number) => {
     const candidate = { sha: sha(`head${n}`), baseSha: tip, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-    return {
-      id: `w${n}`, key: `GY-${n}`, title: `Queued merge ${n}`, description: '', type: 'feature', priority: 1, dependencies: [],
-      criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1,
-      createdAt: iso(start + n), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), ready: true, epoch: 1, lease: null, workspaces: [],
-      submission: { epoch: 1, pr: n }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [], sessions: [], gates, stage: 'build',
-      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip, baseTipContained: true, at: iso(start) },
-    } as unknown as Work;
+    return workFixture({ id: `w${n}`, key: `GY-${n}`, title: `Queued merge ${n}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+      createdAt: iso(start + n), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), epoch: 1, submission: { epoch: 1, pr: n }, candidate, sessions: [], gates, stage: 'build',
+      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip, baseTipContained: true, at: iso(start) } as never,
+    });
   };
   const work = [queued(1), queued(2)];
   const started: string[] = [];

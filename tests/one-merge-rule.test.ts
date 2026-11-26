@@ -9,6 +9,7 @@ import { riskOf } from '../src/model-boundary/risk-class.js';
 import { resolveRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import * as dispatch from '../src/model/dispatch.js';
 import * as policy from '../src/model/policy.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2876 AC-1: exactly one merge rule. A head whose delta touches a sensitive path waits for one
 // independent approval before the merge writer merges it; any other head merges on its passing trial
@@ -20,12 +21,11 @@ const H = 'a'.repeat(40), B = 'b'.repeat(40), at = '2031-01-01T00:00:00.000Z', n
 
 function head(key: string, path: string, review = true): Work {
   const candidate = { sha: H, baseSha: B, pr: 1, branch: `graphyard/${key.toLowerCase()}-1`, author: 'graphyard-claude-1' };
-  return { id: `id-${key}`, key, title: `Change ${path}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review },
-    stage: 'review', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: `/w/${key}-1`, branch: `graphyard/${key.toLowerCase()}-1`, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 1 }, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [],
+  return workFixture({ key, title: `Change ${path}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review },
+    stage: 'review', createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 1 }, gates: [],
+    workspaces: [{ host: 'h', path: `/w/${key}-1`, branch: `graphyard/${key.toLowerCase()}-1`, epoch: 1, owner: 'graphyard-claude-1' }],
     observation: { source: 'control-plane', at, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: [path], scopeFiles: [{ path, status: 'modified' }], baseTip: B, baseTipContained: true } } as unknown as Work;
+      files: [path], scopeFiles: [{ path, status: 'modified' }], baseTip: B, baseTipContained: true } as never });
 }
 const judged = (item: Work) => { Object.assign(item, evaluate(item, [item], now)); return item; };
 const passed = (item: Work, gate: string) => item.gates.find(entry => entry.name === gate)?.passed;

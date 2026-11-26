@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { neededRework } from '../src/daemon/rework.js';
 import { appliedReworkBrief, reworkBriefMax, reworkBriefSection } from '../src/master/rework-brief.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const proof = 'unit:rework-brief-carries-the-attempt-ledger';
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
@@ -12,40 +13,12 @@ type Entry = { attempt: number; reason: string; binding: string | null; at: stri
 
 function workWithHistory(history: Entry[], overrides: Partial<Work> = {}): Work {
   const latest = history.at(-1)!;
-  return {
-    id: 'gy-3636-fixture',
-    key: 'GY-500',
-    title: 'Ledger fixture',
-    description: '',
-    type: 'feature',
-    priority: 1,
-    dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:x'] }],
-    policy: { checks: ['test'], review: true },
-    stage: 'build',
-    revision: history.length + 1,
-    policyRevision: 1,
-    createdAt: at(0),
-    updatedAt: latest.at,
-    stageEnteredAt: latest.at,
-    ready: true,
-    epoch: latest.attempt,
-    lease: null,
-    workspaces: [],
-    candidate: { sha: head, baseSha: base, pr: 500, branch: 'graphyard/gy-500-1', author: 'worker' },
-    submission: { epoch: latest.attempt, pr: 500 },
-    reworkRequested: true,
-    lastRework: { reason: latest.reason, binding: latest.binding, at: latest.at },
-    reworkHistory: history,
-    pipeline: { attempts: [], submittedAt: at(1), resubmittedAt: null, reworkRounds: history.length, interventions: { blocked: 0, requirements: 0 } },
-    scenarioRequirements: [],
-    evidence: [],
-    observation: null,
-    blocker: null,
-    gates: [],
-    violations: [],
-    ...overrides,
-  } as unknown as Work;
+  return workFixture({ id: 'gy-3636-fixture', key: 'GY-500', title: 'Ledger fixture', priority: 1, stage: 'build', revision: history.length + 1,
+    createdAt: at(0), updatedAt: latest.at, stageEnteredAt: latest.at, epoch: latest.attempt,
+    candidate: { sha: head, baseSha: base, pr: 500, branch: 'graphyard/gy-500-1', author: 'worker' }, submission: { epoch: latest.attempt, pr: 500 },
+    reworkRequested: true, lastRework: { reason: latest.reason, binding: latest.binding, at: latest.at } as never, reworkHistory: history as never,
+    pipeline: { attempts: [], submittedAt: at(1), resubmittedAt: null, reworkRounds: history.length, interventions: { blocked: 0, requirements: 0 } }, gates: [], ...overrides,
+  });
 }
 
 function ledgerLines(brief: string): string[] {
@@ -110,15 +83,11 @@ test(`${proof} — a 30,000-character verdict carries up to reworkBriefMax and n
   const padding = 'a'.repeat(2450) + markerAt2500 + 'b'.repeat(27550);
   assert.ok(padding.length >= 30_000);
   const candidate = { sha: head, baseSha: base, pr: 500, branch: 'graphyard/gy-500-1', author: 'worker' };
-  const reviewed = {
-    id: 'gy-500', key: 'GY-500', title: 'Big verdict', description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:x'] }], policy: { checks: ['test'], review: true }, stage: 'review',
-    revision: 2, policyRevision: 1, createdAt: at(0), updatedAt: at(5), stageEnteredAt: at(5), ready: true, epoch: 1,
-    lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 500 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [],
-    observation: { candidate, checks: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/a.ts'], scopeFiles: [], at: at(5), baseTip: base, baseTree: base, baseTipContained: true, reviews: [] },
-    productReview: { reviewer: 'prod-1', sha: head, verdict: 'changes-requested', findings: padding, screenshots: [], at: at(5) },
-  } as unknown as Work;
+  const reviewed = workFixture({ id: 'gy-500', key: 'GY-500', title: 'Big verdict', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:x'] }], stage: 'review',
+    revision: 2, createdAt: at(0), updatedAt: at(5), stageEnteredAt: at(5), epoch: 1, candidate, submission: { epoch: 1, pr: 500 }, gates: [],
+    observation: { candidate, checks: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/a.ts'], scopeFiles: [], at: at(5), baseTip: base, baseTree: base, baseTipContained: true, reviews: [] } as never,
+    productReview: { reviewer: 'prod-1', sha: head, verdict: 'changes-requested', findings: padding, screenshots: [], at: at(5) } as never,
+  });
 
   const rework = neededRework(reviewed);
   assert.ok(rework, 'neededRework produces a rework for the product review verdict');

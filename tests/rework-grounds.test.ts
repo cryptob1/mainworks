@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { neededRework } from '../src/daemon/rework.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-163, 2026-09-24: a new head arrived with the previous head's review findings still open. The
 // loop asked for rework at once; the approver refused it as premature, since the reviewer had not
@@ -13,14 +14,12 @@ const head = 'a'.repeat(40), base = 'b'.repeat(40), at = '2026-09-24T06:00:00.00
 
 function item(reviews: { state: string; reviewer: string; submittedAt?: string }[]): Work {
   const candidate = { sha: head, baseSha: base, pr: 154, branch: 'graphyard/gy-163-1', author: 'worker' };
-  return {
-    id: 'gy-163', key: 'GY-163', title: 'Held fixes', description: '', type: 'bug', priority: 0, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], policy: { checks: ['test'], review: true }, stage: 'review', revision: 4, policyRevision: 2,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 2, lease: null, workspaces: [], candidate,
-    submission: { epoch: 2, pr: 154 }, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [],
+  return workFixture({
+    id: 'gy-163', key: 'GY-163', title: 'Held fixes', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
+    stage: 'review', revision: 4, policyRevision: 2, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 2, candidate, submission: { epoch: 2, pr: 154 }, gates: [],
     observation: { candidate, checks: [], reviews: reviews.map(review => ({ submittedAt: at, ...review, sha: head })), merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, baseTip: base, baseTree: base, baseTipContained: true },
-  } as unknown as Work;
+      files: ['src/a.ts'], scopeFiles: [], at, baseTip: base, baseTree: base, baseTipContained: true } as never,
+  });
 }
 const decide = (work: Work) => neededRework(work);
 

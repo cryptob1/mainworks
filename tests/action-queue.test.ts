@@ -27,6 +27,7 @@ import { pullOnce, transportRetries } from '../scripts/graphyard-pull.mjs';
 import WorkDetails from '../web/pages/work-details.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { workFixture } from './helpers/work-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-01 boundAt is reviewer config and the 2026-09-20 `at`/clock is the fixed now handed to reconcileActions and evaluate; Date.now() serves only the live engine tests.
@@ -677,13 +678,8 @@ test('integration:session-handles-visible — the reviewer launcher records a ha
 
 test('integration:typed-next-action — the queue is pure over the snapshot: the same state reconciles to the same rows, and a changed state retires the row that no longer applies', () => {
   const at = '2026-09-20T12:00:00.000Z', clock = Date.parse(at);
-  const item = {
-    id: 'work-1', key: 'GY-1', title: 'Pure', description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF] }], policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [],
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
-  } as unknown as Work;
+  const item = workFixture({ id: 'work-1', key: 'GY-1', title: 'Pure', priority: 1, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF] }], createdAt: at, updatedAt: at, stageEnteredAt: at,
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }] });
   const first = structuredClone(item), second = structuredClone(item);
   const a = reconcileActions(first, [first], new Date(clock));
   const b = reconcileActions(second, [second], new Date(clock + 60_000));
@@ -723,12 +719,8 @@ test('integration:typed-next-action — the queue is pure over the snapshot: the
 
 test('integration:typed-next-action — the gate evaluator and the action computation agree on every stage of one item', () => {
   const at = '2026-09-20T12:00:00.000Z';
-  const base_: Work = {
-    id: 'work-2', key: 'GY-2', title: 'Agreement', description: '', type: 'feature', priority: 2, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }], policy: { checks: ['test'], review: true }, stage: 'backlog', revision: 1, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: false, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [], gates: [],
-  } as unknown as Work;
+  const base_ = workFixture({ id: 'work-2', key: 'GY-2', title: 'Agreement', criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }], stage: 'backlog',
+    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: false, gates: [] });
   const evaluated = (overrides: Partial<Work>) => {
     const probe = { ...structuredClone(base_), ...overrides } as Work;
     Object.assign(probe, evaluate(probe, [probe], new Date(at)));

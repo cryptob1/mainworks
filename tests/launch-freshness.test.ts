@@ -11,6 +11,7 @@ import { emptyDispatchCursor, launchWaitLimit, tickWaits } from '../src/dispatch
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-710. On 2026-09-26 review requests waited hours for a reviewer: every launch was refused with
@@ -33,15 +34,11 @@ function reviewRequest(overrides: Partial<DispatchRequest> = {}): DispatchReques
   return { id: 'b8693b4c-0000-4000-8000-000000000001', kind: 'review', sha: head, baseSha: base, policyRevision: 1, pr: 42, provider: 'github', requestedAt: iso(-20 * minute), reason: 'independent approval', state: 'requested', ...overrides };
 }
 function item(observedAt: string, overrides: Partial<Work> = {}): Work {
-  return {
-    id: 'work-42', key: 'GY-42', title: 'Launch on the head', description: '', type: 'bug', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:loop'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' }, 
-    stage: 'review', revision: 5, policyRevision: 1, createdAt: iso(-4 * 60 * minute), updatedAt: iso(0), stageEnteredAt: iso(-30 * minute), ready: true, epoch: 1, lease: null, workspaces: [],
-    submission: { epoch: 1, pr: 42 }, candidate: { sha: head, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], observation: observation(head, observedAt), blocker: null, violations: [],
+  return workFixture({ id: 'work-42', key: 'GY-42', title: 'Launch on the head', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:loop'] }],
+    policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 5, createdAt: iso(-4 * 60 * minute), updatedAt: iso(0), stageEnteredAt: iso(-30 * minute), epoch: 1,
+    submission: { epoch: 1, pr: 42 }, candidate: { sha: head, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, observation: observation(head, observedAt),
     gates: [{ name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }],
-    autoDispatch: { review: reviewRequest(), producers: [], history: [] }, ...overrides,
-  } as Work;
+    autoDispatch: { review: reviewRequest(), producers: [], history: [] }, ...overrides });
 }
 function masterConfig(credentialFile: string, overrides: Record<string, unknown> = {}): MasterConfig {
   return masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile, cliPath: launcher, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a',

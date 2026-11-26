@@ -22,6 +22,7 @@ import { hostname } from 'node:os';
 import type { FleetClient, FleetProbe } from '../src/fleet.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, foldObservations, proposedRuntimes, type AgentRegistry, type FleetRoleName, type FleetSession } from '../src/model/registry.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * The control-plane registry every launch takes its account and slot from (GY-3030), in memory:
@@ -118,13 +119,10 @@ async function configure(root: string, change: (config: any) => void) {
 }
 function work(overrides: Partial<Work> = {}) {
   const candidate = { sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 68, branch: 'graphyard/gy-68-1', author: 'worker' };
-  return { id: 'work-68', key: 'GY-68', title: 'Agent environments', description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:agent-env-discovery'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 9, policyRevision: 2, createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 1, lease: null, workspaces: [],
-    candidate, submission: { epoch: 1, pr: 68 }, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [],
+  return workFixture({ id: 'work-68', key: 'GY-68', title: 'Agent environments', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:agent-env-discovery'] }],
+    stage: 'review', revision: 9, policyRevision: 2, createdAt: '', updatedAt: '', stageEnteredAt: '', epoch: 1, candidate, submission: { epoch: 1, pr: 68 }, gates: [],
     observation: { at: new Date().toISOString(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [], prState: 'open', draft: false },
-
-    ...overrides } as unknown as Work;
+    ...overrides });
 }
 const ready = () => work({ stage: 'ready', lease: null, submission: null, candidate: null, observation: null } as any);
 const herdr = (calls: string[][], answer: (args: string[]) => unknown = () => ({})) => (_command: string, args: string[]) => {

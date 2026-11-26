@@ -4,6 +4,7 @@ import { neededRework, proofRework } from '../src/daemon/rework.js';
 import { intentInput } from '../src/master/autonomy.js';
 import { exerciseRefusal, type Evidence, type Work } from '../src/model.js';
 import { proofExerciseSchema } from '../src/model-boundary/evidence.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-523. On 2026-09-26 GY-374's and GY-393's attestations were approved but carried no exercise
 // record, so each pass was stored untrusted as unexercised, and the loop answered with rework — the
@@ -14,16 +15,14 @@ const head = 'a'.repeat(40), base = 'b'.repeat(40), at = '2026-09-26T07:00:00.00
 const PROOF = 'manual:reproduction-passes';
 function item(evidence: Partial<Evidence>[] = [], extra: Partial<Work> = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 393, branch: 'graphyard/gy-393-1', author: 'worker' };
-  return {
-    id: 'gy-393', key: 'GY-393', title: 'Attested item', description: '', type: 'bug', priority: 0, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'The reproduction passes', proofs: [PROOF] }], policy: { checks: ['test'], review: true }, 
-    stage: 'acceptance', revision: 4, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null, workspaces: [], candidate,
-    submission: { epoch: 1, pr: 393 }, reworkRequested: false, scenarioRequirements: [], blocker: null, gates: [], violations: [],
-    evidence: evidence.map(entry => ({ id: 'e1', proof: PROOF, sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 1, skipped: 0, producer: 'master-operator', trusted: false, at, ...entry })),
+  return workFixture({ id: 'gy-393', key: 'GY-393', title: 'Attested item', type: 'bug', priority: 0,
+    criteria: [{ id: 'AC-1', text: 'The reproduction passes', proofs: [PROOF] }], stage: 'acceptance', revision: 4,
+    createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 393 }, gates: [],
+    evidence: evidence.map(entry => ({ id: 'e1', proof: PROOF, sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 1, skipped: 0, producer: 'master-operator', trusted: false, at, ...entry })) as never,
     observation: { candidate, checks: [{ appId: 15368, name: 'test', result: 'success' }], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true, conversations: { required: true, unresolved: [] } },
+      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true, conversations: { required: true, unresolved: [] } } as never,
     ...extra,
-  } as unknown as Work;
+  });
 }
 const unexercised = { unexercised: `${PROOF} does not exercise AC-1: it passed, but no run of it against a tree with the criterion's behaviour removed was recorded` };
 

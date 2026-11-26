@@ -14,9 +14,9 @@ import { batchGateFlights } from '../src/daemon/trial-slots.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { trialStartOrder, trialStartOwner } from '../src/merge-writer/trial-load.js';
 import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
-import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3444: two batch gates in a row ran into their 45-minute bound on a loaded host, so nothing
 // deployed — the fixes that relieve the load included. The gate now has first claim on trial slots,
@@ -37,12 +37,8 @@ async function workerDuringGate(hold: 'heat' | 'pressure' | 'capacity' | null = 
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [worker], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
   const gates = (passed: string[]) => ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: passed.includes(name), reasons: passed.includes(name) ? [] : [`${name} refused`] }));
-  const item = (fields: Record<string, unknown>) => ({
-    description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-    policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000),
-    ready: true, epoch: 0, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: null, blocker: null, violations: [], sessions: [], gates: gates(['ready']), stage: 'ready', ...fields,
-  }) as unknown as Work;
+  const item = (fields: Record<string, unknown>) => workFixture({ priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+    createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), sessions: [], gates: gates(['ready']), ...fields });
   const candidate = { sha: sha('head2'), baseSha: tip, pr: 2, branch: 'graphyard/gy-2-1', author: 'worker' };
   const work = [
     item({ id: 'w1', key: 'GY-1', title: 'Repair known red on main', type: 'bug', priority: 0, releasedBy: 'master' }),

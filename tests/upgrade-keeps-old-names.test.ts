@@ -29,6 +29,7 @@ import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3594: an install created before the rename keeps running after it deploys, with no manual
 // step. The old layout is seeded in a temporary home — the config directory ~/.config/graphyard,
@@ -96,11 +97,8 @@ const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
 };
 const snapshot = async () => { const read = await api('GET', 'work-snapshot') as { work: Work[]; now: string }; return { ...read, now: new Date(Date.parse(read.now) + skew).toISOString() }; };
 async function readyItem(key: string, priority: number) {
-  const at = new Date().toISOString();
-  const work = { id: randomUUID(), key, title: `Item ${key}`, description: 'Write change.txt.', type: 'bug', priority, dependencies: [], criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] };
+  const work = workFixture({ id: randomUUID(), key, title: `Item ${key}`, description: 'Write change.txt.', type: 'bug', priority,
+    criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }] });
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
   return work.id;
 }

@@ -11,6 +11,7 @@ import { emptyMergeWriterState, type MergeWriterState } from '../src/daemon/cycl
 import { daemonStatePath, readDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import type { Work } from '../src/model.js';
 
 // GY-2186: the loop files no work item on its own. A cycle that sees a flaky test past its rerun
@@ -28,13 +29,8 @@ function config(): MasterConfig {
     repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, mergeMethod: 'merge', workers: [] });
 }
 function item(key: string, overrides: Partial<Work> = {}): Work {
-  return {
-    id: `work-${key}`, key, title: `Item ${key}`, description: '', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'done', revision: 1, policyRevision: 1,
-    createdAt: iso(-hour), updatedAt: iso(0), stageEnteredAt: iso(-hour), ready: true, epoch: 0, lease: null, workspaces: [],
-    candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [], violations: [], ...overrides,
-  } as unknown as Work;
+  return workFixture({ id: `work-${key}`, key, title: `Item ${key}`, type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+    stage: 'done', createdAt: iso(-hour), updatedAt: iso(0), stageEnteredAt: iso(-hour), gates: [], ...overrides });
 }
 /** The serving delivery the deployment step verifies. */
 const delivered = () => item('GY-87', { title: "GY-87's throughput claim", delivery: { mergedAt: iso(-2 * hour), mergeSha: sha('m'), authorizationRevision: 1,

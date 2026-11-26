@@ -15,6 +15,7 @@ import type { Work } from '../src/model.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3850: with the owner recorded, every commit on the install — a worker session's, the kept
 // work-in-progress, the merge writer's merge and revert — is authored 'NAME (Mainworks) <EMAIL>',
@@ -29,11 +30,7 @@ const show = (root: string, format: string, sha = 'HEAD') => execFileSync('git',
 const gitIn = (root: string) => async (args: string[], env?: Record<string, string>) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...clean, ...env } });
 
 function work(key: string): Work {
-  const at = new Date().toISOString();
-  return { id: `id-${key}`, key, title: 'Name the owner', description: '', type: 'feature', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] } as unknown as Work;
+  return workFixture({ key, title: 'Name the owner', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }] });
 }
 
 /** A repository whose own git config is the agent identity, as a worker's checkout is. */

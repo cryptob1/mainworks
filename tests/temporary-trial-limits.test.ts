@@ -21,6 +21,7 @@ import { fleetCommand } from '../src/cli/master/fleet.js';
 import { acquireVerificationSlot, heavyJobLimit, heldSlots, hostHeavyJobsDirectory, readStrictCap, setStrictCap, slotsDirectoryVariable, verificationEnvironment, withHeavyJob } from '../src/master/verification-slots.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3446: when another project on the host asks Mainworks to back off overnight (Huck: at most 2
 // trials, throttle at 80C), the master sets a temporary trial cap and heat limit for its install,
@@ -56,15 +57,12 @@ function world() {
   const live = new Set<string>(), launches: string[] = [];
   const snapshot = (): Work[] => [1, 2, 3, 4].map(n => {
     const candidate = { sha: sha(`head${n}`), baseSha: base, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-    return {
-      id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, type: 'feature', description: '', priority: 1, dependencies: [], stage: 'build',
-      criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true },
-      revision: 1, policyRevision: 1, createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
-      ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false,
-      scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: foldMergeLedger([])[`GY-${n}`] ?? null,
-      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: base, baseTipContained: true, at: iso(start) },
+    return workFixture({ id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, priority: 1, stage: 'build', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+      createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000), epoch: 1, submission: { epoch: 1, pr: n }, candidate,
+      mergeLedger: foldMergeLedger([])[`GY-${n}`] ?? null,
+      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: base, baseTipContained: true, at: iso(start) } as never,
       gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
-    } as unknown as Work;
+    });
   });
   const ports: MergePorts = {
     baseBranch: 'main', now: () => start, fetch: async () => base,

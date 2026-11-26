@@ -12,6 +12,7 @@ import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-10-05 submittedAt is a past verdict literal that reconcile records without comparing it to a clock; the gh stub's submitted_at and the item timestamps come from Date.now().
 
 // GY-1303, 2026-10-05: with the coordinator checkout mounted read-only, every reconcile pass failed
@@ -38,12 +39,11 @@ async function boundMaster() {
 }
 function work(): Work {
   const candidate = { sha: H, baseSha: B, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
-  return { id: 'work-64', key: 'GY-64', title: 'Frobs', description: '', type: 'feature', priority: 0, dependencies: [],
+  return workFixture({ id: 'work-64', key: 'GY-64', title: 'Frobs', priority: 0,
     criteria: [{ id: 'AC-1', text: 'The widget counts every frob.', proofs: ['unit:frob-count'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'review', revision: 7, policyRevision: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString(), ready: true, epoch: 1,
-    lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 64 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 64 }, gates: [],
     observation: { candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(),
-      prState: 'open', draft: false, baseTip: B, baseTree: B, baseTipContained: true }, blocker: null, gates: [], violations: [] } as unknown as Work;
+      prState: 'open', draft: false, baseTip: B, baseTree: B, baseTipContained: true } as never });
 }
 /** node:fs/promises with every write to the lock location refused as a read-only mount would. */
 async function readOnlyLockFs(at: 'mkdir' | 'open' | 'write', code = 'EROFS') {

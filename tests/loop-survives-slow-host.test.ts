@@ -17,6 +17,7 @@ import { coordinationViewHeader } from '../src/server/work-view.js';
 import { loopPresenceHeader } from '../src/model/loop-presence.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3341: a slow host must not make the loop's own supervisor kill it while it still progresses,
 // and a cycle's cost must not grow with every item ever created.
@@ -37,11 +38,9 @@ function doneItem(index: number): Work {
   const id = randomUUID(), key = `GY-D${index + 1}`, at = iso(started - 48 * 3_600_000);
   const head = sha(`${index.toString(16)}d`, 'd');
   const marker = (n: number) => `settled-history:${key} attempt ${n}`;
-  return {
-    id, key, title: `Delivered ${key}`, description: `The history of ${key}, kept on the ledger.`, type: 'feature', priority: 2, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true },
-    stage: 'done', revision: 3, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: false, epoch: 2,
-    lease: null, workspaces: [], submission: null, reworkRequested: false, scenarioRequirements: [], blocker: null, violations: [],
+  return workFixture({
+    id, key, title: `Delivered ${key}`, description: `The history of ${key}, kept on the ledger.`, criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:item-works'] }],
+    stage: 'done', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: false, epoch: 2,
     candidate: { sha: head, baseSha: sha('base'), pr: 1000 + index, branch: `graphyard/gy-${index + 1}-2`, author: 'worker-a' },
     evidence: [{ id: randomUUID(), proof: 'unit:item-works', sha: head, baseSha: sha('base'), policyRevision: 1, producer: 'proof-runner', trusted: true, result: 'pass', executed: 3, skipped: 0, at, environment: 'node', url: `https://ci.example/${index}` },
       { id: randomUUID(), proof: 'e2e:item-e2e', sha: head, baseSha: sha('base'), policyRevision: 1, producer: 'proof-runner', trusted: true, result: 'pass', executed: 1, skipped: 0, at, environment: 'node', url: `https://ci.example/${index}-e2e` }],
@@ -50,7 +49,7 @@ function doneItem(index: number): Work {
     gates: [{ name: 'build', passed: true, reasons: [] }],
     pipeline: { reworkRounds: 0, attempts: Array.from({ length: 6 }, (_, n) => ({ epoch: n + 1, claimedAt: at, endedAt: at, end: 'complete', note: marker(n) })) },
     sessions: Array.from({ length: 6 }, (_, n) => ({ id: `worker-a:${n}`, kind: 'implementation', principal: 'worker-a', runtime: 'claude', host: 'machine-a', subject: `${key}: attempt ${n}`, startedAt: at, updatedAt: at, endedAt: at, state: 'finished', outcome: marker(n) })),
-  } as unknown as Work;
+  } as never);
 }
 
 /** An open item in one of the stages a live yard holds. */
@@ -58,14 +57,9 @@ function openItem(index: number, dependencies: string[] = []): Work {
   const id = randomUUID(), key = `GY-O${index + 1}`, at = iso(started - 600_000);
   const stage = (['ready', 'build', 'review', 'test', 'merge'] as const)[index % 5];
   const head = sha(`${index.toString(16)}o`, 'o');
-  return {
-    id, key, title: `Open ${key}`, description: `Work in flight.`, type: 'feature', priority: index % 3, dependencies,
-    criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true },
-    stage, revision: 2, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1,
-    lease: null, workspaces: [], submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [],
-    candidate: stage === 'ready' ? null : { sha: head, baseSha: sha('base'), pr: 2000 + index, branch: `graphyard/gy-${index + 900}-1`, author: 'worker-a' },
-    observation: null, gates: [{ name: 'ready', passed: true, reasons: [] }],
-  } as unknown as Work;
+  return workFixture({ id, key, title: `Open ${key}`, description: `Work in flight.`, priority: index % 3, dependencies,
+    criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:item-works'] }], stage, revision: 2, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    candidate: stage === 'ready' ? null : { sha: head, baseSha: sha('base'), pr: 2000 + index, branch: `graphyard/gy-${index + 900}-1`, author: 'worker-a' } });
 }
 
 before(async () => {

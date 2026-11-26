@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { diagnose, fileConflicts, proofPreview, resourceConflicts } from '../src/coordination.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 const now = Date.parse('2026-01-01T00:10:00Z');
 function work(id: string): Work {
-  return { id, key: id, stage: 'ready', ready: true, dependencies: [], lease: null, workspaces: [], submission: null, evidence: [], scenarioRequirements: [], criteria: [{ id: 'AC-1', text: 'Actual result', proofs: ['integration:result'] }], policyRevision: 2, candidate: { sha: 'a', baseSha: 'b' }, gates: [], violations: [] } as unknown as Work;
+  return workFixture({ id, key: id, criteria: [{ id: 'AC-1', text: 'Actual result', proofs: ['integration:result'] }], policyRevision: 2, candidate: { sha: 'a', baseSha: 'b' } as never, gates: [] });
 }
 test('overlap includes actual diffs and directory scopes, excludes siblings and completed work', () => {
   const a = work('A'), b = work('B'); a.observation = { files: ['src/api/'] } as any; b.observation = { files: ['src/api/create.ts'] } as any;

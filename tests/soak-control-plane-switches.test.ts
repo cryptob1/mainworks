@@ -10,6 +10,7 @@ import type { MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-1528: the control-plane switches over a simulated day of the real loop's cycles, in the real
@@ -51,14 +52,11 @@ class World {
       }
       const delivered = ledger?.state === 'reconciled';
       const candidate = { sha: this.head(n), baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-      return {
-        id: `w${n}`, key: `GY-${n}`, description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-        policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(submittedAt),
-        ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: ledger,
+      return workFixture({ id: `w${n}`, key: `GY-${n}`, title: undefined, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+        createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(submittedAt), epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger,
         observation: { source: 'control-plane', candidate, files: ['src/app.ts', 'src/other.ts'], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.main[0], baseTipContained: true, at: iso(now) },
         gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name === 'build' || name === 'ready' || name === 'review', reasons: [] })),
-        ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt ?? iso(now), mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),
-      } as unknown as Work;
+        ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt ?? iso(now), mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }) } as never);
     });
   }
   ports(): MergeWriterReads {

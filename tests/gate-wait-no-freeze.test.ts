@@ -14,9 +14,9 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { acquireVerificationSlot, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
-import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3518: one batch gate waiting for a host heavy-job slot paused every new implementation launch,
 // so the items that would have cleared the jam could not start either. A gate that only waits for
@@ -70,12 +70,9 @@ async function world(label: string) {
   const worker = { name: 'w1', principal: 'w1-principal', agentName: 'agent-w1', mode: 'launch', kind: 'claude', credentialFile: '/outside/w1.token', agentArgs: [], environment: {} } as unknown as WorkerProfile;
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [worker], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
-  const ready = {
-    id: 'w1', key: 'GY-1', title: 'Clears the jam', description: '', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-    policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000),
-    ready: true, epoch: 0, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: null, blocker: null, violations: [], sessions: [], gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name === 'ready', reasons: [] })), stage: 'ready',
-  } as unknown as Work;
+  const ready = workFixture({ id: 'w1', key: 'GY-1', title: 'Clears the jam', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+    createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), sessions: [],
+    gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name === 'ready', reasons: [] })) });
   const work = [ready];
   const dispatched: string[] = [];
   const effects: DaemonEffects = {

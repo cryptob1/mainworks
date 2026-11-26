@@ -19,6 +19,7 @@ import { mergeDelivered, mergeIntent } from './helpers/merge-ledger.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -364,17 +365,15 @@ const sha = (item: number, h: number) => `${item.toString(16).padStart(4, '0')}$
 function boardItem(index: number, now: Date, kind: 'settled' | 'active' | 'fresh'): Work {
   const id = randomUUID(), key = `GY-${index + 1}`, at = now.toISOString(), current = sha(index, HEADS), delivered = kind === 'settled';
   const proofs = ['integration:alpha', 'integration:beta', 'e2e:gamma'];
-  if (kind === 'fresh') return {
-    id, key, title: `Board item ${key}`, description: 'An item released and waiting for its implementation. '.repeat(10), type: 'feature', priority: index % 3,
-    dependencies: [], criteria: proofs.map((proof, n) => ({ id: `AC-${n + 1}`, text: `Criterion ${n + 1} of ${key}`, proofs: [proof] })),
-    policy: { checks: ['test', 'typecheck'], review: true }, stage: 'ready', revision: 3, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 0, lease: null, workspaces: [], implementers: [], submission: null, candidate: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [],
+  if (kind === 'fresh') return workFixture({
+    id, key, title: `Board item ${key}`, description: 'An item released and waiting for its implementation. '.repeat(10), priority: index % 3,
+    criteria: proofs.map((proof, n) => ({ id: `AC-${n + 1}`, text: `Criterion ${n + 1} of ${key}`, proofs: [proof] })), policy: { checks: ['test', 'typecheck'], review: true },
+    revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, implementers: [], observation: undefined,
     gates: ['ready', 'build', 'review', 'test', 'acceptance', 'merge'].map(name => ({ name, passed: name === 'ready', reasons: name === 'ready' ? [] : [`${name} is still owed`] })),
     nextAction: { kind: 'dispatch', work: id, key, gate: 'build', refusal: null, reason: `${key} is ready and unassigned`, inputs: { kind: 'dispatch', epoch: 0, target: 'implementation', priority: index % 3 }, llmRole: 'implement', binding: 'dispatch:0' },
     actionQueue: { actions: [{ id: `${key}-dispatch`, kind: 'dispatch', work: id, key, gate: 'build', refusal: null, reason: `${key} is ready and unassigned`, binding: 'dispatch:0', inputs: { kind: 'dispatch', epoch: 0, target: 'implementation', priority: index % 3 }, requestedBy: 'graphyard', requestedAt: at, state: 'pending', claim: null, attempts: 0, history: [{ at, event: 'requested', requester: 'graphyard', executor: null, result: null, reason: 'released' }] }], history: [] },
     autoDispatch: { review: null, producers: [], history: [] },
-  } as unknown as Work;
+  } as never);
   const evidence: Evidence[] = [];
   for (let h = 1; h <= HEADS; h++) for (const proof of proofs) evidence.push({
     id: randomUUID(), proof, sha: sha(index, h), baseSha: base, policyRevision: 1, producer: 'proof-runner', trusted: true, result: 'pass', executed: 12, skipped: 0, at,
@@ -386,13 +385,11 @@ function boardItem(index: number, now: Date, kind: 'settled' | 'active' | 'fresh
   const requests = Array.from({ length: 44 }, (_, n) => ({ id: randomUUID(), kind: n % 2 ? 'producer' : 'review', sha: sha(index, (n % (HEADS - 1)) + 1), baseSha: base, policyRevision: 1, pr: index + 1, requestedAt: at, reason: 'submitted head', state: 'cancelled', resolvedAt: at, resolution: 'head changed' }));
   const sessions = Array.from({ length: 30 }, (_, n) => ({ id: `${key}-session-${n}`, kind: 'review', role: 'review', state: 'finished', agentName: `review-${n}`, host: 'host-1', runtime: 'claude', startedAt: at, updatedAt: at, endedAt: at, outcome: `vanished: the runtime has not reported pane ${n} for 61s after its last observed activity`, subject: `${key}: review` }));
   const stage = delivered ? 'done' : (['build', 'review', 'test', 'acceptance', 'merge'] as const)[index % 5];
-  return {
-    id, key, title: `Board item ${key}`, description: 'An item with the history a long-lived ledger accumulates. '.repeat(10), type: 'feature', priority: index % 3,
-    dependencies: [], criteria: proofs.map((proof, n) => ({ id: `AC-${n + 1}`, text: `Criterion ${n + 1} of ${key}`, proofs: [proof] })),
-    policy: { checks: ['test', 'typecheck'], review: true }, stage, revision: 400, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 2, lease: null, workspaces: [], implementers: ['worker-a'], submission: { epoch: 2, pr: index + 1 },
-    candidate: { sha: current, baseSha: base, pr: index + 1, branch: `graphyard/gy-${index + 1}-2`, author: 'worker-a' },
-    reworkRequested: false, scenarioRequirements: [], evidence, blocker: null, violations: [],
+  return workFixture({
+    id, key, title: `Board item ${key}`, description: 'An item with the history a long-lived ledger accumulates. '.repeat(10), priority: index % 3,
+    criteria: proofs.map((proof, n) => ({ id: `AC-${n + 1}`, text: `Criterion ${n + 1} of ${key}`, proofs: [proof] })), policy: { checks: ['test', 'typecheck'], review: true },
+    stage, revision: 400, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 2, implementers: ['worker-a'], submission: { epoch: 2, pr: index + 1 },
+    candidate: { sha: current, baseSha: base, pr: index + 1, branch: `graphyard/gy-${index + 1}-2`, author: 'worker-a' }, evidence,
     observation: { at, candidate: { sha: current, baseSha: base, pr: index + 1 }, files: ['src/server/index.ts'], checks: [], reviews: [], prState: delivered ? 'closed' : 'open', merged: delivered, mergeSha: delivered ? 'f'.repeat(40) : null, mergeable: true, protected: true,
       scopeFiles: Array.from({ length: 200 }, (_, file) => ({ path: `src/generated/file-${file}.ts`, sha: 'e'.repeat(40), status: 'unchanged' })) },
     gates: ['ready', 'build', 'review', 'test', 'acceptance', 'merge'].map(name => ({ name, passed: delivered, reasons: delivered ? [] : [`${name} is still owed`] })),
@@ -403,7 +400,7 @@ function boardItem(index: number, now: Date, kind: 'settled' | 'active' | 'fresh
     nextAction: delivered ? null : { kind: 'request-review', work: id, key, gate: 'review', refusal: null, reason: 'waiting on review', inputs: { kind: 'request-review' }, llmRole: null, binding: 'review:1' },
     // A delivery recorded with its serving release, as older deliveries carry it.
     ...(delivered ? { delivery: { mergeSha: 'f'.repeat(40), mergedAt: at, deployment: { sha: 'd'.repeat(40), mergeSha: 'f'.repeat(40), source: 'endpoint', observedAt: at, covers: 'exact', at, observer: 'executor-1' } } } : {}),
-  } as unknown as Work;
+  } as never);
 }
 
 /** Every statement the store's checked-out clients and pool run while `run` does, with the rows each returned. */

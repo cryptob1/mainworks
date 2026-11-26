@@ -5,6 +5,7 @@ import { evaluate } from '../src/model-boundary/gates.js';
 import { type Evidence, type Observation, type Work } from '../src/model.js';
 import { refusalAction } from '../src/model/next-action.js';
 import { checkStates, prSteps } from '../src/model/pr-steps.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-292: a merge moves main under every open candidate. Only a candidate that conflicts with the
 // new base is brought onto it; the rest keep their head, CI, review, proofs and stage. Each test is
@@ -29,16 +30,10 @@ function evidence(item: Work): Evidence {
 /** The merge writer's record of a head (GY-2010: the test and merge gates read it): `intent` trialled it, `reconciled` pushed it, `refused` failed its trial. */
 type Ledger = 'intent' | 'reconciled' | 'refused' | null;
 function work(key: string, head: string, overrides: Partial<Observation> = {}, ledger: Ledger = 'intent'): Work {
-  const item = {
-    id: key.toLowerCase(), key, title: key, description: '', type: 'feature', priority: 2, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:policy'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 4, policyRevision: 1, createdAt: now.toISOString(), updatedAt: now.toISOString(),
-    stageEnteredAt: now.toISOString(), ready: true, epoch: 1, lease: null,
+  const item = workFixture({ id: key.toLowerCase(), key, criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:policy'] }],
+    stage: 'review', revision: 4, createdAt: now.toISOString(), updatedAt: now.toISOString(), stageEnteredAt: now.toISOString(), epoch: 1,
     workspaces: [{ host: 'machine', path: `/tmp/${key}`, branch: `graphyard/${key}`, epoch: 1, owner: 'agent' }],
-    candidate: { sha: head, baseSha: main, pr: 1, branch: `graphyard/${key}`, author: 'agent' },
-    submission: { epoch: 1, pr: 1 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: null, blocker: null, gates: [], violations: [],
-  } as unknown as Work;
+    candidate: { sha: head, baseSha: main, pr: 1, branch: `graphyard/${key}`, author: 'agent' }, submission: { epoch: 1, pr: 1 }, gates: [] });
   item.observation = observation(item, overrides);
   item.evidence = [evidence(item)];
   if (ledger) item.mergeLedger = { key, state: ledger, head, baseTip: main, mergeSha: ledger === 'reconciled' ? commit('d0') : null, risk: null, intentAt: now.toISOString(),

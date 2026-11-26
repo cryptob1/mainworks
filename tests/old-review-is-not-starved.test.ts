@@ -14,6 +14,7 @@ import { saveReviewerProfile } from '../src/reviewer.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3684 AC-2: when several heads owe a product review, launches go oldest request first.
 // Seeds one head owing a product review for a day and three fresh ones while main moves every
@@ -30,16 +31,12 @@ const M3 = shaOf('main-3');
 function featureItem(key: string, head: string, base: string, requestedAt: Date): Work {
   const at = requestedAt.toISOString();
   const candidate = { sha: head, baseSha: base, pr: 1, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker-1' };
-  const work = {
-    id: randomUUID(), key, title: `Feature ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:smoke'] }],
-    policy: { checks: ['test'], review: true }, stage: 'review', revision: 3, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }],
-    candidate, submission: { epoch: 1, pr: 1 }, reworkRequested: false,
-    scenarioRequirements: [],
+  const work = workFixture({
+    id: randomUUID(), key, title: `Feature ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:smoke'] }], stage: 'review', revision: 3,
+    createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }],
+    candidate, submission: { epoch: 1, pr: 1 },
     evidence: [{ id: `ev-${key}`, proof: 'e2e:smoke', sha: head, baseSha: base, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
-    blocker: null, gates: [], violations: [], implementers: ['worker-1'],
+    gates: [], implementers: ['worker-1'],
     observation: {
       source: 'control-plane', at, candidate, checks: [],
       reviews: [{ id: 1, reviewer: 'code-reviewer', state: 'APPROVED', sha: head, submittedAt: at }],
@@ -49,7 +46,7 @@ function featureItem(key: string, head: string, base: string, requestedAt: Date)
       baseTip: base, baseTipContained: true, mergeBase: base,
     },
     productReview: null,
-  } as unknown as Work;
+  });
   work.gates = evaluate(work, [work], requestedAt).gates;
   reconcileAutoDispatch(work, [work], requestedAt);
   reconcileActions(work, [work], requestedAt);

@@ -23,6 +23,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -61,11 +62,11 @@ const fixedRequestId = (n: number, slot: string) => `${fixedTag(n, slot)}${creat
 /** A submitted, observed candidate for item N, with its review request recorded under a fixed id. */
 function requested(n: number, overrides: Partial<Work> = {}, now = new Date()): Work {
   const candidate = { sha: sha40(`a${n}`), baseSha: B, pr: 200 + n, branch: `graphyard/gy-${200 + n}-1`, author: 'implementer' };
-  const item = { id: `work-${200 + n}`, key: `GY-${200 + n}`, title: `Item ${n}`, description: '', type: 'feature', priority: 0, dependencies: [],
+  const item = workFixture({ id: `work-${200 + n}`, key: `GY-${200 + n}`, title: `Item ${n}`, priority: 0,
     criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:concurrency'] }, { id: 'AC-2', text: 'Integration', proofs: ['integration:concurrency'] }, { id: 'AC-3', text: 'Manual', proofs: ['manual:concurrency'] }],
-    policy: { checks: ['test', 'typecheck'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1,
-    lease: null, workspaces: [{ host: 'h', path: `/w/gy-${200 + n}`, branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: candidate.pr }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: observation(candidate), blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], violations: [], ...overrides } as Work;
+    policy: { checks: ['test', 'typecheck'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    workspaces: [{ host: 'h', path: `/w/gy-${200 + n}`, branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: candidate.pr }, observation: observation(candidate),
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
   // No proof holds the review (GY-1235): reconciliation raises the review request on the head at
   // once, and no producer request beside it.
   reconcileAutoDispatch(item, [item], now);

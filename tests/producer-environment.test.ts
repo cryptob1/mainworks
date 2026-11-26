@@ -19,6 +19,7 @@ import { expandTypedCommand, requestOf, startedAtOnce } from './helpers/launch-s
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-10-02 `clock` is the explicit tick clock handed to runDispatchTick and its snapshot; new Date() only stamps request/observation records that no clock compares to it.
 
 // GY-1071: the producer's .env secrets (GY-73) — which names leave .env, how a value is read, that
@@ -130,12 +131,10 @@ async function installation(pi = false) {
 function work(key: string, group: string, proofs: string[]): Work {
   const candidate = { sha: H, baseSha: B, pr: 73, branch: `graphyard/${key.toLowerCase()}-1`, author: 'implementer' };
   const request = { id: `request-${randomUUID().slice(0, 8)}`, kind: 'producer', sha: H, baseSha: B, policyRevision: 2, pr: 73, group, proofs, state: 'requested', requestedAt: new Date().toISOString(), reason: 'r' };
-  return { id: `id-${key}`, key, title: 'Live install', description: '', type: 'feature', priority: 1, dependencies: [], 
-    criteria: [{ id: 'AC-1', text: 'Installs', proofs }], policy: { checks: ['test'], review: true }, stage: 'review', revision: 3, policyRevision: 2,
-    createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 1, lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 73 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    blocker: null, gates: [], violations: [], implementers: ['implementer'],
+  return workFixture({ key, title: 'Live install', priority: 1, criteria: [{ id: 'AC-1', text: 'Installs', proofs }], stage: 'review', revision: 3, policyRevision: 2,
+    createdAt: '', updatedAt: '', stageEnteredAt: '', epoch: 1, candidate, submission: { epoch: 1, pr: 73 }, gates: [], implementers: ['implementer'],
     observation: { at: new Date().toISOString(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [], prState: 'open', draft: false },
-    autoDispatch: { review: null, producers: [request], history: [] } } as unknown as Work;
+    autoDispatch: { review: null, producers: [request], history: [] } as never });
 }
 function herdr(calls: string[][]) {
   let pane = 0;
