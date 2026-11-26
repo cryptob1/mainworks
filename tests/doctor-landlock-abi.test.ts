@@ -27,8 +27,8 @@ test('unit:tests/doctor-landlock-abi.test.ts — doctor PASSes ABI 9', async () 
   assert.match(await landlockLine(9), /^PASS landlock: Landlock ABI 9/);
 });
 
-test('unit:tests/doctor-landlock-abi.test.ts — README prerequisites name Landlock ABI 9 and the same fix', async () => {
-  const prerequisites = (await readFile('README.md', 'utf8')).split('\n').find(line => line.startsWith('Prerequisites')) ?? '';
+test('unit:tests/doctor-landlock-abi.test.ts — setup guide prerequisites name Landlock ABI 9 and the same fix', async () => {
+  const prerequisites = (await readFile('docs/setup.md', 'utf8')).split('\n## Prerequisites\n')[1]?.split('\n## ')[0] ?? '';
   assert.match(prerequisites, /Landlock ABI 9\+/);
   assert.match(prerequisites, /Ubuntu 26\.04.*linux-image-oem-7\.3/);
 });
