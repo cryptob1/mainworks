@@ -339,7 +339,7 @@ code.sha{display:inline-block;max-width:8ch;overflow:hidden;white-space:nowrap;v
 .run-history{list-style:none;padding:0;margin:var(--space-2) 0 0;display:grid;gap:6px;font-size:var(--type-small);color:var(--text-2)}
 .test-case-list{list-style:none;padding:0;margin:0;display:grid;gap:8px}
 /* GY-409 connect an account: the picker, the primary action, and the collapsed advanced forms. */
-.connect-button{flex-shrink:0}
+.connect-button{flex-shrink:0}.setup-checklist li>[data-setup-action]{display:inline-block;margin-bottom:16px}.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:auto;margin:0}
 .connect-providers{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;list-style:none;padding:0;margin:14px 0 4px}
 .connect-providers button{width:100%;text-align:left;background:var(--raised);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:14px;font-weight:400}
 .connect-providers button:hover{border-color:var(--up-next)}
