@@ -43,7 +43,7 @@ async function fixture(label: string) {
   };
   const candidate = { sha: head, baseSha: baseTip, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' };
   const work = { id: 'w1', key: 'GY-1', title: 'The item', type: 'feature', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], submission: { epoch: 1, pr: 1 }, candidate,
-    observation: { source: 'control-plane', candidate, files: ['item.txt'], scopeFiles: [], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, at: new Date().toISOString() },
+    observation: { source: 'control-plane', candidate, files: ['item.txt'], scopeFiles: [{ path: 'item.txt' }], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, at: new Date().toISOString() },
     gates: [], policy: { checks: ['test'], review: true }, epoch: 1, policyRevision: 1, mergeLedger: null } as unknown as Work;
   const events: { kind: string; payload: unknown; work: string }[] = [], trials: MergeTrialInput[] = [];
   const config = masterConfigSchema.parse({ version: 1, repository: 'owner/project', baseBranch: 'main', url: 'https://graphyard.example', credentialFile: '/unused', cliPath: '/unused', githubAppId: 1, hostId: 'fixture', masterAgentName: 'fixture', workers: [], run: { mergeWriter: { deployKeyFile: join(directory, 'unused-key') } } });

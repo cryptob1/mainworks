@@ -37,6 +37,8 @@ export const mergeWriterStateSchema = z.object({
   trials: z.array(z.object({ mergeSha: shaField, startedAt: instant, finishedAt: instant, heads: z.array(z.object({ key: z.string(), head: shaField }).strict()),
     steps: z.array(z.object({ step: z.string(), durationMs: z.number().min(0) }).strict()) }).strict()).max(20).optional(),
   lastMergeAt: instant.nullable().default(null),
+  /** GY-3881: landings that took the fast path — onto a tip that moved after their trial, with no second trial. Absent until one does. */
+  untrialledLandings: z.number().int().min(0).optional(),
   queue: z.array(z.object({ key: z.string().max(100), id: z.string().max(100), head: shaField, submittedAt: instant, waitingMs: z.number().int().min(0),
     /** GY-3695: the effective priority the queue ordered the head by (absent on state written before it). */ priority: z.number().int().min(0).optional(),
     /** GY-3451: what the head waits for before its trial starts — a green base while main fails — or absent when it is due. */ waiting: z.string().max(500).optional() }).strict()).max(mergeWriterKeptQueue).default([]),

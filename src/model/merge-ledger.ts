@@ -32,7 +32,9 @@ export type MergeLedgerPreview = z.infer<typeof previewVerdictSchema>;
 export interface MergeLedgerTrial { head: string; mergeSha: string; proofs: Record<string, { executed: number; failed: number }>;
   /** Base tip of a complete passing verdict; omitted for failed or incomplete trials. */
   passedBaseTip?: string;
-  build?: 'pass' | 'fail'; testFiles?: number; preview?: MergeLedgerPreview | null }
+  build?: 'pass' | 'fail'; testFiles?: number; preview?: MergeLedgerPreview | null;
+  /** GY-3881: the test files the trial selected; absent on a trial recorded before it. */
+  files?: string[] }
 /** GY-2963: the trial's newest reported step, with the instant it began. */
 export interface MergeLedgerStep { step: string; at: string }
 export type TrialFlaked = z.infer<typeof trialFlakedSchema>;

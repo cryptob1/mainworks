@@ -5,10 +5,9 @@ import { mergeOne, type MergePorts, type MergeRecordEvent, type MergeTrialRun } 
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model/work.js';
 
-// GY-3545: a merge trial whose only failures are tests with an open "Flaky check on main" item, or
-// tests that fail on the base tip too, is not the candidate's fault: the failures are noted (on the
-// flaky item, or on the candidate as a known red) and the candidate lands. Any other failure is
-// refused as before.
+// GY-3545, GY-3881: a merge trial whose only failures are tests that fail on the base tip too is not
+// the candidate's fault: the failures are noted on the candidate as a known red and it lands. Any
+// other failure, an open "Flaky check on main" item or not, is refused.
 
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const tip = sha('tip'), head = sha('head');
@@ -36,13 +35,12 @@ function world(failed: string[], base?: MergeTrialRun['base']) {
   return { ports, events, notes };
 }
 
-test('integration:trial-known-flaky — a trial failing only on tests with an open flaky item, or tests red on the base tip too, lands and notes them; any other failure is refused as before', async () => {
-  // Only a test with an open flaky-check item fails: the candidate lands and the flaky item gains a note.
+test('integration:trial-known-flaky — a trial failing only on tests red on the base tip too lands and notes them; any other failure is refused, an open flaky item or not', async () => {
+  // GY-3881: a test with an open flaky-check item that passes on the base tip is the candidate's failure.
   const flaky = world(['tests/flaky.test.ts']);
-  assert.equal((await mergeOne(flaky.ports, candidate)).outcome, 'merged');
-  assert.deepEqual(flaky.events.map(event => event.kind), ['intent', 'trial', 'pushed', 'reconciled'], 'no refusal, so no rework');
-  assert.deepEqual(flaky.notes.map(note => note.key), ['GY-9']);
-  assert.match(flaky.notes[0]!.text, /tests\/flaky\.test\.ts failed in GY-1's merge trial/);
+  assert.equal((await mergeOne(flaky.ports, candidate)).outcome, 'refused');
+  assert.deepEqual(flaky.events.at(-1), { kind: 'refused', head, reason: `${trialFailurePrefix}: tests tests/flaky.test.ts` });
+  assert.deepEqual(flaky.notes, [], 'the open flaky item excuses nothing');
 
   // Only tests that fail on the base tip too, case for case: a known red, noted on the candidate, which lands.
   const red = world(['tests/red.test.ts'], { tip, files: ['tests/red.test.ts'], tests: ['red case'], cases: ['red case'] });
