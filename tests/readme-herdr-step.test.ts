@@ -18,7 +18,7 @@ test('e2e:readme-herdr-step — without herdr on PATH doctor FAILs naming the RE
   const install = 'curl -fsSL https://herdr.dev/install.sh | sh';
   assert.ok(lines[0].startsWith('FAIL herdr: herdr is not on PATH'), lines[0]);
   assert.ok(lines[0].includes(`README's Herdr prerequisite`) && lines[0].includes(install), lines[0]);
-  const setup = await readFile(new URL('../docs/setup.md', import.meta.url), 'utf8');
+  const setup = await readFile(new URL('../docs/reference.md', import.meta.url), 'utf8');
   assert.match(setup, /Herdr \(`herdr --version`; install: `curl -fsSL https:\/\/herdr\.dev\/install\.sh \| sh`\)/);
 });
 

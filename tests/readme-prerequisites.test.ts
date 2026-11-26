@@ -11,8 +11,8 @@ import { setupFromZeroChecks, setupLine } from '../src/setup-from-zero.js';
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const major = Number(/^>=\s*(\d+)$/.exec(JSON.parse(read('package.json')).engines.node)![1]);
 
-test('e2e:readme-prerequisites — the setup guide prerequisites name the engines Node major and install commands for Ubuntu/Debian, Arch and macOS', () => {
-  const prerequisites = read('docs/setup.md').split('\n## Prerequisites\n')[1]?.split('\n## ')[0] ?? '';
+test('e2e:readme-prerequisites — the reference prerequisites name the engines Node major and install commands for Ubuntu/Debian, Arch and macOS', () => {
+  const prerequisites = read('docs/reference.md').split('\n## Prerequisites\n')[1]?.split('\n## ')[0] ?? '';
   assert.match(prerequisites, new RegExp(`Node ${major}\\+`));
   assert.ok(prerequisites.includes(`Ubuntu/Debian: \`curl -fsSL https://deb.nodesource.com/setup_${major}.x | sudo bash - && sudo apt install nodejs\``));
   assert.ok(prerequisites.includes('Arch: `sudo pacman -S nodejs npm`'));
