@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -44,11 +45,7 @@ async function defineCase(id = `booking-sms-${++cases}`) {
 }
 /** A submitted item requiring `e2e:<id>`, whose candidate the control plane has observed at `sha`. */
 async function linkedItem(id: string, sha = head, files: string[] = ['src/booking.ts']) {
-  let work = await engine.execute(operator, 'create', null, { title: `Ship ${id}`, criteria: [{ id: 'AC-1', text: 'Bookings text the customer', proofs: [`e2e:${id}`] }] }, randomUUID()) as Work;
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'machine-a', path: `/tmp/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}` }, randomUUID());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, pr: ++pullRequest }, randomUUID());
+  let work = await lifecycle(engine, operator, { title: `Ship ${id}`, criteria: [{ id: 'AC-1', text: 'Bookings text the customer', proofs: [`e2e:${id}`] }] }, { claim: worker, submit: { pr: ++pullRequest } });
   const observation: Observation = { clockOffset: { min: 0, max: 0 }, candidate: { sha, baseSha: base, pr: work.submission!.pr, branch: work.workspaces.at(-1)!.branch, author: 'implementer' },
     checks: [], reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null, files, scopeFiles: [], at: new Date().toISOString() };
   return engine.observe(work.id, work.revision, observation);

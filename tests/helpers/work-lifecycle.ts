@@ -4,7 +4,7 @@ import type { Engine } from '../../src/engine.js';
 import type { Principal, Work } from '../../src/model.js';
 
 /** The steps past `ready` that a test names; the walk ends at the last one. */
-export interface LifecycleSteps {
+interface LifecycleSteps {
   /** Who claims the item; without it the item is only filed and released. */
   claim?: Principal;
   /** The claimant takes its assignment through the worker pull (`pullAssignment`) instead of the claim command. */

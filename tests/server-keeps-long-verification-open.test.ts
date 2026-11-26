@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { workerVerificationTimeoutMs } from '../src/merge-writer/worker-verification.js';
 import { verificationRequest, verificationRequestTimeoutMs } from '../src/cli/verification-request.js';
 import { withDatabase } from './helpers/postgres.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 test('unit:server-keeps-long-verification-open — a simulated verification past 300 seconds receives its HTTP reply', async t => {
   const store = await withDatabase('long-verification');
@@ -16,11 +16,7 @@ test('unit:server-keeps-long-verification-open — a simulated verification past
   const worker = { id: 'worker', role: 'worker' as const, token: 'worker-test-token' };
   const host = { id: 'host', role: 'coordinator' as const, token: 'host-test-token' };
   engine.principals = [operator, worker, host];
-  let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Long verification',
-    criteria: [{ id: 'AC-1', text: 'Replies', proofs: ['unit:server-keeps-long-verification-open', 'e2e:fixture'] }] }, randomUUID());
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: process.cwd(), branch: 'graphyard/test' }, randomUUID());
+  let work = await lifecycle(engine, operator, { type: 'chore', title: 'Long verification', criteria: [{ id: 'AC-1', text: 'Replies', proofs: ['unit:server-keeps-long-verification-open', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: process.cwd(), branch: 'graphyard/test' } });
   const http = server(engine, [worker, host]);
   // Scale socket time by 1000: 300 ms represents the reported 300 s cutoff.
   // Use real socket timers and a real delayed host reply, not a mocked response.

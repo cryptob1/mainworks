@@ -17,6 +17,7 @@ import type { Principal } from '../src/model.js';
 import { withDatabase } from './helpers/postgres.js';
 import { ensureDashboardBuilt, runTests } from './helpers/run-tests.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 const workers = 4;
 const thousandLines = Array.from({ length: 1000 }, (_, i) => `earlier line ${String(i).padStart(4, '0')}\n`).join('');
@@ -102,9 +103,7 @@ async function startSharedMasterUxServers(count: number) {
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
   loopPanesRegistry(engine).observe({ configHome: null, session: null, host: 'host-1', running: true, master: 'w1:master' });
-  let item = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Watch a worker', criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
+  let item = await lifecycle(engine, operator, { type: 'chore', title: 'Watch a worker', criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['e2e:fixture'] }] }, { claim: worker });
   await engine.execute(coordinator, 'session', item.id, { id: 'worker-1', kind: 'implementation', runtime: 'claude', host: 'host-1', workspace: 'w1', agentName: 'work-claude',
     pane: 'w1:worker', attach: 'herdr pane attach w1:worker --workspace w1', subject: `${item.key}: Watch a worker`, state: 'running', observed: 'working', observedAt: new Date().toISOString() }, randomUUID());
 

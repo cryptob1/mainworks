@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
@@ -33,18 +34,13 @@ let store: Store, engine: Engine, url: string;
 
 useTestStore('park-requirements-question-refused', { repository: repository, credentials: credentials }, ctx => { ({ store, engine, url } = ctx); });
 
-const id = () => randomUUID();
 const request = async (credential: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, body: await response.json() as any };
 };
 const reload = async (workId: string) => (await store.list()).find(item => item.id === workId)!;
 /** A claimed item to park on: created, readied and claimed under the worker's own credential. */
-const claimed = async (n: number): Promise<Work> => {
-  let work = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Requirements question ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:behaves', 'e2e:fixture'] }] }, id());
-  work = await engine.execute(operator, 'ready', work.id, {}, id());
-  return engine.execute(worker, 'claim', work.id, {}, id());
-};
+const claimed = (n: number): Promise<Work> => lifecycle(engine, operator, { type: 'chore',  title: `Requirements question ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:behaves', 'e2e:fixture'] }] }, { claim: worker });
 
 test('unit:park-requirements-question-refused — GY-1816 AC-1: a goals-and-priorities park whose ask, needed text or reason asks whether a criterion is rewritten, revised or matched to another item\'s tests is refused naming the agent route; scope, ordering and product direction still park', async () => {
   // The ask GY-1814 parked (request 46a6f027), phrased as its worker wrote it: which yields —

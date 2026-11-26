@@ -21,6 +21,7 @@ import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
@@ -60,11 +61,7 @@ test('unit:tests/merge-requires-executed-proofs.test.ts integration:merge-requir
         await write(`change-${n}.txt`, 'change'); git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'change');
         const head = git(checkout, 'rev-parse', 'HEAD');
         const proof = mode === 'missing' ? 'integration:absent' : 'unit:declared';
-        let work = await engine.execute(operator, 'create', null, { type: 'chore', title: `${mode}-${n}`, criteria: [{ id: 'AC-1', text: 'Works', proofs: [proof, 'e2e:fixture'] }, { id: 'AC-2', text: 'Observe after deployment', proofs: ['manual:post-deploy/observed'] }] }, randomUUID());
-        work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-        work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-        await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'fixture', path: join(directory, branch), branch }, randomUUID());
-        work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, randomUUID());
+        let work = await lifecycle(engine, operator, { type: 'chore', title: `${mode}-${n}`, criteria: [{ id: 'AC-1', text: 'Works', proofs: [proof, 'e2e:fixture'] }, { id: 'AC-2', text: 'Observe after deployment', proofs: ['manual:post-deploy/observed'] }] }, { claim: worker, workspace: { host: 'fixture', path: join(directory, branch), branch }, submit: { head } });
         assert.equal(work.gates.find(gate => gate.name === 'build')?.passed, true);
         assert.equal(work.gates.find(gate => gate.name === 'review')?.passed, true);
         works.push(work);
