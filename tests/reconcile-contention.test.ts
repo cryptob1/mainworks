@@ -32,8 +32,11 @@ const ticksSince = (earlier: Set<unknown>) => engine.reconcileTicks.filter(recor
 const lapsed = () => ({ owner: 'gone-worker', epoch: 1, expiresAt: new Date(Date.now() - 60_000).toISOString() });
 /** Make `ids` hold a lapsed lease, so the next tick writes them, and a submission, so it wakes their jobs too. */
 const lapse = async (ids: string[]) => {
-  for (const id of ids) await store.pool.query(`UPDATE work_items SET document = jsonb_set(jsonb_set(document, '{lease}', $2::jsonb), '{submission}', $3::jsonb) WHERE id = $1`,
-    [id, JSON.stringify(lapsed()), JSON.stringify({ epoch: 1, pr: 4000 + items.findIndex(item => item.id === id) })]);
+  const submissions = ids.map(id => JSON.stringify({ epoch: 1, pr: 4000 + items.findIndex(item => item.id === id) }));
+  await store.pool.query(
+    `UPDATE work_items AS w SET document = jsonb_set(jsonb_set(w.document, '{lease}', $2::jsonb), '{submission}', v.submission) FROM unnest($1::uuid[], $3::jsonb[]) AS v(id, submission) WHERE w.id = v.id`,
+    [ids, JSON.stringify(lapsed()), submissions],
+  );
 };
 
 /** Run the fleet's traffic until `stop` resolves: heartbeats, resyncs, webhook wakes and raw moves; every failure is collected. */
@@ -68,15 +71,19 @@ after(async () => { if (store) await store.close(); });
 
 // Proven at a 20 ms batch, which makes the most batches contend, and at the 250 ms production default (GY-1212).
 for (const batchMs of [20, 250]) test(`unit:reconcile-tick-bounded-under-contention — a tick over 100 live items under continuous mutation completes within 30 s, evaluating or deferring every candidate, no batch rerun more than twice (reconcileBatchMs ${batchMs})`, { timeout: 180_000 }, async () => {
-  await lapse(items.slice(40, 70).map(work => work.id));
   engine.reconcileBatchMs = batchMs;
   const errors: unknown[] = [];
   let stop!: () => void; const stopped = new Promise<void>(resolve => { stop = resolve; });
   const load = traffic(stopped, errors);
-  await new Promise(resolve => setTimeout(resolve, 300));
-  const earlier = new Set(engine.reconcileTicks);
-  const started = performance.now();
-  try { await engine.reconcile(); } finally { stop(); await load; engine.reconcileBatchMs = 250; }
+  let earlier!: Set<unknown>, started = 0;
+  try {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    earlier = new Set(engine.reconcileTicks);
+    // Lapse atomically after warmup so traffic's resync ticks cannot drain the thirty lapsed items before `earlier` is captured (GY-3869).
+    await lapse(items.slice(40, 70).map(work => work.id));
+    started = performance.now();
+    await engine.reconcile();
+  } finally { stop(); await load; engine.reconcileBatchMs = 250; }
   const elapsedMs = performance.now() - started;
   // The resyncs ran ticks of their own; every tick in the window, the measured one included, keeps the bound.
   const ticks = ticksSince(earlier);
