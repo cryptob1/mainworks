@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { type CliCommand } from './registry.js';
 import { checkoutRoot } from './context.js';
+import { checkRelativeImports } from './relative-imports.js';
 import { changeBase, selfVerification } from './verify.js';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
 import { leadingProof } from '../model/flake-ledger.js';
@@ -447,7 +448,7 @@ function firstFailingLine(output: string): string | null {
  * 2. `requiredProofFailure` over `proofTestFiles` for each non-bootstrap unit/integration proof;
  * 3. `featureCaseFailure` over the files added or modified by the head;
  * 4. `workerFastGates` when the repository carries them (`workerFastGatesPresent`);
- * 5. `staticRuleTests` (GY-3826 / GY-3892) when the repository carries any of them.
+ * 5. Changed source/test relative imports resolve in the head, then `staticRuleTests` when present.
  */
 export async function completePreflight(
   root: string,
@@ -541,6 +542,7 @@ export async function completePreflight(
   }
 
   // 5. GY-3892: static rule test files the trial always adds (GY-3826).
+  await checkRelativeImports(git, head, baseTip);
   const presentStaticRules = staticRuleTests.filter(file => existsSync(join(root, file)));
   if (presentStaticRules.length) {
     const staticRun = await rerunTrialFiles(root, presentStaticRules, run);
