@@ -16,6 +16,7 @@ import type { Principal } from '../src/model.js';
 import { parseCase } from '../src/e2e/case.js';
 import { projectCaseSuite } from '../src/release-project.js';
 import type { E2eReport } from '../src/e2e/runner.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2988 AC-2 on this head: the Work page shows an item in review as 'In review' and a merged,
 // served, verified item as 'Live and verified'. The case itself is e2e/cases/plain-status-words.json,
@@ -51,7 +52,7 @@ async function runCase(runs: number) {
   git(['init', '-q', '-b', 'main'], root);
   await writeFile(join(root, 'README.md'), 'plain status words\n');
   git(['add', '.'], root); git(['commit', '-q', '-m', 'fixture'], root);
-  let http: ReturnType<typeof server> | null = null, store: Store | null = null;
+  let close: (() => Promise<void>) | undefined, store: Store | null = null;
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;
   try {
     // One database, migrated by the store the case's seed step then writes to, as the trial's
@@ -59,9 +60,7 @@ async function runCase(runs: number) {
     const connection = await databaseUrl('plain-status-words-case');
     store = new Store(connection); await store.init();
     const engine = new Engine(store, 120, '');
-    http = server(engine, [{ ...operator, token }], {});
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const origin = `http://127.0.0.1:${(http!.address() as { port: number }).port}`;
+    const { url: origin, close: stop } = await listen(server(engine, [{ ...operator, token }], {})); close = stop;
 
     // The case seeds its own items through the database URL scripts/e2e-serve.mjs records, as in the trial.
     await mkdir(join(root, '.graphyard'), { recursive: true });
@@ -85,12 +84,7 @@ async function runCase(runs: number) {
       if (outcome?.verdict !== 'passed') break;
     }
     return verdicts;
-  } finally {
-    delete process.env.GRAPHYARD_REPOSITORY_ROOT;
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
-}
+  } finally { delete process.env.GRAPHYARD_REPOSITORY_ROOT; await close?.(); if (store) await store.close(); } }
 
 test('unit:plain-status-words-case — the Work page shows In review and Live and verified for the seeded items', { timeout: 300_000 }, async () => {
   assert.deepEqual(await runCase(1), ['passed']);

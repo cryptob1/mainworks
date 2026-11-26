@@ -13,6 +13,7 @@ import type { Work } from '../src/model.js';
 
 // GY-3037: the fixture files an item, and every item owes an e2e proof; it declares the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -35,11 +36,9 @@ test('e2e:events-retention-bounded — one retention pass over 200,000 events de
   const url = await databaseUrl('events-retention');
   const store = new Store(url); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  const http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url: base, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token }]));
   const retention = new pg.Pool({ connectionString: url, max: 2 });
-  t.after(async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await retention.end(); await store.close(); });
+  t.after(async () => { await close(); await retention.end(); await store.close(); });
 
   // One row of each seeded kind through its real writer: a loop-state save of four review records, and a routine heartbeat save.
   const reviews = Array.from({ length: 4 }, (_, i) => reviewRecordSchema.parse({ id: randomUUID(), key: `GY-${i + 1}`, pr: i + 1, sha: sha('a'), baseSha: sha('b'), policyRevision: 1,

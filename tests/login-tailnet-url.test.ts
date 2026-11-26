@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { createContext } from '../src/cli/context.js';
 import { loginCommand } from '../src/cli/session-commands.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3216: `mainworks login` prints the tailnet address `tailscale serve` maps to the install's loopback URL.
 
@@ -19,9 +19,7 @@ async function login(upJson: object | undefined, stub: ((port: number) => string
   await mkdir(join(install, 'tokens'), { recursive: true });
   await writeFile(join(install, 'tokens/acme-widget-operator.token'), 'operator-admin-credential-0123456789abcdef\n', { mode: 0o600 });
   const bin = await temporaryDirectory('login-tailnet-bin');
-  const server = createServer((request, response) => { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ code: 'one-time-code-0123456789', principal: 'acme-widget-operator', expiresAt: '2026-10-19T00:10:00Z' })); });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const port = (server.address() as { port: number }).port;
+  const { port, close } = await listen((request, response) => { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ code: 'one-time-code-0123456789', principal: 'acme-widget-operator', expiresAt: '2026-10-19T00:10:00Z' })); });
   if (stub) { await writeFile(join(bin, 'tailscale'), `#!/bin/sh\n${stub(port)}\n`); await chmod(join(bin, 'tailscale'), 0o755); }
   const names = ['GRAPHYARD_URL', 'GRAPHYARD_CONFIG_HOME', 'GRAPHYARD_REPOSITORY_ROOT', 'GRAPHYARD_TOKEN', 'GRAPHYARD_TOKEN_FILE', 'PATH'];
   const saved = Object.fromEntries(names.map(name => [name, process.env[name]]));
@@ -32,11 +30,7 @@ async function login(upJson: object | undefined, stub: ((port: number) => string
     const context = await createContext('login', undefined, [], false);
     await loginCommand.run({ ...context, print: value => printed.push(value) }, undefined);
     return printed[0].signIn as string;
-  } finally {
-    for (const name of names) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
-    server.close();
-  }
-}
+  } finally { for (const name of names) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name]; await close(); } }
 const serving = (port: number) => `echo '${JSON.stringify({ Web: { 'vishrog.tail3739e3.ts.net:8443': { Handlers: { '/': { Proxy: `http://127.0.0.1:${port}` } } } } })}'`;
 const code = '/#sign-in=one-time-code-0123456789';
 // What `tailscale serve --bg --http=<port>` (the serve `up` sets up) and an https serve report: Web is alike, TCP tells them apart.

@@ -10,6 +10,7 @@ import { Store } from '../src/store.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-2605: an item whose own record reserves its release to the owner (GY-1857's 'Owner hold:') is
@@ -18,7 +19,7 @@ const repository = 'owner/hold';
 const owner: Principal = { id: 'human-owner', role: 'admin', sessionKind: 'human' };
 const credentials = [{ ...owner, token: `owner-hold-${'o'.repeat(32)}` }];
 const master = { id: 'master-operator', token: `master-operator-${'m'.repeat(32)}`, capabilities: ['policy:requirements'] };
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
 const call = async (credential: string, path: string, body: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
@@ -36,15 +37,13 @@ const fixture = (fields: Partial<Work>) => ({ key: 'GY-1', title: 'Work', descri
 before(async () => {
   store = await withDatabase('release-owner-hold'); await store.init();
   engine = new Engine(store, 120, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   for (const agent of [master]) {
     const provisioned = await call(credentials[0].token, 'operator-agents', { id: agent.id, displayName: agent.id, capabilities: agent.capabilities, scope: { repositories: [repository], workItems: ['*'] }, token: agent.token, reason: 'Onboarding' });
     assert.equal(provisioned.status, 200, JSON.stringify(provisioned.body));
   }
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('unit:release-owner-hold-refused — every recorded form of the hold refuses a non-owner release, naming the hold', () => {
   for (const work of [fixture({ title: 'Owner hold: later' }), fixture({ description: 'It leaves the backlog only when the owner releases it.' }),

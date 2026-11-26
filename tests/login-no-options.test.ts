@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { createContext } from '../src/cli/context.js';
 import { loginCommand, openCommand } from '../src/cli/session-commands.js';
 import { HumanSignIn, signInSessionTtlMs } from '../src/server/auth.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2171: `mainworks login` with no options and no GRAPHYARD_TOKEN_FILE finds the operator credential
 // the install recorded under the config home, and the human session its link opens lasts until 90 days unused.
@@ -16,26 +16,21 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // Mints a link with no credential named, against a stub server, and returns the credential it sent and what it printed.
 async function loginWithNoOptions(root: string, configHome: string, command = loginCommand, env: Record<string, string> = {}) {
   const seen: (string | undefined)[] = [];
-  const server = createServer((request, response) => {
+  const { url: serverUrl, close } = await listen((request, response) => {
     if (request.url === '/api/sign-in-links') seen.push(request.headers.authorization);
     response.setHeader('Content-Type', 'application/json');
     response.end(request.url === '/api/sign-in-links' ? JSON.stringify({ code: 'one-time-code-0123456789', principal: 'acme-widget-operator', expiresAt: '2026-10-19T00:10:00Z' }) : '{}');
   });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
   const names = ['GRAPHYARD_URL', 'GRAPHYARD_CONFIG_HOME', 'GRAPHYARD_REPOSITORY_ROOT', 'GRAPHYARD_TOKEN', 'GRAPHYARD_TOKEN_FILE', 'PATH'] as const;
   const saved = Object.fromEntries(names.map(name => [name, process.env[name]]));
   try {
     for (const name of names) if (name !== 'PATH') delete process.env[name];
-    Object.assign(process.env, env, { GRAPHYARD_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, GRAPHYARD_CONFIG_HOME: configHome, GRAPHYARD_REPOSITORY_ROOT: root });
+    Object.assign(process.env, env, { GRAPHYARD_URL: serverUrl, GRAPHYARD_CONFIG_HOME: configHome, GRAPHYARD_REPOSITORY_ROOT: root });
     const printed: any[] = [];
     const context = await createContext('login', undefined, [], false);
     await command.run({ ...context, print: value => printed.push(value) }, undefined);
     return { seen, printed: printed[0], base: process.env.GRAPHYARD_URL! };
-  } finally {
-    for (const name of names) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
-    server.close();
-  }
-}
+  } finally { for (const name of names) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name]; await close(); } }
 
 async function checkout(upJson?: object) {
   const root = await temporaryDirectory('login-repo');

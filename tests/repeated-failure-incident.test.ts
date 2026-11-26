@@ -15,6 +15,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { groupRepeatedFailures, incidentsFromStatus, normaliseFailureLine, repeatedFailureGroups } from '../src/model/incidents.js';
 import { HomeStatus } from '../web/components/home.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3626: the same failure in three sessions within 30 minutes is one incident,
 // found from session results without any agent reporting it.
@@ -151,19 +152,14 @@ test('unit:repeated-failure-is-one-incident — removes item keys, hashes, temp 
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'r'.repeat(32)}`;
-let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+let store: Store | undefined, close: (() => Promise<void>) | undefined;
 
-after(async () => {
-  if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 test('e2e:repeated-failure-incident — three ended sessions with the same error produce one Home card and one attention line, and none after 30 minutes', async () => {
   store = await withDatabase('repeated-failure-incident');
   await store.init();
-  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
-  await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as any).port}`;
+  const { url, close: stop } = await listen(server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }])); close = stop;
   const api = async (path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, {
       method: body ? 'POST' : 'GET',

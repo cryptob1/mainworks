@@ -19,6 +19,7 @@ import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/revi
 import { ReviewPostRefusal, screenshotUploads } from '../src/review-post.js';
 import { liveRun } from '../src/runner/registry.js';
 import type { HeadlessExec } from '../src/headless-session.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3590: a headless product reviewer's sandbox keeps its own /tmp and home, so a screenshot saved
 // there cannot be read by the launcher posting its verdict. Each such session is named one
@@ -29,16 +30,14 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP438AAAAQBAYDFKhhdAAAAAElFTkSuQmCC', 'base64');
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, base: string, head: string;
 
 before(async () => {
   store = await withDatabase('review-screenshots-shared-dir'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('review-screenshots-root'); credentials = await temporaryDirectory('review-screenshots-credentials');
   const browserBin = await temporaryDirectory('review-screenshots-browser');
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
@@ -61,7 +60,7 @@ before(async () => {
   process.env.PATH = `${browserBin}:${process.env.PATH ?? ''}`;
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (root) await rm(root, { recursive: true, force: true });
   if (credentials) await rm(credentials, { recursive: true, force: true });

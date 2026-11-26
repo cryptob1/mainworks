@@ -27,6 +27,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3339: on an AppArmor host (Ubuntu 26.04) Docker's docker-default profile denied the nested
 // bubblewrap sandbox trial tests start ("Failed to make / slave"), and apparmor=unconfined is denied a
@@ -143,15 +144,13 @@ test('e2e:trial-container-apparmor — a trial whose nested sandbox AppArmor den
   git(root, 'checkout', '-q', '--detach', base);
   let attempts = 0;
   const trials: Parameters<MergePorts['record']>[1][] = [];
-  let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+  let store: Store | undefined, close: (() => Promise<void>) | undefined;
   try {
     store = await withDatabase('trial-apparmor-fault'); await store.init();
     const engine = new Engine(store, 120, 'owner/proofs');
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
     let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'sandbox', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
@@ -189,10 +188,7 @@ test('e2e:trial-container-apparmor — a trial whose nested sandbox AppArmor den
     assert.equal(current.reworkRequested, false);
     assert.equal(trialRefusalHeld(current.candidate, current.mergeLedger), null, 'the head is not refused');
     assert.notEqual(current.mergeLedger?.state, 'refused');
-  } finally {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
+  } finally { await close?.(); if (store) await store.close(); }
 
   const filed: string[] = [];
   const cycle = { state: emptyDaemonState(config('owner/game')), effects: { fileUpstream: async (_input: unknown, key: string) => { filed.push(key); return { key: 'GY-900' }; } } as unknown as DaemonEffects, clock: Date.now(), log: () => {}, config: config('owner/game') };

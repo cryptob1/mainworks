@@ -21,6 +21,7 @@ import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3235: on Huck's install the served repository is not the checkout the CLI release runs from.
 // Reviewer launches were confined against the launcher's checkout, so the whole served repository,
@@ -33,14 +34,12 @@ const worker: Principal = { id: 'graphyard-claude-1', role: 'worker' };
 const credentials = [coordinator, worker].map(principal => ({ ...principal, token: `${principal.id}-token-${'x'.repeat(32)}` }));
 // The CLI release lives in this checkout; the served repository is a separate fixture repository.
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 before(async () => {
   store = await withDatabase('codex-reviewer-git-write'); await store.init();
-  http = server(new Engine(store, 120, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(new Engine(store, 120, repository), credentials)));
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+after(async () => { await close?.(); if (store) await store.close(); });
 
 // The served checkout is the repository itself, or a linked worktree of it whose .git is a pointer file.
 for (const layout of ['repository', 'linked-worktree'] as const)

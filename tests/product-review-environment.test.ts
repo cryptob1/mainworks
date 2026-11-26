@@ -28,6 +28,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { dispatchEffects } from '../src/dispatch/effects.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3331: a product reviewer that cannot reach the app records could not run — never changes
 // requested. The launch hands the session the connection a worker's gets plus a browser tool; a
@@ -42,7 +43,7 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const servePort = 4397;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, browserBin: string, toolPath: string;
 let base: string, headA: string, headB: string;
 
@@ -50,9 +51,7 @@ before(async () => {
   store = await withDatabase('product-review-environment'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   // A master over a real repository: a base, a head with no app to serve, and one whose own
   // graphyard.json declares the e2e.serve command that serves it.
   root = await temporaryDirectory('product-review-environment-root'); credentials = await temporaryDirectory('product-review-environment-credentials');
@@ -100,7 +99,7 @@ createServer((request, response) => {
   process.env.PATH = `${browserBin}:${process.env.PATH ?? ''}`;
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (root) await rm(root, { recursive: true, force: true });
   if (credentials) await rm(credentials, { recursive: true, force: true });

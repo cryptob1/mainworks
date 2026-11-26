@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import type { Server } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -15,6 +14,7 @@ import type { Principal } from '../src/model.js';
 import { server } from '../src/server.js';
 import { withDatabase } from './helpers/postgres.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3892: complete runs the fast static rule test files (GY-3826) on the head before submitting
 // and refuses with the failing file and its first failing line when one fails.
@@ -124,12 +124,10 @@ test('e2e:complete-runs-static-rules — on a running test install a worker comp
   const engine = new Engine(store, 120, 'owner/mainworks-e2e');
   engine.gitRunner = gitRunnerFor(root);
   engine.baseBranch = 'main';
-  const http: Server = server(engine, [
+  const { url, close } = await listen(server(engine, [
     { ...operator, token: adminToken },
     { ...worker, token: workerToken },
-  ]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ]));
 
   try {
     let item = await engine.execute(operator, 'create', null, {
@@ -193,9 +191,4 @@ test('e2e:complete-runs-static-rules — on a running test install a worker comp
     const afterAccept = (await store.workDocument(item.id))!;
     assert.notEqual(afterAccept.stage, 'build', 'clean head leaves build stage');
     assert.equal(afterAccept.submission?.epoch, item.epoch, 'clean head submission recorded for epoch');
-  } finally {
-    http.closeAllConnections();
-    await new Promise<void>(resolve => http.close(() => resolve()));
-    await store.close();
-  }
-});
+  } finally { await close(); await store.close(); } });

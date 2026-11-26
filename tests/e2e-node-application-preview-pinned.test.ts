@@ -2,10 +2,10 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { freePort } from './helpers/http-server.js';
 
 // GY-3246: the batch gate's diagnostics run the whole catalog in one trial. A release run shares one
 // 1800 s wait budget among its cases, so node-application-preview, about the seventieth of ~135, had
@@ -16,9 +16,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const made: string[] = [];
 after(async () => { for (const directory of made) await rm(directory, { recursive: true, force: true }); });
-const freePort = () => new Promise<number>((accept, reject) => {
-  const server = createServer().once('error', reject).listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
-});
 
 test('unit:e2e-node-application-preview-pinned — a case with a whole catalog after it in one trial waits as its steps declare, not a share of a release run\'s wait budget', { timeout: 120_000 }, async () => {
   const worktree = await temporaryDirectory('catalog-waits'); made.push(worktree);

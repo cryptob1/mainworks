@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { chmod, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -17,6 +16,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { DispatchRequest } from '../src/model/dispatch.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { listen } from './helpers/http-server.js';
 // Time-bomb allowance (GY-1694): the 2030-01-01 clock is handed to runCycle as its explicit now over fixtures derived from it; Date.now() only measures elapsed time and child deadlines.
 
 // GY-125. Each test is named for the proof it produces: unit:no-sync-child-processes,
@@ -140,11 +140,9 @@ test('integration:snapshot-read-unblocked-by-launch — while the dispatcher wai
   const herdr = await slowHerdr(directory, 30_000);
   const run = childRunner({ timeoutMs: 60_000, env: { ...process.env, PATH: herdr.path } });
   // A control plane on this host: the snapshot is a real HTTP read with the loop's own bound.
-  const server = createServer((request, response) => {
+  const { port, close } = await listen((request, response) => {
     setTimeout(() => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ work: [], now: new Date().toISOString() })); }, 20);
   });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const port = (server.address() as { port: number }).port;
   const reads: number[] = [];
   const snapshot = async () => {
     const startedAt = Date.now();
@@ -191,8 +189,4 @@ test('integration:snapshot-read-unblocked-by-launch — while the dispatcher wai
     const ticked = await tick;
     assert.deepEqual(ticked.launched.map(entry => [entry.kind, entry.work, entry.profile]), [['producer', 'GY-125', 'producer-a']]);
     assert.deepEqual(ticked.refused, []);
-  } finally {
-    await new Promise<void>(done => server.close(() => done()));
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+  } finally { await close(); await rm(directory, { recursive: true, force: true }); } });

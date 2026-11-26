@@ -1,6 +1,5 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AddressInfo } from 'node:net';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { databaseUrl as createDatabaseUrl } from './helpers/postgres.js';
@@ -14,6 +13,7 @@ import { views } from '../web/pages/index.js';
 import WorkDetails from '../web/pages/work-details.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import { unknownFeatures } from '../web/features.js';
+import { listen } from './helpers/http-server.js';
 
 /**
  * GY-422. On 2026-09-25, after a day of 2,000+ sessions, 180 new items and 137 closures, the routes
@@ -34,7 +34,7 @@ const EVENTS = 200_000, SETTLED = 600, OPEN = 170, SESSIONS_PER_SETTLED = 5;
 const hour = 3_600_000, day = 24 * hour;
 
 let store: Store; let engine: Engine; let databaseUrl: string;
-let http: ReturnType<typeof server>; let url: string;
+let close: (() => Promise<void>) | undefined; let url: string;
 let seededAt: number;
 
 const uuid = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
@@ -77,9 +77,7 @@ before(async () => {
   store = new Store(databaseUrl);
   await store.init();
   engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, [{ ...coordinator, token: tokens.coordinator }, { ...admin, token: tokens.admin }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: tokens.coordinator }, { ...admin, token: tokens.admin }])));
 
   seededAt = Date.now();
   // 1,000 settled deliveries and closures, then 170 open items, as whole documents.
@@ -104,10 +102,7 @@ before(async () => {
     CROSS JOIN LATERAL (SELECT to_timestamp($2::double precision / 1000) - ((g % 2880) * interval '1 hour') - interval '30 minutes' AS at) AS t`, [EVENTS, seededAt]);
   await store.pool.query('ANALYZE');
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 async function read(path: string, token = tokens.coordinator) {
   const started = performance.now();

@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { execFileSync, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -16,6 +15,7 @@ import { branchHolders, reclaimBranchHolders } from '../src/worktree-holders.js'
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-1078: GY-859 waited 5.4 hours through about forty failed dispatches because a session worktree
 // left in an interactive rebase still held its branch, git lists such a worktree as detached so
@@ -43,16 +43,15 @@ async function rebasingHolder(root: string, path: string, branch: string) {
 /** The control plane the worktree command talks to: the item, its repository, and the workspace it reserves. */
 async function controlPlane(item: Record<string, unknown>) {
   const posted: string[] = [];
-  const http = createServer(async (request, response) => {
+  const { url, close } = await listen(async (request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/api/status') return response.end(JSON.stringify({ actor: { id: 'worker-a', role: 'worker' }, repository: 'owner/project', now: new Date().toISOString() }));
     if (request.method === 'POST') { posted.push(request.url!); for await (const _chunk of request) { /* drain */ } return response.end(JSON.stringify(item)); }
     response.end(JSON.stringify(request.url === `/api/work/${item.key}` || request.url === `/api/work/${item.id}` ? item : [item]));
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const env: NodeJS.ProcessEnv & { GRAPHYARD_URL: string } = { ...process.env, GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as { port: number }).port}`, GRAPHYARD_TOKEN: workerToken, GRAPHYARD_HOST_ID: 'machine-a' };
+  const env: NodeJS.ProcessEnv & { GRAPHYARD_URL: string } = { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: workerToken, GRAPHYARD_HOST_ID: 'machine-a' };
   delete env.GRAPHYARD_TOKEN_FILE; delete env.GRAPHYARD_REQUEST_ID;
-  return { env, posted, close: () => new Promise<void>(resolve => http.close(() => resolve())) };
+  return { env, posted, close: close };
 }
 const item = (lease: { epoch: number; live: boolean }) => ({ id: 'item-7', key: 'GY-7', epoch: 3, submission: null, candidate: null, workspaces: [],
   lease: { owner: 'worker-a', epoch: lease.epoch, expiresAt: new Date(Date.now() + (lease.live ? 600_000 : -600_000)).toISOString() } });

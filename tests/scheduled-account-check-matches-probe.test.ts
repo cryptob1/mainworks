@@ -20,16 +20,14 @@ import { parseProbeFailure } from '../src/model/account-quota.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { smokeRegistryAccount } from '../src/runner/roles.js';
 import { shellQuote } from '../src/shell-quote.js';
+import { listen } from './helpers/http-server.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
 const stores: Store[] = [];
-const servers: ReturnType<typeof server>[] = [];
-after(async () => {
-  for (const http of servers) http.close();
-  for (const store of stores) await store.close();
-});
+const servers: (() => Promise<void>)[] = [];
+after(async () => { for (const stop of servers) await stop(); for (const store of stores) await store.close(); });
 
 function writeStubAgy(binDir: string, name: string, mode: 'ok-noisy' | 'fail-noisy', providerError = '') {
   const file = join(binDir, `${name}.cjs`);
@@ -134,10 +132,8 @@ test('e2e:scheduled-account-check-matches-probe — scheduled check matches care
   const store = await withDatabase('e2e-sched-check-probe');
   stores.push(store);
   await store.init();
-  const http = server(new Engine(store, 7200, 'owner/sched-probe'), credentials);
-  servers.push(http);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(new Engine(store, 7200, 'owner/sched-probe'), credentials));
+  servers.push(close);
 
   const apiCall = async (bearer: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, body === undefined

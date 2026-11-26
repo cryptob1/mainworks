@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { execFileSync } from 'node:child_process';
-import { createServer, type Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import { listen } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2978: while an install deploys a new release, its CLI checkout and the server differ for the
@@ -16,17 +16,14 @@ const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const checkout = fileURLToPath(new URL('..', import.meta.url));
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, '0');
-const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
-const origin = (server: Server) => `http://127.0.0.1:${(server.address() as any).port}`;
 
-test('unit:lease-commands-survive-cli-server-skew — heartbeat and blocked from a CLI at another commit than the server succeed with the version-difference warning, a non-lease command still refuses before its first request', async () => {
+test('unit:lease-commands-survive-cli-server-skew — heartbeat and blocked from a CLI at another commit than the server succeed with the version-difference warning, a non-lease command still refuses before its first request', async t => {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim();
   const deployed = sha40('deployed');
   const cwd = await temporaryDirectory('lease-skew-cwd');
   const requests: string[] = [];
   const bodies: unknown[] = [];
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     requests.push(`${request.method} ${request.url}`);
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true, version: '0.0.0-dev', commit: deployed }));
@@ -37,34 +34,31 @@ test('unit:lease-commands-survive-cli-server-skew — heartbeat and blocked from
       if (request.url === '/api/work/GY-1') return response.end(JSON.stringify({ id: 'work-1', key: 'GY-1', epoch: 1 }));
       return response.end(JSON.stringify({ ok: true }));
     });
-  });
-  await listen(server);
-  const env = { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: origin(server) } as Record<string, string | undefined>;
+  }, t);
+  const env = { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } as Record<string, string | undefined>;
   delete env.GRAPHYARD_VERSION; // an unreleased build: the commit it runs is what the server's answer differs from
   const run = (args: string[]) => exec(process.execPath, [launcher, ...args], { cwd, env });
-  try {
-    // heartbeat proceeds and extends the lease.
-    const heartbeat = await run(['heartbeat', 'GY-1', '1']);
-    assert.deepEqual(JSON.parse(heartbeat.stdout), { ok: true }, 'the heartbeat succeeded');
-    assert.match(heartbeat.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade; the heartbeat proceeds`), 'the warning names the difference and the command carries on');
-    assert.equal(heartbeat.stderr.split('\n').filter(line => line.includes('differ')).length, 1, 'the warning is one line');
-    assert.deepEqual(requests, ['GET /healthz', 'GET /api/work/GY-1', 'POST /api/work/work-1/heartbeat'], 'the request went out');
+  // heartbeat proceeds and extends the lease.
+  const heartbeat = await run(['heartbeat', 'GY-1', '1']);
+  assert.deepEqual(JSON.parse(heartbeat.stdout), { ok: true }, 'the heartbeat succeeded');
+  assert.match(heartbeat.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade; the heartbeat proceeds`), 'the warning names the difference and the command carries on');
+  assert.equal(heartbeat.stderr.split('\n').filter(line => line.includes('differ')).length, 1, 'the warning is one line');
+  assert.deepEqual(requests, ['GET /healthz', 'GET /api/work/GY-1', 'POST /api/work/work-1/heartbeat'], 'the request went out');
 
-    // blocked proceeds and records the blocker.
-    requests.length = 0;
-    const blocked = await run(['blocked', 'GY-1', '1', 'waiting on the deploy to finish']);
-    assert.deepEqual(JSON.parse(blocked.stdout), { ok: true }, 'the blocker was recorded');
-    assert.match(blocked.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade; the blocked proceeds`));
-    assert.deepEqual(requests, ['GET /healthz', 'GET /api/work/GY-1', 'POST /api/work/work-1/blocked']);
-    assert.deepEqual(bodies.at(-1), { epoch: 1, reason: 'waiting on the deploy to finish' });
+  // blocked proceeds and records the blocker.
+  requests.length = 0;
+  const blocked = await run(['blocked', 'GY-1', '1', 'waiting on the deploy to finish']);
+  assert.deepEqual(JSON.parse(blocked.stdout), { ok: true }, 'the blocker was recorded');
+  assert.match(blocked.stderr, new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade; the blocked proceeds`));
+  assert.deepEqual(requests, ['GET /healthz', 'GET /api/work/GY-1', 'POST /api/work/work-1/blocked']);
+  assert.deepEqual(bodies.at(-1), { epoch: 1, reason: 'waiting on the deploy to finish' });
 
-    // A non-lease command keeps today's behaviour: refused by name, before its first API request.
-    requests.length = 0;
-    const status = await run(['status', 'GY-1']).then(() => null, (error: any) => error);
-    assert.match(status?.stderr ?? '', new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade$`, 'm'), 'the refusal names no proceeding');
-    assert.doesNotMatch(status?.stderr ?? '', /proceeds/);
-    assert.equal(status?.code, 1, 'persistent skew exits with failure after the bounded handover window');
-    assert.equal((status?.stderr.match(/release handover: retry/g) ?? []).length, 3, 'each of the three retries is observable');
-    assert.deepEqual(requests, Array(4).fill('GET /healthz'), 'the initial probe and three retries send no API request');
-  } finally { await close(server); }
+  // A non-lease command keeps today's behaviour: refused by name, before its first API request.
+  requests.length = 0;
+  const status = await run(['status', 'GY-1']).then(() => null, (error: any) => error);
+  assert.match(status?.stderr ?? '', new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade$`, 'm'), 'the refusal names no proceeding');
+  assert.doesNotMatch(status?.stderr ?? '', /proceeds/);
+  assert.equal(status?.code, 1, 'persistent skew exits with failure after the bounded handover window');
+  assert.equal((status?.stderr.match(/release handover: retry/g) ?? []).length, 3, 'each of the three retries is observable');
+  assert.deepEqual(requests, Array(4).fill('GET /healthz'), 'the initial probe and three retries send no API request');
 });

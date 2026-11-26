@@ -19,6 +19,7 @@ import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/revi
 import { liveRun } from '../src/runner/registry.js';
 import { npmCiEnvironment } from '../src/cli/test-isolation.js';
 import type { HeadlessExec } from '../src/headless-session.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3579: a head whose package-lock.json differs from the repository checkout's cannot share that
 // install, so the review installs the head's own dependencies in its checkout before serving it.
@@ -28,16 +29,14 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const servePort = 4396;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, base: string, matching: string, differing: string, broken: string;
 
 before(async () => {
   store = await withDatabase('product-review-installs-differing-lock'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('product-review-differing-lock-root'); credentials = await temporaryDirectory('product-review-differing-lock-credentials');
   const browserBin = await temporaryDirectory('product-review-differing-lock-browser');
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
@@ -93,7 +92,7 @@ createServer((request, response) => {
   process.env.PATH = `${browserBin}:${process.env.PATH ?? ''}`;
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (root) await rm(root, { recursive: true, force: true });
   if (credentials) await rm(credentials, { recursive: true, force: true });

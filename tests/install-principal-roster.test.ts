@@ -17,6 +17,7 @@ import { fingerprint, importPrincipalToken, plannedPrincipals, reconcileRoster, 
 import { externalRunsImportGrant } from '../src/server/principals.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { catFrom, deployedRoster, harness, REPOSITORY, type Harness, type HarnessOptions } from './install-harness.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-1879: an installation keeps its principal roster in install.json as a durable record and every
 // apply reconciles with it instead of rewriting it. `mainworks principal add|remove` edits one entry,
@@ -259,18 +260,16 @@ const github = {
     throw new Error(`unexpected GitHub read ${path}`);
   },
 };
-let store: Store, http: ReturnType<typeof server>, url: string, scratch: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, scratch: string;
 
 before(async () => {
   scratch = await temporaryDirectory('principal-roster');
 
   store = await withDatabase('install-principal-roster'); await store.init();
   const engine = new Engine(store, 120, REPOSITORY);
-  http = server(engine, [operator, granted, ungranted].map(entry => ({ ...entry, token: tokens.get(entry.id)! })), github as any);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, [operator, granted, ungranted].map(entry => ({ ...entry, token: tokens.get(entry.id)! })), github as any)));
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
+after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 async function call(path: string, actor: Principal, data?: unknown) {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: data === undefined ? undefined : JSON.stringify(data) });

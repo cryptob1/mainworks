@@ -6,12 +6,12 @@ import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { MERGE_PROTOCOL } from '../src/protocol-version.js';
 import { captureTrackedRoot, linuxProcessRecord, signalTrackedProcesses, supervise, systemdContainment } from '../src/session-watch.js';
 import { isConfirmedCoordinationRefusal } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 // Time-bomb allowance (GY-1694): the 2030-01-01 leases are judged against the snapshot's own 2030 now or a monotonic stub; the 2026 snapshot nows and deadline are stub fixtures; Date.now() builds relative expiries.
 
 const exec = promisify(execFile);
@@ -48,27 +48,25 @@ test('unit:cli — retired commands are absent from help; github-setup is gone: 
 
 test('installed CLI resolves its runtime from another repository and includes submitted rework in next using the work snapshot clock', async () => {
   const cwd = await temporaryDirectory('cli ');
-  const http = createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({now:'2026-01-01T00:01:00Z',work:[{ id: 'rework', stage: 'build', ready: true, reworkRequested: true, submission: { pr: 1 }, dependencies: [], priority: 1 },{id:'active',stage:'build',ready:true,dependencies:[],priority:1,lease:{expiresAt:'2026-01-01T00:02:00Z'}},{id:'expired',stage:'build',ready:true,dependencies:[],priority:1,lease:{expiresAt:'2026-01-01T00:00:00Z'}},{id:'holding',key:'GY-H',stage:'build',ready:true,dependencies:[],priority:1,exclusiveResources:['staging'],lease:{expiresAt:'2026-01-01T00:02:00Z'}},{id:'shared',stage:'ready',ready:true,dependencies:[],priority:1,exclusiveResources:['staging']},{id:'unrelated',stage:'ready',ready:true,dependencies:[],priority:1,exclusiveResources:['other']}]})); });
-  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const { url, close } = await listen((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({now:'2026-01-01T00:01:00Z',work:[{ id: 'rework', stage: 'build', ready: true, reworkRequested: true, submission: { pr: 1 }, dependencies: [], priority: 1 },{id:'active',stage:'build',ready:true,dependencies:[],priority:1,lease:{expiresAt:'2026-01-01T00:02:00Z'}},{id:'expired',stage:'build',ready:true,dependencies:[],priority:1,lease:{expiresAt:'2026-01-01T00:00:00Z'}},{id:'holding',key:'GY-H',stage:'build',ready:true,dependencies:[],priority:1,exclusiveResources:['staging'],lease:{expiresAt:'2026-01-01T00:02:00Z'}},{id:'shared',stage:'ready',ready:true,dependencies:[],priority:1,exclusiveResources:['staging']},{id:'unrelated',stage:'ready',ready:true,dependencies:[],priority:1,exclusiveResources:['other']}]})); });
   try {
     assert.match((await exec(process.execPath, [launcher, '--help'], { cwd })).stdout, /Mainworks 0.1/);
-    const { stdout } = await exec(process.execPath, [launcher, 'next'], { cwd, env: { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}` } });
+    const { stdout } = await exec(process.execPath, [launcher, 'next'], { cwd, env: { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } });
     assert.deepEqual(JSON.parse(stdout).map((w:any)=>w.id), ['rework','expired','unrelated']);
-  } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 });
 
 test('CLI preserves admin ready and sends the current revision and audit reason for scoped mutations', async () => {
   const cwd = await temporaryDirectory('operator-cli');
   const requests: { url: string; body: any }[] = [];
   const work = { id: 'task-id', key: 'GY-7', revision: 12 };
-  const http = createServer(async (req, res) => {
+  const { url, close } = await listen(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.method === 'GET') return res.end(JSON.stringify(req.url === '/api/work/GY-7' ? work : [work]));
     let raw = ''; for await (const chunk of req) raw += chunk;
     requests.push({ url: req.url!, body: JSON.parse(raw) }); res.end(JSON.stringify(work));
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const env = { ...process.env, GRAPHYARD_TOKEN: 'operator-token', GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}` };
+  const env = { ...process.env, GRAPHYARD_TOKEN: 'operator-token', GRAPHYARD_URL: url };
   try {
     await exec(process.execPath, [launcher, 'ready', 'GY-7'], { cwd, env });
     await exec(process.execPath, [launcher, 'ready', 'GY-7', 'Requirements', 'approved'], { cwd, env });
@@ -78,20 +76,19 @@ test('CLI preserves admin ready and sends the current revision and audit reason 
       { url: '/api/work/task-id/ready', body: { expectedRevision: 12, reason: 'Requirements approved' } },
       { url: '/api/work/task-id/unblock', body: { expectedRevision: 12, reason: 'Dependency resolved' } },
     ]);
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 });
 
 test('watch refuses the wrong workspace and uses a fresh heartbeat key despite command retry configuration', async () => {
   const cwd = await temporaryDirectory('watch');
   let registeredPath = tmpdir(), role = 'worker'; const keys: string[] = [], posts: string[] = [];
-  const http = createServer((req, res) => {
+  const { url, close } = await listen((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/status') { res.end(JSON.stringify({ actor: { role } })); return; }
     if (req.method === 'POST') { keys.push(String(req.headers['idempotency-key'])); posts.push(req.url!); res.end(JSON.stringify(renewal())); }
     else { const task = { id: 'task', key: 'GY-1', workspaces: [{ epoch: 1, host: hostname(), path: registeredPath }] }; res.end(JSON.stringify(req.url === '/api/work/GY-1' ? task : [task])); }
   });
-  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
-  const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_HOST_ID: hostname(), GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_REQUEST_ID: 'replayed-command', GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}` };
+  const env: NodeJS.ProcessEnv = { ...process.env, GRAPHYARD_HOST_ID: hostname(), GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_REQUEST_ID: 'replayed-command', GRAPHYARD_URL: url };
   delete env.HERDR_ENV; delete env.GRAPHYARD_HERDR_AGENT_KIND;
   try {
     await assert.rejects(exec(process.execPath, [launcher, 'watch', 'GY-1', '1', '--', process.execPath, '-e', 'process.exit(0)'], { cwd, env }), /assigned workspace/);
@@ -103,7 +100,7 @@ test('watch refuses the wrong workspace and uses a fresh heartbeat key despite c
     // The agent exited while its lease was live, so the heartbeat is followed by the release (GY-1506).
     assert.deepEqual(posts, ['/api/work/task/heartbeat', '/api/work/GY-1/release']);
     assert.ok(keys.every(key => key !== 'replayed-command')); assert.notEqual(keys[0], keys[1]);
-  } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 });
 
 test('implementation subprocesses do not inherit Mainworks server credentials', async () => {
@@ -278,21 +275,19 @@ test('macOS foreground Herdr supervision refuses before launch without durable c
 
  test('handoff pairs ownership with its work observation rather than a later status clock', async () => {
   const cwd=await temporaryDirectory('handoff');const requests:string[]=[];
-  const http=createServer((req,res)=>{requests.push(req.url!);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/api/status'?{actor:{id:'worker-a',role:'worker'},now:'2026-01-01T00:02:00Z'}:{now:'2026-01-01T00:00:00Z',work:[{id:'task',key:'GY-1',lease:{owner:'worker-a',epoch:7,expiresAt:'2026-01-01T00:01:00Z'},workspaces:[{epoch:7,host:'machine-a',path:cwd}]}]}))});
-  await new Promise<void>(r=>http.listen(0,'127.0.0.1',r));
-  try{const result=await exec(process.execPath,[launcher,'handoff','GY-1'],{cwd,env:{...process.env,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_HOST_ID:'machine-a',GRAPHYARD_URL:`http://127.0.0.1:${(http.address() as any).port}`}});assert.match(JSON.parse(result.stdout).commands.join(' '),/watch/);assert.deepEqual(requests.sort(),['/api/status','/api/work-snapshot','/healthz']);/* GY-1960: the invocation first reads the release /healthz serves; the stub names none, so it proceeds */}
-  finally{await new Promise<void>(r=>http.close(()=>r()));await rm(cwd,{recursive:true,force:true});}
+  const { url, close } = await listen((req,res)=>{requests.push(req.url!);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/api/status'?{actor:{id:'worker-a',role:'worker'},now:'2026-01-01T00:02:00Z'}:{now:'2026-01-01T00:00:00Z',work:[{id:'task',key:'GY-1',lease:{owner:'worker-a',epoch:7,expiresAt:'2026-01-01T00:01:00Z'},workspaces:[{epoch:7,host:'machine-a',path:cwd}]}]}))});
+  try{const result=await exec(process.execPath,[launcher,'handoff','GY-1'],{cwd,env:{...process.env,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_HOST_ID:'machine-a',GRAPHYARD_URL:url}});assert.match(JSON.parse(result.stdout).commands.join(' '),/watch/);assert.deepEqual(requests.sort(),['/api/status','/api/work-snapshot','/healthz']);/* GY-1960: the invocation first reads the release /healthz serves; the stub names none, so it proceeds */}
+  finally{await close();await rm(cwd,{recursive:true,force:true});}
  });
 
  test('worktree verifies the checkout before reserving a workspace or creating a branch', async () => {
   const cwd=await temporaryDirectory('repository-fence');let reservations=0;
-  const http=createServer((req,res)=>{res.setHeader('Content-Type','application/json');
+  const { url, close } = await listen((req,res)=>{res.setHeader('Content-Type','application/json');
     if(req.url==='/api/status')res.end(JSON.stringify({repository:'OWNER/project',actor:{id:'worker-a',role:'worker'}}));
     else if(req.method==='POST'){reservations++;res.end('{}');}
     else{const task={id:'task',key:'GY-1',workspaces:[]};res.end(JSON.stringify(req.url==='/api/work/GY-1'?task:[task]));}
   });
-  await new Promise<void>(r=>http.listen(0,'127.0.0.1',r));
-  const env={...process.env,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_URL:`http://127.0.0.1:${(http.address() as any).port}`};
+  const env={...process.env,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_URL:url};
   try {
     await exec('git',['init','-q'],{cwd});await exec('git',['-c','user.name=Test','-c','user.email=test@localhost','commit','--allow-empty','-m','Initial'],{cwd});
     await assert.rejects(exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env}),/Cannot verify/);
@@ -304,21 +299,20 @@ test('macOS foreground Herdr supervision refuses before launch without durable c
     const created=await exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env});
     assert.equal(JSON.parse(created.stdout).path,join(cwd,'.graphyard/worktrees/GY-1-1'),'worktree stdout remains machine-readable JSON');
     assert.equal(reservations,1);assert.ok((await stat(join(cwd,'.graphyard/worktrees/GY-1-1'))).isDirectory());
-  } finally {await new Promise<void>(r=>http.close(()=>r()));await rm(cwd,{recursive:true,force:true});}
+  } finally {await close();await rm(cwd,{recursive:true,force:true});}
  });
 
 test('rework worktree reopens the exact observed PR branch while preserving its prior checkout', async () => {
   const cwd=await temporaryDirectory('rework');let reservations=0;let candidate='';
   const branch='graphyard/gy-1-1';
-  const http=createServer((req,res)=>{res.setHeader('Content-Type','application/json');
+  const { url, close } = await listen((req,res)=>{res.setHeader('Content-Type','application/json');
     if(req.url==='/api/status')res.end(JSON.stringify({repository:'owner/project',actor:{id:'worker-a',role:'worker'}}));
     else if(req.method==='POST'){reservations++;res.end('{}');}
     else{const task={id:'task',key:'GY-1',submission:{epoch:1,pr:1},candidate:{sha:candidate},workspaces:[{epoch:1,branch}],reworkRequested:true};res.end(JSON.stringify(req.url==='/api/work/GY-1'?task:[task]));}
   });
-  await new Promise<void>(r=>http.listen(0,'127.0.0.1',r));
   const fakeBin=join(cwd,'fake-bin');await mkdir(fakeBin);const gitBinary=(await exec('which',['git'])).stdout.trim();
   const gitWrapper=join(fakeBin,'git');await writeFile(gitWrapper,`#!/bin/sh\nif [ "$1" = "fetch" ]; then exit 0; fi\nexec "${gitBinary}" "$@"\n`);await chmod(gitWrapper,0o755);
-  const env={...process.env,PATH:`${fakeBin}:${process.env.PATH}`,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_URL:`http://127.0.0.1:${(http.address() as any).port}`};
+  const env={...process.env,PATH:`${fakeBin}:${process.env.PATH}`,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_URL:url};
   try {
     await exec('git',['init','-q','--initial-branch',branch],{cwd});
     await writeFile(join(cwd,'feature.txt'),'submitted implementation\n');
@@ -334,13 +328,12 @@ test('rework worktree reopens the exact observed PR branch while preserving its 
     assert.equal((await exec('git',['rev-parse','HEAD'],{cwd})).stdout.trim(),priorHead,'prior checkout stays at its historical commit');
     await assert.rejects(exec('git',['symbolic-ref','--short','HEAD'],{cwd}));
     assert.equal((await readFile(join(cwd,'feature.txt'),'utf8')).trim(),'submitted implementation','prior worktree remains intact');
-  } finally {await new Promise<void>(r=>http.close(()=>r()));await rm(cwd,{recursive:true,force:true});}
+  } finally {await close();await rm(cwd,{recursive:true,force:true});}
 });
 
  test('handoff uses the active CLI or explicit override instead of a stale saved launcher', async () => {
   const cwd=await temporaryDirectory('active-cli');
-  const http=createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/api/status'?{actor:{id:'worker-a',role:'worker'}}:{now:'2026-01-01T00:00:00Z',work:[{id:'task',key:'GY-1',lease:{owner:'worker-a',epoch:1,expiresAt:'2026-01-01T00:01:00Z'},workspaces:[{epoch:1,host:'machine-a',path:cwd}]}]}));});
-  await new Promise<void>(r=>http.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${(http.address() as any).port}`;
+  const { url, close } = await listen((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/api/status'?{actor:{id:'worker-a',role:'worker'}}:{now:'2026-01-01T00:00:00Z',work:[{id:'task',key:'GY-1',lease:{owner:'worker-a',epoch:1,expiresAt:'2026-01-01T00:01:00Z'},workspaces:[{epoch:1,host:'machine-a',path:cwd}]}]}));});
   const env:NodeJS.ProcessEnv={...process.env,GRAPHYARD_URL:url,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_HOST_ID:'machine-a'};delete env.GRAPHYARD_CLI;
   try {
     await exec('git',['init','-q'],{cwd});await mkdir(join(cwd,'.graphyard'));
@@ -350,7 +343,7 @@ test('rework worktree reopens the exact observed PR branch while preserving its 
     const override=join(cwd,'active.mjs');await writeFile(override,'// fixture launcher');
     assert.ok((await commands({...env,GRAPHYARD_CLI:override})).includes(override));
     for(const invalid of ['',join(cwd,'missing.mjs')])await assert.rejects(commands({...env,GRAPHYARD_CLI:invalid}),/launcher/);
-  } finally {await new Promise<void>(r=>http.close(()=>r()));await rm(cwd,{recursive:true,force:true});}
+  } finally {await close();await rm(cwd,{recursive:true,force:true});}
  });
 
 test('master run executes the durable loop as a supervised process and master status reports its cycle', async () => {
@@ -365,15 +358,13 @@ test('master run executes the durable loop as a supervised process and master st
       { id: 'blocked-1', key: 'GY-70', title: 'Needs an operator', stage: 'ready', ready: true, blocker: 'Waiting on an external contract', priority: 1, epoch: 0, dependencies: [], criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['integration:loop'] }], policy: { checks: ['test'], review: true }, workspaces: [], evidence: [], gates: [{ name: 'ready', passed: false, reasons: ['Waiting on an external contract'] }], violations: [], createdAt: now(), updatedAt: now(), stageEnteredAt: now(), lease: null, candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], observation: null, revision: 1, policyRevision: 1 },
     ],
   };
-  const http = createServer((req, res) => {
+  const { url, close } = await listen((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     // The durable loop refuses a server behind its merge protocol before reading any work; this stub speaks the current one.
     if (req.url === '/api/status') return res.end(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, build: { commit: null, protocol: skewed ? MERGE_PROTOCOL - 1 : MERGE_PROTOCOL } }));
     if (req.url === '/api/work-snapshot') return res.end(JSON.stringify({ ...snapshot, now: now() }));
     res.statusCode = 404; res.end('{}');
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as any).port}`;
   try {
     await exec('git', ['init', '-q'], { cwd: root });
     await exec('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
@@ -404,20 +395,15 @@ test('master run executes the durable loop as a supervised process and master st
     skewed = true;
     await assert.rejects(exec(process.execPath, [launcher, 'master', 'run', '--once'], { cwd: root, env }), new RegExp(`server runs an unknown commit, CLI expects [0-9a-f]{40}: deploy main first \\(server merge protocol ${MERGE_PROTOCOL - 1}, CLI merge protocol ${MERGE_PROTOCOL}`));
     await assert.rejects(exec(process.execPath, [launcher, 'master', 'merge'], { cwd: root, env }), /There is no master merge/);
-  } finally {
-    await new Promise<void>(resolve => http.close(() => resolve()));
-    await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true });
-  }
-});
+  } finally { await close(); await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); } });
 
 test('sync merges origin/BASE without rebasing and judges only the merge: in-scope, new and outside files all pass, and a real conflict stops the merge', async () => {
   const cwd = await temporaryDirectory('sync');
-  const http = createServer((req, res) => { res.setHeader('Content-Type', 'application/json');
+  const { url, close } = await listen((req, res) => { res.setHeader('Content-Type', 'application/json');
     const task = { id: 'task', key: 'GY-1', workspaces: [{ epoch: 1, host: 'machine-a', path: cwd, branch: 'graphyard/gy-1-1' }] };
     res.end(JSON.stringify(req.url === '/api/status' ? { baseBranch: 'main', repository: 'owner/project', actor: { id: 'worker-a', role: 'worker' } }
       : req.url === '/api/work-snapshot' ? { now: new Date().toISOString(), work: [task] } : req.url === '/api/work/GY-1' ? task : [task])); });
-  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
-  const env = { ...process.env, GRAPHYARD_TOKEN: 'fixture', GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}` };
+  const env = { ...process.env, GRAPHYARD_TOKEN: 'fixture', GRAPHYARD_URL: url };
   const origin = join(cwd, 'origin'), clone = join(cwd, 'clone');
   const git = async (repo: string, ...args: string[]) => (await exec('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { cwd: repo })).stdout.trim();
   const commit = async (repo: string, message: string) => { await git(repo, 'add', '-A'); await git(repo, 'commit', '-q', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
@@ -459,7 +445,7 @@ test('sync merges origin/BASE without rebasing and judges only the merge: in-sco
     await git(clone, 'merge', '--abort');
     await git(clone, 'checkout', '-q', '-b', 'graphyard/gy-9-1');
     await assert.rejects(sync(), /not one/);
-  } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 });
 
 test(`unit:cli — sync runs from a directory inside the registered workspace (a subdirectory of the checkout) and heartbeats that checkout's own epoch, never a sibling attempt sharing the branch (GY-3355)`, async () => {
@@ -470,12 +456,11 @@ test(`unit:cli — sync runs from a directory inside the registered workspace (a
     workspaces: [{ epoch: 1, host: 'machine-a', path: join(cwd, 'stale'), branch: 'graphyard/gy-4-1' },
       { epoch: 2, host: 'machine-a', path: join(cwd, 'live'), branch: 'graphyard/gy-4-1' }],
     unsyncedRevision: { policyRevision: 1, at: '2026-11-15T00:00:00Z', by: 'operator', changed: [] } };
-  const http = createServer((req, res) => { res.setHeader('Content-Type', 'application/json');
+  const { url, close } = await listen((req, res) => { res.setHeader('Content-Type', 'application/json');
     if (req.method === 'POST') { let raw = ''; req.on('data', (chunk: any) => raw += chunk); req.on('end', () => { heartbeats.push({ url: req.url!, body: JSON.parse(raw) }); res.end('{}'); }); return; }
     res.end(JSON.stringify(req.url === '/api/status' ? { baseBranch: 'main', repository: 'owner/project', actor: { id: 'worker-a', role: 'worker' } }
       : req.url === '/api/work-snapshot' ? { now: new Date().toISOString(), work: [task] } : req.url === '/api/work/GY-4' ? task : [task])); });
-  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
-  const env = { ...process.env, GRAPHYARD_TOKEN: 'fixture', GRAPHYARD_URL: `http://127.0.0.1:${(http.address() as any).port}` };
+  const env = { ...process.env, GRAPHYARD_TOKEN: 'fixture', GRAPHYARD_URL: url };
   const origin = join(cwd, 'origin'), live = join(cwd, 'live');
   const git = async (repo: string, ...args: string[]) => (await exec('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { cwd: repo })).stdout.trim();
   const commit = async (repo: string, message: string) => { await git(repo, 'add', '-A'); await git(repo, 'commit', '-q', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
@@ -500,5 +485,5 @@ test(`unit:cli — sync runs from a directory inside the registered workspace (a
     // Outside every registered workspace — even on the shared branch — sync refuses rather than merge.
     await exec('git', ['clone', '-q', '--branch', 'graphyard/gy-4-1', live, join(cwd, 'elsewhere')]);
     await assert.rejects(exec(process.execPath, [launcher, 'sync', 'GY-4'], { cwd: join(cwd, 'elsewhere'), env }), /is not one/);
-  } finally { await new Promise<void>(r => http.close(() => r())); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 });

@@ -18,6 +18,7 @@ import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -27,7 +28,7 @@ const coordinator: Principal = { id: 'master-loop', role: 'coordinator', session
 const loopId = 'graphyard-master-queue-operator';
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `queue-${principal.id}-${'x'.repeat(32)}` }));
 const agentToken = `queue-agent-${randomUUID()}`;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 
 const call = async (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -79,9 +80,7 @@ const withSlotsLimit = async <T>(limit: number, body: () => Promise<T>): Promise
 before(async () => {
   store = await withDatabase('release-follows-the-test-queue');
   await store.init();
-  http = server(new Engine(store, 300, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(new Engine(store, 300, repository), credentials)));
   await call(credentials[0].token, 'operator-agents', {
     id: loopId, displayName: 'Master loop', capabilities: [],
     scope: { repositories: [repository], workItems: ['*'] }, token: agentToken,
@@ -89,7 +88,7 @@ before(async () => {
   });
 });
 
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 const runRelease = async (workers: number, state: ReturnType<typeof emptyDaemonState>) => {
   const config = makeConfig(workers);

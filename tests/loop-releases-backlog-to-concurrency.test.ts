@@ -12,6 +12,7 @@ import { masterConfigSchema, type HerdrAgent, type MasterConfig, type WorkerProf
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -31,7 +32,7 @@ const token = (id: string) => credentials.find(credential => credential.id === i
 /** The loop's own operator-agent credential, issued to the control plane as an installation would. */
 let agentToken: string;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
 const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -80,15 +81,13 @@ before(async () => {
   store = await withDatabase('loop-releases-backlog-to-concurrency');
   await store.init();
   engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   // The loop's own identity: the operator-agent the master onboarding provisions, with its issued credential.
   agentToken = `loop-agent-${randomUUID()}`;
   await ok(token(operator.id), 'POST', 'operator-agents', { id: loopId, displayName: 'Master loop', capabilities: [],
     scope: { repositories: [repository], workItems: ['*'] }, token: agentToken, reason: 'the loop applies its decisions under its own identity' });
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('unit:loop-releases-backlog-to-concurrency — one cycle at concurrency 2 releases the priority-1 and the independent priority-2 item and leaves the dependent one, the dependent one goes in the first cycle after its dependency is done and a slot is free, and a parked item never releases', async () => {
   await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');

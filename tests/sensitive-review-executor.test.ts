@@ -22,6 +22,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { dispatchEffects } from '../src/dispatch/effects.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 /**
  * GY-3421: a sensitive delta (a dependency manifest) implemented on a claude account owes one
@@ -32,16 +33,14 @@ import { Store } from '../src/store.js';
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
 let root: string, scratch: string, bin: string, base: string, head: string, url: string, hostId: string;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
 before(async () => {
   store = await withDatabase('sensitive-review-executor'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   scratch = await temporaryDirectory('sensitive-review', join(process.cwd(), '.graphyard'));
   root = await temporaryDirectory('coordinator', scratch);
@@ -59,10 +58,7 @@ before(async () => {
   await saveReviewerProfile(root, { name: 'claude-reviewer', agentName: 'graphyard-claude-reviewer', kind: 'claude', agentArgs: [] });
   await saveReviewerProfile(root, { name: 'cursor-reviewer', agentName: 'graphyard-cursor-reviewer', kind: 'cursor', agentArgs: [] });
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 function sensitiveItem(key: string): Work {

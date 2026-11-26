@@ -22,6 +22,7 @@ import { Store } from '../src/store.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { dispatchEffects } from '../src/dispatch/effects.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3748 AC-2: marks the first reviewer account exhausted after its launch was requested
 // and asserts another account posts the verdict within the case.
@@ -30,16 +31,14 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry, hostId: string, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry, hostId: string, url: string;
 let root: string, scratch: string, base: string, head: string, homeA: string, homeB: string, previousPath: string | undefined;
 
 before(async () => {
   store = await withDatabase('review-moves-off-spent'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('review-moves-root');
   scratch = await temporaryDirectory('review-moves-scratch');
   const { git } = await gitRepo({ root });
@@ -103,7 +102,7 @@ console.log(JSON.stringify({
 
 after(async () => {
   process.env.PATH = previousPath;
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   for (const dir of [root, scratch]) if (dir) await rm(dir, { recursive: true, force: true });
 });

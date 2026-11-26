@@ -18,6 +18,7 @@ import { spawnHeadless, startHeadlessSession } from '../src/headless-session.js'
 import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3717: headless runtimes without a stdin form (pi, cursor, muse) receive a prompt past
 // inlinePromptLimitBytes as a 0600 file in the run directory and a short pointer prompt on argv,
@@ -29,7 +30,7 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const reviewer = 'review-pi-1';
 const now = () => new Date().toISOString();
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let scratch: string, root: string, bin: string, credentials: string, home: string, base: string, head: string;
 
 const pointerStub = `#!${process.execPath}
@@ -85,9 +86,7 @@ before(async () => {
   store = await withDatabase('headless-prompt-file-fallback'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
 
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   scratch = await temporaryDirectory('prompt-file-fallback', join(process.cwd(), '.graphyard'));
@@ -115,11 +114,7 @@ before(async () => {
   await setupMaster(root, { url, token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'w', run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
 });
 
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-  if (scratch) await rm(scratch, { recursive: true, force: true });
-});
+after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };

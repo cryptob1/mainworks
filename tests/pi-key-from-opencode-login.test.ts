@@ -18,17 +18,15 @@ import { emptyRegistry, proposedRuntimes, type AgentRegistry } from '../src/mode
 import { smokeRegistryAccount } from '../src/runner/roles.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { shellQuote } from '../src/shell-quote.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3829: a Pi account set up against an OpenCode account reads its Z.AI key from the file
 // OpenCode login actually writes, both on live account check and on role set; when the key command
 // answers nothing, both report the file path it read.
 
 const stores: Store[] = [];
-const servers: ReturnType<typeof server>[] = [];
-after(async () => {
-  for (const http of servers) http.close();
-  for (const store of stores) await store.close();
-});
+const servers: (() => Promise<void>)[] = [];
+after(async () => { for (const stop of servers) await stop(); for (const store of stores) await store.close(); });
 
 function writeStubPi(binDir: string, name: string, mode: 'ok' | 'exhausted', expectedKey: string) {
   const file = join(binDir, `${name}.cjs`);
@@ -167,10 +165,8 @@ test('e2e:pi-key-from-opencode-login — on a running test install a Pi account 
   const store = await withDatabase('e2e-pi-key-from-opencode-login');
   stores.push(store);
   await store.init();
-  const http = server(new Engine(store, 7200, 'owner/e2e-pi-key'), credentials);
-  servers.push(http);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-pi-key'), credentials));
+  servers.push(close);
 
   const apiCall = async (bearer: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, body === undefined

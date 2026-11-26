@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { MasterConfig } from '../src/master.js';
+import { freePort, listen } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3204: Railway deploys each application from git on its own; Mainworks only reads each app's
@@ -24,13 +24,11 @@ const commit = async (root: string, date: string, file: string, text: string) =>
 };
 
 /** A stub version endpoint answering `body`; resolves to its URL. */
-const endpoint = (body: string, type: string) => new Promise<{ url: string; close(): void }>(resolve => {
-  const server = createServer((_, res) => { res.writeHead(200, { 'Content-Type': type }); res.end(body); }).listen(0, '127.0.0.1', () => {
-    const { port } = server.address() as { port: number };
-    resolve({ url: `http://127.0.0.1:${port}/version`, close: () => server.close() });
-  });
-});
-const closedPort = () => new Promise<string>(resolve => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(`http://127.0.0.1:${port}/version`)); }); });
+const endpoint = async (body: string, type: string) => {
+  const { url, close } = await listen((_, res) => { res.writeHead(200, { 'Content-Type': type }); res.end(body); });
+  return { url: `${url}/version`, close };
+};
+const closedPort = async () => `http://127.0.0.1:${await freePort()}/version`;
 
 test('e2e:railway-observed-deploys — master status lists each app\'s versionUrl release against main: current, lagging, failed', async () => {
   const root = await temporaryDirectory('railway-observed-deploys');

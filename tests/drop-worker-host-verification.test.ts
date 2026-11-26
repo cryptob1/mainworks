@@ -22,6 +22,7 @@ import { mergeOne, runMergeTrial } from '../src/merge-writer/executor.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { verificationQueue } from '../src/server/worker-verification-queue.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-worker-host-verification']) {
@@ -57,10 +58,9 @@ for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-work
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: worktree, branch }, randomUUID());
-    const http = server(engine, [worker, coordinator]);
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-    t.after(() => { http.closeAllConnections(); return new Promise<void>(resolve => http.close(() => resolve())); });
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
+    t.after(close);
+    const url = serverUrl;
     const api = async (path: string, body?: unknown, token = coordinator.token, requestId: string = randomUUID()) => {
       const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': requestId }, body: body === undefined ? undefined : JSON.stringify(body) });
       const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result)); return result;

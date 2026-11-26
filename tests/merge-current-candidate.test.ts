@@ -21,6 +21,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
@@ -29,14 +30,12 @@ const coordinator: Principal = { id: 'coordinator', role: 'coordinator' };
 test('integration:merge-current-candidate — typed rework and replacement ownership stop pending trials; unchanged candidates land', { timeout: 600_000 }, async () => {
   const root = await temporaryDirectory('current-candidate');
   const servePort = await freePort();
-  let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+  let store: Store | undefined, close: (() => Promise<void>) | undefined;
   try {
     store = await withDatabase('merge-current-candidate'); await store.init();
     const engine = new Engine(store, 120, 'owner/proofs');
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
     setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
     let branchNumber = 0;
     for (const mode of ['pending', 'unchanged', 'review-held'] as const) {
@@ -185,9 +184,4 @@ test('unit:declared', () => assert.ok(!(fs.existsSync('change-0.txt') && fs.exis
       }
 
     }
-  } finally {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  } finally { await close?.(); if (store) await store.close(); await rm(root, { recursive: true, force: true }); } });

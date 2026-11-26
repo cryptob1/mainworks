@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { cp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { join, relative, resolve } from 'node:path';
@@ -16,6 +15,7 @@ import { build as esbuild } from 'esbuild';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { controlPlaneRecordPath, deployRecordPath, readControlPlaneRecord, readDeployRecord } from '../src/deploy-watch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const modules = resolve(createRequire(import.meta.url).resolve('tsx'), '../../..');
@@ -95,7 +95,7 @@ test('integration:deploy-watch-runs-deployed-code — a watch that deploys a com
   await dependencies(checkout);
 
   // A health endpoint that always reports the commit the docker shim last built an image for.
-  const server = createServer((request, response) => {
+  const { port: serverPort, close } = await listen((request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url?.startsWith('/healthz')) {
       let served = 'f'.repeat(40);
@@ -103,8 +103,7 @@ test('integration:deploy-watch-runs-deployed-code — a watch that deploys a com
       response.end(JSON.stringify({ ok: true, healthy: true, version: `unreleased ${served.slice(0, 12)}`, commit: served, schema: 0 }));
     } else response.end(JSON.stringify({ actor: { id: 'operator', role: 'admin' }, repository }));
   });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const port = (server.address() as { port: number }).port, url = `http://127.0.0.1:${port}`;
+  const port = serverPort, url = `http://127.0.0.1:${port}`;
 
   // The only Docker and gh this fixture has: every provider command succeeds but a pull (GY-3214:
   // these commits are published nowhere, so the install builds them) and an image inspect (GY-3710:
@@ -240,7 +239,7 @@ exit 0\n`, { mode: 0o755 });
     await until('the watch follows the code it serves again', () => handovers() >= 2);
     assert.equal(await buildsOf(c), 1, 'C is deployed exactly once');
   } finally {
-    server.closeAllConnections(); await new Promise<void>(done => server.close(() => done()));
+    await close();
     const exited = new Promise<void>(done => child.once('exit', () => done()));
     try { process.kill(-child.pid!, 'SIGTERM'); } catch { /* already gone */ }
     await Promise.race([exited, new Promise(done => setTimeout(done, 1_000))]);

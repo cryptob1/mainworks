@@ -27,6 +27,7 @@ import { boardFromStatus } from '../src/model/board.js';
 import WorkPage from '../web/pages/work.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -92,8 +93,8 @@ test('unit:caretaker-checklist-is-complete — the one prompt file holds all six
     assert.ok(!named.some(entry => entry.split(' ').includes(forbidden.split(' ')[0]!) && !entry.startsWith('caretaker')), `the prompt never names ${forbidden}`);
 });
 
-let store: Store | undefined, http: ReturnType<typeof server> | undefined;
-after(async () => { http?.close(); await store?.close(); });
+let store: Store | undefined, close: (() => Promise<void>) | undefined;
+after(async () => { await close?.(); await store?.close(); });
 
 test('e2e:caretaker-report-on-home — a caretaker pass makes a held account that answers available, reports, Home shows the away host and its token cannot revise requirements', async () => {
   const operator: Principal = { id: 'care-operator', role: 'admin', sessionKind: 'human' };
@@ -102,9 +103,7 @@ test('e2e:caretaker-report-on-home — a caretaker pass makes a held account tha
   const token = (actor: Principal) => credentials.find(entry => entry.id === actor.id)!.token;
   store = await withDatabase('caretaker-report-on-home');
   await store.init();
-  http = server(new Engine(store, 7200, 'owner/caretaker'), credentials);
-  await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: stop } = await listen(server(new Engine(store, 7200, 'owner/caretaker'), credentials)); close = stop;
   const call = async (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
     const response = await fetch(`${url}/api/${path}`, body === undefined ? { headers: { Authorization: `Bearer ${bearer}`, ...headers } }
       : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });

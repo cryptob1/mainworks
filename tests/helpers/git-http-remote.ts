@@ -1,14 +1,14 @@
 // Concern: a git remote served over token-authenticated smart HTTP on loopback (git http-backend
 // behind a Basic-auth server), the fixture for the merge writer's https credentials (GY-3220, GY-3269).
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { listen } from './http-server.js';
 
 /**
  * Serves PROJECT_ROOT over git smart HTTP on loopback, answering 401 unless the Basic password is
  * TOKEN. LOG collects each request line, so a test can prove no line holds the token.
  */
 export async function serveGitHttp(projectRoot: string, token: string, log: string[]) {
-  const server = createServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     log.push(`${request.method} ${request.url}`);
     const password = Buffer.from((request.headers.authorization ?? '').replace(/^Basic /, ''), 'base64').toString().split(':')[1];
     if (password !== token) { response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git"' }).end(); return; }
@@ -24,6 +24,5 @@ export async function serveGitHttp(projectRoot: string, token: string, log: stri
       response.writeHead(Status ? Number(Status.split(' ')[0]) : 200, rest).end(output.subarray(split + 4));
     });
   });
-  await new Promise<void>(accept => server.listen(0, '127.0.0.1', accept));
-  return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/repo.git`, close: () => server.close() };
+  return { url: `${url}/repo.git`, close };
 }
