@@ -246,14 +246,51 @@ test('unit:scan-excludes-runtime-worktrees — a checkout whose Claude runtime h
  * the file bound still refuses; the depth, byte-size and symlink bounds hold for ordinary content;
  * and a nested runtime manifest cannot change the discovered delivery policy.
  */
-test('unit:scan-bounds-preserved — over-limit ordinary projects still refuse, the depth, byte-size and symlink bounds hold, and nested runtime manifests cannot change the delivery policy', async () => {
-  // A genuine over-limit project of ordinary content refuses, as before.
-  const over = await fixtureRepo({ 'package.json': JSON.stringify({ name: 'bulk', scripts: { test: 'vitest run' } }) });
+/**
+ * GY-3871 AC-1: a checkout past the entry budget still scans. The walk is breadth-first, so every
+ * shallow manifest is read before the budget runs out, and the result says it was truncated.
+ */
+test('unit:scan-of-a-large-repository-is-bounded-not-refused — a 20,000-file checkout scans in under 5 s with every shallow manifest; small checkouts are unchanged; a data directory keeps its top-level manifest', async () => {
+  const manifests: Record<string, string> = {
+    'package.json': JSON.stringify({ name: 'large', scripts: { test: 'vitest run' } }),
+    'Dockerfile': 'FROM node:22\n',
+    '.github/workflows/ci.yml': 'on:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n',
+    'services/api/package.json': JSON.stringify({ name: 'api' }),
+    'e2e/cases/smoke.json': JSON.stringify({ id: 'smoke' }),
+  };
+  const large = await fixtureRepo(manifests);
   try {
-    await addBulkFiles(over, 'bulk', scanLimits.files + 1);
-    await assert.rejects(collectScanInput(over), /Repository exceeds the scan file limit/);
-  } finally { await rm(over, { recursive: true, force: true }); }
+    await addBulkFiles(large, 'parity/golden/data', 15_000);
+    for (let module = 0; module < 50; module++) await addBulkFiles(large, `src/m${module}/lib`, 100);
+    const started = Date.now();
+    const input = await collectScanInput(large);
+    assert.ok(Date.now() - started < 5000, `the scan took ${Date.now() - started} ms`);
+    for (const [path, text] of Object.entries(manifests)) assert.equal(input.contents[path], text, `${path} is read`);
+    assert.ok(input.truncated && input.truncated.seen > 0 && input.truncated.skipped > 0, 'the result is marked truncated');
+  } finally { await rm(large, { recursive: true, force: true }); }
 
+  const small = await fixtureRepo(manifests);
+  try {
+    await addFile(small, 'src/index.ts', 'export {};\n');
+    const input = await collectScanInput(small);
+    assert.deepEqual(input, {
+      files: ['.github/workflows/ci.yml', 'Dockerfile', 'e2e/cases/smoke.json', 'package.json', 'services/api/package.json', 'src/index.ts'],
+      contents: manifests,
+    });
+  } finally { await rm(small, { recursive: true, force: true }); }
+
+  const data = await fixtureRepo({ 'package.json': JSON.stringify({ name: 'root' }) });
+  try {
+    await addBulkFiles(data, 'fixtures', 600);
+    await addFile(data, 'fixtures/package.json', JSON.stringify({ name: 'fixtures' }));
+    const input = await collectScanInput(data);
+    assert.equal(JSON.parse(input.contents['fixtures/package.json']!).name, 'fixtures', 'a whitelisted file past the 500th entry is still read');
+    assert.equal(input.files.filter(file => file.startsWith('fixtures/entry-')).length, 500, 'the directory stops yielding plain files at 500');
+    assert.ok(input.truncated, 'skipping entries marks the scan truncated');
+  } finally { await rm(data, { recursive: true, force: true }); }
+});
+
+test('unit:scan-bounds-preserved — the depth, byte-size and symlink bounds hold, and nested runtime manifests cannot change the delivery policy', async () => {
   // Depth six is inside the bound, depth seven is not; text past the byte bound is never read;
   // symlinked entries are never followed, so a link cannot widen the walk or its input.
   const root = await fixtureRepo({
