@@ -634,3 +634,24 @@ export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 
 /** GY-3534: one attention line for each host the latest trial left away because its SSH server reset the connection. */
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>
   ({ subject: `host ${host.name}`, text: `${host.name} takes no trial shards: it reset the SSH connection`, next: `Check that sshd is running on ${host.name}; the next trial tries it again` }));
+
+/**
+ * GY-3874: the ready test machines the daily e2e catalog's shards go to, read once, with a way to run
+ * one shard of cases on one of them: the commit sent as a trial shard's is, scripts/e2e-shard.mjs run
+ * there over the case files, and each case's result brought back as the trial's own e2e entries.
+ */
+export async function catalogHosts(input: { root: string; commit: string; run: ChildRun; deadline: number }) {
+  const targets = await shardHosts();
+  const transport = shardSshSession(input.run);
+  const readings = targets.length ? (await readShardHosts(targets, input.run, availableParallelism(), transport)).slice(1) : [];
+  const session = remoteShardSession({ root: input.root, sha: input.commit, image: trialImage(), run: input.run, deadline: input.deadline, transport, hosts: readings });
+  return {
+    hosts: readings.filter(underHeatLimit),
+    run: async (host: string, index: number, cases: readonly string[]): Promise<import('./e2e-trial.js').TrialE2eCase[]> => {
+      const files = cases.map(proof => `e2e/cases/${proof.slice(4)}.json`), reading = readings.find(entry => entry.name === host);
+      const ended = await session.run(host, index, files, (list, records) => ['node', '--import', 'tsx', 'scripts/e2e-shard.mjs', list, records, String(Math.max(1_000, input.deadline - Date.now()))], Math.max(1, Math.floor(reading?.cores ?? 1)));
+      return ended.records.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as import('./e2e-trial.js').TrialE2eCase);
+    },
+    close: () => session.close(),
+  };
+}

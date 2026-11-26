@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gateCeilingMs } from '../src/batch-gate.js';
+import { gateLimitMs } from '../src/batch-gate.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 
-// GY-3816: the whole catalog takes about 55 minutes, but the diagnostics bounded its trial by the
-// 45-minute gate limit, so e2e-catalog timed out after 2700s on every daily run. Its trial is bounded
-// by the gate ceiling, the same 90 minutes a gate run of the whole catalog may take.
+// GY-3816 bounded the diagnostics' catalog trial by the 90-minute gate ceiling and it still timed out.
+// GY-3874 shards the catalog across the ready test machines and bounds it by the 45-minute limit again.
 
-test('unit:e2e-catalog-pinned — the diagnostics trial of the whole catalog is bounded by the gate ceiling, not the 45-minute limit (GY-3816)', async () => {
+test('unit:e2e-catalog-pinned — the diagnostics trial of the whole catalog is bounded by the 45-minute limit (GY-3874)', async () => {
   const timeouts: Record<string, number | undefined> = {};
   const reads = {
     baseBranch: 'main', now: Date.now, fetch: async () => 'a'.repeat(40),
@@ -23,5 +22,5 @@ test('unit:e2e-catalog-pinned — the diagnostics trial of the whole catalog is 
   } as unknown as MergeWriterReads;
   const result = await batchGatePorts({ ...reads, git: reads.git! }, []).diagnose('b'.repeat(40));
   assert.deepEqual(result.failed, []);
-  assert.equal(timeouts.catalog, gateCeilingMs, 'the catalog trial may run as long as the gate ceiling');
+  assert.equal(timeouts.catalog, gateLimitMs, 'GY-3874: the catalog trial is bounded by the 45-minute limit again');
 });
