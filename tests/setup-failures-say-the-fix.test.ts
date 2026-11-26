@@ -23,10 +23,10 @@ test('e2e:setup-failures-say-the-fix — doctor gives remedies on a host missing
 
 test('e2e:setup-failures-say-the-fix — prerequisites have setup guide checks and source has no obsolete step references', async () => {
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
-  const setup = await readFile(new URL('../docs/setup.md', import.meta.url), 'utf8');
+  const setup = await readFile(new URL('../docs/reference.md', import.meta.url), 'utf8');
   assert.ok(readme.includes('mainworks doctor'), 'README names mainworks doctor');
   for (const command of ['uname -r', 'node --version', 'npm --version', 'git --version', 'git remote -v', 'docker version', 'docker compose version', 'gh auth status', 'bwrap --version', 'python3 --version', 'herdr --version', 'systemctl --user status', 'mainworks doctor']) {
-    assert.ok(setup.includes(command), `docs/setup.md is missing ${command}`);
+    assert.ok(setup.includes(command), `docs/reference.md is missing ${command}`);
   }
   assert.match(setup, /Linux 7\.0\+ with Landlock ABI 9\+/);
   const source = new URL('../src/', import.meta.url);

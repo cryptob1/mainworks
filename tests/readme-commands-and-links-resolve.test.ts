@@ -14,6 +14,31 @@ const tracked = new Set(execFileSync('git', ['ls-files'], { cwd: root, encoding:
 const searchTerms = ['AI coding agents', 'open-source', 'Claude Code', 'Codex', 'Gemini'];
 const keywords = ['AI coding agents', 'open source', 'Claude Code', 'Codex', 'Gemini', 'self-hosted', 'code review', 'merge queue', 'autonomous'];
 
+const help = execFileSync(process.execPath, ['--import', 'tsx', join(root, 'src/cli.ts'), '--help'], { cwd: root, encoding: 'utf8' });
+
+/** Every fenced and inline command in FILE resolves; returns the inline `mainworks …` commands. */
+function commandsResolve(file: string, text: string, manifest: any) {
+  // Every fenced command resolves: the clone URL is this repository, npm scripts exist, node runs a tracked file, mainworks names a CLI command.
+  const commands = [...text.matchAll(/```sh\n([^`]+)```/g)].flatMap(match => match[1]!.trim().split('\n')).flatMap(line => line.split(' && '));
+  assert.ok(commands.length >= 5, `${file} commands checked: ${commands.length}`);
+  for (const command of commands) {
+    const [program, first, second] = command.trim().split(/\s+/);
+    if (program === 'git' && first === 'clone') assert.equal(second, 'https://github.com/cryptob1/mainworks.git', command);
+    else if (program === 'cd') assert.equal(first, manifest.name, command);
+    else if (program === 'npm' && first === 'run') assert.ok(manifest.scripts[second!], `${command}: npm script ${second} exists`);
+    else if (program === 'npm') assert.equal(first, 'ci', command);
+    else if (program === 'node') assert.ok(tracked.has(first!), `${command}: ${first} is tracked`);
+    else if (program === 'mainworks') assert.match(help, new RegExp(`^\\s+${first}\\b`, 'm'), `mainworks ${first} is in the CLI help`);
+    else assert.fail(`unknown command in ${file}: ${command}`);
+  }
+
+  // Every inline `mainworks …` command names a command the CLI's help lists.
+  const inline = [...text.matchAll(/`mainworks ([a-z][a-z-]*(?: [a-z][a-z-]*)?)[^`]*`/g)].map(match => match[1]!);
+  assert.ok(inline.length >= 1, `${file} inline commands checked: ${inline.length}`);
+  for (const command of inline) assert.match(help, new RegExp(`^\\s+${command.split(' ')[0]}\\b`, 'm'), `mainworks ${command} is in the CLI help`);
+  return inline;
+}
+
 test('unit:readme-commands-and-links-resolve — the README opens with the promise, carries true badges, and every fenced command, inline CLI command and file link resolves', () => {
   const readme = read('README.md');
   const manifest = JSON.parse(read('package.json'));
@@ -46,25 +71,12 @@ test('unit:readme-commands-and-links-resolve — the README opens with the promi
   assert.ok(links.length >= 6, `links checked: ${links.length}`);
   for (const link of links) assert.ok(tracked.has(link), `README links ${link}, which is a tracked file`);
 
-  const help = execFileSync(process.execPath, ['--import', 'tsx', join(root, 'src/cli.ts'), '--help'], { cwd: root, encoding: 'utf8' });
-
-  // Every fenced command resolves: the clone URL is this repository, npm scripts exist, node runs a tracked file, mainworks names a CLI command.
-  const commands = [...readme.matchAll(/```sh\n([^`]+)```/g)].flatMap(match => match[1]!.trim().split('\n')).flatMap(line => line.split(' && '));
-  assert.ok(commands.length >= 5, `commands checked: ${commands.length}`);
-  for (const command of commands) {
-    const [program, first, second] = command.trim().split(/\s+/);
-    if (program === 'git' && first === 'clone') assert.equal(second, 'https://github.com/cryptob1/mainworks.git', command);
-    else if (program === 'cd') assert.equal(first, manifest.name, command);
-    else if (program === 'npm' && first === 'run') assert.ok(manifest.scripts[second!], `${command}: npm script ${second} exists`);
-    else if (program === 'npm') assert.equal(first, 'ci', command);
-    else if (program === 'node') assert.ok(tracked.has(first!), `${command}: ${first} is tracked`);
-    else if (program === 'mainworks') assert.match(help, new RegExp(`^\\s+${first}\\b`, 'm'), `mainworks ${first} is in the CLI help`);
-    else assert.fail(`unknown command in the README: ${command}`);
-  }
-
-  // Every inline `mainworks …` command names a command the CLI's help lists.
-  const inline = [...readme.matchAll(/`mainworks ([a-z][a-z-]*(?: [a-z][a-z-]*)?)[^`]*`/g)].map(match => match[1]!);
-  assert.ok(inline.length >= 1, `inline commands checked: ${inline.length}`);
-  for (const command of inline) assert.match(help, new RegExp(`^\\s+${command.split(' ')[0]}\\b`, 'm'), `mainworks ${command} is in the CLI help`);
+  const inline = commandsResolve('README.md', readme, manifest);
   assert.ok(inline.some(found => found.startsWith('doctor')), 'the README names mainworks doctor');
+});
+
+// GY-3940: the getting-started guide's commands resolve the same way; its links and anchors are checked by setup-guide-is-the-approved-text.
+test('unit:readme-commands-and-links-resolve — every fenced and inline command in docs/setup.md resolves, and it names mainworks doctor', () => {
+  const inline = commandsResolve('docs/setup.md', read('docs/setup.md'), JSON.parse(read('package.json')));
+  assert.ok(inline.some(found => found.startsWith('doctor')) && inline.some(found => found.startsWith('host add')), 'docs/setup.md names mainworks doctor and host add');
 });
