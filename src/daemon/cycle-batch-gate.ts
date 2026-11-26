@@ -171,12 +171,15 @@ async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<Merge
   try {
     const hosts = [...remote?.hosts ?? []].sort((a, b) => realFreeCores(b) - realFreeCores(a));
     const shards: string[][] = Array.from({ length: hosts.length + 1 }, () => []);
-    let next = 0;
-    for (const proof of cases) {
+    const roaming: string[] = [];
+    for (const proof of hosts.length ? cases : []) {
       const text = await reads.git(['show', `${commit}:e2e/cases/${proof.slice(4)}.json`]).catch(() => '');
       const tests = await Promise.all([...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])].map(file => reads.git(['show', `${commit}:${file}`]).catch(() => '')));
-      shards[localOnlyTestPattern.test([text, ...tests].join('\n')) || /"environment"/.test(text) ? 0 : next++ % shards.length]!.push(proof);
+      (localOnlyTestPattern.test([text, ...tests].join('\n')) || /"environment"/.test(text) ? shards[0]! : roaming).push(proof);
     }
+    // Each case any machine may run goes to the shard holding the fewest, so this machine's local-only cases count against its share.
+    if (!hosts.length) shards[0]!.push(...cases);
+    for (const proof of roaming) shards.reduce((fewest, shard) => shard.length < fewest.length ? shard : fewest).push(proof);
     const failure = (detail: string): CatalogRun => ({ failed: ['e2e-catalog'], details: { 'e2e-catalog': detail }, outputs: {} });
     const dropped = new Set<string>();
     const onHost = async (index: number): Promise<CatalogRun & CatalogShard> => {
