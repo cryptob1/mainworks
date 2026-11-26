@@ -1,0 +1,16 @@
+{
+  "id": "helper-update-without-env",
+  "title": "A machine takes the next helper without optional settings or host add",
+  "description": "The shipped helper runs under GY-3895's previous launcher with a clean environment and the signers file host add writes. Unsigned and wrongly signed updates are refused. A running test install's host-reading loop sends the next signed helper without sudo or host add and reports the machine ready through its API. SSH and Docker use the isolated host fixture.",
+  "tags": ["hosts"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the helper verifies updates without signers environment and the running install updates its machine",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/helper-update-without-env.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}
