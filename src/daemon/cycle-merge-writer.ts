@@ -157,7 +157,7 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
       // Discovered inside each retried attempt (GY-1832), so a git grep that fails or times out is timed and retried like the trial's other reads.
       const discoverProofFiles = (runOptions: { timeoutMs?: number }) => proofTestFiles(run, root, mergeSha, proofs, runOptions);
       const selectorApproved = 'observation' in item && (!!exactApproval(item as Work) || !!carriedApproval(item as Work));
-      return heavyTrial(item.key, onStep, signal, () => (options.trial ?? runMergeTrial)({ root, base: options.base, caches: true, mergeSha, changedFiles: files, proofs, e2eProofs: e2eProofsOf(item), checkProofs: checkProofsOf(item), proofFiles: [], discoverProofFiles, ...(item.environments ? { e2eOrigins: item.environments } : {}), key: item.key, reproduce: item.type !== 'chore', run, environment: options.environment, hidden, ...(baseTip ? { baseTip } : {}), ...(selectorApproved ? { selectorApproved: true } : {}), ...(onStep ? { onStep } : {}), ...(onTiming ? { onTiming } : {}), ...(signal ? { signal } : {}),
+      return heavyTrial(item.key, onStep, signal, () => (options.trial ?? runMergeTrial)({ root, base: options.base, caches: true, mergeSha, changedFiles: files, proofs, e2eProofs: e2eProofsOf(item), checkProofs: checkProofsOf(item), proofFiles: [], discoverProofFiles, ...(item.environments ? { e2eOrigins: item.environments } : {}), key: item.key, reproduce: item.type !== 'chore', ...(item.boundOnly ? { boundOnly: true } : {}), run, environment: options.environment, hidden, ...(baseTip ? { baseTip } : {}), ...(selectorApproved ? { selectorApproved: true } : {}), ...(onStep ? { onStep } : {}), ...(onTiming ? { onTiming } : {}), ...(signal ? { signal } : {}),
         ...trialShareAllowance(share, timeoutMs) }));
     },
     // GY-1902: an item citing a case bound to a declared static application is previewed from the coordinator checkout, its record written through the merge-record route.
@@ -722,6 +722,8 @@ function mergeFlightTrials(reads: MergeWriterReads, state: DaemonState, persist:
   const launch = reads.launchTrialRun;
   return { ...reads, adoptedTrial: key => adopted?.has(key) ?? false, trial: (mergeSha, files, item, baseTip, onStep, onTiming, heads, share, signal, timeoutMs) => heavyTrial(item.key, onStep, signal, async () => {
     share = Math.max(1, flightSlots(state) + batchGateBusySlots(state));
+    // GY-3921: the deadline follows the configured trials at once, never what else happens to run at launch.
+    timeoutMs ??= trialShareAllowance(reads.parallel).timeoutMs;
     const handle = adopted?.get(item.key);
     if (handle) {
       if (handle.mergeSha === mergeSha) return awaitRun(state, handle, onStep, onTiming, signal);

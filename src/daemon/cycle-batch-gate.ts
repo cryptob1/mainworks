@@ -110,14 +110,14 @@ export function fetchRefusalLine(repository: string, baseBranch: string, error: 
  * the failing step's for a case, the trial log's for the build or a test file); the trial is bounded
  * by `timeoutMs`, the gate's own clock, never the merge-trial deadline (GY-3142).
  */
-async function trialFailures(reads: MergeWriterReads, commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, trusted: () => string | null = () => null, skipFaults = false, signal?: AbortSignal, onStep?: (step: string) => void): Promise<{ failed: string[]; details: Record<string, string>; outputs: Record<string, string[]>; assertions: Record<string, string>; flaked: string[] }> {
+async function trialFailures(reads: MergeWriterReads, commit: string, checks: readonly string[], files: readonly string[], timeoutMs: number, trusted: () => string | null = () => null, skipFaults = false, signal?: AbortSignal, onStep?: (step: string) => void, boundOnly = false): Promise<{ failed: string[]; details: Record<string, string>; outputs: Record<string, string[]>; assertions: Record<string, string>; flaked: string[] }> {
   const cases = checks.filter(check => check.startsWith('e2e:'));
   const tests = checks.includes('affected') ? files : checks.filter(check => check.startsWith('test:')).map(check => check.slice(5));
   const environments = await gateEnvironments(reads, commit, cases, trusted());
   const runCases = cases.filter(proof => !(proof in environments.unknown) && !environments.untrusted.includes(proof));
   const trial = (origins: Record<string, string>, skipped: readonly string[]) => {
     const proofs = runCases.filter(proof => !skipped.includes(proof));
-    return reads.trial(commit, tests, { key: gateKey, criteria: proofs.length ? [{ id: 'AC-1', text: 'The batch gate cases pass', proofs }] as Work['criteria'] : [], ...(Object.keys(origins).length ? { environments: origins } : {}) }, trusted() ?? undefined, onStep, undefined, undefined, undefined, signal, timeoutMs);
+    return reads.trial(commit, tests, { key: gateKey, criteria: proofs.length ? [{ id: 'AC-1', text: 'The batch gate cases pass', proofs }] as Work['criteria'] : [], ...(Object.keys(origins).length ? { environments: origins } : {}), ...(boundOnly ? { boundOnly } : {}) }, trusted() ?? undefined, onStep, undefined, undefined, undefined, signal, timeoutMs);
   };
   // GY-3296: each named environment is provisioned around the one trial, its URL handed to its cases.
   // An environment wait or fault throws for the gate, which retries; the diagnostics (`skipFaults`)
@@ -331,7 +331,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     },
     seen,
     run: async (commit, checks, files, timeoutMs, signal, onStep) => {
-      const ran = await trialFailures(reads, commit, checks, files, timeoutMs, trusted, false, signal, onStep);
+      // GY-3921: a probe of the verified commit reads only its build, cases and test files, so it starts no declared check.
+      const ran = await trialFailures(reads, commit, checks, files, timeoutMs, trusted, false, signal, onStep, commit === trusted());
       Object.assign(seen.assertions, ran.assertions);
       for (const file of ran.flaked) seen.flaked.add(file);
       return ran.failed;
@@ -513,7 +514,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
       }
       await reads.ensureTrialImage?.();
       const launched = reads.launchTrialRun({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
-        reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
+        reproduce: item.type !== 'chore', ...(item.boundOnly ? { boundOnly: true } : {}), cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
       await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => !sameKind(run)), { commit: sha, input, directory: launched.directory }] }));
       return launched.trial(step, timing);
     }
@@ -549,7 +550,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
       // A run that settled while the image built launches nothing.
       signal?.throwIfAborted(); run.throwIfAborted();
       const launched = launch({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
-        reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
+        reproduce: item.type !== 'chore', ...(item.boundOnly ? { boundOnly: true } : {}), cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
       gated.inFlight = { ...gated.inFlight!, run: { commit: sha, input, directory: launched.directory } };
       await mergeGateRecord(file, latest => ({ ...gated, ...diagnosticFields(latest, gated) })).catch(() => undefined);
       return launched.trial(progress, timing, signal);

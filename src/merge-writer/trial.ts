@@ -805,6 +805,8 @@ export interface RunTrialInput {
   key?: string;
   /** GY-3750: a rerun of failing files or of proofs on the base tip, which neither narrows its selection nor counts as a trial's. */
   rerun?: boolean;
+  /** GY-3921: a run whose declared checks' results nobody reads (the reproduce-on-base rerun, the batch gate's verified-commit probe): it starts only the `check:` proofs' checks and the selection of its test files. */
+  boundOnly?: boolean;
   run?: ChildRun;
   /** GY-3787: the files a rerun runs, in place of a selection of its own. */
   files?: readonly string[];
@@ -1651,6 +1653,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     });
     for (const check of checks) {
       if (check.paths && !touchesPaths(input.changedFiles, check.paths) && !requestedChecks.has(check.check)) continue;
+      // GY-3921: a bound-only run starts a declared check only for a check: proof, and a selection only to run the given test files.
+      if (input.boundOnly && !requestedChecks.has(check.check) && !(check.selection && (!input.files || input.files.some(file => new RegExp(check.selection!.pattern).test(file))))) continue;
       if (check.selection) {
         const selected = await withServices(check, () => runSelected(check));
         if ('services' in selected) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }

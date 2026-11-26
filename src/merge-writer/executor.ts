@@ -616,7 +616,7 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   const rerunInput = { ...input, e2eProofs: [] as const };
   // Only the run on the base tip reads counts: attribution reads failing files, so it spends no runner's time.
   const retest = async (sha: string, failing: string[], e2eProofs: readonly string[] = [], counting?: 'count', e2eFrom?: string) => {
-    try { const rerun = await runTrial({ ...rerunInput, rerun: true, files: failing, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
+    try { const rerun = await runTrial({ ...rerunInput, rerun: true, ...(counting ? { boundOnly: true } : {}), files: failing, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
     catch (error) { return error instanceof TrialCleanupError && error.verdict ? { run: error.verdict, tap, proofs: counted() } : null; }
   };
   const ownProofFiles = discovered ?? input.proofFiles;
@@ -820,7 +820,7 @@ export interface MergePorts {
    * `share` is how many trials run at once (`mergeHeads`): each takes that share of the host's cores.
    * Aborting `signal` stops the trial's children (GY-3099). `timeoutMs` bounds the whole trial; absent, the merge-trial deadline (`trialTimeoutMinutes`).
    */
-  trial(mergeSha: string, files: readonly string[], item: Pick<Work, 'key' | 'criteria'> & { type?: Work['type']; /** GY-3296: case id → URL of the named app environment the batch gate provisioned for it. */ environments?: Record<string, string> }, baseTip?: string, onStep?: (step: string, report?: TrialStepReport) => void, onTiming?: (step: string, durationMs: number) => void, heads?: { key: string; head: string }[], share?: number, signal?: AbortSignal, timeoutMs?: number): Promise<MergeTrialRun>;
+  trial(mergeSha: string, files: readonly string[], item: Pick<Work, 'key' | 'criteria'> & { type?: Work['type']; /** GY-3296: case id → URL of the named app environment the batch gate provisioned for it. */ environments?: Record<string, string>; /** GY-3921: the batch gate's verified-commit probe starts no declared check (`RunTrialInput.boundOnly`). */ boundOnly?: boolean }, baseTip?: string, onStep?: (step: string, report?: TrialStepReport) => void, onTiming?: (step: string, durationMs: number) => void, heads?: { key: string; head: string }[], share?: number, signal?: AbortSignal, timeoutMs?: number): Promise<MergeTrialRun>;
   /** The leased push of `mergeSha` onto `baseTip`; `rejected` when the remote reported a stale lease (`staleLeaseRejection`), any other failure thrown. */
   push(mergeSha: string, baseTip: string): Promise<'pushed' | 'rejected'>;
   /** Whether the base branch's first-parent history holds `sha`, as last fetched. */
