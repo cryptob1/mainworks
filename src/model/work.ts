@@ -16,7 +16,6 @@ import type { SessionHandle } from './sessions.js';
 import type { Delivery, ReleaseDelivery } from './delivery.js';
 import type { BlockingRulingAction } from './delegation.js';
 import { demand } from './refusal.js';
-export const CHECK_NAME = 'Graphyard / merge', LANDABLE_CHECK = 'graphyard/landable'; // GY-887: both are Mainworks's own, never CI inputs to the verdict
 export const stages = ['backlog', 'ready', 'build', 'review', 'test', 'acceptance', 'merge', 'done'] as const;
 export type Stage = typeof stages[number];
 export const sliceIds = ['product', 'infrastructure', 'docs-experience'] as const; export type SliceId = typeof sliceIds[number];

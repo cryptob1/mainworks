@@ -1,6 +1,6 @@
 // Concern: the worker bound (GY-1460) — an attempt holding its lease past the no-submission bound, read from the item's own record.
 import { isClosed } from './closure.js';
-import type { Candidate, Lease, Work } from './work.js'; // the timeline's `Work.pipeline`
+import type { Candidate, Work } from './work.js'; // the timeline's `Work.pipeline`
 
 /**
  * GY-1460: the worker bound. An attempt holding its lease this long without a submission is a
@@ -122,19 +122,4 @@ export const workerNoSubmissionRefusalMs = workerReclaimBoundMs + 10 * 60_000;
 export function noSubmissionRenewalRefused(work: Work, now: number): boolean {
   const attempt = unsubmittedAttempt(work, now);
   return !!attempt && now - Date.parse(attempt.boundFrom) >= workerNoSubmissionRefusalMs;
-}
-/**
- * Whether a lapsed `lease` ran to the no-submission refusal unsubmitted: its last renewal kept it
- * past the point from which the server refuses renewals, with no submission progress inside the
- * cadence at its expiry, so it lapsed on that refusal (renewals come well inside the lease, so a
- * lease expiring past the refusal was renewed up to it).
- */
-export function lapsedAtNoSubmissionBound(work: Pick<Work, 'submission'> & Partial<Work>, lease: Pick<Lease, 'epoch'> & Partial<Pick<Lease, 'expiresAt' | 'owner'>>): boolean {
-  if (work.submission?.epoch === lease.epoch || !lease.expiresAt || !work.workspaces) return false;
-  const assignment = work.lastAssignment?.epoch === lease.epoch ? work.lastAssignment.claimedAt : null;
-  const claimedAt = assignment ?? work.pipeline?.attempts?.find(attempt => attempt.epoch === lease.epoch)?.claimedAt ?? null;
-  const expiresAt = Date.parse(lease.expiresAt);
-  const boundFrom = claimedAt && Number.isFinite(Date.parse(claimedAt)) ? claimedAt : null;
-  if (!claimedAt || !boundFrom || expiresAt - Date.parse(boundFrom) < workerNoSubmissionRefusalMs) return false;
-  return !attemptProgressFresh(work as Work, lease.epoch, lease.owner ?? '', claimedAt, expiresAt);
 }

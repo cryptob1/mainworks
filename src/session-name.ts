@@ -33,25 +33,6 @@ export function assertSessionName(name: string, retry?: string | null) {
   if (refusal) throw new SessionNameRefusedError(name, refusal, retry ?? null);
   return name;
 }
-/**
- * A name for one session of one role on one item, inside the same bounds. What a human reads first
- * — the role, then the work key — is kept whole, and the rest of the limit goes to what tells this
- * session from the next of that role on that item: the decision id, the escalation trigger. The
- * role word is what gives way when the limit is tight, in the order the caller writes it, because
- * a name whose key has been cut short says less than an abbreviated role does; only when even the
- * shortest role word leaves too little to tell two sessions apart does the whole identity go
- * through `sessionName`, which shortens the key and carries a digest of everything.
- */
-export const sessionNameDistinguisher = 4, sessionNameDistinguisherLimit = 8;
-export function distinctSessionName(prefixes: readonly [string, ...string[]], subject: string, distinguisher: string) {
-  for (const prefix of prefixes) {
-    const head = sessionName(prefix, subject);
-    const room = Math.min(sessionNameLimit - head.length - 1, sessionNameDistinguisherLimit);
-    const tail = distinguisher.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, Math.max(0, room));
-    if (tail.length >= sessionNameDistinguisher) return assertSessionName(`${head}-${tail}`);
-  }
-  return sessionName(prefixes.at(-1)!, subject, distinguisher);
-}
 /** The name one launch will use, refused with the command that retries that launch once it is fixed. */
 export function nameForLaunch(retry: string, build: () => string) {
   try { return assertSessionName(build(), retry); }

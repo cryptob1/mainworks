@@ -9,8 +9,6 @@ import type { CliContext } from './context.js';
 import { defineCommands, workMutation } from './registry.js';
 import { setting } from '../setting.js';
 
-export const installUnderLease: typeof import('./install-under-lease.js').installUnderLease = async (...args) => (await import('./install-under-lease.js')).installUnderLease(...args);
-
 const quietBranch = () => spawnSync('git', ['symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout.trim();
 
 export async function syncWork({ api, print }: CliContext, work: any) {

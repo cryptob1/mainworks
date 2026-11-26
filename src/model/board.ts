@@ -169,8 +169,6 @@ export function upNextHold(work: Work, all: Work[], now: number): { kind: 'depen
 export function upNextMeaning(items: Work[], all: Work[], now: number): string {
   return heldMeaning(items.length, items.flatMap(item => upNextHold(item, all, now)?.text ?? []));
 }
-/** The same tile words from the board's Up next rows: a held row is the one nobody acts on yet (`nextActor`). */
-export const upNextTile = (items: Pick<BoardItem, 'who' | 'does'>[]) => heldMeaning(items.length, items.flatMap(item => item.who === 'Nobody yet' ? [item.does] : []));
 function heldMeaning(total: number, held: string[]): string {
   if (!held.length) return groupMeaning['up-next'];
   if (held.length === total) return held.length === 1 ? held[0]! : 'Held behind other work';

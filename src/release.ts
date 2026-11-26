@@ -27,21 +27,6 @@ export const publishedImages = (commit: string, env: NodeJS.ProcessEnv = process
   return { server: `${registry}/graphyard:${commit}`, trial: `${registry}/graphyard-trial:${commit}` };
 };
 
-/**
- * The version a promotion on `date` (its UTC calendar day) takes, given the tags that exist:
- * YYYY.M.D when none of that day exists, else one past the highest .N suffix of that day.
- */
-export function nextDateVersion(date: Date, existing: readonly string[]) {
-  const day = `${date.getUTCFullYear()}.${date.getUTCMonth() + 1}.${date.getUTCDate()}`;
-  let highest = -1;
-  for (const tag of existing) {
-    const match = datedVersionPattern.exec(tag.trim());
-    if (!match || `${match[1]}.${match[2]}.${match[3]}` !== day) continue;
-    highest = Math.max(highest, match[4] ? Number(match[4]) : 0);
-  }
-  return highest < 0 ? day : `${day}.${highest + 1}`;
-}
-
 /** Orders date versions; the latest sorts last. */
 export function compareDateVersions(a: string, b: string) {
   const parts = (v: string) => (datedVersionPattern.exec(v) ?? []).slice(1).map(p => Number(p ?? 0));

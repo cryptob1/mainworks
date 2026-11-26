@@ -1,6 +1,6 @@
 import { pathScopesOverlap } from './documentation-glob.js';
 import type { Evidence } from './evidence.js';
-import { exactApproval, type ReviewProvider } from './review.js';
+import type { ReviewProvider } from './review.js';
 import type { Work } from './work.js';
 import { docsSignoffProof } from './docs-signoff.js';
 
@@ -197,20 +197,6 @@ export function carriedApproval(work: Work): CarriedApproval | null {
   const carry = currentCarry(work), approval = carry?.approval;
   if (!approval?.carried || approval.provider !== (work.policy.reviewProvider ?? 'github')) return null;
   return approval;
-}
-/**
- * The identity behind the approval the review gate currently accepts: the exact one, or the one
- * already carried onto this candidate. A second Mainworks-authored commit over the same reviewed
- * head decides from this, so a candidate the control plane refreshed twice does not lose its
- * review to the second refresh. The identity keeps the commit it actually approved.
- */
-export function bindingApproval(work: Work): ApprovalIdentity | null {
-  const exact = exactApproval(work);
-  if (exact) return exact;
-  const carried = carriedApproval(work);
-  if (!carried) return null;
-  const { carried: _carried, originalSha, reason: _reason, ...identity } = carried;
-  return { ...identity, sha: originalSha };
 }
 /**
  * The commit the current candidate was built from, whose review the carried approval stands for

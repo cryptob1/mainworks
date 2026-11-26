@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { foldMergeLedger, mergeIntentSchema, mergePushedSchema, mergeReconciledSchema, mergeRefusedSchema } from '../src/model-boundary/merge-ledger.js';
-import { ledgerMergeShas, mergeLedgerKinds, type MergeLedgerEvent } from '../src/model/merge-ledger.js';
+import { mergeLedgerKinds, type MergeLedgerEvent } from '../src/model/merge-ledger.js';
 
 // GY-1519 AC-1: the merge ledger's event kinds and payload schemas, and the fold that gives each
 // item's latest ledger state from the append-only rows, whatever older rows and strangers it holds.
@@ -52,7 +52,6 @@ test('unit:merge-ledger-fold — the four event kinds parse their payloads, and 
   assert.equal(folded['GY-3'].head, sha('other'));
   assert.equal(folded['GY-4'].state, 'reconciled');
   assert.equal(folded['GY-4'].observedTip, sha('merge4'));
-  assert.deepEqual([...ledgerMergeShas(folded)].sort(), [sha('merge1'), sha('merge2'), sha('merge3'), sha('merge4')].sort());
   // A later intent for the same item starts it over, counting the rows it folded.
   const again = foldMergeLedger([...events, { kind: mergeLedgerKinds.intent, payload: { key: 'GY-1', head: sha('head1b'), baseTip: sha('tip1'), mergeSha: sha('merge1b'), risk: 'low', at: T } }]);
   assert.equal(again['GY-1'].state, 'intent'); assert.equal(again['GY-1'].pushedAt, null); assert.equal(again['GY-1'].events, 4);

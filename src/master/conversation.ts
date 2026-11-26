@@ -176,7 +176,6 @@ export async function continuationContext(previous: Conversation) {
   const { unanswered, input } = await conversationRecord(previous);
   return { input, handover: `Continue the authoritative master conversation from runtime ${previous.runtime}, account ${previous.account ?? 'default'}, native session ${previous.nativeId}, launch ${previous.launch}. Read its full read-only transcript at ${previous.record} on demand.\nLast unanswered person message: ${unanswered === null ? 'none' : JSON.stringify(unanswered)}` };
 }
-export async function conversationHandover(previous: Conversation) { return (await continuationContext(previous)).handover; }
 
 /** Claude names its id before launch; Codex writes session_meta with its native id and cwd. */
 async function discoverConversation(kind: string, environment: Record<string, string>, root: string, since: number, nativeId: string | null, initialInput?: string): Promise<{ nativeId: string; transcript: string } | null> {

@@ -43,7 +43,6 @@ import type { FleetProbe } from './fleet.js';
 import { implementerIdentities, type Work } from './model.js';
 import { dataDirectory, removeSessionCheckout, type FilesystemProbe, type SessionCheckout } from './install/worktree-root.js';
 import { behindBaseHold, liveReviewRequest } from './model/dispatch.js';
-import { sessionLiveness, type RuntimeSession, type SessionHandle } from './model/sessions.js';
 import { paneAlreadyGone, sessionReported, withPaneGone } from './request-settlement.js';
 import { projectMemoryDigest, type ProjectMemory } from './model/project-memory.js';
 import { readVerificationMaps, verificationMapDigest, type VerificationMap } from './verification-maps.js';
@@ -331,20 +330,6 @@ export function requestSessionInHerdr(records: Pick<ReviewRecord, 'key' | 'sha' 
   return null;
 }
 
-/**
- * Whether a review or proof session the item still records as running has ended for its slot
- * (GY-1716): its runtime no longer lists it (`vanished`), and its ledger record for the request it
- * was launched under has settled while no pending record holds its name. A handle a dispatch request
- * names is ended only by that request's answer (GY-1532), and a vanished session is the one meant to
- * give it, so without this its name held the profile's slot and the replacement never launched. A
- * runtime that could not be read, a handle another host launched, or a record still pending — a
- * launch still starting — keeps the slot held.
- */
-export function vanishedSettledSession(handle: Pick<SessionHandle, 'id' | 'pane' | 'agentName' | 'runtime' | 'host'>, records: readonly Pick<ReviewRecord, 'requestId' | 'agentName' | 'state'>[], runtime: RuntimeSession[] | null, hostId: string | null | undefined) {
-  if (!handle.agentName || sessionLiveness(handle, runtime, undefined, hostId) !== 'vanished') return false;
-  if (records.some(record => record.state === 'pending' && record.agentName === handle.agentName)) return false;
-  return records.some(record => record.state !== 'pending' && record.requestId === handle.id && record.agentName === handle.agentName);
-}
 
 export async function saveReviewerProfile(root: string, profileInput: unknown) {
   const profile = reviewerProfileSchema.parse(profileInput);

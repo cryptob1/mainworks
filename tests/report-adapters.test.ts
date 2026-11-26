@@ -4,7 +4,7 @@ import { readFile, writeFile, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, resolve } from 'node:path';
-import { adapterContracts, genericInventory, inventoryFormat, junitTestIdentity, normaliseJunit, parseXml, reportAdapter, reportAdapters, reportFormats } from '../src/report-adapters.js';
+import { genericInventory, inventoryFormat, junitTestIdentity, normaliseJunit, parseXml, reportAdapters } from '../src/report-adapters.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const run = promisify(execFile);
@@ -14,19 +14,6 @@ const fixture = (name: string) => readFile(resolve('tests/fixtures/reports', nam
 const inventoryFor = (xml: string) => ({ format: inventoryFormat, tests: normaliseJunit(xml).tests.map(t => ({ id: t.id })), overflow: false });
 const junit = reportAdapters['junit-xml-v1'];
 const markers = ['private-property-marker', 'private-value-marker', 'private-error-marker', 'private-stdout-marker', 'private-sku-marker', 'private-stack-marker', 'ORDERS_API_KEY', 'test_create_order', 'createsAnOrder', 'creates an order'];
-
-test('every adapter publishes a complete contract and unknown formats are refused by name', () => {
-  for (const contract of adapterContracts()) {
-    assert.ok(reportFormats.includes(contract.format));
-    assert.ok(contract.producers.length && contract.producers.every(p => p.name && p.versions));
-    for (const list of [contract.proves, contract.observed, contract.notProven]) assert.ok(list.length >= 2);
-    assert.ok(Object.keys(contract.failureSemantics).length >= 5);
-    assert.ok(!Object.values(contract.failureSemantics).some(v => /\bpass(?:es|ed)?\b/.test(v) && !/refused|retains/.test(v)), 'no failure classification yields a pass');
-    assert.equal(contract.artifacts.inventory.file, 'inventory.json');
-    assert.ok(!('parse' in contract) && !('verify' in contract));
-  }
-  for (const unknown of ['junit-xml-v2', 'nunit-3', '', undefined, null, 42, { format: 'junit-xml-v1' }]) assert.throws(() => reportAdapter(unknown), /Unsupported report format/);
-});
 
 test('JUnit contract fixtures from real producers normalise, verify and publish only structure', async () => {
   for (const name of ['pytest-8.xml', 'jest-junit-16.xml', 'surefire-3.xml', 'go-junit-report-2.xml']) {

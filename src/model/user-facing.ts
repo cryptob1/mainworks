@@ -1,8 +1,6 @@
 
 
 
-/** The case file an `e2e:NAME` proof binds to, on the head. */
-export const e2eCasePath = (name: string) => `e2e/cases/${name}.json`;
 
 /**
  * Why create or requirements refuses an item's criteria, or null: every item, of every type, must

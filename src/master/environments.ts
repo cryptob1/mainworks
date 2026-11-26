@@ -11,7 +11,7 @@ import { defaultChildRun } from '../child-runner.js';
 import { sessionName } from '../session-name.js';
 import { launchPlan, assertNoApprovalOptOut, LaunchRefusedError, trustClaudeFolder, trustCodexFolder } from '../harness.js';
 import { hostInstallCheckouts } from '../install/units.js';
-import { type CapacityRole, type CapacityAccount, capacityRetryAt, quotaRoles } from '../model/capacity.js';
+import { type CapacityRole, quotaRoles } from '../model/capacity.js';
 import { type FleetClient, type FleetLaunchAccount, type FleetProbe, accountCheckIntervalMs, checkAccountLive, nextLiveCheck, observeAccount, selectFleetSession, fleetRoleHealth, httpFleetClient } from '../fleet.js';
 import { type AgentEnvironment, agentEnvironmentSchema, type EnvironmentKind, environmentKinds, environmentVariable, type MasterConfig, masterConfigSchema, producerProfileSchema, reviewerProfileSchema, workerProfileSchema } from './profiles.js';
 import { externalCredential, loadStoredMasterConfig } from './config.js';
@@ -20,9 +20,9 @@ import { installDirectory, readInstallRecord } from '../install/secrets.js';
 import { installIdFor } from '../install/types.js';
 import { failureText } from '../disk-space.js';
 import { shellQuote } from '../shell-quote.js';
-import { describeObservedExhaustion, providerIdentity } from './account-identity.js';
+import { providerIdentity } from './account-identity.js';
 import { getCachedPlanUsage, setCachedPlanUsage } from '../provider-usage.js';
-export { describeObservedExhaustion, providerIdentity } from './account-identity.js';
+export { providerIdentity } from './account-identity.js';
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
 import { accountHomeEnvironment, openCodeConfig, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';
@@ -214,23 +214,6 @@ export interface AccountSelection { environment: string | null; kind: string | n
 export type EnvironmentLog = { version: 1; environments: Record<string, EnvironmentHealth>; skipped: AccountSkip[]; selected: Record<string, AccountSelection>; exhausted: Record<string, ObservedExhaustion>; /** When an operator last released each account's hold (GY-3100): no notice read before it holds the account again. */ released?: Record<string, string> };
 /** A profile that names no accounts launches on whatever its own environment selects; its exhaustion is held under this name. */
 export const profileAccount = (profile: string) => `profile:${profile}`;
-/**
- * The runtime's own login (GY-182): a session launched on `kind` with no named account and no home
- * of its own runs on it, whichever role it serves, so its exhaustion is held under this name as
- * well and every such launch of every role is refused until the reset.
- */
-export const runtimeLogin = (kind: string) => `runtime:${kind}`;
-/** Whether a profile that names no accounts launches on its runtime's own login, rather than a home its environment selects. */
-const sharesRuntimeLogin = (profile: { kind?: string; environment?: Record<string, string> }) =>
-  !!profile.kind && !Object.hasOwn(profile.environment ?? {}, environmentVariable[profile.kind as EnvironmentKind] ?? '');
-/** The names a session on no named account is held under: the profile's own and, when it shares it, the runtime's own login. */
-export const ownLoginAccounts = (profile: { name: string; kind?: string; environment?: Record<string, string> }) =>
-  [profileAccount(profile.name), ...(sharesRuntimeLogin(profile) ? [runtimeLogin(profile.kind!)] : [])];
-/** The hold, if any, that bars a launch of `profile` on no named account. */
-export function ownLoginHold(held: Record<string, ObservedExhaustion>, profile: { name: string; kind?: string; environment?: Record<string, string> }) {
-  const key = ownLoginAccounts(profile).find(name => held[name]);
-  return key ? { key, held: held[key] } : null;
-}
 export const selectionKey = (role: LaunchRole, profile: string) => `${role}:${profile}`, sessionKeyOf = (key: string, work: string, group?: string | null) => `${key}|${work}${group ? `|${group}` : ''}`; // and one session's own beside it, by item and proof group, kept two days (GY-1582)
 export function environmentLogPath(config: Pick<MasterConfig, 'credentialFile'>) {
   return resolve(dirname(config.credentialFile), `${basename(config.credentialFile).replace(/\.token$/, '')}.environments.json`);
@@ -286,10 +269,6 @@ export async function recordEnvironmentLog(config: Pick<MasterConfig, 'credentia
   await atomicPrivateWrite(environmentLogPath(config), log);
 }
 
-/** Every launch reserves its account and slot in the control-plane registry before starting. */
-export const sameRuntimeRoles: readonly LaunchRole[] = ['reviewer', 'producer'];
-export const crossRuntimeSkip = (role: LaunchRole, profile: { name: string; kind?: string }, account: { name: string; kind: string }) =>
-  `${account.name} runs ${account.kind}, not ${profile.kind}: a ${role} launch of profile ${profile.name} starts only on ${profile.kind} accounts, so it waits for one rather than starting ${account.kind} in a checkout its ${profile.kind} launch prepared`;
 export type LaunchAccount = AgentEnvironment | FleetLaunchAccount;
 /** The agent registry session a launch was chosen under, or undefined when no registry chose it. */
 export const registrySessionOf = (selected: Pick<LaunchSelection, 'account'> | null | undefined) => selected?.account && 'fleet' in selected.account ? selected.account.fleet.session : undefined;
@@ -443,25 +422,6 @@ export async function inspectProfileAccounts<T extends { available: boolean; rea
   return result;
 }
 
-/** Registry accounts as this host knows them: one a session here saw spent is spent, whatever the registry last read. */
-export function withHeldAccounts(accounts: ProfileAccountHealth[], held: Record<string, ObservedExhaustion>): ProfileAccountHealth[] {
-  return accounts.map(account => held[account.environment] ? { ...account, healthy: false, reason: describeObservedExhaustion(account.environment, held[account.environment]), quota: 'exhausted', resetsAt: held[account.environment].resetsAt } : account);
-}
-
-/**
- * Whether a role has any account left. A role is out of capacity only when every launch profile
- * it has is unavailable for one reason — each of its accounts is spent — so a logged-out account
- * or an unreadable credential, which somebody can fix now, never reads as a wait for a reset.
- */
-export interface RoleCapacity { role: CapacityRole; exhausted: boolean; accounts: CapacityAccount[]; retryAt: string | null }
-export function roleCapacity(role: CapacityRole, profiles: { name: string }[], health: Record<string, { available: boolean; reason: string | null; accounts?: ProfileAccountHealth[] }>): RoleCapacity {
-  const spent = profiles.map(profile => ({ profile, accounts: health[profile.name]?.accounts ?? [], available: health[profile.name]?.available !== false }));
-  const exhausted = spent.length > 0 && spent.every(entry => !entry.available && entry.accounts.length > 0 && entry.accounts.every(account => account.quota === 'exhausted'));
-  // Profiles the registry decides share its accounts; each account is named once.
-  const accounts: CapacityAccount[] = exhausted ? spent.flatMap(entry => entry.accounts.map(account => ({ account: account.environment, profile: entry.profile.name, resetsAt: account.resetsAt, reason: (account.reason ?? 'quota exhausted').slice(0, 500) })))
-    .filter((account, index, all) => all.findIndex(other => other.account === account.account) === index) : [];
-  return { role, exhausted, accounts, retryAt: capacityRetryAt(accounts) };
-}
 
 /**
  * Onboarding for agent environments: discover the per-account homes (or create new ones), report

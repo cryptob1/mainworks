@@ -6,7 +6,7 @@ import type { CoordinationRounds } from '../server/work-view.js';
 import { newestVersion, pinnedInstall, versionEntry, versionName, type AgentRegistry, type CanaryOffer, type FleetRuntime } from '../model/registry.js';
 import { resumeExitWindowMs } from '../master/session-resume.js';
 import { type WorkerProfile } from '../master/profiles.js';
-import type { DaemonAction, DaemonState } from './state.js';
+import type { DaemonState } from './state.js';
 
 export interface ProfileHealth { profile: WorkerProfile; healthy: boolean; busy: boolean; reason: string | null }
 /**
@@ -26,15 +26,6 @@ export function profileHealth(profiles: WorkerProfile[], credentials: Record<str
         : agent ? `${profile.agentName} is running a worker` : null;
     return { profile, healthy: !reason, busy, reason };
   });
-}
-
-/** Retry a refused action on a widening cycle interval rather than on every pass. */
-export function readyToRetry(previous: DaemonAction | undefined, cycle: number, maxBackoffCycles = 30) {
-  if (!previous) return true;
-  // A waiting action is an outcome still being reconciled (GY-195): it is asked again every cycle.
-  if (previous.state === 'waiting') return true;
-  if (previous.state !== 'failed') return false;
-  return cycle - previous.cycle >= Math.min(2 ** Math.max(0, previous.attempts - 1), maxBackoffCycles);
 }
 
 /**
