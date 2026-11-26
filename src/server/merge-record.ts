@@ -43,8 +43,7 @@ import { foldServeReverts, mergeServeRevertKind, mergeServeRevertSchema } from '
 const sha = z.string().regex(/^[0-9a-f]{40}$/i).transform(value => value.toLowerCase());
 const instant = z.string().max(64).refine(value => Number.isFinite(Date.parse(value)), 'an ISO 8601 instant');
 const tests = z.object({ passed: z.number().int().min(0), failed: z.array(z.string().max(300)).max(100), files: z.number().int().min(0),
-  /** GY-3599: the file that ran longest, for the Task page. */ slowest: z.object({ file: z.string().max(300), durationMs: z.number().int().min(0) }).strict().optional(),
-  /** GY-3867: the first failing assertion line of each failed file whose output names one. */ assertions: z.record(z.string().max(300), z.string().max(500)).optional() }).strict();
+  /** GY-3599: the file that ran longest, for the Task page. */ slowest: z.object({ file: z.string().max(300), durationMs: z.number().int().min(0) }).strict().optional() }).strict();
 const trialPhase = z.enum(trialPhases), trialNoVerdictOutcome = z.enum(['timeout', 'cancelled', 'host-failure']);
 const trialPhaseDurations = z.object(Object.fromEntries(trialPhases.map(phase => [phase, z.number().min(0)])) as Record<TrialPhase, z.ZodNumber>).strict();
 const trialAttempts = z.array(z.object({ outcome: trialNoVerdictOutcome, phase: trialPhase, reason: z.string().max(1000), phases: trialPhaseDurations }).strict()).max(10);

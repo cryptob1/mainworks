@@ -117,11 +117,6 @@ const trialFlaked = ({ flaked, assertions = {} }: Pick<MergeTrialRun, 'assertion
   const files = flaked.files.slice(0, 100), named = files.filter(file => assertions[file]);
   return { files, tests: flaked.tests.slice(0, 100), ...(named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!])) } : {}), at };
 };
-/** GY-3867: the first failing assertion line of each file the trial's verdict still fails, for the flow's failing checks. */
-const failedAssertions = ({ tests, assertions = {} }: Pick<MergeTrialRun, 'tests' | 'assertions'>) => {
-  const named = recordedTests(tests).failed.filter(file => assertions[file]);
-  return named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!.slice(0, 500)])) } : {};
-};
 /** What `POST /api/work/:id/merge-record` takes: one of the five steps, with its ledger payload. */
 export type MergeRecordEvent =
   | ({ kind: 'serve-revert' } & MergeServeRevert)
@@ -945,7 +940,7 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
     await fileFlakes(ports, run, item.key, mergeSha, merged.added ?? []);
     // GY-1834: a flake rides on the trial record, refused or not, so it is durable before anything else happens.
     const flaked = run.flaked ? trialFlaked({ flaked: run.flaked, assertions: run.assertions }, at()) : null;
-    await ports.record(item, { kind: 'trial', head, baseTip, mergeSha, outcome: 'verdict', build: run.build, tests: { ...recordedTests(run.tests), ...(run.slowest ? { slowest: run.slowest } : {}), ...failedAssertions(run) }, files: run.files, proofs: run.proofs, durationMs: run.durationMs,
+    await ports.record(item, { kind: 'trial', head, baseTip, mergeSha, outcome: 'verdict', build: run.build, tests: { ...recordedTests(run.tests), ...(run.slowest ? { slowest: run.slowest } : {}) }, files: run.files, proofs: run.proofs, durationMs: run.durationMs,
       ...(run.phases ? { phases: run.phases } : {}), attempts: run.retried ?? [], ...(flaked ? { flaked } : {}),
       // GY-3267: the screenshots travel once, in their own field — never inside the e2e results.
       ...(run.e2e?.length ? { e2e: run.e2e.map(({ output: _output, screenshot: _screenshot, ...entry }) => entry) } : {}),

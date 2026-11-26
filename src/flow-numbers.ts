@@ -16,7 +16,7 @@ type ReworkCause = typeof reworkCauses[number];
  * ends) and whether it flaked (its failing tests passed on the rerun, or failed the same way on the
  * base); a `merge.serve-revert` whether it reverted.
  */
-export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; flakes?: FlakeEvent[]; failures?: FlakeEvent[]; reverted?: boolean }
+export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; flakes?: FlakeEvent[]; reverted?: boolean }
 /** GY-3849: one test file that failed a trial or release check then passed on its rerun, with its first failing assertion line when the run named one. */
 export interface FlakeEvent { file: string; at: string; assertion: string | null }
 export interface FlowItem {
@@ -28,13 +28,6 @@ export interface FlowItem {
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
-type CheckCount = { check: string; count: number; assertion: string | null };
-/** Test files by how often they failed, the most first, each with its latest assertion line. */
-function topChecks(failures: readonly FlakeEvent[]): CheckCount[] {
-  const checks = new Map<string, CheckCount>();
-  for (const { file, assertion } of [...failures].sort((a, b) => ms(a.at) - ms(b.at))) checks.set(file, { check: file, count: (checks.get(file)?.count ?? 0) + 1, assertion });
-  return [...checks.values()].sort((a, b) => b.count - a.count).slice(0, 5);
-}
 interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }
 export interface FlowNumbers {
   hours: number; attempts: number; attemptsPerHour: number; merges: number; mergesPerHour: number;
@@ -45,9 +38,7 @@ export interface FlowNumbers {
   reviewReasons: { label: string; count: number }[];
   stations: Record<FlowStation, StationWait | null>;
   /** GY-3849: the five test files that most often failed a trial or release check then passed on rerun, with the latest occurrence's first failing assertion line. */
-  flakyChecks: CheckCount[];
-  /** GY-3867: the five test files that most often failed a trial without passing on rerun or failing on the base, likewise. */
-  trialFailures: CheckCount[];
+  flakyChecks: { check: string; count: number; assertion: string | null }[];
   trials: number; flaky: number; flakyRate: number | null;
   reverts: number; revertRate: number | null;
 }
@@ -154,8 +145,10 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
     if (cause === 'review' || cause === 'product review') { const label = reviewReason(event.reason ?? ''); reasons.set(label, (reasons.get(label) ?? 0) + 1); }
   }
   const reviewReasons = [...reasons].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 3);
-  const flakyChecks = topChecks([...events.flatMap(event => event.flakes ?? []), ...releaseFlakes.filter(flake => inWindow(ms(flake.at)))]);
-  const trialFailures = topChecks(events.flatMap(event => event.failures ?? []));
+  const flakes = [...events.flatMap(event => event.flakes ?? []), ...releaseFlakes.filter(flake => inWindow(ms(flake.at)))].sort((a, b) => ms(a.at) - ms(b.at));
+  const checks = new Map<string, FlowNumbers['flakyChecks'][number]>();
+  for (const { file, assertion } of flakes) checks.set(file, { check: file, count: (checks.get(file)?.count ?? 0) + 1, assertion });
+  const flakyChecks = [...checks.values()].sort((a, b) => b.count - a.count).slice(0, 5);
   // GY-3732: like merges an hour, the live station counts only merges made inside the window.
   const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {
@@ -173,7 +166,7 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const ratio = (part: number, whole: number) => whole ? part / whole : null;
   return {
     hours, attempts: ended.length, attemptsPerHour: ended.length / hours, merges, mergesPerHour: merges / hours,
-    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, reviewReasons, flakyChecks, trialFailures, stations,
+    firstPassYield: ratio(ended.filter(outcome => outcome.merged).length, ended.length), rework, reviewReasons, flakyChecks, stations,
     trials: trials.length, flaky, flakyRate: ratio(flaky, trials.length), reverts, revertRate: ratio(reverts, merges),
   };
 }
