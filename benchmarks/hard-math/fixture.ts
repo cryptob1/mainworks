@@ -41,6 +41,17 @@ export async function writeControlledArtifact(root:string,python:string,oracleFi
   await writeFile(join(root,'src/solver.mjs'),`import {parseRequest} from './contract.mjs';\nconst table=${JSON.stringify(table)};\nexport function solve(value){const {coefficients}=parseRequest(value);if(coefficients.length===1)return {roots:[]};const result=table[coefficients.map(String).join(',')];if(!result)throw {code:'INVALID_REQUEST'};return result;}\n`);
   await writeFile(join(root,'public/app.mjs'),app);
 }
+/**
+ * Runs a generated e2e-trial script in this process. Its nonce comes from the trial's input, not
+ * this process's stdin, which never closes under the test runner, and its verdict line is returned
+ * as the output the trial parses (GY-3920).
+ */
+export async function importTrialScript(script:string,input:string,sourceRoot:string):Promise<string> {
+  const source=await readFile(script,'utf8'),stdin="readFileSync(0, 'utf8')",verdict='process.stdout.write(';
+  if(!source.includes(stdin) || !source.includes(verdict)) throw new Error(`${script} no longer reads its nonce from stdin and writes its verdict to stdout`);
+  await writeFile(script,source.replaceAll(trialHarness,sourceRoot).replace(stdin,JSON.stringify(input)).replace(verdict,'export const output=('));
+  return (await import(pathToFileURL(script).href)).output;
+}
 const certificationFailure=(c:RunContext)=>JSON.stringify(c.receipt.failures.filter(f=>f.component==='integration').at(-1),null,2);
 export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boolean;incorrectArtifact?:boolean;injectRepair?:boolean;haltAfterClaims?:boolean;waitAfterClaims?:boolean;nativePostMerge?:boolean}={}) {
   const trials=join(c.directory,'trials');await mkdir(trials);
@@ -56,13 +67,8 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
   const runTrialDirect:Parameters<typeof runMergeTrial>[0]['run']=async(program,args,options)=>{
     const mapped=args.map(arg=>arg.startsWith(`${trialHarness}/`)?`${c.config.sourceRoot}${arg.slice(trialHarness.length)}`:arg);
     const script=mapped.at(-1);
-    if(program==='node' && script?.endsWith('/run.mjs')) {
-      const source=await readFile(script,'utf8');
-      if(source.includes(trialHarness)) await writeFile(script,source.replaceAll(trialHarness,c.config.sourceRoot));
-      // Run the generated e2e-trial script in-process instead of cold-starting tsx 8 times.
-      await import(pathToFileURL(script).href);
-      return '';
-    }
+    // Run the generated e2e-trial script in-process instead of cold-starting tsx 8 times.
+    if(program==='node' && script?.endsWith('/run.mjs')) return importTrialScript(script,String(options?.input??''),c.config.sourceRoot);
     if(program==='npm' && options?.cwd) {
       // Run the seed's own package script without npm's ~0.3s start, twice per merge (GY-3848).
       const [name,...rest]=mapped[0]==='run'?mapped.slice(1):mapped;
