@@ -36,10 +36,11 @@ const machines = (away: boolean): Machine[] => [
 async function fillLocal(directory: string, label: string) {
   const held: HeldSlot[] = [];
   for (;;) {
-    let waited = false;
+    let waited = false, settled = false;
     const taking = acquireVerificationSlot({ directory, label: `${label}-${held.length + 1}`, project: 'acme/app', pollMs: 5, signal: stop.signal, onWait: () => { waited = true; } });
-    taking.catch(() => {});
-    const slot = await Promise.race([taking, until(() => waited, 'the job waits').then(() => null)]);
+    taking.catch(() => {}).finally(() => { settled = true; });
+    // The wait poll stops once the job is admitted, so no orphaned poll keeps the file running after its tests.
+    const slot = await Promise.race([taking, until(() => waited || settled, 'the job waits').then(() => null)]);
     if (!slot) return { held, waiting: taking };
     held.push(slot);
   }
@@ -65,9 +66,10 @@ test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts
   assert.equal(heavyJobLimit(directory), 4, 'this machine runs at most floor(24 / 6)');
 
   // Four local jobs run and the fifth waits; shards go to the hosts by free cores beside them (GY-3706).
+  // The shards are placed first, each host's beside the other's, so the fifth local job's 5 ms poll does not run beside every host take.
+  const [onMsi, onOmarchy] = await Promise.all([takeAll(directory, msi), takeAll(directory, omarchy)]);
   const first = await fillLocal(directory, 'merge trial');
   assert.equal(first.held.length, 4);
-  const onMsi = await takeAll(directory, msi), onOmarchy = await takeAll(directory, omarchy);
   assert.equal(onMsi.length, 19, 'vish-msi takes 24 cores less 2 less 3 busy');
   assert.equal(onOmarchy.length, 18, 'omarchypc takes 32 cores less 2 less 12.2 busy');
   assert.equal(heldSlots(directory).filter(entry => entry.slot >= hostSlot).length, 37);
@@ -102,8 +104,7 @@ test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts
   // A limit file still sets the budget, and host shards are then bounded only by placement.
   writeMachines(directory, machines(false));
   // A host whose share is temporarily full under another trial is not dropped: overflow runs locally and the host is reused once a shard finishes.
-  const busyOther: HeldSlot[] = [];
-  for (let shard = 1; shard <= 18; shard++) busyOther.push((await takeHostSlot(directory, msi, `other ${shard}`))!);
+  const busyOther = (await Promise.all(Array.from({ length: 18 }, (_, shard) => takeHostSlot(directory, msi, `other ${shard + 1}`)))).filter(slot => slot !== null);
   assert.equal(busyOther.length, 18, 'another trial leaves vish-msi one free shard');
   const placed: PlacedHost<string>[] = [
     { name: 'vishrog', room: 1, reading: { name: 'vishrog', cores: 24, busy: 0, steal: 0, celsius: 60, limit: 85, away: false } },
