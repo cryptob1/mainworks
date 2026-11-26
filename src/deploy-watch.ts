@@ -429,7 +429,10 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     if (control?.waiting) await noteControl({ waiting: null });
   }
   // GY-3700: a watch started after a handover finds the commit already serving: record it, build and restart nothing.
+  // GY-3902: a watch killed between health and checkout left the CLI and loop pin behind; move them first (both idempotent).
   if (await ports.serves?.(tip).catch(() => false)) {
+    await ports.checkout(tip);
+    await ports.pin(tip);
     await write({ tip, failed: null, reason: null, verified: gated === tip });
     await noteControl({ commit: tip, failedStep: null, failedReason: null, failedAt: null });
     log(`[mainworks-deploy] ${tip.slice(0, 12)} already serves healthy; recorded as serving`);
@@ -441,8 +444,6 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     await write({ tip, failed: null, reason: null, verified: gated === tip });
     await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null });
     log(`[mainworks-deploy] serving ${tip.slice(0, 12)}`);
-    await ports.prune(previous ? [tip, previous] : [tip]);
-    return 'deployed';
   } catch (error) {
     const reason = message(error), step = (error as { step?: string }).step;
     const failedControl = () => noteControl({ failedStep: step ?? null, failedReason: reason.slice(0, 2000), failedAt: new Date().toISOString() });
@@ -465,7 +466,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
         // The server serves the kept tip, so the CLI checkout follows it too, best-effort like the pin.
         await ports.checkout(tip).catch(failed => log(`[mainworks-deploy] the checkout of ${tip.slice(0, 12)} failed: ${message(failed)}`));
         await write({ tip, failed: null, reason: `${reason}; kept because ${why}` });
-        await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null });
+        await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: step ?? null, failedReason: `${reason}; kept because ${why}`.slice(0, 2000), failedAt: new Date().toISOString() });
         return 'kept';
       }
     }
@@ -474,6 +475,9 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     await failedControl();
     return outcome;
   }
+  // GY-3902: cleanup is not part of the deploy: a prune that fails is logged and nothing rolls back.
+  await ports.prune(previous ? [tip, previous] : [tip]).catch(error => log(`[mainworks-deploy] the image prune after ${tip.slice(0, 12)} failed: ${message(error)}`));
+  return 'deployed';
 }
 
 /**
@@ -519,7 +523,7 @@ export const releaseHandover = (running: () => string | null, stop: () => void, 
 export interface ManagedDeploy {
   /** The managed repository this answers for. */
   repository: string;
-  /** A deploy record names this repository as the one it serves and holds a serving tip. */
+  /** A deploy record names this repository as the one it serves; its tip is null while a rollback restores (GY-3902). */
   configured: boolean;
   /** The commit that deploy serves; null when no deploy of this repository is configured. */
   tip: string | null;
@@ -540,7 +544,7 @@ export interface ManagedDeploy {
  */
 export async function managedDeploy(repository: string, baseBranch: string, root: string | null | undefined, git?: GitRunner | null): Promise<ManagedDeploy> {
   const record = root ? readDeployRecord(deployRecordPath(root)) : null;
-  const configured = !!(record && record.tip && record.repository?.toLowerCase() === repository.toLowerCase());
+  const configured = !!record && record.repository?.toLowerCase() === repository.toLowerCase();
   let main: string | null = null, pending: number | null = null;
   if (root && git) {
     for (const ref of [`refs/remotes/origin/${baseBranch}`, `refs/heads/${baseBranch}`]) {
@@ -548,12 +552,12 @@ export async function managedDeploy(repository: string, baseBranch: string, root
       const sha = tip.stdout.trim();
       if (tip.status === 0 && /^[0-9a-f]{40}$/.test(sha)) { main = sha; break; }
     }
-    if (configured && main) {
+    if (configured && record!.tip && main) {
       const since = await git(['rev-list', '--count', `${record!.tip}..${main}`]);
       pending = since.status === 0 && /^\d+$/.test(since.stdout.trim()) ? Number(since.stdout.trim()) : null;
     }
   }
-  return { repository, configured, tip: configured ? record!.tip : null, at: configured ? record!.at : null, main, pending };
+  return { repository, configured, tip: configured ? record!.tip : null, at: configured && record!.tip ? record!.at : null, main, pending };
 }
 
 /** The git toplevel of a directory, or null when it is not in a checkout — the server's fallback serving root (its own working directory). */
@@ -595,7 +599,7 @@ export interface ServingReport {
 export async function servingReport(root: string | null | undefined, repository: string, baseBranch: string, git?: GitRead | null): Promise<ServingReport> {
   const record = root ? readDeployRecord(deployRecordPath(root)) : null;
   const serve = root ? readServeRecord(serveRecordPath(root)) : null;
-  const configured = !!(record && record.tip && record.repository?.toLowerCase() === repository.toLowerCase());
+  const configured = !!record && record.repository?.toLowerCase() === repository.toLowerCase();
   const commit = serve?.commit ?? (configured ? record!.tip : null);
   const failed = serve?.failed ? { tip: serve.failed, reason: serve.reason }
     : !serve && configured && record!.failed ? { tip: record!.failed, reason: record!.reason } : null;
@@ -614,9 +618,9 @@ export async function servingReport(root: string | null | undefined, repository:
   }
   return {
     onboarding,
-    unconfigured: !commit,
+    unconfigured: !commit && !failed,
     commit, main,
-    deployedAt: serve?.commit ? serve.started ?? serve.at : configured ? record!.at : null,
+    deployedAt: serve?.commit ? serve.started ?? serve.at : configured && record!.tip ? record!.at : null,
     atMain: commit && main ? commit === main : null,
     failedDeploy: failed ? { tip: failed.tip, reason: failed.reason, restoring: !serve && configured ? record!.restore ?? null : null } : null,
     pending,
