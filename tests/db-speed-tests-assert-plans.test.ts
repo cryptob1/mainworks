@@ -32,6 +32,18 @@ test('unit:db-speed-tests-assert-plans-static — neither of the two database sp
   }
 });
 
+test('unit:db-speed-tests-assert-plans-pinned — the item-status readers run only the history page whose plan the file bounds, and count their queries on the client', async () => {
+  // GY-3913: on a loaded trial one of twenty full-document history reads ran past the server's 5 s statement timeout (422), and sampling the database's activity misses short reads.
+  // Each concurrent reader must request the page the file plans (payload=details).
+  const source = await readFile(new URL('./item-status-read-is-indexed-and-bounded.test.ts', import.meta.url), 'utf8');
+  const readers = source.match(/const readers = [^\n]*/)?.[0] ?? '';
+  const history = readers.match(/`events\?[^`]*`/g) ?? [];
+  assert.ok(history.length > 0, 'the readers read the history page');
+  for (const path of history) assert.equal(path, '`events?work=${id}&payload=details`', `a concurrent reader requests ${path}, not the planned page`);
+  assert.match(source, /parseEventHistoryQuery\(new URLSearchParams\(\{ work: id, payload: 'details' \}\)\)/, 'the planned page is payload=details');
+  assert.doesNotMatch(source, /FROM pg_stat_activity/, 'history queries are counted on the client, not sampled');
+});
+
 test('integration:db-speed-tests-assert-plans — the two database speed tests assert query plans and rows/buffers instead of wall-clock milliseconds, and pass three times in a row under a two-core CPU burner', { timeout: 900_000 }, async () => {
   // AC-2: run the two files three times in a row while a CPU burner holds two cores busy; none fails.
   const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'NODE_TEST_CONTEXT'));
