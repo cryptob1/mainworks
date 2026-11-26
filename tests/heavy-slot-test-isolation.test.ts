@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { heavyTrial } from '../src/daemon/cycle-merge-writer.js';
 import type { MasterConfig } from '../src/master.js';
@@ -60,11 +60,26 @@ test('integration:heavy-slot-test-isolation — a test file that starts merge tr
   assert.deepEqual(readdirSync(slots), ['limit'], 'the host\'s slot directory is unchanged');
 });
 
+const helpersDir = join(root, 'tests/helpers'), tempDirsFile = join(helpersDir, 'temp-dirs.ts');
+
+/** Whether a test or helper module reaches tests/helpers/temp-dirs.ts through static runtime imports. */
+function importsTempDirs(file: string, seen = new Set<string>()): boolean {
+  if (seen.has(file)) return false;
+  seen.add(file);
+  const source = readFileSync(file, 'utf8');
+  for (const [, specifier] of source.matchAll(/^\s*(?:import|export)\s+(?!type\b)(?:[^;'"]+\s+from\s+)?['"](\.[^'"]+)['"]/gm)) {
+    const resolved = join(dirname(file), specifier.replace(/\.js$/, '.ts'));
+    if (resolved === tempDirsFile) return true;
+    if (resolved.startsWith(`${helpersDir}${sep}`) && existsSync(resolved) && importsTempDirs(resolved, seen)) return true;
+  }
+  return false;
+}
+
 test('integration:heavy-slot-test-isolation — every test file that starts trials is isolated from the host\'s slots', () => {
   const tests = join(root, 'tests');
   const open = readdirSync(tests).filter(name => name.endsWith('.test.ts')).filter(name => {
-    const source = readFileSync(join(tests, name), 'utf8');
-    return /mergeWriterStep|batchGateStep|mergeWriterReads|heavyTrial|mergeWriter:|withHeavyJob|acquireVerificationSlot/.test(source) && !/helpers\/(temp-dirs|pipeline-world)\.js/.test(source);
+    const file = join(tests, name), source = readFileSync(file, 'utf8');
+    return /mergeWriterStep|batchGateStep|mergeWriterReads|heavyTrial|mergeWriter:|withHeavyJob|acquireVerificationSlot/.test(source) && !importsTempDirs(file);
   });
   assert.deepEqual(open, [], 'import ./helpers/temp-dirs.js');
 });
