@@ -13,6 +13,7 @@ import { observationWorkers } from '../src/server/main.js';
 import type { Principal } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -49,10 +50,7 @@ after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fi
 
 /** An item claimed by the worker on its own linked worktree, with one commit there. */
 async function claimed(n: number, file = `src/item-${n}.ts`) {
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Observed ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-  const pulled = await engine.pullAssignment(worker, { work: w.id }, randomUUID());
-  assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused));
+  let w = await lifecycle(engine, operator, { type: 'chore',  title: `Observed ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, { claim: worker, pull: true });
   const branch = `graphyard/gy-${n}-1`, worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree, 'refs/remotes/origin/main');
   const head = await commit(worktree, file, `export const item = ${n};\n`, `item ${n}`);

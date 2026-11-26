@@ -17,13 +17,14 @@ import { runMergeTrial, trialFailureReason } from '../src/merge-writer/executor.
 import { trialMerge } from '../src/merge-writer/trial.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
-import type { Principal, Work } from '../src/model.js';
+import type { Principal } from '../src/model.js';
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { mergeRecordBodySchema } from '../src/server/merge-record.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { linkedCases } from '../src/model/test-cases.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-2965 AC-2: the merge trial serves the head and runs its bound case. A head carrying
 // e2e:home-shows-change is refused when e2e/cases/home-shows-change.json is absent, naming the
@@ -138,11 +139,7 @@ test('unit:trial-serves-head-and-runs-bound-cases — a passing case makes the i
   const defined = await call('scenarios', operator, { id: 'home-shows-change', title: 'The home page shows the change', purpose: 'The home page shows the change',
     steps: ['open /'], expected: ['the change is shown'], environment: 'any', runner: 'graphyard-e2e', testPath: 'e2e/cases/home-shows-change.json' });
   assert.equal(defined.status, 200, JSON.stringify(defined.body));
-  let work = await engine.execute(operator, 'create', null, { title: 'The home page shows the change', criteria: [{ id: 'AC-1', text: 'The home page shows the change', proofs: ['e2e:home-shows-change'] }] }, randomUUID()) as Work;
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'machine-a', path: '/tmp/trial-e2e', branch }, randomUUID());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head: withCase }, randomUUID());
+  let work = await lifecycle(engine, operator, { title: 'The home page shows the change', criteria: [{ id: 'AC-1', text: 'The home page shows the change', proofs: ['e2e:home-shows-change'] }] }, { claim: worker, workspace: { path: '/tmp/trial-e2e', branch }, submit: { head: withCase } });
   const at = new Date().toISOString();
   const intent = await call(`work/${work.id}/merge-record`, coordinator, { kind: 'intent', head: withCase, baseTip, mergeSha: merged.mergeSha, risk: 'normal', at });
   assert.equal(intent.status, 200, JSON.stringify(intent.body));
@@ -180,11 +177,7 @@ test('unit:trial-serves-head-and-runs-bound-cases — a failing step refuses the
   assert.deepEqual(run.proofs['e2e:home-shows-change'], { executed: 1, failed: 1 });
   assert.match(trialFailureReason({ run })!, /^trial failed: e2e case home-shows-change: step 1 GET \//);
   // The refused head's trial record, carrying the failing step, is accepted by the merge record route.
-  let work = await engine.execute(operator, 'create', null, { title: 'The home page shows the failing change', criteria: [{ id: 'AC-1', text: 'The home page shows the change', proofs: ['e2e:home-shows-change'] }] }, randomUUID()) as Work;
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'machine-a', path: '/tmp/trial-e2e-failing', branch: `${branch}-failing` }, randomUUID());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head: withCase }, randomUUID());
+  let work = await lifecycle(engine, operator, { title: 'The home page shows the failing change', criteria: [{ id: 'AC-1', text: 'The home page shows the change', proofs: ['e2e:home-shows-change'] }] }, { claim: worker, workspace: { path: '/tmp/trial-e2e-failing', branch: `${branch}-failing` }, submit: { head: withCase } });
   const at = new Date().toISOString();
   assert.equal((await call(`work/${work.id}/merge-record`, coordinator, { kind: 'intent', head: withCase, baseTip, mergeSha: merged.mergeSha, risk: 'normal', at })).status, 200);
   const recorded = await call(`work/${work.id}/merge-record`, coordinator, { kind: 'trial', head: withCase, baseTip, mergeSha: merged.mergeSha, outcome: 'verdict', build: run.build,

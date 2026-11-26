@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { pipelineTimeline } from '../src/pipeline-speed.js';
@@ -186,11 +187,7 @@ test('unit:workspace-failure-spares-profile — the engine keeps the preserved-a
   const worker: Principal = { id: 'engineer-a', role: 'worker', sessionKind: 'ai' };
   const id = () => randomUUID();
   const input = (title: string) => ({ title, type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] });
-  const claimed = async (actor: Principal = worker) => {
-    let work = await engine.execute(operator, 'create', null, input(randomUUID()), id());
-    work = await engine.execute(operator, 'ready', work.id, {}, id());
-    return engine.execute(actor, 'claim', work.id, {}, id());
-  };
+  const claimed = (actor: Principal = worker) => lifecycle(engine, operator, input(randomUUID()), { claim: actor });
   const events = async (work: Work, kind: string) => (await store.pool.query('SELECT kind, payload FROM events WHERE work_id=$1 AND kind=$2 ORDER BY seq', [work.id, kind])).rows as { kind: string; payload: any }[];
 
   // AC-1's record: the allocation that released a holder keeps its refs and diff on the ledger.

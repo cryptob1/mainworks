@@ -15,6 +15,7 @@ import { landabilityRefusals } from '../src/model/landability.js';
 import type { Evidence, Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -54,11 +55,7 @@ after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fi
 /** A submitted head the master attested on its first base, with the trial's e2e pass on that base. */
 async function attested(branch: string): Promise<Work> {
   git(checkout, 'branch', '-f', branch, head);
-  let work = await engine.execute(admin, 'create', null, { type: 'bug', title: 'Attested by the master', criteria: [{ id: 'AC-1', text: 'The onboarding files land where the guide says', proofs: [PROOF, E2E] }] }, id());
-  work = await engine.execute(admin, 'ready', work.id, {}, id());
-  const pulled = await engine.pullAssignment(worker, { work: work.id }, id());
-  work = await engine.execute(worker, 'workspace', pulled.assigned!.id, { epoch: pulled.assigned!.epoch, host: 'test', path: `/tmp/manual-attest/${work.key}`, branch }, id());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, id());
+  let work = await lifecycle(engine, admin, { type: 'bug', title: 'Attested by the master', criteria: [{ id: 'AC-1', text: 'The onboarding files land where the guide says', proofs: [PROOF, E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch }, submit: { head } });
   work = await engine.execute(master, 'evidence', work.id, { proof: PROOF, sha: head, baseSha: work.candidate!.baseSha, policyRevision: work.policyRevision, result: 'pass', executed: 1, skipped: 0, reason: 'the onboarding files match the guide', ...attestationExercise(work, PROOF) }, id());
   return withTrial(work, work.candidate!.baseSha);
 }

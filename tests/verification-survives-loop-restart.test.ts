@@ -17,6 +17,7 @@ import { requestWorkerVerification } from '../src/cli/worker-verification.js';
 import type { CliContext } from '../src/cli/context.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // Require pre-merge review for the fixture's changed source, just as this sensitive fix does.
 setRepositoryPolicy({ ...repositoryPolicy(), risk: { sensitive: [{ glob: 'app.js', rule: 'fixture requires independent review' }], declared: true }, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -48,11 +49,7 @@ test('integration:restart-required', () => assert.equal(answer, 42));
   const peer = { id: 'peer', role: 'coordinator' as const, token: 'peer-test-token' };
   const master = { id: 'master', role: 'operator-agent' as const, token: 'master-test-token', scope: { workItems: ['*'], repositories: ['owner/project'] } };
   engine.principals = [operator, worker, host, peer, master];
-  let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Survives loop restart',
-    criteria: [{ id: 'AC-1', text: 'Required validation', proofs: ['integration:restart-required', 'e2e:fixture'] }] }, randomUUID());
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: root, branch: 'graphyard/restart' }, randomUUID());
+  let work = await lifecycle(engine, operator, { type: 'chore', title: 'Survives loop restart', criteria: [{ id: 'AC-1', text: 'Required validation', proofs: ['integration:restart-required', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: root, branch: 'graphyard/restart' } });
   const { url: serverUrl, close } = await listen(server(engine, [worker, host, peer, master]));
   t.after(close);
   const url = serverUrl;

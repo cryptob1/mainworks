@@ -12,6 +12,7 @@ import { runTrial } from '../src/merge-writer/trial.js';
 import { runWorkerCheck } from '../src/merge-writer/worker-check.js';
 import { workerVerificationPump } from '../src/daemon/worker-verification.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3283: a confined worker runs its item's declared preMerge check, with the check's Compose
 // services, on its own head through `mainworks check NAME`; the host loop runs it as the trial does.
@@ -51,9 +52,7 @@ dns.lookup = (host, options, callback) => lookup(host === 'db' ? '127.0.0.1' : h
   const worker = { id: 'worker', role: 'worker' as const }, operator = { id: 'operator', role: 'admin' as const, sessionKind: 'human' as const };
   const credentials = [{ ...worker, token: 'worker-test-token' }, { id: 'other-worker', role: 'worker' as const, token: 'other-test-token' }, { id: 'host', role: 'coordinator' as const, token: 'host-test-token' }];
   engine.principals = [operator, ...credentials];
-  let work = await engine.execute(operator, 'create', null, { type: 'feature', title: 'Declared check', criteria: [{ id: 'AC-1', text: 'Queries db', proofs: ['e2e:fixture'] }] }, randomUUID());
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
+  let work = await lifecycle(engine, operator, { type: 'feature', title: 'Declared check', criteria: [{ id: 'AC-1', text: 'Queries db', proofs: ['e2e:fixture'] }] }, { claim: worker });
 
   // The coordinator checkout, and the worker's assigned worktree on graphyard/<key>-<epoch>.
   const coordinator = await temporaryDirectory('coordinator', root), base = await temporaryDirectory('trials', root);

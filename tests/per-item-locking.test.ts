@@ -2,6 +2,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store, StaleWrite, save } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { definiteRenewalRefusal } from '../src/session-watch.js';
@@ -43,11 +44,7 @@ after(async () => {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 let created = 0;
-async function claimed(worker: Principal) {
-  const item = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Locking item ${++created}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }, randomUUID());
-  await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  return engine.execute(worker, 'claim', item.id, {}, randomUUID());
-}
+const claimed = (worker: Principal) => lifecycle(engine, operator, { type: 'chore',  title: `Locking item ${++created}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }, { claim: worker });
 const heartbeat = (worker: Principal, work: Work) => engine.execute(worker, 'heartbeat', work.id, { epoch: work.lease!.epoch }, randomUUID());
 /** Hold a transaction open with the given locks until `release` is called; resolves `held` once the locks are taken. */
 function hold(options: Parameters<Store['transaction']>[1]) {
@@ -63,8 +60,7 @@ const within = async <T>(promise: Promise<T>, ms: number) => Promise.race([promi
 test('unit:per-item-locking heartbeats on different items run while a dispatch holds the fleet lock, and neither waits for the other', { timeout: 60_000 }, async () => {
   const [one, two] = [await claimed(workers[0]), await claimed(workers[1])];
   // A real claim command on a third item holding the fleet lock: a claim of a fourth item queues behind it.
-  const threeItem = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Locking item ${++created}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }, randomUUID());
-  await engine.execute(operator, 'ready', threeItem.id, {}, randomUUID());
+  const threeItem = await lifecycle(engine, operator, { type: 'chore',  title: `Locking item ${++created}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] });
 
   let releaseDispatch!: () => void;
   const dispatchDone = new Promise<void>(resolve => { releaseDispatch = resolve; });
@@ -166,11 +162,7 @@ test('unit:per-item-locking mixed fleet and item locks under concurrent load nev
 
 const headSha = 'a'.repeat(40), baseSha = 'b'.repeat(40);
 /** An item submitted for review, whose observation job saves a fresh provider observation every poll. */
-async function submittedItem(worker: Principal) {
-  let item = await claimed(worker);
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/locking/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  return engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
-}
+const submittedItem = (worker: Principal) => lifecycle(engine, operator, { type: 'chore',  title: `Locking item ${++created}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }, { claim: worker, submit: {} });
 const providerObservation = (item: Work): Observation => ({
   clockOffset: { min: 0, max: 0 },
   candidate: { sha: headSha, baseSha, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
@@ -337,8 +329,7 @@ test('unit:per-item-locking 100 items and 20 concurrent writers keep p95 request
   engine.principals = [operator, ...workers, ...writers];
   const items: Work[] = [];
   for (let n = 0; n < 100; n++) {
-    const item = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Load ${n}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }, randomUUID());
-    items.push(await engine.execute(operator, 'ready', item.id, {}, randomUUID()));
+    items.push(await lifecycle(engine, operator, { type: 'chore',  title: `Load ${n}`, criteria: [{ id: 'AC-1', text: 'Holds', proofs: ['unit:per-item-locking', 'e2e:fixture'] }] }));
   }
   const latencies: number[] = [];
   const timed = async <T>(run: () => Promise<T>) => { const started = performance.now(); const result = await run(); latencies.push(performance.now() - started); return result; };

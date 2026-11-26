@@ -16,6 +16,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -66,12 +67,7 @@ test('unit:planned-files-only-a-hint — the scope, split, research and triage m
 });
 
 test('unit:planned-files-only-a-hint — a head outside the item\'s plannedFiles is accepted with no scope request, hold, blocker or decision', async () => {
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Hinted', plannedFiles: ['src/planned.ts'], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:planned-files-only-a-hint', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-  const pulled = await engine.pullAssignment(worker, { work: w.id }, randomUUID());
-  assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused));
-  await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: '/tmp/planned-files-hint', branch: 'graphyard/gy-1-1' }, randomUUID());
-  const submitted = await engine.execute(worker, 'submit', w.id, { epoch: 1, head }, randomUUID());
+  const submitted = await lifecycle(engine, operator, { type: 'chore',  title: 'Hinted', plannedFiles: ['src/planned.ts'], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:planned-files-only-a-hint', 'e2e:fixture'] }] }, { claim: worker, pull: true, workspace: { host: 'test', path: '/tmp/planned-files-hint', branch: 'graphyard/gy-1-1' }, submit: { head } });
   assert.equal(submitted.candidate?.sha, head, 'the head is the candidate');
   assert.equal(submitted.submission?.epoch, 1, 'the submission is accepted');
   assert.deepEqual([...submitted.observation?.files ?? []].sort(), ['docs/unplanned.md', 'src/elsewhere.ts'], 'every changed file is outside the plan');
@@ -80,13 +76,12 @@ test('unit:planned-files-only-a-hint — a head outside the item\'s plannedFiles
   assert.equal(submitted.violations.length, 0, 'no violation');
   for (const field of retired) assert.equal(field in submitted, false, `no ${field}`);
   assert.ok(!submitted.gates.some(gate => gate.reasons.some(reason => /\bscope\b|plannedFiles|planned files/i.test(reason))), 'no gate holds it on its scope');
-  assert.deepEqual((await events(w.id)).filter(kind => judged.test(kind)), [], 'nothing requested, widened or judged it');
+  assert.deepEqual((await events(submitted.id)).filter(kind => judged.test(kind)), [], 'nothing requested, widened or judged it');
 });
 
 test('unit:planned-files-only-a-hint — an item with twelve planned source files is dispatched whole on the next cycle, with no decomposition or research record', async () => {
   const planned = Array.from({ length: 12 }, (_, index) => `src/module-${index + 1}.ts`);
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Broad', plannedFiles: planned, criteria: [1, 2, 3, 4, 5, 6].map(n => ({ id: `AC-${n}`, text: `Behaviour ${n}`, proofs: [`unit:broad-${n}`, 'e2e:fixture'] })) }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
+  let w = await lifecycle(engine, operator, { type: 'chore',  title: 'Broad', plannedFiles: planned, criteria: [1, 2, 3, 4, 5, 6].map(n => ({ id: `AC-${n}`, text: `Behaviour ${n}`, proofs: [`unit:broad-${n}`, 'e2e:fixture'] })) });
   const directory = await temporaryDirectory('planned-files-hint-loop');
   const credential = join(directory, 'token');
   await writeFile(credential, 'token-'.padEnd(40, 'x'), { mode: 0o600 });

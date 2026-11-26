@@ -23,6 +23,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { verificationQueue } from '../src/server/worker-verification-queue.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-worker-host-verification']) {
@@ -54,10 +55,7 @@ for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-work
     const worker = { id: 'worker', role: 'worker' as const, token: 'worker-fixture-token' };
     const coordinator = { id: 'host', role: 'coordinator' as const, token: 'host-fixture-token' };
     engine.principals = [operator, worker, coordinator];
-    let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Submit without host verification', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:fixture', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: worktree, branch }, randomUUID());
+    let work = await lifecycle(engine, operator, { type: 'chore', title: 'Submit without host verification', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:fixture', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: worktree, branch } });
     const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
     t.after(close);
     const url = serverUrl;

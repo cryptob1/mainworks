@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +15,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3912: changing the owner while an attempt is in flight never strands its work. complete accepts
 // commits authored with the current owner, the owner recorded on the attempt at its claim, or the
@@ -43,9 +43,7 @@ test('integration:owner-change-keeps-in-flight-work-completable — the claim re
     const operator = { id: 'operator', role: 'admin', sessionKind: 'human' } as const, worker = { id: 'worker-a', role: 'worker', sessionKind: 'ai' } as const;
     const setOwner = (owner: { name: string; email: string }) => store.pool.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', ['operator', 'owner.set', JSON.stringify(owner)]);
     await setOwner(ada);
-    let item = await engine.execute(operator, 'create', null, { title: 'Keep work', type: 'chore', criteria: [{ id: 'AC-1', text: 'Keep it', proofs: ['e2e:keep'] }] }, randomUUID());
-    item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-    item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
+    let item = await lifecycle(engine, operator, { title: 'Keep work', type: 'chore', criteria: [{ id: 'AC-1', text: 'Keep it', proofs: ['e2e:keep'] }] }, { claim: worker });
     assert.deepEqual(item.lastAssignment?.checkInOwner, ada, 'the claim records the owner in force');
     await setOwner(grace);
     const claimOwner = item.lastAssignment!.checkInOwner;

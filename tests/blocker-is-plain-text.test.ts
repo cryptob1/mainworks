@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Engine } from '../src/engine.js';
 import { answerHumanDecision, listHumanRequests, requestHumanDecision } from '../src/server/waits.js';
 import { buildBoard } from '../src/model/board.js';
@@ -27,13 +28,7 @@ useTestStore('blocker-is-plain-text', {}, ctx => {
   services = { engine, repository: 'owner/project', principals: [] } as unknown as Services;
 });
 
-async function claimed(title: string) {
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:blocker-is-plain-text', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-  const pulled = await engine.pullAssignment(worker, { work: w.id }, randomUUID());
-  assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused));
-  return pulled.assigned!;
-}
+const claimed = (title: string) => lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:blocker-is-plain-text', 'e2e:fixture'] }] }, { claim: worker, pull: true });
 const derived = ['blockerProbe', 'blockerClass', 'class', 'kind', 'probe'];
 
 test('unit:blocker-is-plain-text — blocked sets the item\'s blocker as that string with nothing derived from it, and unblock leaves the item claimable', async () => {
