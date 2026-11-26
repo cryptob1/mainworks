@@ -35,6 +35,8 @@ export interface FakeHost {
   tamperSlirpChecksum?: boolean;
   /** GY-3834: not prepared; the owner's own login (vish) opens a plain shell whose sudo is the stand-in, so `host add vish@HOST` prepares it over SSH. */
   owner?: boolean;
+  /** GY-3879: what `sudo -u USER` runs may write only that user's home, the run directory and the log (Landlock), as a real unprivileged user may; root's lines write anywhere. */
+  confineUser?: boolean;
 }
 
 /** The operator public key the fixture authorizes on every host (the wrapper reads no key material). */
@@ -157,6 +159,7 @@ D='${dir}'
 case "$3" in /etc/*) exec /usr/bin/grep "$1" "$2" "$D$3" ;; esac
 exec /usr/bin/grep "$@"
 `,
+  'landlock-run': landlockRun,
   tailscale: `#!/bin/sh
 [ "$1 $2" = "debug prefs" ] && echo '{ "RunSSH": ${host.tailscale ? 'true' : 'false'} }'
 `,
@@ -166,6 +169,7 @@ echo "sshd $*" >> "$D/log"
 `,
   'ssh-keygen': `#!/bin/sh
 D='${dir}'
+[ "$1" = -Y ] && exec /usr/bin/ssh-keygen "$@"
 echo "ssh-keygen $*" >> "$D/log"
 `,
   // GY-3697: the user unit reads enabled and active unless the test writes unit-enabled or unit-active.
@@ -195,7 +199,7 @@ full="$*"
 while :; do case "$1" in *=*) export "$1"; shift ;; *) break ;; esac; done
 export HOME="$D/home/$user" USER="$user" LOGNAME="$user" FAKE_SSH_USER="$user"
 echo "sudo $full" >> "$D/log"
-exec "$@"
+${host.confineUser ? 'exec python3 -I -B "$D/standins/landlock-run" "$D" "$HOME" "$@"' : 'exec "$@"'}
 `,
   // GY-3419: a host without the rootless tools installs no setuptool stand-in; the curl stand-in
   // that serves the downloads is added by runPrepareScript with its serve directory.
@@ -213,6 +217,21 @@ cp "$D/standins/rootless-docker-template" "$HOME/bin/docker"
 echo "dockerd-rootless-setuptool.sh install for $USER at $XDG_RUNTIME_DIR/docker.sock" >> "$D/log"
 ` }),
 });
+
+/** GY-3879: run argv[3:] able to write only beneath the user's home, the host's run directory and log, and /dev (Landlock ABI 3+). */
+const landlockRun = `import ctypes, os, struct, sys
+libc = ctypes.CDLL(None, use_errno=True)
+dirs, files = 2 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384, 2 | 16384
+ruleset = libc.syscall(444, struct.pack('Q', dirs), 8, 0)
+assert ruleset >= 0, os.strerror(ctypes.get_errno())
+for path, access in ((sys.argv[2], dirs), (os.path.join(sys.argv[1], 'run'), dirs), ('/dev', dirs), (os.path.join(sys.argv[1], 'log'), files)):
+    if os.path.exists(path):
+        fd = os.open(path, os.O_PATH)
+        assert libc.syscall(445, ruleset, 1, struct.pack('=Qi', access, fd), 0) == 0, os.strerror(ctypes.get_errno())
+        os.close(fd)
+assert libc.prctl(38, 1, 0, 0, 0) == 0 and libc.syscall(446, ruleset, 0) == 0, os.strerror(ctypes.get_errno())
+os.execvp(sys.argv[3], sys.argv[3:])
+`;
 
 /** GY-3419: the fixture's answer to the downloads the printed script makes when the host lacks the rootless tools. */
 const slirpFixture = `#!/bin/sh
@@ -264,7 +283,7 @@ echo "dockerd-rootless-setuptool.sh install for $USER at $XDG_RUNTIME_DIR/docker
 
 /** The host's fixture root: etc, usr-local-bin and the privileged stand-ins. */
 async function setupHostRoot(host: FakeHost, dir: string) {
-  await Promise.all(['etc/ssh', 'etc/systemd/system', 'usr-local-bin', 'standins'].map(part => mkdir(join(dir, part), { recursive: true })));
+  await Promise.all(['etc/ssh', 'etc/systemd/system', 'usr-local-bin', 'standins', 'run'].map(part => mkdir(join(dir, part), { recursive: true })));
   await Promise.all([
     writeFile(join(dir, 'etc', 'passwd'), 'root:x:0:0:root:/root:/bin/sh\n'),
     writeFile(join(dir, 'etc', 'group'), 'root:x:0:\n'),
@@ -278,7 +297,7 @@ async function setupHostRoot(host: FakeHost, dir: string) {
 }
 
 /** The one rewrite of a prepare script: the test is not root, so the shim's /usr/local/bin and the files it writes under /etc/ssh and /etc/systemd/system land inside the fixture. */
-const fixturePaths = (script: string, dir: string) => script.replaceAll('/usr/local/bin/graphyard-host-shim', join(dir, 'usr-local-bin', 'graphyard-host-shim'))
+const fixturePaths = (script: string, dir: string) => script.replaceAll('/usr/local/bin/graphyard-h', join(dir, 'usr-local-bin', 'graphyard-h'))
   .replaceAll('/etc/ssh/', `${dir}/etc/ssh/`).replaceAll('/etc/systemd/system/', `${dir}/etc/systemd/system/`);
 
 /** Run the printed script itself against the stand-in host: gy-compute, linger, subuid, shim, key, rootless Docker. */
@@ -391,7 +410,7 @@ PATH="$home/bin:/usr/bin:/bin"
 # GY-3834: the owner's login on an unprepared host: its sudo and privileged tools are the stand-ins, its paths the fixture's.
 if [ "$user" = ${ownerLogin} ] && [ -d "$dir/standins" ]; then
   PATH="$dir/standins:$PATH"
-  last=$(printf '%s' "$last" | sed "s#/usr/local/bin/graphyard-host-shim#$dir/usr-local-bin/graphyard-host-shim#g; s#/etc/ssh/#$dir/etc/ssh/#g; s#/etc/systemd/system/#$dir/etc/systemd/system/#g")
+  last=$(printf '%s' "$last" | sed "s#/usr/local/bin/graphyard-h#$dir/usr-local-bin/graphyard-h#g; s#/etc/ssh/#$dir/etc/ssh/#g; s#/etc/systemd/system/#$dir/etc/systemd/system/#g")
 fi
 exec sh -c "$last"
 `);
