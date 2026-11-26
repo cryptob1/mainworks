@@ -653,7 +653,7 @@ async function catalogImage(input: { root: string; commit: string; image: string
   const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}`).digest('hex');
   const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.commit);
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
-  const name = `graphyard-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
+  const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
   try {
     await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
     await local('docker', ['commit', name, tag]);
