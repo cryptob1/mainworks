@@ -22,13 +22,14 @@ function checkOne(name: string, text: string) {
   for (const old of [/~\/\.config\/graphyard\//, /(^|[^\w/])\.graphyard\b/]) assert.doesNotMatch(text, old, `${name} names the Mainworks path, not ${old}`);
 }
 
-test('e2e:mainworks-docs-names — guide master and README name MAINWORKS_URL and no GRAPHYARD_URL outside the one honoured line', () => {
-  for (const [name, text] of [['README.md', readme], ['guide master', guide('master')]] as const) {
-    assert.ok(text.includes('MAINWORKS_URL'), `${name} names MAINWORKS_URL`);
-    assert.equal(text.split('\n').filter((line) => line.includes('GRAPHYARD_URL') && !honoured.test(line)).length, 0, `${name} names GRAPHYARD_URL only in the honoured line`);
-    assert.equal(text.split('\n').filter((line) => honoured.test(line)).length, 1, `${name} has exactly one honoured line`);
-    checkOne(name, text);
-  }
+test('e2e:mainworks-docs-names — guide master names MAINWORKS_URL and no GRAPHYARD_URL outside the one honoured line, and README names only the legacy command notice', () => {
+  const master = guide('master');
+  assert.ok(master.includes('MAINWORKS_URL'), 'guide master names MAINWORKS_URL');
+  assert.equal(master.split('\n').filter((line) => line.includes('GRAPHYARD_URL') && !honoured.test(line)).length, 0, 'guide master names GRAPHYARD_URL only in the honoured line');
+  assert.equal(master.split('\n').filter((line) => honoured.test(line)).length, 1, 'guide master has exactly one honoured line');
+  checkOne('guide master', master);
+  checkOne('README.md', readme);
+  assert.match(readme, /the `graphyard` command and settings still work/);
 });
 
 test('e2e:mainworks-docs-names — every guide topic and the index name only MAINWORKS_* settings and Mainworks paths', () => {

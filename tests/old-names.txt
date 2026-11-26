@@ -80,6 +80,7 @@ POSTGRES_(USER|DB)=graphyard
 \bgraphyard-[\w-]+-(server|db)-1\b
 # The old command, where the docs say it still works
 [Tt]he (old )?\\?`?graphyard\\?`? command
+previously called Graphyard
 # Image tags installs built before the rename
 \bgraphyard-(local|trial):[\w.$-]+
 # The same names escaped inside regular expressions, and the database name in connection strings
