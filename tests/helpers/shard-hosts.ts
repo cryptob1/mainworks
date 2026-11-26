@@ -118,6 +118,8 @@ elif command == 'tag':
     s['images'][args[2]] = src
     if args[1] in s['warm']:
         s['warm'][args[2]] = s['warm'][args[1]]
+    if args[1] in s['deps']:
+        s['deps'][args[2]] = s['deps'][args[1]]
     save()
 elif command == 'save':
     log('save')
@@ -145,6 +147,9 @@ elif command == 'load':
     if data.get('deps') and os.path.isdir(data['deps']):
         s['deps'][data['name']] = data['deps']
     save()
+elif command == 'run' and '--rm' in args:
+    # GY-3936: the warm image's test database check; the stand-in image has no Postgres to start.
+    log('check')
 elif command == 'run':
     log('install')
     data = sys.stdin.buffer.read()

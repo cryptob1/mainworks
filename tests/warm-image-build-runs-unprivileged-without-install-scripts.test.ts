@@ -54,6 +54,7 @@ test('unit:warm-image-build-runs-unprivileged-without-install-scripts — warm-i
       }
       if (args[0] === 'images') return [...localImages].filter(t => t.startsWith('graphyard-warm:')).join('\n');
       if (args[0] === 'commit') { localImages.add(args.at(-1)!); return ''; }
+      if (args[0] === 'tag') { localImages.add(args[2]!); return ''; }
       if (args[0] === 'rm') return '';
       return '';
     }
