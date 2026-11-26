@@ -6,6 +6,7 @@ import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Engine } from '../src/engine.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -44,10 +45,7 @@ test(`${proof} — with every heavy-job slot held, the loop submits a recorded f
   const engine = new Engine(store, 600, 'owner/project');
   engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';
   const operator: Principal = { id: 'operator', role: 'admin' }, worker: Principal = { id: 'worker', role: 'worker' }, coordinator: Principal = { id: 'loop', role: 'coordinator' };
-  let work = await engine.execute(operator, 'create', null, { type: 'bug', title: 'Finished hotfix', criteria: [{ id: 'AC-1', text: 'Submitted at once', proofs: [proof, 'e2e:resubmit-without-verify'] }] }, randomUUID());
-  work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: worktree, branch }, randomUUID());
+  let work = await lifecycle(engine, operator, { type: 'bug', title: 'Finished hotfix', criteria: [{ id: 'AC-1', text: 'Submitted at once', proofs: [proof, 'e2e:resubmit-without-verify'] }] }, { claim: worker, workspace: { host: 'test', path: worktree, branch } });
   // The worker's complete failed on a host fault; its blocker names the head it finished at.
   work = await engine.execute(worker, 'blocked', work.id, { epoch: 1, reason: 'complete failed: the trial host has no image', finishedHead: head }, randomUUID());
   assert.equal(work.finishedBlockerHead?.head, head);

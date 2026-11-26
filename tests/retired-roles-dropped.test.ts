@@ -15,6 +15,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
 const retired = ['approver', 'escalation-handler', 'diagnostician', 'doctor', 'acceptance', 'planner'];
@@ -96,9 +97,7 @@ test('e2e:retired-roles-dropped — an ordinary worker blocker reaches the regis
   setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
   const store = await withDatabase('retired-escalation'); await store.init(); t.after(() => store.close());
   const engine = new Engine(store, 120, 'owner/project'), worker = { id: 'ordinary-worker', role: 'worker' as const };
-  let item = await engine.execute(admin, 'create', null, { title: 'Fixture implementation', type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:retired-roles-dropped'] }] }, randomUUID());
-  item = await engine.execute(admin, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
+  let item = await lifecycle(engine, admin, { title: 'Fixture implementation', type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:retired-roles-dropped'] }] }, { claim: worker });
   const reason = 'Fixture dependency is unavailable';
   item = await engine.execute(worker, 'blocked', item.id, { epoch: item.epoch, reason }, randomUUID());
   const config = masterConfigSchema.parse(base), state = emptyDaemonState(config), prompts: string[] = [];

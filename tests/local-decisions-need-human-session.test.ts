@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import type { Principal, Work } from '../src/model.js';
+import type { Principal } from '../src/model.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // The local viewer reads; it never acts. Every mutation and every human-only decision still needs
 // a signed-in human session, and an agent's credential neither answers one nor obtains a session.
@@ -22,9 +23,7 @@ test('integration:local-decisions-need-human-session — an anonymous local muta
   const { url, close } = await listen(server(engine, [operator, agentAdmin, coordinator, worker].map(actor => ({ ...actor, token: token(actor) }))));
   const post = (path: string, body: unknown, bearer?: string) => localRequest(url, `/api/${path}`, { method: 'POST', body, headers: { 'Idempotency-Key': randomUUID(), ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) } });
   try {
-    let work: Work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Needs an account', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
+    let work = await lifecycle(engine, operator, { type: 'chore', title: 'Needs an account', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: worker });
     const parked = await post(`work/${work.id}/park`, { epoch: work.epoch, kind: 'money-or-accounts', needed: 'A provider account', reason: 'The proof needs a paid account', recommendation: 'Approve', why: 'Nothing else unblocks the item.' }, token(worker));
     assert.equal(parked.status, 200, JSON.stringify(parked.body));
     const answer = { request: parked.body.humanRequest.id, outcome: 'provided', answer: 'Opened it' };

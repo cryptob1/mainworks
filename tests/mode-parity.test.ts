@@ -19,6 +19,7 @@ import type { Observation, Work } from '../src/model/work.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { git } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1528: mode parity. One fixture item runs through evaluate (the landability verdict, and the
@@ -117,13 +118,7 @@ test('unit:mode-parity-github-snapshot — the engine\'s own submit of the fixtu
   store = await withDatabase('mode-parity'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.baseBranch = 'main';
-  const assigned = async (branch: string) => {
-    let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'parity fixture', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'e2e:fixture'] }] }, randomUUID());
-    w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-    const pulled = await engine.pullAssignment(worker, { work: w.id }, randomUUID());
-    assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused));
-    return engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: `/w/${branch}`, branch }, randomUUID());
-  };
+  const assigned = (branch: string) => lifecycle(engine, operator, { type: 'chore',  title: 'parity fixture', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'e2e:fixture'] }] }, { claim: worker, pull: true, workspace: { host: 'test', path: `/w/${branch}`, branch } });
 
   // control-plane: the head, observed from the shared object store, is accepted.
   const branch = 'graphyard/gy-2-1';

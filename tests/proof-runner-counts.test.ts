@@ -23,6 +23,7 @@ import { countJunitCases, countProofCases, junitCases } from '../src/proof-runne
 import { runProof } from '../src/cli/verify.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 const own = 'unit:tests/proof-runner-counts.test.ts';
 const operator: Principal = { id: 'operator', role: 'admin' };
@@ -97,11 +98,7 @@ test(`${own} — a vitest repository's passing proof records executed >= 1 and t
       git(checkout, 'checkout', '-qb', branch, baseTip);
       await write('change.txt', 'change'); git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'change');
       const head = git(checkout, 'rev-parse', 'HEAD');
-      let work = await engine.execute(operator, 'create', null, { type: 'chore', title: mode, criteria: [{ id: 'AC-1', text: 'Works', proofs: [proof, 'e2e:fixture'] }, { id: 'AC-2', text: 'Observe after deployment', proofs: ['manual:post-deploy/observed'] }] }, randomUUID());
-      work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-      work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-      await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'fixture', path: join(directory, branch), branch }, randomUUID());
-      work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, randomUUID());
+      let work = await lifecycle(engine, operator, { type: 'chore', title: mode, criteria: [{ id: 'AC-1', text: 'Works', proofs: [proof, 'e2e:fixture'] }, { id: 'AC-2', text: 'Observe after deployment', proofs: ['manual:post-deploy/observed'] }] }, { claim: worker, workspace: { host: 'fixture', path: join(directory, branch), branch }, submit: { head } });
       git(checkout, 'checkout', '-q', 'main');
       const trials: MergeRecordEvent[] = [];
       const reads = mergeWriterReads(masterConfigSchema.parse({ version: 1, repository: 'owner/proofs', baseBranch: 'main', url, credentialFile: '/unused', cliPath: '/unused', githubAppId: 1, hostId: 'fixture', masterAgentName: 'fixture', workers: [], run: { mergeWriter: { deployKeyFile: join(directory, 'unused-key') } } }), checkout, direct, {
