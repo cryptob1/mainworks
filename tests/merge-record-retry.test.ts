@@ -25,10 +25,8 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
 const gates = ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name !== 'merge', reasons: name !== 'merge' ? [] : ['merge refused'] }));
 const candidate = { sha: sha('head1'), baseSha: tip, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' };
-const submitted = () => workFixture({
-  id: 'w1', key: 'GY-1', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 600_000),
-  epoch: 1, submission: { epoch: 1, pr: 1 }, candidate, gates, stage: 'build',
+const submitted = () => workFixture({ id: 'w1', key: 'GY-1', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 600_000), epoch: 1, submission: { epoch: 1, pr: 1 }, candidate, gates, stage: 'build',
   observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip, baseTipContained: true, at: iso(start) },
 });
 

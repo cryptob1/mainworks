@@ -22,6 +22,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3235: on Huck's install the served repository is not the checkout the CLI release runs from.
 // Reviewer launches were confined against the launcher's checkout, so the whole served repository,
@@ -55,13 +56,11 @@ test(`e2e:codex-reviewer-git-write — ${layout}: a codex reviewer launched for 
     if (layout === 'linked-worktree') git(repo, 'worktree', 'add', '-q', '--detach', root);
     await setupMaster(root, { url, token: credentials[0].token, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks', run: { worktreeRoot: join(base, 'sessions') } });
     await saveReviewerProfile(root, { name: 'reviewer-codex', agentName: 'review-codex-1', kind: 'codex' });
-    const now = new Date().toISOString();
-    const candidate = { sha: head, baseSha, pr: 7, branch: 'graphyard/gy-7-1', author: worker.id };
-    const work = { id: randomUUID(), key: 'GY-7', title: 'Fixture', description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
-      policy: { checks: ['test'], review: true }, stage: 'review', revision: 3, policyRevision: 1, createdAt: now, updatedAt: now, stageEnteredAt: now, ready: true, epoch: 1, lease: null,
-      workspaces: [], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: [worker.id],
+    const now = new Date().toISOString(), candidate = { sha: head, baseSha, pr: 7, branch: 'graphyard/gy-7-1', author: worker.id };
+    const work = workFixture({ id: randomUUID(), key: 'GY-7', title: 'Fixture', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], systemDriven: undefined,
+      stage: 'review', revision: 3, createdAt: now, updatedAt: now, stageEnteredAt: now, epoch: 1, candidate, submission: { epoch: 1, pr: 7 }, gates: [], implementers: [worker.id],
       observation: { source: 'control-plane', at: now, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, files: ['src/a.ts'],
-        scopeFiles: [{ path: 'src/a.ts', status: 'modified', sha: 'f'.repeat(40), additions: 1, deletions: 0, binary: false }], baseTip: baseSha, baseTipContained: true } } as unknown as Work;
+        scopeFiles: [{ path: 'src/a.ts', status: 'modified', sha: 'f'.repeat(40), additions: 1, deletions: 0, binary: false }], baseTip: baseSha, baseTipContained: true } } as never);
     await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
 
     const probed: string[][] = [], calls: string[][] = [];

@@ -28,8 +28,7 @@ const iso = (offsetMs: number) => new Date(clock + offsetMs).toISOString();
 
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 1127, branch: 'graphyard/gy-1127-1', author: 'implementer' };
-  return workFixture({ id: 'work-1127', key: 'GY-1127', title: 'Producer runtime exhaustion', type: 'bug', priority: 0,
-    criteria: [{ id: 'AC-1', text: 'Producer runtime notice', proofs: ['unit:never-started-producers-request-no-rework'] }],
+  return workFixture({ id: 'work-1127', key: 'GY-1127', title: 'Producer runtime exhaustion', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Producer runtime notice', proofs: ['unit:never-started-producers-request-no-rework'] }],
     stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 1127 },
     observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }

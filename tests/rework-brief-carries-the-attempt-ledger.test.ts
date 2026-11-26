@@ -17,8 +17,7 @@ function workWithHistory(history: Entry[], overrides: Partial<Work> = {}): Work 
     createdAt: at(0), updatedAt: latest.at, stageEnteredAt: latest.at, epoch: latest.attempt,
     candidate: { sha: head, baseSha: base, pr: 500, branch: 'graphyard/gy-500-1', author: 'worker' }, submission: { epoch: latest.attempt, pr: 500 },
     reworkRequested: true, lastRework: { reason: latest.reason, binding: latest.binding, at: latest.at } as never, reworkHistory: history as never,
-    pipeline: { attempts: [], submittedAt: at(1), resubmittedAt: null, reworkRounds: history.length, interventions: { blocked: 0, requirements: 0 } }, gates: [], ...overrides,
-  });
+    pipeline: { attempts: [], submittedAt: at(1), resubmittedAt: null, reworkRounds: history.length, interventions: { blocked: 0, requirements: 0 } }, gates: [], ...overrides });
 }
 
 function ledgerLines(brief: string): string[] {
@@ -86,8 +85,7 @@ test(`${proof} — a 30,000-character verdict carries up to reworkBriefMax and n
   const reviewed = workFixture({ id: 'gy-500', key: 'GY-500', title: 'Big verdict', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:x'] }], stage: 'review',
     revision: 2, createdAt: at(0), updatedAt: at(5), stageEnteredAt: at(5), epoch: 1, candidate, submission: { epoch: 1, pr: 500 }, gates: [],
     observation: { candidate, checks: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/a.ts'], scopeFiles: [], at: at(5), baseTip: base, baseTree: base, baseTipContained: true, reviews: [] } as never,
-    productReview: { reviewer: 'prod-1', sha: head, verdict: 'changes-requested', findings: padding, screenshots: [], at: at(5) } as never,
-  });
+    productReview: { reviewer: 'prod-1', sha: head, verdict: 'changes-requested', findings: padding, screenshots: [], at: at(5) } as never });
 
   const rework = neededRework(reviewed);
   assert.ok(rework, 'neededRework produces a rework for the product review verdict');

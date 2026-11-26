@@ -377,7 +377,7 @@ test('integration:role-scoped-harness-rules — worker, reviewer and producer se
     const credential = await token('worker');
     const profile: WorkerProfile = { name: 'claude-worker', principal: 'graphyard-claude-1', agentName: 'engineering-claude-1', mode: 'launch', kind: 'claude', credentialFile: credential, agentArgs: [], approvals: 'auto', environment: {} };
     const worker = recordedRuns();
-    await dispatchWork(root, work({ stage: 'ready', lease: null, submission: null, candidate: null, observation: null, gates: [{ name: 'ready', passed: true, reasons: [] }] }), profile,
+    await dispatchWork(root, work({ stage: 'ready', submission: null, candidate: null, observation: null, gates: [{ name: 'ready', passed: true, reasons: [] }] }), profile,
       { prepare: async () => ({ epoch: 4, path: join(root, 'assigned'), base: 'c'.repeat(40), branch: 'graphyard/gy-69-4' }), release: async () => {}, headless: worker.exec, probe: fleet() });
     const workerFile = sessionHarnessFile(root, 'worker', 'claude-worker');
     const [run] = worker.runs;

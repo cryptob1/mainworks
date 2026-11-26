@@ -24,14 +24,11 @@ const WITNESS = 'manual:witness-only';
 
 function item(evidence: Partial<Evidence>[] = [{}], extra: Partial<Work> = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 901, branch: 'graphyard/gy-901-1', author: 'worker' };
-  return workFixture({
-    id: 'gy-901', key: 'GY-901', title: 'Follow-up triage', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Review follow-ups are triaged', proofs: [PROOF] }],
+  return workFixture({ id: 'gy-901', key: 'GY-901', title: 'Follow-up triage', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Review follow-ups are triaged', proofs: [PROOF] }],
     stage: 'acceptance', revision: 4, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 901 }, gates: [], producerProofs: [PROOF],
     evidence: evidence.map(entry => ({ id: 'e1', proof: PROOF, sha: head, baseSha: base, policyRevision: 1, result: 'fail' as const, executed: 0, skipped: 0, producer: 'trusted-producer', trusted: true, at, ...entry })),
     observation: { candidate, checks: [{ appId: 15368, name: 'test', result: 'success' }], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true, conversations: { required: true, unresolved: [] } },
-    ...extra,
-  } as never);
+      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true, conversations: { required: true, unresolved: [] } }, ...extra } as never);
 }
 
 test('unit:producer-prompt-manual-proof-judged — both producer prompts judge a manual proof and scope the title rule to unit/integration', () => {

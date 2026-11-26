@@ -13,6 +13,7 @@ import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -113,12 +114,8 @@ test('integration:overlapping-items-run-in-sequence — backlog items declaring 
 
 test('unit:overlapping-items-run-in-sequence — two released items declaring the same file, neither in flight, both dispatch in one cycle', async () => {
   const at = new Date(Date.now() - 3_600_000).toISOString();
-  const ready = (key: string, plannedFiles: string[]) => ({
-    id: `id-${key}`, key, title: key, description: '', type: 'chore', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 0, lease: null,
-    workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [], plannedFiles,
-  }) as unknown as Work;
+  const ready = (key: string, plannedFiles: string[]) => workFixture({ key, type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }],
+    createdAt: at, updatedAt: at, stageEnteredAt: at, plannedFiles });
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/c.token', cliPath: '/outside/bin/graphyard.mjs', repository, baseBranch: 'main', githubAppId: 1234,
     hostId: 'h', masterAgentName: 'graphyard-master-unit', autoMerge: true, mergeMethod: 'merge', workers: [profile('one', 'w1'), profile('two', 'w2'), profile('three', 'w3')] });
   const log: string[] = [];

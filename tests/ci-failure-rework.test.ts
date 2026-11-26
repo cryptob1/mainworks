@@ -15,8 +15,7 @@ function item(checks: Check[], extra: Partial<Work> = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 198, branch: 'graphyard/gy-245-1', author: 'worker' };
   return workFixture({
     id: 'gy-245', key: 'GY-245', title: 'Single merger', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
-    policy: { checks: ['test', 'typecheck'], review: true }, stage: 'test', revision: 4, policyRevision: 2, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate,
-    submission: { epoch: 1, pr: 198 }, gates: [],
+    policy: { checks: ['test', 'typecheck'], review: true }, stage: 'test', revision: 4, policyRevision: 2, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 198 }, gates: [],
     observation: observationFixture(candidate, { checks: checks.map(check => ({ appId: 15368, ...check })), at, baseTree: base, conversations: { required: true, unresolved: [] } } as Partial<Observation>),
     ...extra,
   } as never);

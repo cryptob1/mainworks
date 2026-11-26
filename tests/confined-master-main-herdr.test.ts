@@ -79,9 +79,8 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
     const candidate = { sha: HEAD, baseSha: BASE, pr: 7, branch: 'graphyard/gy-1-1', author: 'implementer' };
     const work = workFixture({ id: '1f0c9a5e-7b2d-4c8a-9f3e-6d5b4a3c2d10', key: 'GY-1', title: 'Migrated review', type: 'bug', priority: 1,
       criteria: [{ id: 'AC-1', text: 'The confined master session reaches the main Herdr', proofs: ['e2e:confined-master-main-herdr'] }],
-      stage: 'review', revision: 3, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
-      workspaces: [{ host: 'fixture-host', path: '/w/gy-1', branch: candidate.branch, epoch: 1, owner: 'implementer' }],
-      candidate, submission: { epoch: 1, pr: 7 },
+      stage: 'review', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+      workspaces: [{ host: 'fixture-host', path: '/w/gy-1', branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 7 },
       observation: { source: 'control-plane', candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: BASE, baseTree: sha40('tree'), baseTipContained: true },
       gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
     work.autoDispatch = { review: { id: 'fixture-review-request', kind: 'review', provider: 'github', pr: 7, sha: HEAD, baseSha: BASE, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'fixture review owed' }, producers: [], history: [] };

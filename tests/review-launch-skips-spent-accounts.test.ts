@@ -75,14 +75,10 @@ function makeReviewItem(key: string, requestId: string, at: string, extra: Parti
   return workFixture({
     id: randomUUID(), key, title: `Item ${key}`, type: 'bug', risk: 'sensitive', riskSource: 'operator', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
     stage: 'review', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: hostId, path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-worker-1' }],
-    candidate, submission: { epoch: 1, pr: 11 }, gates: [], implementers: ['graphyard-worker-1'],
-    autoDispatch: {
-      review: { id: requestId, kind: 'review', provider: 'github', pr: 11, sha: head, baseSha: base, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'review required' },
-      producers: [], history: [],
-    },
+    candidate, submission: { epoch: 1, pr: 11 }, gates: [], implementers: ['graphyard-worker-1'], autoDispatch: { producers: [], history: [],
+      review: { id: requestId, kind: 'review', provider: 'github', pr: 11, sha: head, baseSha: base, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'review required' } },
     observation: observationFixture(candidate, { source: 'control-plane', at, protected: false,
-      files: ['src/server/auth.ts'], scopeFiles: [{ path: 'src/server/auth.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }] }),
-    ...extra,
+      files: ['src/server/auth.ts'], scopeFiles: [{ path: 'src/server/auth.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }] }), ...extra,
   });
 }
 

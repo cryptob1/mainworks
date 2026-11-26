@@ -17,6 +17,7 @@ import type { Work } from '../src/model.js';
 import type { ChildRun } from '../src/child-runner.js';
 import type { StaticBuildShell } from '../src/release-project.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-1902: item previews over a simulated day of the real loop's cycles (`runCycle`). Items citing a
@@ -91,13 +92,11 @@ class World {
       this.docs.set(n, doc);
       const current = this.headOf(n, now), ended = now >= arrives(n) + (closed(n) ? 300 : 480) * minute;
       const candidate = current ? { sha: current, baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' } : null;
-      work.push({
-        ...doc, title: `Item ${n}`, description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'The home shows the change', proofs: ['e2e:site-home'] }],
-        policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(arrives(n)), updatedAt: iso(now), stageEnteredAt: iso(arrives(n)),
-        ready: true, epoch: 1, lease: null, workspaces: [], submission: current ? { epoch: 1, pr: n } : null, candidate, scenarioRequirements: [], evidence: [], blocker: null, violations: [],
+      work.push(workFixture({ ...doc, title: `Item ${n}`, priority: 1, criteria: [{ id: 'AC-1', text: 'The home shows the change', proofs: ['e2e:site-home'] }], systemDriven: undefined,
+        createdAt: iso(arrives(n)), updatedAt: iso(now), stageEnteredAt: iso(arrives(n)), epoch: 1, submission: current ? { epoch: 1, pr: n } : null, candidate, observation: undefined,
         gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name !== 'test' && name !== 'merge', reasons: [] })),
         ...(ended ? closed(n) ? { stage: 'done', closure: { kind: 'obsolete', reason: 'Not needed', ref: null, by: 'operator', at: iso(now), from: 'build' } } : { stage: 'done', delivery: { mergedAt: iso(now), mergeSha: current!, authorizationRevision: 1 } } : { stage: 'build' }),
-      } as unknown as Work);
+      } as never));
     }
     return work;
   }

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { withDatabase } from './postgres.js';
 import { listen } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { workFixture } from './work-fixture.js';
 import { AgentRegistry } from '../../src/agent-registry.js';
 import { Engine } from '../../src/engine.js';
 import { loadMasterConfig, setupMaster } from '../../src/master/config.js';
@@ -59,14 +60,12 @@ export async function reviewAbandonHarness(name: string) {
   async function insertReviewItem(key: string) {
     const candidate = { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
     const request = { id: randomUUID(), kind: 'review' as const, provider: 'github' as const, reason: 'fixture needs independent review', pr: 7, sha: head, baseSha: base, policyRevision: 1, state: 'requested' as const, requestedAt: now() };
-    const work = { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-      criteria: [{ id: 'AC-1', text: 'The flag reads held', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-      stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-      workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false,
-      scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
-      autoDispatch: { review: request, producers: [], history: [] },
+    const work = workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'The flag reads held', proofs: ['unit:works'] }],
+      stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1,
+      workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 },
+      gates: [], implementers: ['graphyard-claude-1'], autoDispatch: { review: request, producers: [], history: [] },
       observation: { source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-        files: ['Dockerfile'], scopeFiles: [{ path: 'Dockerfile', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true } } as unknown as Work;
+        files: ['Dockerfile'], scopeFiles: [{ path: 'Dockerfile', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true } as never });
     await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
     return work;
   }

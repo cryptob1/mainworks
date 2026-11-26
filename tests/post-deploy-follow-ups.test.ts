@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Work } from '../src/model.js';
 import { criterionWindowDays, criterionWindowHours, observationWindowFor } from '../src/model/observation-window.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-1698: a post-deploy follow-up for a windowed criterion — an intervention rate below a threshold
 // per N days, a hold for N consecutive days — can produce nothing before the window has run. GY-1689
@@ -17,14 +18,12 @@ const gy1685Id = 'b896515a-0def-4a4d-95f5-e7de00578d81';
 const rate = { id: 'AC-1', text: 'below 3 per 7 days', proofs: ['manual:post-deploy/rate'] };
 
 /** GY-1685 as delivered: merged at 03:11Z, its deployment observed on the release that is its own merge. */
-const delivered = (overrides: Partial<Work> = {}): Work => ({
-  id: gy1685Id, key: 'GY-1685', title: 'Recurring escalation interventions at the build stage: 3 in 7 days', description: '', type: 'bug', priority: 1,
-  dependencies: [], criteria: [rate], policy: { checks: ['test', 'typecheck'], review: true }, 
-  stage: 'done', revision: 40, policyRevision: 1, createdAt: '2026-10-11T02:07:11.287Z', updatedAt: mergedAt, stageEnteredAt: mergedAt, ready: true, epoch: 1, lease: null,
-  workspaces: [{ host: 'vishrog', path: '/w', branch: 'graphyard/gy-1685-1', epoch: 1, owner: 'graphyard-codex-2' }], candidate: null, submission: { epoch: 1, pr: 1110 }, reworkRequested: false,
-  scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [], violations: [],
+const delivered = (overrides: Partial<Work> = {}): Work => workFixture({
+  id: gy1685Id, key: 'GY-1685', title: 'Recurring escalation interventions at the build stage: 3 in 7 days', type: 'bug', priority: 1, criteria: [rate],
+  policy: { checks: ['test', 'typecheck'], review: true }, systemDriven: undefined, stage: 'done', revision: 40, createdAt: '2026-10-11T02:07:11.287Z', updatedAt: mergedAt, stageEnteredAt: mergedAt,
+  epoch: 1, workspaces: [{ host: 'vishrog', path: '/w', branch: 'graphyard/gy-1685-1', epoch: 1, owner: 'graphyard-codex-2' }], submission: { epoch: 1, pr: 1110 }, gates: [],
   delivery: { mergeSha, mergedAt, evidenceAsOf: mergedAt, authorizationRevision: 334 } as never, ...overrides,
-} as Work);
+});
 const iso = (ms: number) => new Date(ms).toISOString();
 
 // GY-1727: on 2026-10-12 master verify-deployment filed GY-1721 (GY-1684 AC-1, a rate per 7 days) and

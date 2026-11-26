@@ -13,7 +13,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { acquireVerificationSlot, declarationSlot, heldSlots, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { masterConfigSchema } from '../src/master.js';
-import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3449: a batch gate on e27e5826 timed out while a step of its check that cannot be cancelled —
@@ -153,12 +153,10 @@ test('e2e:gate-releases-heavy-slot — after a gate timeout, a queued merge tria
   const other = await acquireVerificationSlot({ directory: yard.slots, label: 'npm test (other project)' });
   const candidate = { sha: sha('head2'), baseSha: yard.tip, pr: 2, branch: 'graphyard/gy-2-1', author: 'worker' };
   const gates = ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name !== 'merge', reasons: [] }));
-  const work = [{
-    id: 'w2', key: 'GY-2', title: 'Queued merge', description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-    policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), ready: true, epoch: 1, lease: null,
-    workspaces: [], submission: { epoch: 1, pr: 2 }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [], sessions: [], gates, stage: 'build', mergeLedger: null,
+  const work = [workFixture({ id: 'w2', key: 'GY-2', title: 'Queued merge', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+    createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), epoch: 1, submission: { epoch: 1, pr: 2 }, candidate, sessions: [], gates, stage: 'build', mergeLedger: null,
     observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: yard.tip, baseTipContained: true, at: iso(start) },
-  }] as unknown as Work[];
+  } as never)];
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
   const state = emptyDaemonState(config);

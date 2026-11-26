@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
@@ -173,15 +174,11 @@ test('e2e:agy-large-prompt — a review of a change with a very large diff run o
     text: `Rename sweep criterion: ${'every reference in module group updated cleanly without regression; '.repeat(1100)}`,
     proofs: ['unit:works'],
   }];
-  const work = await insert({
-    id: randomUUID(), key: 'GY-9696', title: 'Large rename sweep', description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: bigCriteria, policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 94 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
+  const work = await insert(workFixture({ id: randomUUID(), key: 'GY-9696', title: 'Large rename sweep', priority: 1, criteria: bigCriteria, systemDriven: undefined,
+    stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1, candidate, submission: { epoch: 1, pr: 94 }, gates: [], implementers: ['graphyard-claude-1'],
+    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }],
     observation: { source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['sweep.ts'], scopeFiles: [{ path: 'sweep.ts', status: 'modified', sha: head, additions: 2401, deletions: 2400, binary: false }], baseTip: base, baseTipContained: true },
-  } as unknown as Work);
+      files: ['sweep.ts'], scopeFiles: [{ path: 'sweep.ts', status: 'modified', sha: head, additions: 2401, deletions: 2400, binary: false }], baseTip: base, baseTipContained: true } as never }));
 
   // Inject record/head/base env into the agy runtime for the review launch.
   const config = await loadMasterConfig(root);

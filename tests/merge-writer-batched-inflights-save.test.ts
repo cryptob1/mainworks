@@ -11,6 +11,7 @@ import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3672: with every trial slot taken by a batch of compatible heads (GY-3625), the merge writer holds
 // more in-flight heads than the parallel limit; its state must still save on every cycle, one entry per head.
@@ -31,16 +32,12 @@ test('integration:merge-writer-batched-inflights-save — parallel limit full of
     return Array.from({ length: count }, (_, index) => index + 1).map(n => {
       const ledger = folded[`GY-${n}`] ?? null, delivered = ledger?.state === 'reconciled';
       const candidate = { sha: sha(`head${n}`), baseSha: base, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-      return {
-        id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, type: 'feature', description: '', priority: 1, dependencies: [],
-        criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true },
-        revision: 1, policyRevision: 1, createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
-        ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false,
-        scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: ledger,
+      return workFixture({ id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+        createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000), epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger, systemDriven: undefined,
         observation: { source: 'control-plane', candidate, files: [`item-${n}.txt`], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: main[0], baseTipContained: true, at: iso(start) },
         gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
         ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt!, mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),
-      } as unknown as Work;
+      } as never);
     });
   };
   const reads: MergeWriterReads = {

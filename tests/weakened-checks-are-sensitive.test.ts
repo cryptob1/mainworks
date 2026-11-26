@@ -5,32 +5,15 @@ import { mainworksChecksChanged, reviewedBeforeMerge } from '../src/model/risk-c
 import { evaluate } from '../src/model-boundary/gates.js';
 import type { Work } from '../src/model/work.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
-const baseWork = (scopeFiles: NonNullable<NonNullable<Work['observation']>['scopeFiles']>): Work => ({
-  id: 'work-1',
-  key: 'GY-9999',
-  title: 'Test change',
-  type: 'bug',
-  stage: 'build',
-  ready: true,
-  revision: 1,
-  policyRevision: 1,
-  createdAt: '2026-11-22T00:00:00.000Z',
-  updatedAt: '2026-11-22T00:00:00.000Z',
-  stageEnteredAt: '2026-11-22T00:00:00.000Z',
-  criteria: [{ id: 'AC-1', text: 'works', proofs: [] }],
-  dependencies: [],
-  plannedFiles: [],
-  workspaces: [],
-  policy: { checks: [], review: true },
-  violations: [],
-  evidence: [],
-  gates: [],
-  submission: { sha: 'a'.repeat(40), pr: 1, by: 'worker-1', at: '2026-11-22T00:00:00.000Z' },
+const baseWork = (scopeFiles: NonNullable<NonNullable<Work['observation']>['scopeFiles']>): Work => workFixture({ id: 'work-1', key: 'GY-9999', title: 'Test change', type: 'bug', stage: 'build',
+  createdAt: '2026-11-22T00:00:00.000Z', updatedAt: '2026-11-22T00:00:00.000Z', stageEnteredAt: '2026-11-22T00:00:00.000Z', criteria: [{ id: 'AC-1', text: 'works', proofs: [] }],
+  plannedFiles: [], policy: { checks: [], review: true }, gates: [], submission: { sha: 'a'.repeat(40), pr: 1, by: 'worker-1', at: '2026-11-22T00:00:00.000Z' } as never,
   candidate: { sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 1, branch: 'graphyard/gy-9999-1', author: 'worker-1' },
   observation: observationFixture({ sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 1, branch: 'graphyard/gy-9999-1', author: 'worker-1' },
     { source: 'control-plane', mergeBase: 'b'.repeat(40), protected: false, files: scopeFiles.map(f => f.path), scopeFiles, at: '2026-11-22T00:00:00.000Z' }),
-} as unknown as Work);
+});
 
 test('unit:weakened-checks-are-sensitive — modifying or removing existing tests, e2e cases, scripts/ci-tests.mjs, tests/helpers/**, or graphyard.json checks is sensitive; add-only stays normal; renamed test file is sensitive', () => {
   // 1. Existing test file modified or removed -> sensitive naming path

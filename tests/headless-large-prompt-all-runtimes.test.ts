@@ -19,6 +19,7 @@ import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3713: every built-in headless runtime, not only agy (GY-3696), takes a prompt past Linux's
 // 128 KiB MAX_ARG_STRLEN on stdin, so spawn never fails with E2BIG.
@@ -137,16 +138,13 @@ test('e2e:headless-large-prompt-all-runtimes — a review of a change with a ver
   await saveReviewerProfile(root, { name: 'reviewer-opencode', agentName: reviewer, kind: 'opencode', agentArgs: [] });
 
   const candidate = { sha: head, baseSha: base, pr: 94, branch: 'graphyard/gy-3594-1', author: 'graphyard-claude-1' };
-  const work = await insert({
-    id: randomUUID(), key: 'GY-9713', title: 'Large rename sweep', description: '', type: 'feature', priority: 1, dependencies: [],
+  const work = await insert(workFixture({ id: randomUUID(), key: 'GY-9713', title: 'Large rename sweep', priority: 1, systemDriven: undefined,
     criteria: [{ id: 'AC-1', text: `Rename sweep criterion: ${'every reference in module group updated cleanly without regression; '.repeat(1100)}`, proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 94 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
+    stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1, workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }],
+    candidate, submission: { epoch: 1, pr: 94 }, gates: [], implementers: ['graphyard-claude-1'],
     observation: { source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
       files: ['sweep.ts'], scopeFiles: [{ path: 'sweep.ts', status: 'modified', sha: head, additions: 2401, deletions: 2400, binary: false }], baseTip: base, baseTipContained: true },
-  } as unknown as Work);
+  } as never));
 
   const run = (command: string, args: string[], options?: { cwd?: string }) => {
     if (command === 'git') return execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });

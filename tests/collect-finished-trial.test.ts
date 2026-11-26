@@ -52,10 +52,8 @@ class World {
     return Array.from({ length: this.submitted }, (_, index) => index + 1).map(n => {
       const ledger = folded[`GY-${n}`] ?? null, delivered = ledger?.state === 'reconciled';
       const candidate = { sha: this.head(n), baseSha: base, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-      return workFixture({
-        id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, priority: 1, epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger,
-        criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-        createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
+      return workFixture({ id: `w${n}`, key: `GY-${n}`, title: `Item ${n}`, priority: 1, epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger,
+        criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
         observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.main[0], baseTipContained: true, at: iso(start) } as never,
         gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
         ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt!, mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),

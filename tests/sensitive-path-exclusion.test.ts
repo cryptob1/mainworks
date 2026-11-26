@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { resolveRepositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { classifyRisk } from '../src/model-boundary/risk-class.js';
 import { evaluate } from '../src/model-boundary/gates.js';
@@ -14,14 +15,10 @@ const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 /** A head the merge writer observed with `files` as its delta, built and unapproved. */
 const planeHead = (files: string[]): Work => {
   const candidate = { sha: H, baseSha: B, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
-  return { id: randomUUID(), key: 'GY-7', title: 'Item', description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 9, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
+  return workFixture({ id: randomUUID(), key: 'GY-7', title: 'Item', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], systemDriven: undefined,
+    stage: 'review', revision: 9, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 7 }, gates: [], implementers: ['graphyard-claude-1'],
     observation: { source: 'control-plane', at, candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, files,
-      scopeFiles: files.map(path => ({ path, status: 'modified', sha: sha(path), additions: 1, deletions: 0, binary: false })), baseTip: B, baseTipContained: true },
-  } as unknown as Work;
+      scopeFiles: files.map(path => ({ path, status: 'modified', sha: sha(path), additions: 1, deletions: 0, binary: false })), baseTip: B, baseTipContained: true } as never });
 };
 const reviewGate = (files: string[]) => evaluate(planeHead(files), [planeHead(files)], new Date(at)).gates.find(gate => gate.name === 'review')!;
 

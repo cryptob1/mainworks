@@ -11,6 +11,7 @@ import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3120: each queued head is trialled alone on the current main tip, up to run.mergeWriter.parallel
 // trials at once. A head whose trial passes lands as soon as it passes — re-merged onto whatever the
@@ -50,14 +51,12 @@ class World {
     return Array.from({ length: this.count }, (_, index) => index + 1).map(n => {
       const ledger = this.ledger(n), delivered = ledger?.state === 'reconciled';
       const candidate = { sha: this.head(n), baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-      return {
-        id: `w${n}`, key: `GY-${n}`, description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-        policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
-        ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: ledger,
+      return workFixture({ id: `w${n}`, key: `GY-${n}`, title: undefined, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+        createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000), epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger,
         observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: this.main[0], baseTipContained: true, at: iso(start) },
         gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name !== 'test' && name !== 'merge', reasons: [] })),
         ...(delivered ? { stage: 'done', delivery: { mergedAt: ledger!.pushedAt!, mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),
-      } as unknown as Work;
+      } as never);
     });
   }
   ports(): MergeWriterReads {

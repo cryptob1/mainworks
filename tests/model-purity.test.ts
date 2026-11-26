@@ -7,7 +7,8 @@ import ts from 'typescript';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { currentEvidence } from '../src/model/evidence.js';
 import { unexercisedFindings } from '../src/model/mechanical-proofs.js';
-import type { Work, Evidence } from '../src/model.js';
+import type { Evidence } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const root = fileURLToPath(new URL('../src/model/', import.meta.url));
 
@@ -54,14 +55,9 @@ test('unit:model-purity — gates and unexercised findings judge evidence expiry
     result: 'fail', executed: 1, skipped: 0, at: now.toISOString(),
     expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
   } as Evidence;
-  const work = {
-    id: 'item', key: 'GY-1', type: 'chore', stage: 'build', ready: true,
-    dependencies: [], workspaces: [{ epoch: 1 }], submission: { epoch: 1, pr: 1 },
-    candidate, observation: { candidate, reviews: [], files: [] },
-    policy: { review: false, checks: [] }, policyRevision: 1,
-    criteria: [{ id: 'AC-1', text: 'Clock consistency', proofs: [proof] }],
-    evidence: [evidence], scenarioRequirements: [], violations: [], implementers: [],
-  } as unknown as Work;
+  const work = workFixture({ id: 'item', type: 'chore', stage: 'build', workspaces: [{ epoch: 1 }] as never, submission: { epoch: 1, pr: 1 },
+    candidate, observation: { candidate, reviews: [], files: [] } as never, policy: { review: false, checks: [] },
+    criteria: [{ id: 'AC-1', text: 'Clock consistency', proofs: [proof] }], evidence: [evidence], implementers: [] });
   const build = (at: Date) => evaluate(work, [work], at).gates.find(gate => gate.name === 'build')!;
   assert.equal(build(now).passed, false, 'a current failing proof refuses the build');
   assert.match(build(now).reasons.join('; '), /unit:model-purity/);

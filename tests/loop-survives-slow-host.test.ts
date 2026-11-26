@@ -38,18 +38,15 @@ function doneItem(index: number): Work {
   const id = randomUUID(), key = `GY-D${index + 1}`, at = iso(started - 48 * 3_600_000);
   const head = sha(`${index.toString(16)}d`, 'd');
   const marker = (n: number) => `settled-history:${key} attempt ${n}`;
-  return workFixture({
-    id, key, title: `Delivered ${key}`, description: `The history of ${key}, kept on the ledger.`, criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:item-works'] }],
+  return workFixture({ id, key, title: `Delivered ${key}`, description: `The history of ${key}, kept on the ledger.`, criteria: [{ id: 'AC-1', text: 'It works', proofs: ['unit:item-works'] }],
     stage: 'done', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: false, epoch: 2,
     candidate: { sha: head, baseSha: sha('base'), pr: 1000 + index, branch: `graphyard/gy-${index + 1}-2`, author: 'worker-a' },
     evidence: [{ id: randomUUID(), proof: 'unit:item-works', sha: head, baseSha: sha('base'), policyRevision: 1, producer: 'proof-runner', trusted: true, result: 'pass', executed: 3, skipped: 0, at, environment: 'node', url: `https://ci.example/${index}` },
       { id: randomUUID(), proof: 'e2e:item-e2e', sha: head, baseSha: sha('base'), policyRevision: 1, producer: 'proof-runner', trusted: true, result: 'pass', executed: 1, skipped: 0, at, environment: 'node', url: `https://ci.example/${index}-e2e` }],
     observation: { source: 'control-plane', candidate: { sha: head, baseSha: sha('base') }, files: [`src/module-${index}.ts`], checks: [{ name: 'test', conclusion: 'success' }], reviews: [], merged: true, mergeSha: sha(`${index.toString(16)}m`, 'm'), mergeable: true, protected: false, baseTip: sha('base'), baseTipContained: true, at },
-    delivery: { mergedAt: at, mergeSha: sha(`${index.toString(16)}m`, 'm'), authorizationRevision: 3 },
-    gates: [{ name: 'build', passed: true, reasons: [] }],
+    delivery: { mergedAt: at, mergeSha: sha(`${index.toString(16)}m`, 'm'), authorizationRevision: 3 }, gates: [{ name: 'build', passed: true, reasons: [] }],
     pipeline: { reworkRounds: 0, attempts: Array.from({ length: 6 }, (_, n) => ({ epoch: n + 1, claimedAt: at, endedAt: at, end: 'complete', note: marker(n) })) },
-    sessions: Array.from({ length: 6 }, (_, n) => ({ id: `worker-a:${n}`, kind: 'implementation', principal: 'worker-a', runtime: 'claude', host: 'machine-a', subject: `${key}: attempt ${n}`, startedAt: at, updatedAt: at, endedAt: at, state: 'finished', outcome: marker(n) })),
-  } as never);
+    sessions: Array.from({ length: 6 }, (_, n) => ({ id: `worker-a:${n}`, kind: 'implementation', principal: 'worker-a', runtime: 'claude', host: 'machine-a', subject: `${key}: attempt ${n}`, startedAt: at, updatedAt: at, endedAt: at, state: 'finished', outcome: marker(n) })) } as never);
 }
 
 /** An open item in one of the stages a live yard holds. */

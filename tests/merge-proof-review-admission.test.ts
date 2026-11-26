@@ -1,24 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { mergeCandidateHold, mergeOpeningHold } from '../src/merge-writer/executor.js';
 
 const H = 'a'.repeat(40), B = 'b'.repeat(40), at = '2031-01-01T00:00:00Z';
 export function admissionFixture(): Work {
   const candidate = { sha: H, baseSha: B, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' };
-  return { id: 'w1', key: 'GY-1', title: 'Admission', type: 'chore', description: '', dependencies: [], ready: true,
-    epoch: 1, lease: null, stage: 'review', submission: { epoch: 1, pr: 1 }, policyRevision: 1,
-    policy: { checks: ['test'], review: true }, criteria: [{ id: 'AC-1', text: 'Proved', proofs: ['e2e:fixture', 'manual:checked'] },
-      { id: 'AC-2', text: 'After deployment', proofs: ['manual:post-deploy/audit'] }],
-    workspaces: [{ host: 'test', path: '/fixture', branch: candidate.branch, epoch: 1, owner: 'worker' }],
-    candidate, evidence: [], violations: [], reworkRequested: false,
+  return workFixture({ id: 'w1', title: 'Admission', type: 'chore', epoch: 1, stage: 'review', submission: { epoch: 1, pr: 1 },
+    criteria: [{ id: 'AC-1', text: 'Proved', proofs: ['e2e:fixture', 'manual:checked'] }, { id: 'AC-2', text: 'After deployment', proofs: ['manual:post-deploy/audit'] }],
+    workspaces: [{ host: 'test', path: '/fixture', branch: candidate.branch, epoch: 1, owner: 'worker' }], candidate,
     observation: { candidate, source: 'control-plane', at, files: ['package-lock.json'], checks: [], reviews: [],
       merged: false, mergeSha: null, baseTip: B, mergeBase: B, baseTipContained: true },
     gates: ['ready', 'build', 'review', 'test', 'acceptance'].map(name => ({ name, passed: true, reasons: [] })),
     mergeLedger: { key: 'GY-1', state: 'intent', head: H, baseTip: B, mergeSha: 'c'.repeat(40),
-      trial: { head: H, mergeSha: 'c'.repeat(40), proofs: { 'e2e:fixture': { executed: 1, failed: 0 } } } },
-  } as unknown as Work;
+      trial: { head: H, mergeSha: 'c'.repeat(40), proofs: { 'e2e:fixture': { executed: 1, failed: 0 } } } } as never,
+  });
 }
 export function approve(work: Work) {
   work.observation!.reviews = [{ reviewer: 'independent', sha: H, baseSha: B, policyRevision: 1, state: 'APPROVED', id: 5, source: 'control-plane' }];
