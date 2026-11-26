@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type { CliContext } from './context.js';
-import { leftToCiRun, written, type VerifyRecord } from './verify.js';
+import { written, type VerifyRecord } from './verify.js';
 import type { completionRerun } from './complete.js';
 
 export interface WorkerVerificationResult {
@@ -8,11 +8,6 @@ export interface WorkerVerificationResult {
   rerun: Awaited<ReturnType<typeof completionRerun>>;
 }
 
-/**
- * GY-3335: the required-proof runs a completed verification failed — used by finished-head recovery. Empty when every required proof passed or was left to CI.
- */
-export const failedRequiredProofs = (record: Pick<VerifyRecord, 'ran'>) =>
-  record.ran.filter(run => (run.result !== 'pass' && !leftToCiRun(run)) || run.unexercised);
 
 /** No candidate command executes in the worker's sandbox. */
 export async function requestWorkerVerification(context: CliContext, work: any, input: {

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { Store, save } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { boundLockedCache, isStandIn, lockedRows, lockedWork, rememberSaved, savedVersions, warmLockedReads, withWhole, type Queryable } from '../src/store/locked-read.js';
+import { boundLockedCache, isStandIn, lockedRows, lockedWork, rememberSaved, savedVersions, warmLockedReads, type Queryable } from '../src/store/locked-read.js';
 import type { Principal, Work } from '../src/model.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -110,7 +110,4 @@ test('unit:projection-contract — an open item\'s projection leaves out its per
   assert.equal(projection.observation?.scopeFiles, undefined, 'the projection carries no per-file scope');
   assert.equal((projection as any).pipeline, undefined);
   assert.throws(() => { (projection as any).title = 'edited'; }, TypeError);
-  const whole = (await withWhole(store.pool, await lockedWork(store.pool, []), item => item.stage !== 'done' && !!item.submission)).find(item => item.id === peer.id)!;
-  assert.ok(!isStandIn(whole));
-  assert.deepEqual(whole.observation?.scopeFiles, scopeFiles, 'read whole, the peer carries its scope for the landing check');
 });

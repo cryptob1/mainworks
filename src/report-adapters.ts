@@ -304,12 +304,3 @@ const junit: ReportAdapter = {
 };
 
 export const reportAdapters: Record<ReportFormat, ReportAdapter> = { 'graphyard-playwright-v1': playwright, 'junit-xml-v1': junit };
-/** The adapter a pinned format names. Anything else is a visible refusal, never a fallback. */
-export function reportAdapter(format: unknown): ReportAdapter {
-  if (typeof format !== 'string' || !(format in reportAdapters)) throw new Error(`Unsupported report format ${JSON.stringify(format)}; supported formats: ${reportFormats.join(', ')}`);
-  return reportAdapters[format as ReportFormat];
-}
-/** The published contract of every adapter, for integrations and the docs. */
-export const adapterContracts = () => reportFormats.map(format => {
-  const { parse, verify, ...contract } = reportAdapters[format]; void parse; void verify; return contract;
-});

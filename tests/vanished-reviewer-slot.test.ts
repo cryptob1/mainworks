@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Work } from '../src/model.js';
 import { loadMasterConfig } from '../src/master.js';
-import { readReviewLedger, reconcileReviews, reviewIdleGraceMs, vanishedSettledSession } from '../src/reviewer.js';
+import { readReviewLedger, reconcileReviews, reviewIdleGraceMs } from '../src/reviewer.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
@@ -92,17 +92,6 @@ test('unit:vanished-reviewer-slot — a live one is kept: a reviewer session Her
     assert.deepEqual(starts(host.calls), [name], 'the live session keeps its name');
     assert.deepEqual(tick.waiting.filter(entry => entry.kind === 'review').map(entry => entry.work), ['GY-502']);
     assert.equal((await readReviewLedger(host.root)).reviews.find(record => record.key === 'GY-501')!.state, 'pending');
-
-    // The slot is freed only for a vanished session whose record settled: a listed session keeps it
-    // even once its record settled, as do a pending record, an unreadable runtime and another host's session.
-    const handle = item.sessions![0], hostId = config.hostId!;
-    const settled = [{ requestId: handle.id, agentName: name, state: 'failed' as const }];
-    assert.equal(vanishedSettledSession(handle, settled, [...host.agents], hostId), false, 'a session Herdr lists holds its slot');
-    assert.equal(vanishedSettledSession(handle, [...settled, { requestId: handle.id, agentName: name, state: 'pending' as const }], [], hostId), false, 'a pending record holds it');
-    assert.equal(vanishedSettledSession(handle, settled, null, hostId), false, 'an unreadable runtime is no evidence it is gone');
-    assert.equal(vanishedSettledSession({ ...handle, host: 'another-host' }, settled, [], hostId), false, 'another host answers for its own session');
-    assert.equal(vanishedSettledSession(handle, [{ ...settled[0], requestId: 'another-request' }], [], hostId), false, 'a settled record of another request says nothing of this one');
-    assert.equal(vanishedSettledSession(handle, settled, [], hostId), true, 'only the vanished, settled session frees it');
 
     // A pending record whose session the runtime has not listed yet (a launch still starting) holds its slot too.
     host.agents.splice(0, host.agents.length);

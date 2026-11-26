@@ -132,19 +132,6 @@ export async function lockedRows(db: Queryable, focus: readonly (string | null |
  */
 export async function warmLockedReads(db: Queryable) { await lockedRows(db, []); }
 
-/**
- * `works` with each stand-in `wanted` selects replaced by its document, read whole (GY-1042): for a
- * decision outside the coordination lock that reads, on other items, what a projection leaves out.
- * The documents are a second read after the listing, with no version check, so a peer written in
- * between is read at its newer version; that suits a pre-check whose result a later observation
- * re-derives, not a decision that must see one consistent board.
- */
-export async function withWhole(db: Queryable, works: readonly Work[], wanted: (work: Work) => boolean): Promise<Work[]> {
-  const ids = works.filter(work => isStandIn(work) && wanted(work)).map(work => work.id);
-  if (!ids.length) return [...works];
-  const read = new Map<string, Work>((await db.query(`SELECT id::text AS id, document FROM work_items WHERE id::text = ANY($1::text[])`, [ids])).rows.map(row => [row.id, row.document as Work]));
-  return works.map(work => read.get(work.id) ?? work);
-}
 
 type Listed = { number: number; id: string; wx: string; ix: string | null; rev: string; settled: boolean; focus: boolean };
 /** The item's revision as a stand-in's version names it (`-` for a row the work index does not hold yet), and the cluster that scopes row versions. */

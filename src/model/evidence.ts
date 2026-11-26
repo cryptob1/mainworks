@@ -138,21 +138,8 @@ export function currentEvidence(work: Work, proof: string, now: Date): Evidence 
   return latest && (!latest.expiresAt || Date.parse(latest.expiresAt) > now.getTime()) ? latest : undefined;
 }
 
-// -------------------------------------------------------------------------
-// Evaluator recovery (GY-1841): the explicit rule a failed evaluation is retried under.
-//
-// Judging a proof's retained evidence is an evaluation the pinned verifier performs, and it can
-// end for reasons that are not the change's: the artifacts were never retained (the producer
-// session timed out), the bytes cannot be read (the host ran out of resources), or the verifier
-// itself crashed. Such an evaluator-error is retried against the same retained evidence — the
-// artifacts pinned when the evaluation began — at most `evaluationRetries` more times, with a
-// widening backoff between attempts, never against new evidence. A fail the verifier reached is
-// a verdict on the change and is never retried; a pass on any attempt is the evaluation's
-// result. Every attempt is appended with its time, evaluator and outcome, and none is
-// overwritten. When the retries are exhausted the evaluation ends in its fault — the evaluator
-// errors — which is a fault of the evaluation, never a failed proof: nothing is judged to have
-// failed, and the errors are what the record shows.
-// -------------------------------------------------------------------------
+// Evaluator recovery (GY-1841): an evaluation records every attempt in order, none overwritten, and
+// ends in a fault (never a failed proof) when no attempt judged.
 
 /** How one run of the evaluator over retained evidence ended. */
 export type EvaluationOutcome = 'pass' | 'fail' | 'evaluator-error';
@@ -175,39 +162,6 @@ export interface EvaluationRecord {
   outcome: EvaluationOutcome;
   /** Set only after the retries are exhausted without a verdict: the evaluator errors, a fault of the evaluation, never a failed proof. */
   fault: { kind: 'evaluator-error'; errors: string[] } | null;
-}
-
-/** An evaluator-error is retried against the same retained evidence at most this many more times. */
-export const evaluationRetries = 2;
-/** The backoff between retry attempts, in ms: each retry waits the previous wait doubled (250, then 500). */
-export const evaluationRetryBackoffMs = 250;
-
-/**
- * Drive one evaluation under the recovery rule. `attempt` runs the evaluator once over the same
- * retained evidence and resolves to `pass`, `fail`, or `{ error }` — why it could not judge; a
- * throw is that attempt's evaluator-error too. `sleep` spaces the retries out and `now` stamps
- * each attempt's time, so a test drives both without the wall clock.
- */
-export async function evaluateWithRecovery(evaluator: string, attempt: () => Promise<'pass' | 'fail' | { error: string }>,
-  options: { retries?: number; backoffMs?: number; sleep?: (ms: number) => Promise<void>; now: () => Date }): Promise<EvaluationRecord> {
-  const retries = options.retries ?? evaluationRetries;
-  const backoffMs = options.backoffMs ?? evaluationRetryBackoffMs;
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
-  const now = options.now;
-  const attempts: EvaluationAttempt[] = [], errors: string[] = [];
-  for (;;) {
-    let verdict: 'pass' | 'fail' | { error: string };
-    try { verdict = await attempt(); }
-    catch (error) { verdict = { error: error instanceof Error ? error.message : String(error) }; }
-    if (verdict === 'pass' || verdict === 'fail') {
-      attempts.push({ at: now().toISOString(), evaluator, outcome: verdict, cause: null });
-      return { attempts, outcome: verdict, fault: null };
-    }
-    errors.push(verdict.error);
-    attempts.push({ at: now().toISOString(), evaluator, outcome: 'evaluator-error', cause: verdict.error });
-    if (attempts.length > retries) return { attempts, outcome: 'evaluator-error', fault: { kind: 'evaluator-error', errors } };
-    await sleep(backoffMs * 2 ** (attempts.length - 1));
-  }
 }
 
 /** The criteria a proof is attached to on this item: its own, and any bootstrap obligation it inherited. */

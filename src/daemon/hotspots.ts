@@ -46,5 +46,3 @@ export function hotspots(items: Work[], now: number): Hotspot[] {
     .sort((a, b) => a.file.localeCompare(b.file));
 }
 
-/** The set of hot files, as dispatchOrder reads it. */
-export const hotFileSet = (items: Work[], now: number) => new Set(hotspots(items, now).map(entry => entry.file));

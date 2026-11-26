@@ -93,8 +93,5 @@ export function currentMergeStep(work: Pick<Work, 'candidate' | 'mergeLedger'>, 
   return { ...at, atMs, fresh: now - atMs < mergeStallMs };
 }
 
-/** Every merge commit the folded ledger names, lower-case. */
-export const ledgerMergeShas = (ledger: Readonly<Record<string, Pick<MergeLedgerState, 'mergeSha'>>>) =>
-  new Set(Object.values(ledger).flatMap(state => state.mergeSha ? [state.mergeSha.toLowerCase()] : []));
 
 import type { MergeServeRevert } from '../merge-writer/serve-revert-ledger.js';

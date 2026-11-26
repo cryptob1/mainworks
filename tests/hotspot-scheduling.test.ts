@@ -5,7 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dispatchOrder, dispatchSort, dispatchStarvationMs, stageWaitMs } from '../src/coordination.js';
-import { hotFileSet, hotspots } from '../src/daemon/hotspots.js';
+import { hotspots } from '../src/daemon/hotspots.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -54,11 +54,10 @@ test('unit:dispatch-prefers-non-overlapping — hotspots name the files two or m
   assert.deepEqual(hotspots([ready, readyPeer], clock), [], 'two ready peers are not in flight; they do not heat each other');
   assert.deepEqual(hotspots([one, rework], clock), [], 'a submission sent back for rework is a peer waiting for a worker, not a claimant');
   assert.deepEqual(hotspots([one, expired, delivered], clock), [], 'an expired lease and done work are not claimants');
-  assert.deepEqual([...hotFileSet(all, clock)].sort(), ['docs/protocol/leases.md', hotFile], 'hotFileSet is the set of hot files dispatchOrder reads');
 });
 
 test('unit:dispatch-prefers-non-overlapping — dispatchOrder offers items touching no hot file first within one priority; priority dominates; an empty hot set reproduces the old order', () => {
-  const heat = hotFileSet([claimed('GY-hotA', [hotFile]), claimed('GY-hotB', [hotFile])], clock);
+  const heat = new Set(hotspots([claimed('GY-hotA', [hotFile]), claimed('GY-hotB', [hotFile])], clock).map(entry => entry.file));
   const coldOld = work('GY-coldOld', { createdAt: iso(-7_200_000), ...observed(['src/cold.ts']) });
   const coldNew = work('GY-coldNew', { createdAt: iso(-120_000) });
   const hotOld = work('GY-hotOld', { createdAt: iso(-3_600_000), ...observed([hotFile]) });

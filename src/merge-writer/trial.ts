@@ -466,8 +466,6 @@ export class TrialCancelledError extends Error {
 const trialRetries = 1;
 /** One runner process of a trial (GY-1548): the files it ran, how it ended, and the failing files its records or log named. */
 interface TrialGroup { files: string[]; status: number | null; signal: string | null; failed: string[] }
-/** Whether a verdict's log tail is worth recording: the build did not pass, a test file failed, or the runner did not exit 0. */
-export const trialNeedsLog = (run: Pick<TrialRun, 'build' | 'tests' | 'runnerExit'>) => run.build !== 'pass' || run.tests.failed.length > 0 || (run.runnerExit != null && run.runnerExit !== 0);
 /**
  * How many test files one runner process of a trial runs at most (GY-1548). A full selection of
  * 486 files in one `node --test` process outgrew the child runner's 16 MiB output capture, so the

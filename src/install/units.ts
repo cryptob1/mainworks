@@ -192,20 +192,13 @@ export function unitCheckout(text: string, home = homedir()) {
   return { workingDirectory: working, execStart: start };
 }
 
-/**
- * Whether the unit at PATH belongs to the checkout ROOT: its WorkingDirectory is ROOT, and its
- * ExecStart names no script outside ROOT's own `scripts/` or `bin/` (a coordinator launcher in a
- * private CLI path is allowed: it is the loop's, recorded in its master configuration). Returns the
- * other checkout it names when it does not, null when it is ROOT's or absent.
- */
-export function foreignUnitCheckout(path: string, root: string, home = homedir()): string | null {
-  let text: string;
-  try { text = readFileSync(path, 'utf8'); } catch { return null; }
-  return foreignUnitText(text, root, home);
-}
 /** This package's own executor script, which a unit for a repository without one runs. */
 const packageExecutorScript = fileURLToPath(new URL('../../scripts/graphyard-executor.mjs', import.meta.url));
-/** `foreignUnitCheckout` of a unit's TEXT, read from wherever it lives (this machine or a host). */
+/**
+ * Whether the unit TEXT (read from this machine or a host) belongs to the checkout ROOT: its
+ * WorkingDirectory is ROOT, and its ExecStart names no script outside ROOT's own `scripts/` or `bin/`.
+ * Returns the other checkout it names when it does not, null when it is ROOT's.
+ */
 export function foreignUnitText(text: string, root: string, home = homedir()): string | null {
   const { workingDirectory, execStart } = unitCheckout(text, home);
   const own = canonical(root);
@@ -218,14 +211,6 @@ export function foreignUnitText(text: string, root: string, home = homedir()): s
   const packaged = workingDirectory && script && canonical(script) === canonical(packageExecutorScript);
   if (script && !packaged && canonical(dirname(dirname(script))) !== own) return dirname(dirname(script));
   return null;
-}
-
-/** Thrown when an install would overwrite or restart a unit another checkout runs; it names that checkout. */
-export class ForeignUnitRefusal extends Error {
-  override readonly name = 'ForeignUnitRefusal';
-  constructor(readonly unitPath: string, readonly checkout: string, root: string) {
-    super(`${unitPath} runs another installation (${checkout}), not this checkout (${root}); Mainworks never overwrites or restarts another install's unit`);
-  }
 }
 
 /** The names an install of REPOSITORY at ROOT takes when it records none yet: what `resolveInstallUnits` writes. */

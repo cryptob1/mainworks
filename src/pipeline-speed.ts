@@ -218,24 +218,3 @@ export function plainDuration(minutes: number) {
   const total = Math.max(0, Math.round(minutes)), hours = Math.floor(total / 60), rest = total % 60;
   return hours ? `${hours} h${rest ? ` ${rest} min` : ''}` : `${rest} min`;
 }
-const stageWords: Record<string, string> = { ready: 'waiting for a worker', build: 'being built', review: 'in review', test: 'in its merge trial', acceptance: 'waiting on proof', merge: 'merging' };
-
-/**
- * The Work page's headline figure, merges an hour over the last 24 hours with the count, and its one sentence: a calm line with the median, the slowest tenth and the last merge;
- * or a warning naming the oldest item in the pipeline, its stage and the one next action, when the
- * last merge is over three times the median old or that item has run past the slowest tenth.
- */
-export function pipelineSentence(time: PipelineTime, now: number): { figure: string; warning: boolean; text: string; open?: string } {
-  const figure = `${(time.merged24h / 24).toFixed(1)} merges an hour (${time.merged24h} in the last 24 hours)`;
-  if (time.median === null || time.p90 === null || !time.lastMergeAt) return { figure, warning: false, text: 'No merges to time yet.' };
-  const sinceMerge = (now - Date.parse(time.lastMergeAt)) / 60_000;
-  const oldest = time.oldest, age = oldest ? (now - Date.parse(oldest.releasedAt)) / 60_000 : 0;
-  const next = oldest ? ` Next: open ${oldest.key} and clear what holds it.` : '';
-  if (sinceMerge > 3 * time.median) {
-    const named = oldest ? ` Oldest: ${oldest.key} ${oldest.title}, ${stageWords[oldest.stage] ?? oldest.stage}.${next}` : ' Nothing is in the pipeline. Next: release an item.';
-    return { figure, warning: true, text: `No merge for ${plainDuration(sinceMerge)}, over three times the usual ${plainDuration(time.median)}.${named}`, ...(oldest ? { open: oldest.id } : {}) };
-  }
-  if (oldest && age > time.p90) return { figure, warning: true, open: oldest.id,
-    text: `${oldest.key} ${oldest.title} has been in the pipeline ${plainDuration(age)}, longer than the slowest tenth (${plainDuration(time.p90)}); it is ${stageWords[oldest.stage] ?? oldest.stage}.${next}` };
-  return { figure, warning: false, text: `Last merge ${plainDuration(sinceMerge)} ago. An item takes ${plainDuration(time.median)} from release to merge (slowest tenth ${plainDuration(time.p90)}).` };
-}

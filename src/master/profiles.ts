@@ -243,24 +243,6 @@ export function isProfileSession(profile: { agentName: string }, name: string | 
   try { return derivedSessionName(profile, reading[1], Number(reading[2] ?? 1)) === name; }
   catch (error) { if (error instanceof SessionNameRefusedError) return false; throw error; }
 }
-/**
- * The sessions a profile is running, counted against its limit: every Herdr agent that carries
- * one of its names, and every agent a pending ledger record of the profile names — the same
- * inventory the one-session rule read, so a session Herdr no longer lists frees its slot as it
- * did before, and the ledger's grace settles the record. `free` is how many more may launch.
- */
-export function profileSessions(profile: { name: string; agentName: string; concurrency?: number }, agents: { name?: string }[], records: { profile: string; agentName: string; state: string }[] = []) {
-  const pending = new Set(records.filter(record => record.state === 'pending' && record.profile === profile.name).map(record => record.agentName));
-  const running = [...new Set(agents.map(agent => agent.name).filter((name): name is string => !!name && (isProfileSession(profile, name) || pending.has(name))))];
-  const limit = profileConcurrency(profile);
-  return { running, limit, free: Math.max(0, limit - running.length) };
-}
-/** The refusal a launch raises for a profile with no slot left; the one-session case reads as it always did. */
-export function profileAtLimit(role: 'Reviewer' | 'Producer', profile: { name: string; agentName: string; concurrency?: number }, sessions: { running: string[]; limit: number }) {
-  return sessions.limit === 1
-    ? `${role} agent ${sessions.running[0] ?? profile.agentName} is already visible in Herdr; profile ${profile.name} runs one session at a time (concurrency 1)`
-    : `${role} profile ${profile.name} is at its concurrency limit (${sessions.running.length} running, limit ${sessions.limit}: ${sessions.running.join(', ')}); raise concurrency in .graphyard/master.json or add a ${role.toLowerCase()} profile`;
-}
 
 /** GY-3446: a run setting that holds until `until`, then reverts to its default on its own. */
 const temporaryLimit = <T extends z.ZodTypeAny>(value: T) => z.object({ value, until: z.string().datetime({ offset: true }) }).strict();

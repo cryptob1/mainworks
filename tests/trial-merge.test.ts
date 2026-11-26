@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { defaultChildRun } from '../src/child-runner.js';
-import { credentialTrialVariable, groupTestFiles, mergeSubject, runnerDiagnosticTailLength, runTrial, trialAuthor, trialEnvironment, trialMerge, trialNeedsLog, trialRef, lookupPoisoned, trialLookupEntries, trialCheckoutPrefix, trialCheckoutRoot, trialCheckoutRoots, trialExcludedRoots, reclaimTrialCheckouts, clearTrialCheckout, durableTemporaryRoot, trialTemporaryPrefix, trialTemporaryRoot, trialTemporaryRoots, trialTemporaryVariables, trialTestGroupSize, TrialCleanupError, TrialEnvironmentError, TrialRunnerError, TrialTimeoutError, withheldTrialVariables, type RunTrialInput } from '../src/merge-writer/trial.js';
+import { credentialTrialVariable, groupTestFiles, mergeSubject, runnerDiagnosticTailLength, runTrial, trialAuthor, trialEnvironment, trialMerge, trialRef, lookupPoisoned, trialLookupEntries, trialCheckoutPrefix, trialCheckoutRoot, trialCheckoutRoots, trialExcludedRoots, reclaimTrialCheckouts, clearTrialCheckout, durableTemporaryRoot, trialTemporaryPrefix, trialTemporaryRoot, trialTemporaryRoots, trialTemporaryVariables, trialTestGroupSize, TrialCleanupError, TrialEnvironmentError, TrialRunnerError, TrialTimeoutError, withheldTrialVariables, type RunTrialInput } from '../src/merge-writer/trial.js';
 import { listTestFiles } from '../scripts/ci-tests.mjs';
 import { checkoutKinds, sessionCheckoutName } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -560,7 +560,6 @@ test('integration:shadow-trial-failure-diagnostics — a runner that exits non-z
   const verdict = await runTrial({ root: repo.root, base: await temporaryDirectory('trial-merge-root', tmpdir()), mergeSha: await mergeOf(repo, named), changedFiles: ['tests/bad.test.ts', 'tests/ok.test.ts'], timeoutMs: 120_000, key: 'GY-9', cores: 2, groupSize: 2, environment: planted });
   assert.deepEqual([verdict.build, verdict.tests, verdict.runnerExit], ['pass', { passed: 1, failed: ['tests/bad.test.ts'], files: 2 }, 1], verdict.logTail);
   assert.deepEqual(verdict.groups, [{ files: ['tests/bad.test.ts', 'tests/ok.test.ts'], status: 1, signal: null, failed: ['tests/bad.test.ts'] }], 'the group record names the failing file and the exit status');
-  assert.ok(trialNeedsLog(verdict));
   // A partial-record run: one file finished (passing record), another printed a named failure without a completion record — still the merge's failing verdict, never a runner retry.
   const partial = repo.commitOnBase({ 'tests/ok.test.ts': 'x\n', 'tests/partial.test.ts': 'x\n' }, 'partial records');
   const partialVerdict = await runTrial({ root: repo.root, base: await temporaryDirectory('trial-merge-root', tmpdir()), mergeSha: await mergeOf(repo, partial), changedFiles: ['tests/ok.test.ts', 'tests/partial.test.ts'], timeoutMs: 120_000, key: 'GY-9', cores: 2, groupSize: 2, environment: planted });

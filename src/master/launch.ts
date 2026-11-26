@@ -332,7 +332,7 @@ export const agentStartTimeoutMs = 60_000, agentStartCeilingMs = 120_000, startP
  */
 export const defaultLaunchStartSeconds = agentStartTimeoutMs / 1000;
 export const launchStartMs = (config: { run: Pick<MasterRun, 'launchStartSeconds'> }) => (config.run.launchStartSeconds ?? defaultLaunchStartSeconds) * 1000;
-export const startedStates = ['idle', 'done', 'working'], promptableStates = ['idle', 'done'];
+export const startedStates = ['idle', 'done', 'working'];
 export type StartState = 'ready' | 'starting' | 'absent' | 'blocked' | 'consent' | 'exited';
 export interface StartObservation { state: StartState; agent: HerdrAgent | null; detail: string; line: string; prompt?: ConsentPrompt }
 export interface StartBounds { timeoutMs?: number; ceilingMs?: number; pollMs?: number; clock?: () => number; /** The pause between polls; a test's advances a virtual clock, the process's awaits a timer. */ wait?: (ms: number) => void | Promise<void>; /** The states that count as ready; `startedStates` unless the runtime is still to be prompted. */ readyStates?: string[];
@@ -749,8 +749,6 @@ export function withLaunchClose(error: unknown, note: string): Error {
 export const defaultAcknowledgementSeconds = 90, sustainedActivityMs = 30_000;
 export const acknowledgementMs = (config: { run: Pick<MasterRun, 'acknowledgementSeconds'> }) => (config.run.acknowledgementSeconds ?? defaultAcknowledgementSeconds) * 1000;
 export interface LaunchAcknowledgement { requestedAt: string; acknowledgedAt?: string; repromptedAt?: string; activeSince?: string; screen?: string }
-export type SessionActivity = 'awaiting acknowledgement' | 'running';
-export const sessionActivity = (record: Pick<LaunchAcknowledgement, 'acknowledgedAt'>): SessionActivity => record.acknowledgedAt ? 'running' : 'awaiting acknowledgement';
 export const activeStates = ['working', 'blocked'];
 export const screenDigest = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 32);
 /** How a session's screen is read when the judgement needs it: a stub in a test, one Herdr read in the process. */

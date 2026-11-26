@@ -26,8 +26,6 @@ export const proofAuthority = (principal: Pick<Principal, 'id' | 'role' | 'proof
 /** The single authorization question every trusted-evidence path asks. */
 export const authorizedForProof = (actor: Pick<Principal, 'id' | 'role' | 'proofs'>, proof: string) =>
   !(ungrantableRoles as readonly string[]).includes(actor.role) && grantsAuthorize(proofAuthority(actor).patterns, proof);
-export const authorizedForEveryProof = (actor: Pick<Principal, 'id' | 'role' | 'proofs'>, proofs: readonly string[]) =>
-  proofs.length > 0 && proofs.every(proof => authorizedForProof(actor, proof));
 /**
  * Required proof names no configured principal may produce. A manual proof the work names in
  * `producerProofs` is run by a producer session, never attested, so an admin's `manual:*` pattern does not cover it.

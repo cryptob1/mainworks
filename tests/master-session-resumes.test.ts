@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { adoptConversation, assertConversationRuntime, captureConversation, conversationArgs, conversationEvents, conversationHandover, mainworksInput, masterInputs, masterRecords, type Conversation } from '../src/master/conversation.js';
+import { adoptConversation, assertConversationRuntime, captureConversation, conversationArgs, conversationEvents, continuationContext, mainworksInput, masterInputs, masterRecords, type Conversation } from '../src/master/conversation.js';
 import { emptyDaemonState, emptyMasterSession, readDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 
@@ -29,13 +29,13 @@ test('unit:master-session-resumes — native event metadata distinguishes person
     { type: 'assistant', message: { stop_reason: null } }, user('wake', wake), user('retry', retry)];
   await writeFile(conversation.transcript, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
   assert.equal(await captureConversation(conversation), 'Keep my exact question?\nAnd this line.');
-  assert.match(await conversationHandover(conversation), /Last unanswered person message: "Keep my exact question\?\\nAnd this line\."/);
+  assert.match((await continuationContext(conversation)).handover, /Last unanswered person message: "Keep my exact question\?\\nAnd this line\."/);
   const associations = (await readFile(origins, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(row => row.event);
   assert.deepEqual(associations.map(row => row.event), ['launch', 'wake', 'retry']);
   assert.equal(await readFile(conversation.record, 'utf8'), await readFile(conversation.transcript, 'utf8'), 'the record is the full native transcript');
   await appendFile(conversation.transcript, JSON.stringify({ type: 'assistant', message: { stop_reason: 'end_turn' } }) + '\n');
   assert.equal(await captureConversation(conversation), null);
-  assert.match(await conversationHandover(conversation), /Last unanswered person message: none$/);
+  assert.match((await continuationContext(conversation)).handover, /Last unanswered person message: none$/);
   // Quoting a previous launch is a new person input, rather than a second automatic delivery.
   await appendFile(conversation.transcript, JSON.stringify(user('quoted', `Why did you send this? ${automated}`)) + '\n');
   assert.equal(await captureConversation(conversation), `Why did you send this? ${automated}`);
