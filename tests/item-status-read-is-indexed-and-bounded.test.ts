@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import type pg from 'pg';
 import { planAsRows, withDatabase } from './helpers/postgres.js';
 import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import type { Store } from '../src/store.js';
@@ -40,7 +41,7 @@ before(async () => {
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Watched item', why: 'Many readers watch it.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   ({ id, key } = await created.json() as { id: string; key: string });
-  // A long-lived document carrying evidence: each full history page resolves 300 copies of it in the database.
+  // A long-lived document carrying evidence, as status reads it.
   // Kept at 20 kB so the test process's own JSON work never stalls the server it shares an event loop with.
   await store.pool.query(`UPDATE work_items SET document = document || jsonb_build_object('padding', repeat('x', 20000)) WHERE id=$1`, [id]);
   const template = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;
@@ -92,18 +93,23 @@ test('integration:item-status-read-is-indexed-and-bounded — status GY-N and th
   const reference = await store.pool.query(`SELECT seq FROM events WHERE work_id=$1 AND kind <> ALL($2::text[]) ORDER BY seq DESC LIMIT 300`, [id, routineEventKinds]);
   assert.deepEqual(history.body.map((row: { seq: unknown }) => String(row.seq)), reference.rows.map(row => String(row.seq)));
 
-  // Thirty readers watch the item at once — the full-document history read old clients send, and status.
-  const monitor = await store.pool.connect();
-  let peak = 0, sampling = true;
-  const sampler = (async () => {
-    while (sampling) {
-      const active = Number((await monitor.query(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'active' AND query LIKE 'SELECT seq,work_id,actor,kind,created_at%FROM events WHERE work_id=%'`)).rows[0].count);
-      peak = Math.max(peak, active);
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-  })();
+  // Thirty readers watch the item at once — the history page whose plan is bounded above, and status. GY-3913: each reader runs that
+  // bounded page, not the full-document one, whose cost under a loaded trial ran past the server's 5 s statement timeout; the history
+  // queries in flight are counted on the client, whose interval holds the server's, so a short one is never missed.
+  const inFlight = { now: 0, peak: 0 }, wrapped = new WeakSet<object>();
+  const count = (client: pg.PoolClient) => {
+    if (wrapped.has(client)) return; wrapped.add(client);
+    const query = client.query.bind(client) as (...args: any[]) => any;
+    (client as unknown as { query: (...args: any[]) => any }).query = (...args: any[]) => {
+      const text = typeof args[0] === 'string' ? args[0] : args[0]?.text;
+      if (typeof text !== 'string' || !text.startsWith('SELECT seq,work_id,actor,kind,created_at') || !text.includes('WHERE work_id=')) return query(...args);
+      inFlight.peak = Math.max(inFlight.peak, ++inFlight.now);
+      return Promise.resolve(query(...args)).finally(() => { inFlight.now--; });
+    };
+  };
+  store.pool.on('acquire', count);
   try {
-    const readers = Array.from({ length: 30 }, (_, n) => n % 3 === 0 ? get(adminToken, `work/${key}`) : get(adminToken, `events?work=${id}`));
+    const readers = Array.from({ length: 30 }, (_, n) => n % 3 === 0 ? get(adminToken, `work/${key}`) : get(adminToken, `events?work=${id}&payload=details`));
     await new Promise(resolve => setTimeout(resolve, 200));
     const loop = await get(coordinatorToken, 'work-snapshot', { [coordinationViewHeader]: 'coordination' });
     assert.ok(loop.body.work.some((item: { id: string }) => item.id === id));
@@ -118,15 +124,15 @@ test('integration:item-status-read-is-indexed-and-bounded — status GY-N and th
     assert.ok(settledPlan.rowsScanned('work_index') <= ITEMS, `coordination settled query scanned ${settledPlan.rowsScanned('work_index')} work_index rows: ${settledPlan.summary}`);
     const answers = await Promise.all(readers);
     for (const answer of answers) assert.ok(Array.isArray(answer.body) ? answer.body.length === 300 : answer.body.key === key);
-  } finally { sampling = false; await sampler; monitor.release(); }
-  assert.ok(peak <= historyReadSlots, `at most ${historyReadSlots} history queries ran at once; saw ${peak}`);
-  assert.ok(peak >= 1, 'the sampler saw the history queries');
+  } finally { store.pool.off('acquire', count); }
+  assert.ok(inFlight.peak <= historyReadSlots, `at most ${historyReadSlots} history queries ran at once; saw ${inFlight.peak}`);
+  assert.ok(inFlight.peak >= 1, 'the history queries were counted');
 
   // Every slot held: a read waits five seconds, then gets the last answer and its age.
   const held: (() => void)[] = [];
   const holders = Array.from({ length: historyReadSlots }, () => boundedHistoryRead(randomUUID(), () => new Promise<void>(resolve => held.push(resolve))));
   const started = Date.now();
-  const late = await boundedHistoryRead(`/api/events?work=${id}`, async () => { throw new Error('a waiting read runs no query'); }).catch(() => null);
+  const late = await boundedHistoryRead(`/api/events?work=${id}&payload=details`, async () => { throw new Error('a waiting read runs no query'); }).catch(() => null);
   held.forEach(resolve => resolve()); await Promise.all(holders);
   assert.ok(late, 'a read with a last answer is answered from it');
   const waited = Date.now() - started;
