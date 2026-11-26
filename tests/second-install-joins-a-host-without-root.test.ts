@@ -70,7 +70,7 @@ test(`${proof} — share binds the key to the same helper with its own state dir
   assert.equal((await probeHost('gy-compute@box')).ok, true, 'A still does');
 
   // GY-3804: share adds verbs; every earlier revision stays.
-  for (const verb of ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1']) assert.ok(hostShimVerbs.includes(verb), verb);
+  for (const verb of ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:3', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1']) assert.ok(hostShimVerbs.includes(verb), verb);
   assert.ok(!trialVerbs.includes('share:1'), 'share is no trial verb: older hosts keep taking shards');
 });
 
