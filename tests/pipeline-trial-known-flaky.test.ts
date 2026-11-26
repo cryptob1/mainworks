@@ -8,7 +8,7 @@ import { adminToken, cycleUntil, pipelineWorld, worldLoop } from './helpers/pipe
 
 const flakyTest = "const { test } = require('node:test');\ntest('tests/flaky.test.cjs fails while broken exists', () => { if (require('fs').existsSync('broken')) throw new Error('flaked'); });\n";
 
-test('e2e:trial-known-flaky — a candidate that breaks a test with an open flaky item, while the base tip passes it, is refused naming the file', { timeout: 280_000 }, async () => {
+test('e2e:trial-known-flaky — a candidate that breaks a test with an open flaky item, while the base tip passes it, is refused naming the file and sent back for rework', { timeout: 280_000 }, async () => {
   const world = await pipelineWorld('trial-known-flaky', {
     'package.json': JSON.stringify({ name: 'pipeline-fixture', scripts: { build: 'node --eval 0', test: 'node --test --test-reporter=tap proof.cjs tests/flaky.test.cjs' } }),
     'tests/flaky.test.cjs': flakyTest,
@@ -21,11 +21,11 @@ test('e2e:trial-known-flaky — a candidate that breaks a test with an open flak
 
     const change = await world.submit('A change the flaky test fails on', { broken: 'yes\n' });
     const loop = worldLoop(world, { gate: false });
-    const refusal = async () => (await world.work()).find(item => item.id === change.id)?.mergeLedger?.refusal?.reason ?? '';
-    await cycleUntil(loop, `${change.key} is refused`, async () => !!(await refusal()));
-    assert.match(await refusal(), /tests\/flaky\.test\.cjs/);
-    const work = await world.work();
-    assert.notEqual(work.find(item => item.id === change.id)!.stage, 'done', 'the candidate did not land');
+    await cycleUntil(loop, `${change.key} is sent back`, () => loop.reworks.includes(change.key));
+    assert.deepEqual(loop.reworks, [change.key], 'the loop sent the refused candidate back for rework');
+    const work = await world.work(), refused = work.find(item => item.id === change.id)!;
+    assert.notEqual(refused.stage, 'done', 'the candidate did not land');
+    assert.match(refused.mergeLedger?.refusal?.reason ?? '', /tests\/flaky\.test\.cjs/);
     const notes = (work.find(item => item.key === flaky.key)!.agentRequests ?? []).filter(request => request.type === 'note' && request.reason.includes(`${change.key}'s merge trial`));
     assert.equal(notes.length, 0, 'the flaky item excused nothing');
   } finally { await world.close(); }

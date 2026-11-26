@@ -194,14 +194,14 @@ export function loopReads(where: Where, options: { gate: boolean; attribute?: bo
 /** One loop process: its own daemon state and effects over the world; `cycle()` runs one coordination cycle. */
 export function pipelineLoop(where: Where, options: { gate: boolean; attribute?: boolean }) {
   const state: DaemonState = emptyDaemonState(where.config);
-  const lines: string[] = [];
+  const lines: string[] = [], reworks: string[] = [];
   let gate = options.gate, lastSnapshot: Work[] = [];
   const effects = () => ({ agents: () => [], herdr: () => ({ agents: [], available: true }), credentials: async () => ({}),
     snapshot: async () => ({ work: lastSnapshot = await where.snapshot(), now: new Date().toISOString() }), closeSession: () => {}, dispatch: async () => {},
     decisions: async () => ({ decisions: [] }), persist: async () => {}, github: githubDouble, merge: githubDouble,
-    mergeWriter: loopReads(where, { gate, attribute: options.attribute }), rework: async () => {} }) as unknown as DaemonEffects;
+    mergeWriter: loopReads(where, { gate, attribute: options.attribute }), rework: async (item: Work) => { reworks.push(item.key); } }) as unknown as DaemonEffects;
   return {
-    state, lines,
+    state, lines, reworks,
     get lastSnapshot() { return lastSnapshot; },
     gating: (on: boolean) => { gate = on; },
     cycle: () => runCycle(where.config, state, effects(), Date.now, undefined, line => { lines.push(line); }),
