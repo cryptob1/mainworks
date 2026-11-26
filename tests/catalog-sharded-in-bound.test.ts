@@ -80,11 +80,11 @@ test('integration:catalog-sharded-in-bound — with no host added, this machine 
 });
 
 test('integration:catalog-sharded-in-bound — a Compose-bound case stays on this machine, a left-out case is no failure, and an empty shard goes to no host', async () => {
-  const graphyard = JSON.stringify({ delivery: { applications: [{ id: 'app', kind: 'compose' }], cases: { 'compose-case': 'app' } } });
+  const config = JSON.stringify({ delivery: { applications: [{ id: 'app', kind: 'compose' }], cases: { 'compose-case': 'app' } } });
   const local: string[] = [], remote: Record<string, string[]> = {};
   const reads = {
     baseBranch: 'main', now: Date.now, fetch: async () => 'a'.repeat(40),
-    git: async (args: string[]) => args[0] === 'ls-tree' ? 'compose-case.json\nleft-out.json' : args[1]?.endsWith(':graphyard.json') ? graphyard : '',
+    git: async (args: string[]) => args[0] === 'ls-tree' ? 'compose-case.json\nleft-out.json' : args[1]?.endsWith(':graphyard.json') ? config : '',
     trial: async (_commit: string, files: readonly string[], item: { criteria: { proofs: string[] }[] }) => {
       const proofs = item.criteria.flatMap(criterion => criterion.proofs);
       local.push(...proofs);
