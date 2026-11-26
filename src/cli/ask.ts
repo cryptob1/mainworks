@@ -10,16 +10,20 @@ import { setting } from '../setting.js';
  * link back to the repository) into a read-only temporary folder; one headless run answers the
  * question there with read tools only, under a time bound, holding no lease. Its answer — or one
  * plain failure line — is recorded on the item's history, where the next attempt finds it.
+ * GY-3898: the request goes on stdin, as headless sessions take large prompts (GY-3713); a trailing
+ * argument after Claude's variadic tool lists was read as one more tool, leaving no prompt.
  */
-const readOnlyArgs: Record<string, (request: string) => string[]> = {
-  claude: request => ['-p', '--output-format', 'text', '--allowedTools', 'Read,Grep,Glob', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task', request],
-  codex: request => ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', request],
+const readOnlyArgs: Record<string, string[]> = {
+  claude: ['-p', '--output-format', 'text', '--allowedTools', 'Read,Grep,Glob', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task'],
+  codex: ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-'],
 };
 type Note = { summary: string; evidence: string[] } | { failure: string };
 
-function investigate(program: string, args: string[], cwd: string, boundSeconds: number): Promise<{ stdout: string; failure?: string }> {
+function investigate(program: string, args: string[], request: string, cwd: string, boundSeconds: number): Promise<{ stdout: string; failure?: string }> {
   return new Promise(resolve => {
-    const child = spawn(program, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const child = spawn(program, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    child.stdin.on('error', () => {});
+    child.stdin.end(request);
     let stdout = '', stderr = '', timedOut = false;
     child.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-256 * 1024); });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4000); });
@@ -51,7 +55,7 @@ export const askCommands = defineCommands([{
       execFileSync('tar', ['-x', '-C', checkout], { input: execFileSync('git', ['archive', head], { maxBuffer: 1 << 30 }) });
       execFileSync('chmod', ['-R', 'a-w', checkout]);
       const { realRuntimeBinary } = await import('../runtime-binary.js');
-      const run = await investigate(realRuntimeBinary(kind), readOnlyArgs[kind]!(request), checkout, bound);
+      const run = await investigate(realRuntimeBinary(kind), readOnlyArgs[kind]!, request, checkout, bound);
       if (run.failure) note = { failure: run.failure };
       else {
         const [{ z }, { jsonAnswer }] = await Promise.all([import('zod'), import('../headless-session.js')]);
