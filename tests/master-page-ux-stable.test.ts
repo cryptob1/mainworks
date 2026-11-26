@@ -110,7 +110,7 @@ async function startSharedMasterUxServers(count: number) {
 
   const principals = [
     { ...operator, token: 'test-human-operator' } as any,
-    { id: 'watcher', role: 'reader', token: 'test-reader' },
+    { id: 'watcher', role: 'reader', team: 'viewer', token: 'test-reader' } as any,
     { ...worker, token: 'test-worker' } as any,
     { ...coordinator, token: 'test-coordinator' } as any,
     { id: 'install-a', role: 'reporter', token: 'test-install-a' },
