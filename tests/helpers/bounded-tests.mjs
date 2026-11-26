@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 // Node's --test-timeout cancels callbacks but does not bound a file process with
 // leaked handles. Each file here owns a process group and an external deadline.
@@ -36,8 +37,7 @@ await Promise.all(Array.from({ length: Math.min(breadth, files.length) }, async 
     // The bound is named to the file it bounds, so a test whose execution cannot fit it (the
     // slow-tick receipt's twenty sequential runs) defers to an unbounded run instead of dying at
     // the deadline.
-    // GY-3933: closed-stdin swaps fd 0 before tsx starts, so no file tsx opens can take fd 0 in the gap (libuv aborts when it closes it).
-    const child = spawn(process.execPath, ['--import', import.meta.resolve('./closed-stdin.mjs'), '--import', import.meta.resolve('tsx'), '--test', ...reporter, ...flags, file], {
+    const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), '--require', fileURLToPath(new URL('./closed-stdin.cjs', import.meta.url)), '--test', ...reporter, ...flags, file], {
       detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(Number.isFinite(timeoutMs) ? { GRAPHYARD_FILE_TIMEOUT_MS: String(timeoutMs) } : {}) },
     });
     children.add(child);

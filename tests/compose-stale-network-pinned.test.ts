@@ -7,11 +7,11 @@ import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3933: tests/compose-stale-network.test.ts passed, then its file process died with SIGABRT
-// (libuv: uv__close: Assertion `fd > STDERR_FILENO' failed). closed-stdin.mjs closes fd 0 and
-// reopens /dev/null; it ran after tsx, whose loader can open a file in that gap and take fd 0,
-// which libuv later closes and aborts on. The seam stands in for that loader: a NODE_OPTIONS
-// preload (it runs before every command-line one) opens a file right after fd 0 closes whenever
-// tsx is already loaded. closed-stdin must swap stdin before tsx starts, so no open lands in the gap.
+// (libuv: uv__close: Assertion `fd > STDERR_FILENO' failed). GY-3922's closed-stdin closed fd 0
+// and reopened /dev/null after tsx had started, and a file tsx opened in that gap took fd 0, which
+// libuv later closed and aborted on. The seam stands in for tsx: a NODE_OPTIONS preload (it runs
+// before every command-line one) opens a file right after fd 0 closes whenever tsx is loaded.
+// The per-file runner must give each file /dev/null on fd 0 without leaving that gap.
 test('unit:compose-stale-network-pinned — a file the tsx loader opens cannot take fd 0 while the per-file runner swaps stdin for /dev/null', async () => {
   const directory = await temporaryDirectory('compose-stale-network-pinned');
   const loader = join(directory, 'loader.mjs'), file = join(directory, 'stdin.test.mjs');
