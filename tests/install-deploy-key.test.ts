@@ -36,7 +36,7 @@ test('unit:install-deploy-key — a fresh normal install finishes on the deploy 
     const directory = installDirectory('owner-project', fixture.configHome);
     assert.equal(summary.deployKey, join(directory, 'deploy-key'));
     assert.equal((await stat(summary.deployKey!)).mode & 0o777, 0o600);
-    assert.deepEqual(deployKeyAdds(fixture), [`gh repo deploy-key add ${join(directory, 'deploy-key.pub')} -R owner/project --allow-write --title graphyard-merge-writer-install-test-host`]);
+    assert.deepEqual(deployKeyAdds(fixture), [`gh repo deploy-key add ${join(directory, 'deploy-key.pub')} -R owner/project --allow-write --title mainworks-merge-writer-install-test-host`]);
     assert.deepEqual(fixture.state.deployKeys.map(entry => entry.key), [DEPLOY_PUBLIC_KEY]);
     assert.deepEqual(githubApiRequests(fixture), [], 'the install makes no GitHub API request of its own');
     // GY-3219: the one API call is the read of the organization's deploy-key setting.

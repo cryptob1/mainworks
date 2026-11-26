@@ -1222,7 +1222,7 @@ export const onboardingRequiredFiles = ['AGENTS.md', 'graphyard.json'] as const;
  * host git identity: the environment names the author and committer for `git commit-tree`, and a
  * host with no global user.name/user.email commits all the same.
  */
-export const mainworksGitIdentity = { GIT_AUTHOR_NAME: 'Mainworks', GIT_AUTHOR_EMAIL: 'graphyard@localhost', GIT_COMMITTER_NAME: 'Mainworks', GIT_COMMITTER_EMAIL: 'graphyard@localhost' } as const;
+export const mainworksGitIdentity = { GIT_AUTHOR_NAME: 'Mainworks', GIT_AUTHOR_EMAIL: 'mainworks@localhost', GIT_COMMITTER_NAME: 'Mainworks', GIT_COMMITTER_EMAIL: 'mainworks@localhost' } as const;
 
 /**
  * Publish the onboarding files as one commit on the base branch's tip, on `graphyard/onboarding`.

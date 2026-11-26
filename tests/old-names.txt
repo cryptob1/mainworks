@@ -91,6 +91,12 @@ pathname = '/graphyard'
 'graphyard-token'
 \[\\\\/\]graphyard-\(
 # Assertions that the old name is gone from what people read
+# GY-3872: the case whose allow-list names each machine-facing old name with its reason
+path tests/no-old-name-where-a-person-reads.test.ts
+# A test helper that clears both the old and the new settings
+\['MAINWORKS', 'GRAPHYARD'\]
+# A case that checks owner commands printed under either CLI name
+path tests/printed-owner-commands-are-runnable.test.ts
 (doesNotMatch|not\.toContain(Text)?|!.*includes)\(.*[Gg]raphyard.*
 /graphyard\.\*still work
 # A test fixture whose content is a rename sweep from the old name

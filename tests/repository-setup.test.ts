@@ -22,7 +22,7 @@ test('managed instructions refresh one section and preserve all surrounding oper
   // GY-2972: the block is the short every-turn core and names the guide topics; the procedure it
   // used to carry in full prints from the topics (guide master, guide sync, guide complete).
   assert.match(first, /Before editing, claim an authorized work item and use its assigned worktree\./);
-  assert.match(first, /`node \$GRAPHYARD_CLI guide TOPIC`/);
+  assert.match(first, /`node \$MAINWORKS_CLI guide TOPIC`/);
   assert.match(guideText('master').replace(/\s+/g, ' '), /A dedicated master coordinator keeps cycling: run master status and act on what it names, until every in-scope item is Done or carries a recorded blocker and the serving commit is main's tip\./);
   const surrounding = `${first}\n## Team review\nAsk the maintainer.\n`;
   const updated = managedInstructions(surrounding);

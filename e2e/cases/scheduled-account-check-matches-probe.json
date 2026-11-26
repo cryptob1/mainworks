@@ -1,0 +1,16 @@
+{
+  "id": "scheduled-account-check-matches-probe",
+  "title": "Scheduled account check matches caretaker probe for agy with file_watcher stderr and Pi with OpenCode Z.AI key",
+  "description": "Seeds an agy account whose live request succeeds while printing file_watcher log lines on stderr and a Pi account whose Z.AI key comes from its OpenCode auth file; asserts both caretaker registry account probe and the loop's scheduled account check record both available, and a really failing request still records broken with the provider's sentence.",
+  "tags": ["accounts", "quota", "caretaker"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "scheduled account check matches caretaker probe and keeps provider error on real failure",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:scheduled-account-check-matches-probe tests/scheduled-account-check-matches-probe.test.ts",
+      "timeoutSeconds": 300
+    }
+  ]
+}

@@ -11,6 +11,15 @@ const checkInAuthor = (owner: CheckInOwner | null | undefined) => owner ? { name
 export const authorLine = (owner: CheckInOwner | null | undefined) => (author => `${author.name} <${author.email}>`)(checkInAuthor(owner));
 export const authorEnvironment = (owner: CheckInOwner | null | undefined) => (author => ({ GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email }))(checkInAuthor(owner));
 
+/**
+ * GY-3872: a worker's commits are committed by 'mainworks-<identity>' (an old 'graphyard-' prefix dropped).
+ * Commits made before keep their 'graphyard-' committer: no gate reads a committer name, so both pass alike.
+ */
+export const workerCommitterEnvironment = (principal: string) => {
+  const name = `mainworks-${principal.replace(/^(graphyard|mainworks)-/, '')}`;
+  return { GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: `${name}@users.noreply.invalid` };
+};
+
 /** The one attention line an install with no owner shows. */
 export const ownerAttentionLine = 'Commits are authored "Mainworks": name the owner with mainworks config owner "NAME" EMAIL';
 

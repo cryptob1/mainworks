@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { CaretakerOutcome } from '../daemon/caretaker.js';
-import { checkAccountLive, fleetRequest, type FleetLaunchAccount } from '../fleet.js';
+import { fleetRequest, probeRegistryAccount, type FleetLaunchAccount } from '../fleet.js';
 import { defaultHeadlessExec, headlessRunMs, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
 import { loopRestartRequestPath } from '../daemon/state.js';
 import type { AgentRegistry } from '../model/registry.js';
@@ -55,8 +55,7 @@ async function startCaretakerProbeServer(
       const account = registry.accounts.find(entry => entry.name === name && entry.credential.host === config.hostId);
       const runtime = registry.runtimes.find(entry => entry.name === account?.runtime);
       if (!account || !runtime) return send(404, { error: `${name} is not a registry account on ${config.hostId}; caretaker registry lists this host's accounts` });
-      const modelId = registry.models.find(model => model.name === account.model)?.id ?? null;
-      const quota = await checkAccountLive(account, runtime, { smoke: deps.smoke }, modelId);
+      const quota = await probeRegistryAccount(registry, account, runtime, { smoke: deps.smoke });
       const line = quota.state === 'available'
         ? `${name} passed its live check`
         : `${name} ${quota.loggedIn === false ? 'is not logged in' : `is ${quota.state}`}: ${quota.reason ?? 'no reason given'}`;

@@ -57,7 +57,7 @@ async function repository(files: Record<string, string>) {
   return { root, base, commitOnBase, write };
 }
 
-test('unit:trial-merge-exact-commit — a head whose first-parent chain does not hold the base tip gets its merge commit in the object store: parents [baseTip, head], the merged tree, committer graphyard-merge-writer and author Mainworks while no owner is named (GY-3850), the subject the caller names (`Merge GY-N: title`), only refs/graphyard/trial/<head> written, and no worktree, branch or remote touched', async () => {
+test('unit:trial-merge-exact-commit — a head whose first-parent chain does not hold the base tip gets its merge commit in the object store: parents [baseTip, head], the merged tree, committer mainworks-merge-writer and author Mainworks while no owner is named (GY-3850), the subject the caller names (`Merge GY-N: title`), only refs/graphyard/trial/<head> written, and no worktree, branch or remote touched', async () => {
   const repo = await repository({ 'a.txt': 'one\n', 'b.txt': 'two\n' });
   const baseTip = gitIn(repo.root, 'commit-tree', gitIn(repo.root, 'rev-parse', 'HEAD^{tree}'), '-p', repo.base, '-m', 'main moved');
   gitIn(repo.root, 'reset', '-q', '--hard', baseTip);

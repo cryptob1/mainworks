@@ -42,7 +42,8 @@ import { recordTrialTimings } from './trial-timings.js';
 export type TrialGit = (args: string[], env?: Record<string, string>) => Promise<string>;
 export type TrialMergeResult = { mergeSha: string; tree: string } | { conflict: string[] };
 
-export const trialAuthor = 'graphyard-merge-writer';
+/** GY-3872: the merge writer commits as Mainworks; history and branches made before keep 'graphyard-merge-writer', which no gate reads. */
+export const trialAuthor = 'mainworks-merge-writer';
 export const trialRef = (head: string) => `refs/graphyard/trial/${head}`;
 /** A trial's test outcome as the merge record accepts it (src/server/merge-record.ts): at most 100 failed files of at most 300 characters, so a mass failure is still recorded instead of refused. */
 export const recordedTests = (tests: { passed: number; failed: string[]; files: number }) => ({ ...tests, failed: tests.failed.slice(0, 100).map(file => file.slice(0, 300)) });
@@ -99,7 +100,7 @@ export const mergeSubject = (item: { key: string; title?: string | null }) => `M
  * to it, so every commit the base's first-parent history held stays on it, and no merge commit
  * wraps a tree with no new change. Any other head gets the merge commit of head onto baseTip:
  * `git merge-tree --write-tree` computes the merged tree, `git commit-tree` (committed by
- * graphyard-merge-writer and authored by the owner (GY-3850), subject `input.subject`, dated by its parents so a repeat is identical) makes the commit with parents baseTip and head.
+ * mainworks-merge-writer and authored by the owner (GY-3850), subject `input.subject`, dated by its parents so a repeat is identical) makes the commit with parents baseTip and head.
  * Either way the only ref written is `refs/graphyard/trial/<head>`. Nothing under `refs/heads/*`,
  * no remote and no checkout is touched. A conflicting merge gives the conflicted paths and writes
  * no commit. Retention: one ref per tried head, overwritten by that head's next trial and never

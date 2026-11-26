@@ -239,6 +239,22 @@ export async function checkAccountLive(account: FleetAccount, runtime: FleetRunt
   return running;
 }
 
+/**
+ * The one live-probe path shared by the loop's scheduled checks, `caretaker registry account probe`
+ * and `master registry account check`.
+ */
+export function probeRegistryAccount(
+  registry: Pick<AgentRegistry, 'models'>,
+  account: FleetAccount,
+  runtime: FleetRuntime,
+  probe: FleetProbe = {},
+  usage: QuotaObservation['usage'] = [],
+  ownKey?: string,
+): Promise<QuotaObservation> {
+  const modelId = registry.models.find(model => model.name === account.model)?.id ?? null;
+  return checkAccountLive(account, runtime, probe, modelId, usage, ownKey);
+}
+
 /** A provider usage read is shared by every install on the host and taken at most once in this interval per login home (GY-3500). */
 const usageReadIntervalMs = 5 * 60_000;
 /** The account's reading, from the host's record when one was taken within the interval on this login and key; otherwise one provider read, written back. */
@@ -287,8 +303,8 @@ export async function observeAccount(account: FleetAccount, runtime: FleetRuntim
   // metering window never holds by itself. A window of the provider's own limit list does hold,
   // past even a passing request (windowHold, GY-3497): the provider stops sessions on that list.
   const spent = reading.quota.state === 'exhausted' || usage.some(window => window.percent >= ceiling && !!window.resetsAt && Date.parse(window.resetsAt) > now);
-  if (cached || signalled || spent || needsSmoke(account, runtime, now)) {
-    const live = await checkAccountLive(account, runtime, probe, model, usage, reading.quota.key);
+  if ((cached || signalled || spent || needsSmoke(account, runtime, now)) && !setting(masterConfinementVariable)) {
+    const live = await checkAccountLive(account, runtime, probe, model ?? null, usage, reading.quota.key);
     return { ...reading, quota: windowHold({ ...live, ...(live.fault && live.loggedIn === null && reading.quota.loggedIn !== null ? { loggedIn: reading.quota.loggedIn } : {}), ...reading.quota.spend ? { spend: reading.quota.spend } : {} }, ceiling, now) };
   }
   return { ...reading, quota: windowHold({ ...reading.quota, usage }, ceiling, now) };
