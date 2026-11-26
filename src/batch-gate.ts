@@ -716,7 +716,10 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
 }
 
 /** GY-3779: how the last diagnostics run ended: passed, failed checks (named in the reason) or threw (its error). */
-interface DiagnosticsRun { at: string; outcome: 'passed' | 'failed' | 'threw'; reason: string | null }
+interface DiagnosticsRun { at: string; outcome: 'passed' | 'failed' | 'threw'; reason: string | null; /** GY-3874: where the catalog's shards ran and how many cases each held. */ shards?: CatalogShard[] }
+
+/** GY-3874: one shard of the daily catalog: the machine it ran on (`local` for this one) and its case count. */
+export interface CatalogShard { host: string; cases: number }
 
 /** One diagnostic failure as the record keeps it (GY-3264). */
 interface DiagnosticFailure { commit: string; detail: string | null; at: string }
@@ -726,7 +729,7 @@ interface DiagnosticFailure { commit: string; detail: string | null; at: string 
  * catalog's duration, the preview cases' runs and, per failing check, the trial's failing-step text
  * and the last lines of its output (GY-3265), which only the filing carries.
  */
-export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catalogMs: number; previewCases?: PreviewCaseRun[]; onboarding?: OnboardingRun; details?: Record<string, string>; outputs?: Record<string, string[]> }>;
+export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catalogMs: number; shards?: CatalogShard[]; previewCases?: PreviewCaseRun[]; onboarding?: OnboardingRun; details?: Record<string, string>; outputs?: Record<string, string[]> }>;
 
 const onboardingCheck = 'onboarding:first-merge';
 
@@ -734,7 +737,7 @@ const onboardingCheck = 'onboarding:first-merge';
 export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { diagnose: DiagnosePort }, record: GateRecord): Promise<string[] | null> {
   const verified = record.verified;
   if (!verified || (record.diagnosticsAt && ports.now() - Date.parse(record.diagnosticsAt) < diagnosticsIntervalMs)) return null;
-  const { failed: checks, catalogMs, previewCases = [], onboarding, details: found = {}, outputs = {} } = await ports.diagnose(verified);
+  const { failed: checks, catalogMs, shards, previewCases = [], onboarding, details: found = {}, outputs = {} } = await ports.diagnose(verified);
   const at = new Date(ports.now()).toISOString();
   // GY-3747: an onboarding run over 15 minutes or needing a hand fix reaches an owner like any failing check.
   const slowOnboarding = onboarding && onboardingFailure(onboarding), details = slowOnboarding ? { ...found, [onboardingCheck]: slowOnboarding } : found;
@@ -751,7 +754,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
   }
   record.catalogMs = catalogMs;
   record.diagnosticsAt = at;
-  record.diagnosticsRun = { at, outcome: failed.length ? 'failed' : 'passed', reason: failed.length ? `${failed.length} failing: ${failed.join(', ')}`.slice(0, 500) : null };
+  record.diagnosticsRun = { at, outcome: failed.length ? 'failed' : 'passed', reason: failed.length ? `${failed.length} failing: ${failed.join(', ')}`.slice(0, 500) : null, ...(shards?.length ? { shards } : {}) };
   if (previewCases.length) record.previewCases = Object.fromEntries(previewCases.map(run => [run.case, run]));
   if (onboarding) record.onboarding = onboarding;
   return failed;

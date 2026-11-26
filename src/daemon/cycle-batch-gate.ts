@@ -2,7 +2,7 @@ import { featureMapCaseId } from '../app-feature-check.js';
 // Concern: the loop's batch gate on main (GY-3119): one gate at a time beside the cycle, the
 // scheduled diagnostics beside it, both over the merge writer's trial container and git.
 import type { Work } from '../model.js';
-import { bootstrapGate, clearGateNote, gateCeilingMs, gateLimitMs, type DiagnosePort, gateOutcomeReason, gateRecordPath, mergeFilings, readGateRecord, runDiagnostics, runGate, writeGateRecord, type GatePorts, type GateRecord } from '../batch-gate.js';
+import { bootstrapGate, clearGateNote, gateLimitMs, type CatalogShard, type DiagnosePort, gateOutcomeReason, gateRecordPath, mergeFilings, readGateRecord, runDiagnostics, runGate, writeGateRecord, type GatePorts, type GateRecord } from '../batch-gate.js';
 import { mainworksRepository } from '../scenarios.js';
 import { releaseNotesPath, releaseNote, appendReleaseNote } from '../release-notes.js';
 import { deployRecordPath, readDeployRecord } from '../deploy-watch.js';
@@ -10,6 +10,7 @@ import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.
 import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert, type ServeRevertPorts } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
+import { HostDroppedError, localOnlyTestPattern, realFreeCores } from '../merge-writer/remote-shards.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
 import type { Cycle } from './cycle.js';
@@ -153,6 +154,69 @@ async function trialFailures(reads: MergeWriterReads, commit: string, checks: re
     ...failed.filter(check => !check.startsWith('e2e:') && logTail.length).map(check => [check, logTail])]);
   return { failed: failed.filter(check => checks.includes(check) || (check.startsWith('test:') && checks.includes('affected'))), details, outputs,
     assertions: run.assertions ?? {}, flaked: run.flaked?.files ?? [] };
+}
+
+type CatalogRun = { failed: string[]; details: Record<string, string>; outputs: Record<string, string[]> };
+
+/**
+ * GY-3874: the daily catalog's cases split into shards, one per ready test machine and one for this
+ * machine, as a merge trial splits its test files; the cases a remote shard cannot run (Docker,
+ * nested confinement, a named environment) stay in this machine's shard. Each remote shard goes to the
+ * host with the most free CPU first and, when that host drops it, to the next; this machine's shard
+ * is one ordinary trial. Every shard ends by `deadline`, the 45-minute limit.
+ */
+async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, commit: string, cases: readonly string[], deadline: number,
+  survive: (run: Promise<CatalogRun>) => Promise<CatalogRun>, trusted: () => string | null): Promise<CatalogRun & { shards: CatalogShard[] }> {
+  const remote = await reads.gate?.catalogHosts?.(commit, deadline).catch(() => undefined);
+  try {
+    const hosts = [...remote?.hosts ?? []].sort((a, b) => realFreeCores(b) - realFreeCores(a));
+    const shards: string[][] = Array.from({ length: hosts.length + 1 }, () => []);
+    const roaming: string[] = [];
+    // A case bound to a Compose application needs Docker, which only this machine gives it.
+    let compose = new Set<string>();
+    try {
+      const delivery = JSON.parse(await reads.git(['show', `${commit}:graphyard.json`])).delivery ?? {};
+      const kinds = new Map<string, string>((delivery.applications ?? []).map((application: { id: string; kind: string }) => [application.id, application.kind]));
+      compose = new Set(Object.entries<string>(delivery.cases ?? {}).filter(([, app]) => kinds.get(app) === 'compose').map(([id]) => `e2e:${id}`));
+    } catch { /* no graphyard.json binds a case */ }
+    for (const proof of hosts.length ? cases : []) {
+      const text = await reads.git(['show', `${commit}:e2e/cases/${proof.slice(4)}.json`]).catch(() => '');
+      const tests = await Promise.all([...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])].map(file => reads.git(['show', `${commit}:${file}`]).catch(() => '')));
+      (compose.has(proof) || localOnlyTestPattern.test([text, ...tests].join('\n')) || /"environment"/.test(text) ? shards[0]! : roaming).push(proof);
+    }
+    // Each case any machine may run goes to the shard holding the fewest, so this machine's local-only cases count against its share.
+    if (!hosts.length) shards[0]!.push(...cases);
+    for (const proof of roaming) shards.reduce((fewest, shard) => shard.length < fewest.length ? shard : fewest).push(proof);
+    const failure = (detail: string): CatalogRun => ({ failed: ['e2e-catalog'], details: { 'e2e-catalog': detail }, outputs: {} });
+    const dropped = new Set<string>();
+    const onHost = async (index: number): Promise<CatalogRun & CatalogShard> => {
+      const group = shards[index]!, reasons: string[] = [];
+      for (const host of [hosts[index - 1]!, ...hosts.filter((_, other) => other !== index - 1)].filter(host => !dropped.has(host.name))) {
+        try {
+          const ran = await remote!.run(host.name, index, group);
+          // A case the trial leaves out (a Compose preview or the fixture's own application) returns no
+          // result, here as on this machine; the daily served run proves it.
+          const failing = ran.filter(entry => entry.failed > 0 || entry.missing || entry.executed === 0);
+          return { host: host.name, cases: group.length, failed: failing.map(entry => entry.proof),
+            details: Object.fromEntries(failing.filter(entry => entry.failingStep).map(entry => [entry.proof, entry.failingStep!])),
+            outputs: Object.fromEntries(failing.filter(entry => entry.output?.length).map(entry => [entry.proof, entry.output!.slice(-outputLines)])) };
+        } catch (error) {
+          if (!(error instanceof HostDroppedError)) return { host: host.name, cases: group.length, ...failure(`shard ${index + 1} on ${host.name}: ${message(error)}`) };
+          dropped.add(host.name);
+          reasons.push(error.message);
+        }
+      }
+      return { host: 'none', cases: group.length, ...failure(`no test machine took shard ${index + 1} of ${group.length} cases: ${reasons.join('; ')}`) };
+    };
+    const ran = await Promise.all(shards.map(async (group, index): Promise<CatalogRun & CatalogShard> => index > 0 ? group.length ? onHost(index) : { host: 'none', cases: 0, failed: [], details: {}, outputs: {} }
+      : { host: 'local', cases: group.length, ...group.length ? await survive(trialFailures(reads, commit, group, [], gateLimitMs, trusted, true)) : { failed: [], details: {}, outputs: {} } }));
+    return { failed: [...new Set(ran.flatMap(shard => shard.failed))], outputs: Object.assign({}, ...ran.map(shard => shard.outputs)),
+      details: ran.reduce<Record<string, string>>((all, shard) => {
+        for (const [check, detail] of Object.entries(shard.details)) all[check] = all[check] ? `${all[check]}; ${detail}` : detail;
+        return all;
+      }, {}),
+      shards: ran.filter(shard => shard.cases).map(({ host, cases }) => ({ host, cases })) };
+  } finally { await remote?.close().catch(() => undefined); }
 }
 
 /**
@@ -311,12 +375,12 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     diagnose: async commit => {
       // GY-3779: a trial that crashes or times out is that check's failure, not the run's end: the
       // catalog and onboarding still run and the day's run is recorded.
-      const survive = (check: string, run: Promise<Awaited<ReturnType<typeof trialFailures>>>) =>
+      const survive = (check: string, run: Promise<CatalogRun>): Promise<CatalogRun> =>
         run.catch((error: unknown) => ({ failed: [check], details: { [check]: message(error) } as Record<string, string>, outputs: {} as Record<string, string[]> }));
       const suite = await survive('full-suite', trialFailures(reads, commit, ['build', 'affected'], ['package.json'], gateLimitMs, trusted));
       const held = await catalog(commit), cases = held.map(id => `e2e:${id}`), started = reads.now();
-      // GY-3816: the whole catalog takes about 55 minutes; it gets the gate ceiling, not the 45-minute limit.
-      const { failed, details, outputs } = cases.length ? await survive('e2e-catalog', trialFailures(reads, commit, cases, [], gateCeilingMs, trusted, true)) : { failed: [], details: {}, outputs: {} }, catalogMs = reads.now() - started;
+      // GY-3874: the whole catalog, sharded across the ready test machines and this one, within the 45-minute limit.
+      const { failed, details, outputs, shards } = cases.length ? await shardedCatalog(reads, commit, cases, started + gateLimitMs, run => survive('e2e-catalog', run), trusted) : { failed: [], details: {}, outputs: {}, shards: [] }, catalogMs = reads.now() - started;
       const previews = reads.gate?.previews;
       const previewCases = !servedPreviewCases.some(id => held.includes(id)) ? []
         : previews ? await previews(commit) : notCovered(commit, new Date(reads.now()).toISOString(), 'this loop runs no served preview cases');
@@ -324,7 +388,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       const onboarding = held.includes(onboardingCase) ? await reads.gate?.onboarding?.(commit) : undefined;
       // GY-3305: the suite trial's details ride with the catalog's — a failing test check (the browser
       // suite among them) keeps its identity whichever trial named it.
-      return { failed: [...new Set([...suite.failed, ...failed])], catalogMs, previewCases, ...(onboarding ? { onboarding } : {}), details: { ...suite.details, ...details }, outputs: { ...suite.outputs, ...outputs } };
+      return { failed: [...new Set([...suite.failed, ...failed])], catalogMs, shards, previewCases, ...(onboarding ? { onboarding } : {}), details: { ...suite.details, ...details }, outputs: { ...suite.outputs, ...outputs } };
     },
   };
 }

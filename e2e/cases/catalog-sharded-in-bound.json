@@ -1,0 +1,16 @@
+{
+  "id": "catalog-sharded-in-bound",
+  "title": "The daily run splits the e2e catalog across the ready test machines and finishes inside 45 minutes",
+  "description": "The daily diagnostics on a test install with two ready test machines split the catalog's cases into shards on them and this machine, bound every shard by 45 minutes, and master status's batch gate shows where each shard ran once the run finishes.",
+  "tags": ["diagnostics"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "run the daily catalog once across two test machines and read its shards in master status",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/catalog-sharded-in-bound.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}
