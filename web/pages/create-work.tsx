@@ -33,8 +33,8 @@ export default function CreateWork({ work, error, busy, setCreating, setBusy, se
     <label>Why it helps users<input name="why" required maxLength={300} placeholder="One sentence: who gets what"/></label>
     <label>Why it is the simplest thing that works<input name="simplest" required maxLength={300} placeholder="One sentence: what it leaves out"/></label>
     <label>Description (optional)<textarea name="description" rows={3}/></label>
-    <label><input type="checkbox" name="hold"/> Hold (keep it out of dispatch until released)</label>
-    <p className="muted">Describe the change. The master writes the criteria and proofs.</p>
+    <label className="check-label"><input type="checkbox" name="hold"/> Hold (keep it out of dispatch until released)</label>
+    <p className="muted">Describe the change. The Lead writes the criteria and proofs.</p>
     <details open={advanced} onToggle={e => setAdvanced(e.currentTarget.open)}><summary>Advanced</summary>
     <fieldset className="criteria-fields"><legend>What must be true when it is done</legend>
       <p className="muted">Each <Term term="acceptance criterion">criterion</Term> is one thing someone can check. Give it one or more <Term term="proof"><strong>proofs</strong></Term>: the names of the tests that show it is true. A proof name starts with its kind — <Term term="unit test"><code>unit:</code></Term> a fast code test, <Term term="integration test"><code>integration:</code></Term> a test against a real database or service, <Term term="end-to-end test"><code>e2e:</code></Term> a test through the browser, <Term term="manual check"><code>manual:</code></Term> a person checks it. Examples: <Term term="unit test"><code>unit:login-rejects-bad-password</code></Term>, <Term term="integration test"><code>integration:claim-safety</code></Term>, <Term term="end-to-end test"><code>e2e:checkout</code></Term>, <Term term="manual check"><code>manual:copy-review</code></Term>. Someone who did not build the work must run it.</p>

@@ -1,0 +1,9 @@
+{
+  "id": "setup-and-new-item-layout",
+  "title": "Setup and New work item read cleanly at 1280 and 390 px",
+  "description": "On the served dashboard with the docs demo data, at 1280 and 390 px: an unfinished Setup step's action button leaves space above the next step's heading, the New work item dialog shows the Hold checkbox on its label's line, and the dialog's help names the Lead, not the master.",
+  "tags": ["dashboard", "setup", "filing"],
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "Setup checklist and New work item layout", "run": "npm run test:browser -- browser-tests/setup-and-new-item-layout.spec.ts", "timeoutSeconds": 240 }]
+}
