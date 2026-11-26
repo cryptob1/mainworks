@@ -18,6 +18,10 @@ export const terminalInputEvent = 'master.terminal.input';
 /** GY-3514: every open Master page stream, by who opened it, so revoking a person closes theirs at once. */
 const openTerminals = new Map<string, Set<() => void>>();
 export function endTerminals(id: string) { for (const close of openTerminals.get(id) ?? []) close(); }
+/** GY-3880: who sees the Lead's pane (it shows credentials): the admin, the loop's coordinator and teammates the owner invited. */
+export const canViewMasterPane = (principal: Principal) => principal.role === 'admin' || principal.role === 'coordinator' || !!principal.team;
+/** GY-3880: the largest client message a terminal socket buffers; a 20 MB upload is about 27 MB as base64. */
+const maxTerminalMessageBytes = 32 * 1024 * 1024;
 
 const refuse = (socket: Duplex, status: number, text: string) => { socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
 /** One unfragmented server frame: text (1), binary (2), close (8) or pong (10). */
@@ -37,13 +41,17 @@ const accept = (req: IncomingMessage, socket: Duplex, protocol: string) => socke
  * fragmented itself, is delivered at once even between a message's fragments. */
 const readFrames = (socket: Duplex, on: (opcode: number, payload: Buffer) => void) => {
   let pending = Buffer.alloc(0), fragmented: { opcode: number; payload: Buffer } | null = null;
+  const tooLarge = () => { pending = Buffer.alloc(0); fragmented = null; socket.destroy(); };
   socket.on('data', (chunk: Buffer) => {
+    if (socket.destroyed) return;
     pending = Buffer.concat([pending, chunk]);
     for (;;) {
       if (pending.length < 2) return;
       const fin = (pending[0]! & 128) !== 0, opcode = pending[0]! & 15; let length = pending[1]! & 127, offset = 2;
       if (length === 126) { if (pending.length < 4) return; length = pending.readUInt16BE(2); offset = 4; }
       else if (length === 127) { if (pending.length < 10) return; length = Number(pending.readBigUInt64BE(2)); offset = 10; }
+      // A frame, or a fragmented message's total, over the limit closes the socket before it is buffered.
+      if (length + (fragmented?.payload.length ?? 0) > maxTerminalMessageBytes) return tooLarge();
       if (pending.length < offset + 4 + length) return;
       const mask = pending.subarray(offset, offset + 4), payload = Buffer.from(pending.subarray(offset + 4, offset + 4 + length).map((byte, index) => byte ^ mask[index % 4]!));
       pending = pending.subarray(offset + 4 + length);
@@ -124,9 +132,9 @@ const bridgedStream = (bridge: BridgeHost, request: StreamRequest, handlers: Han
  * (`mainworks, TOKEN`); a request without a valid one is refused before the upgrade. The pane is
  * always the master's, as the loop last named it (GY-3259: workers run headless, and their output
  * is the item page's run log). A human admin gets Herdr's writable `terminal session control`
- * stream (taking over), anyone else a read-only view whose input is never forwarded. Frames go out as binary
- * messages of ANSI bytes; the page sends `{type:'input',data}` and `{type:'resize',cols,rows}`, every viewer's
- * resize sizing the pane to its page (GY-3313). Each typed line is recorded in
+ * stream (taking over); the coordinator and invited viewers a read-only view whose input and resizes are never
+ * forwarded, and anyone else is refused 403 before the upgrade (GY-3880). Frames go out as binary
+ * messages of ANSI bytes; the page sends `{type:'input',data}` and `{type:'resize',cols,rows}`. Each typed line is recorded in
  * history under the human who typed it. Closing the page releases the stream; the pane runs on.
  * These are the streams Herdr documents for bridges: unlike `herdr terminal attach TERMINAL_ID`,
  * they take the pane ids Mainworks records and speak newline-delimited JSON over pipes, so the
@@ -139,6 +147,7 @@ export async function terminalUpgrade(services: Services, req: IncomingMessage, 
   const [protocol, token = ''] = String(req.headers['sec-websocket-protocol'] ?? '').split(',').map(part => part.trim());
   let actor: Principal;
   try { actor = await authenticate(services, `Bearer ${token}`, services.repository); } catch { return refuse(socket, 401, 'Unauthorized'); }
+  if (!canViewMasterPane(actor)) return refuse(socket, 403, 'Forbidden');
   const panes = loopPanesRegistry(services.engine).latest, pane = panes?.master ?? null;
   const control = canTypeIntoMasterPane(actor);
   const size = (name: string, fallback: number) => String(Math.min(500, Math.max(10, Number(url.searchParams.get(name)) || fallback)));
@@ -196,9 +205,9 @@ export async function terminalUpgrade(services: Services, req: IncomingMessage, 
   const message = (text: string) => {
     let input: any; try { input = JSON.parse(text); } catch { return; }
     if (!activePane) return;
-    // Every viewer sizes the pane to its page, read-only ones too (GY-3313); only a typing viewer types.
-    if (input.type === 'resize') return void command({ type: 'terminal.resize', cols: Number(input.cols), rows: Number(input.rows) });
+    // GY-3880: only a person who may type sizes the pane, or types into it.
     if (!control) return;
+    if (input.type === 'resize') return void command({ type: 'terminal.resize', cols: Number(input.cols), rows: Number(input.rows) });
     if (input.type === 'upload') return void upload(String(input.name ?? 'file'), Buffer.from(String(input.data ?? ''), 'base64'));
     if (input.type !== 'input' || typeof input.data !== 'string') return;
     command({ type: 'terminal.input', text: input.data });

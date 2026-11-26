@@ -29,7 +29,7 @@ const engine = new Engine(store, 120, 'owner/project');
 engine.gitRunner = null;
 const http = server(engine, [
   { ...operator, token: 'test-human-operator' } as any,
-  { id: 'watcher', role: 'reader', token: 'test-reader' },
+  { id: 'watcher', role: 'reader', team: 'viewer', token: 'test-reader' } as any,
   { ...worker, token: 'test-worker' } as any,
   { ...coordinator, token: 'test-coordinator' } as any,
   // GY-3345: another install's Master, messaging this one.

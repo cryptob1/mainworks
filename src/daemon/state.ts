@@ -196,8 +196,10 @@ export const daemonStateSchema = z.object({
   actions: z.record(z.string(), daemonActionSchema).default({}),
   /** GY-3103: worker launch failures by `runtime:item id`, each backing off until `until` (launchBackoffMs). */
   launchBackoff: z.record(z.string(), z.object({ failures: z.number().int().min(1), reason: z.string().max(500), until: z.string() }).strict()).default({}),
-  /** GY-3103: per registry runtime, the newer installed version one session runs on before the fleet switches; `failed` holds a failed canary's error until a newer version appears. */
-  canaries: z.record(z.string(), z.object({ entry: z.string().max(1000), version: z.string().max(100), work: z.string().nullable(), epoch: z.number().int().nullable(), startedAt: z.string().nullable(), failed: z.string().max(500).nullable() }).strict()).default({}),
+  /** GY-3103: per registry runtime, the newer installed version one session runs on before the fleet switches; `failed` holds a failed canary's error until a newer version appears.
+   *  GY-3883: `inconclusive` holds the provider limit notice (and its reset) a canary stopped on; such a canary runs again on the runtime's next launch. */
+  canaries: z.record(z.string(), z.object({ entry: z.string().max(1000), version: z.string().max(100), work: z.string().nullable(), epoch: z.number().int().nullable(), startedAt: z.string().nullable(), failed: z.string().max(500).nullable(),
+    inconclusive: z.object({ notice: z.string().max(500), resetsAt: z.string().nullable() }).strict().nullable().optional() }).strict()).default({}),
   metrics: z.array(cycleMetricsSchema).default([]),
   mergeWriter: mergeWriterStateSchema.default(() => emptyMergeWriterState()), // GY-1524: the control-plane merge executor's queue, flight, last delivery and refusals
   /** The release the running loop process loaded, recorded by each process at its startup (GY-437). */

@@ -256,15 +256,14 @@ export class HumanSignIn {
 
   /**
    * GY-3215: the operator invites a teammate. NAME is recorded as a human principal with its team role
-   * (inviting it again changes the role), and the link opens that teammate's own session: role reader,
+   * (inviting it again changes the role and ends their sessions, GY-3880), and the link opens that teammate's own session: role reader,
    * so it reads everything; a maintainer also files work and types into the master. GY-3514: the link
    * is kept in the database, opens once, and stays valid for the TTL the owner picked.
    */
   async invite(issuer: Principal, configured: string[], name: string, team: string, ttl: number) {
     this.checkInvite(issuer, configured, name, team);
     const now = this.clock(), code = randomBytes(32).toString('base64url'), expiresAt = new Date(now + ttl);
-    await this.store.pool.query(`INSERT INTO team_members (name, team, invited_by, invited_at) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (name) DO UPDATE SET team=EXCLUDED.team, invited_by=EXCLUDED.invited_by, invited_at=EXCLUDED.invited_at`, [name, team, issuer.id, new Date(now)]);
+    await this.admit(name, team, issuer.id);
     await this.store.pool.query('DELETE FROM team_invites WHERE expires_at <= $1', [new Date(now)]);
     await this.store.pool.query('INSERT INTO team_invites (code_hash, name, expires_at) VALUES ($1, $2, $3)', [digest(code), name, expiresAt]);
     return { code, principal: name, expiresAt: expiresAt.toISOString() };
@@ -291,17 +290,25 @@ export class HumanSignIn {
 
   /** GY-3486: the machine's roster admits a teammate on this install by their Tailscale login (team-access.ts). */
   async admit(name: string, team: string, by: string) {
+    const { rows } = await this.store.pool.query<{ team: string }>('SELECT team FROM team_members WHERE name=$1', [name]);
     await this.store.pool.query(`INSERT INTO team_members (name, team, invited_by, invited_at) VALUES ($1, $2, $3, $4)
       ON CONFLICT (name) DO UPDATE SET team=EXCLUDED.team, invited_by=EXCLUDED.invited_by, invited_at=EXCLUDED.invited_at`, [name, team, by, new Date(this.clock())]);
+    // GY-3880: a changed role takes effect at once: their sessions and open terminals end, and signing in again gives the new role.
+    if (rows[0] && rows[0].team !== team) await this.endSessions(name);
   }
 
   /** Remove a teammate, their unopened links and every session they hold, closing their open master pane at once. */
   async remove(name: string) {
     await this.store.pool.query('DELETE FROM team_invites WHERE name=$1', [name]);
     const { rowCount } = await this.store.pool.query('DELETE FROM team_members WHERE name=$1', [name]);
+    return { removed: !!rowCount, sessionsEnded: await this.endSessions(name) };
+  }
+
+  /** End every session teammate NAME holds and close their open master pane; the count of sessions ended. */
+  private async endSessions(name: string) {
     const sessions = await this.store.pool.query(`DELETE FROM human_sign_in_sessions WHERE actor->>'id'=$1 AND actor ? 'team'`, [name]);
     endTerminals(name);
-    return { removed: !!rowCount, sessionsEnded: sessions.rowCount ?? 0 };
+    return sessions.rowCount ?? 0;
   }
 
   private link(principal: Principal) {

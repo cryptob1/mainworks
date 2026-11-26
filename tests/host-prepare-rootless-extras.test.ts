@@ -34,7 +34,7 @@ test(`${proof} — on a host without dockerd-rootless-setuptool.sh and slirp4net
   }
   // And it uses them: the install ran through the fetched setuptool with its directory on PATH, so
   // the daemon it writes runs the fetched rootlesskit and slirp4netns.
-  assert.match(lines.find(line => line.startsWith('sudo '))!, new RegExp(`sudo -u gy-compute XDG_RUNTIME_DIR=/run/user/1001 [^\\n]*PATH=[^\\n]*docker-rootless-extras:[^\\n]*gy-compute/\\.graphyard/rootless/docker-rootless-extras/dockerd-rootless-setuptool\\.sh install`));
+  assert.match(lines.find(line => line.startsWith('sudo -u gy-compute XDG_RUNTIME_DIR='))!, new RegExp(`sudo -u gy-compute XDG_RUNTIME_DIR=/run/user/1001 [^\\n]*PATH=[^\\n]*docker-rootless-extras:[^\\n]*gy-compute/\\.graphyard/rootless/docker-rootless-extras/dockerd-rootless-setuptool\\.sh install`));
   assert.match(lines.join('\n'), /dockerd-rootless-setuptool\.sh install for gy-compute at \/run\/user\/1001\/docker\.sock/, 'the fetched setuptool ran the install');
   await stat(join(fixture.host('bare'), 'run', 'user', '1001', 'docker.sock'));
   assert.match(fixture.prepareOutput('bare'), /Ready\. On the Mainworks machine run: mainworks host add gy-compute@bare\s*$/);

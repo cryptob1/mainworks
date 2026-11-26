@@ -1,19 +1,19 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { hostShimDigest, hostShimScript, hostShimVerbs } from '../src/host-shim.js';
-import { readHostReadings } from '../src/hosts.js';
+import { helperSigningKeyFile, readHostReadings } from '../src/hosts.js';
 import { slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
 import { outdatedShimAttention, readShardHosts } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { fakeHosts } from './helpers/fake-hosts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { dockerCreates, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { dockerCreates, fixtureShim, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
 // GY-3780: after a release changes graphyard-host-shim the loop updates each host over its restricted
 // key; nobody runs host prepare. A host that does not take the update reads away with the reason.
@@ -42,7 +42,7 @@ const shims = () => join(hosts.home('box'), '.graphyard', 'shims');
 /** The host as prepared by an older release: another digest, and a run-shard revision this release's trials cannot use. */
 const installOlder = async (verbs = hostShimVerbs.join(' ').replace(/run-shard:\d+/, 'run-shard:1'), edit = (script: string) => script) => {
   await rm(shims(), { recursive: true, force: true });
-  await writeFile(hosts.shim, edit(hostShimScript.replace(hostShimDigest, 'a'.repeat(64)).replace(hostShimVerbs.join(' '), verbs)));
+  await writeFile(hosts.shim, fixtureShim(edit(hostShimScript.replace(hostShimDigest, 'a'.repeat(64)).replace(hostShimVerbs.join(' '), verbs)), hosts.root));
 };
 const loop = async () => (await readHostReadings([], { file, run, local: 'here', update: true })).find(reading => reading.host === target)!;
 const shim = (command: string, input: string) => spawnSync(hosts.shim, [], { input, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: hosts.home('box'), SSH_ORIGINAL_COMMAND: command } });
@@ -75,7 +75,10 @@ test(`${proof} — a shim with a wrong digest is refused and the host keeps its 
   assert.equal(existsSync(shims()), false, 'nothing was written');
   assert.match(shim('probe', '').stdout, /^shim a{64}$/m);
   assert.equal(shim('update-shim ../x', hostShimScript).status, 1);
-  const taken = shim(`update-shim ${createHash('sha256').update(hostShimScript).digest('hex')}`, hostShimScript);
+  const digest = createHash('sha256').update(hostShimScript).digest('hex');
+  assert.match(shim(`update-shim ${digest}`, hostShimScript).stderr, /refuses the update: no key this host was prepared with signed it/, 'GY-3879: an unsigned update is refused');
+  const signed = execFileSync('ssh-keygen', ['-Y', 'sign', '-q', '-f', helperSigningKeyFile(), '-n', 'mainworks-helper'], { input: hostShimScript, encoding: 'utf8' });
+  const taken = shim(`update-shim ${digest}`, signed + hostShimScript);
   assert.equal(taken.status, 0, taken.stderr);
   assert.match(shim('probe', '').stdout, new RegExp(`^shim ${hostShimDigest}$`, 'm'));
 });
@@ -104,7 +107,7 @@ test(`${proof} — a host prepared by the printed script takes the update as gy-
   assert.equal((await read(false)).older, true);
   assert.equal((await read(true)).older, undefined);
   assert.equal((await read(false)).older, undefined, 'the next probe reads current');
-  assert.equal(await readFile(join(prepared.host('box'), 'usr-local-bin', `graphyard-host-shim-${older.digest}`), 'utf8'), older.script, 'the root-owned file is untouched');
+  assert.equal(await readFile(join(prepared.host('box'), 'usr-local-bin', `graphyard-host-shim-${older.digest}`), 'utf8'), older.script.replaceAll('/etc/ssh/', `${prepared.host('box')}/etc/ssh/`), 'the root-owned file is untouched');
   await prepared.prepare('box', { shim: older });
   assert.equal((await read(false)).older, true);
 });

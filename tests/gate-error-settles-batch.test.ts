@@ -78,11 +78,12 @@ async function world(label: string, verdict: (launch: number) => Promise<MergeTr
 const gateOnce = async (cycle: Parameters<typeof batchGateStep>[0]) => { const flight = (await batchGateStep(cycle))!; await flight.gate; await flight.diagnostics; };
 
 for (const [fault, error] of [['a trial-host fault', () => new Error('the trial container is gone')], ['a TrialTimeoutError', () => new TrialTimeoutError('tests', 1_000, '')]] as const) {
-  test(`integration:gate-error-settles-batch — after ${fault}, the next gate cycle launches a fresh run on main's tip instead of adopting the finished run`, { timeout: 60_000 }, async () => {
+  test(`integration:gate-error-settles-batch — after ${fault}, the gate launches a fresh run on main's tip instead of adopting the finished run`, { timeout: 60_000 }, async () => {
     const yard = await world(`gate-error-${fault.length}`, async launch => { if (launch === 1) throw error(); return passing; });
     await gateOnce(yard.loop().cycle);
     const failed = readGateRecord(yard.file)!;
-    assert.equal(failed.lastOutcome?.outcome, 'error');
+    // A trial timeout now uses the gate's timeout path, which retries within this cycle (GY-3882).
+    assert.equal(failed.lastOutcome?.outcome, error() instanceof TrialTimeoutError ? 'verified' : 'error');
     assert.equal(failed.lastOutcome?.tip, yard.tip);
     assert.equal(failed.inFlight, null, 'the thrown gate settles its batch');
     await gateOnce(yard.loop().cycle);

@@ -6,7 +6,7 @@ import { defineRoutes, parseJson, type RouteContext } from '../routes.js';
 import { humanSignIn } from '../auth.js';
 import { applyTeamChange, missingTailnetGuidance, type MachineTeam, type TeamChange } from '../../team-access.js';
 import { teamRoles } from '../principals.js';
-import { terminalInputEvent } from '../terminal.js';
+import { canViewMasterPane, terminalInputEvent } from '../terminal.js';
 import { unownedFamilySql } from '../../store/tables/work.js';
 
 /**
@@ -150,8 +150,9 @@ export const teamAccessRoutes = defineRoutes('team-access', [
     const local = (await context.services.engine.store.pool.query('SELECT 1 FROM team_members WHERE name=$1', [name])).rowCount;
     return listed && !local ? { revoked: name, sessionsEnded: 0 } : humanSignIn(context.services).revoke(context.actor, configuredIds(context), name);
   } },
-  // GY-3514: what people typed into the master's pane, newest first, for everyone signed in.
+  // GY-3514: what people typed into the master's pane, newest first, for whoever may see that pane (GY-3880).
   { method: 'GET', path: '/api/typed-input', handle: async context => {
+    demand(canViewMasterPane(context.actor), 'Only the owner and invited teammates see what was typed into the Lead', 403);
     const { rows } = await context.services.engine.store.pool.query<{ actor: string; at: Date; payload: { line: string } }>(
       'SELECT actor, created_at AS at, payload FROM events WHERE work_id IS NULL AND kind=$1 ORDER BY seq DESC LIMIT 500', [terminalInputEvent]);
     return { typed: rows.map(row => ({ who: row.actor, at: new Date(row.at).toISOString(), text: row.payload.line })) };

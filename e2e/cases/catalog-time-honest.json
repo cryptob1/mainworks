@@ -1,0 +1,13 @@
+{
+  "id": "catalog-time-honest",
+  "title": "A catalog timeout makes the next release check run the affected subset",
+  "description": "Runs a test install's release loop through a whole-catalog trial timeout, checks its persisted timing, and verifies the retry uses the affected subset and verifies the commit.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "catalog timeout is measured before the release check retries",
+    "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=e2e:catalog-time-honest tests/catalog-time-honest.test.ts",
+    "timeoutSeconds": 300
+  }]
+}

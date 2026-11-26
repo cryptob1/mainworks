@@ -42,6 +42,7 @@ import type { ReleaseSweep } from './merge-writer/test-selection.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { onboardingFailure, type OnboardingRun } from './onboarding-time.js';
 import { TrialHeatError, trialFileTimeoutMs } from './merge-writer/trial-load.js';
+import { TrialTimeoutError } from './merge-writer/trial.js';
 import { stateDirectory } from './install/layout.js';
 
 /** How long one gate may run before it counts as failed (gate timeout). */
@@ -707,7 +708,7 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       keepInFlight();
       return { outcome: 'retry', tip, reason: error.message };
     }
-    if (!(error instanceof GateTimeout)) throw error;
+    if (!(error instanceof GateTimeout) && !(error instanceof TrialTimeoutError)) throw error;
     if (!(mainKey in finished)) measure(ports.now() - Date.parse(record.inFlight.startedAt));
     // A timeout blames nobody and never holds: the loop recuts the batch from main's newest tip at once (GY-3444).
     record.attempt = { ...record.attempt, timeouts: record.attempt.timeouts + 1 };
@@ -737,7 +738,9 @@ const onboardingCheck = 'onboarding:first-merge';
 export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { diagnose: DiagnosePort }, record: GateRecord): Promise<string[] | null> {
   const verified = record.verified;
   if (!verified || (record.diagnosticsAt && ports.now() - Date.parse(record.diagnosticsAt) < diagnosticsIntervalMs)) return null;
+  const started = ports.now();
   const { failed: checks, catalogMs, shards, previewCases = [], onboarding, details: found = {}, outputs = {} } = await ports.diagnose(verified);
+  const elapsed = ports.now() - started;
   const at = new Date(ports.now()).toISOString();
   // GY-3747: an onboarding run over 15 minutes or needing a hand fix reaches an owner like any failing check.
   const slowOnboarding = onboarding && onboardingFailure(onboarding), details = slowOnboarding ? { ...found, [onboardingCheck]: slowOnboarding } : found;
@@ -752,7 +755,8 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
     await fileFailure(ports, record, at, { key: `diagnostic:${check}`, title: `Diagnostic failure on main: ${check}`,
       description: `The scheduled full run against the verified commit ${verified} failed ${check}${detail ? `: ${detail}` : ''}. It never blocks a gate or a merge; fix it at its cause.${output}` });
   }
-  record.catalogMs = catalogMs;
+  // A failed run may report only a partial catalog time. Count its full elapsed time instead.
+  record.catalogMs = checks.length ? Math.max(catalogMs, elapsed) : catalogMs;
   record.diagnosticsAt = at;
   record.diagnosticsRun = { at, outcome: failed.length ? 'failed' : 'passed', reason: failed.length ? `${failed.length} failing: ${failed.join(', ')}`.slice(0, 500) : null, ...(shards?.length ? { shards } : {}) };
   if (previewCases.length) record.previewCases = Object.fromEntries(previewCases.map(run => [run.case, run]));

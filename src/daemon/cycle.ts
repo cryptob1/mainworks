@@ -11,7 +11,7 @@ import type { Work } from '../model.js';
 import type { MasterConfig, WorkerProfile } from '../master/profiles.js';
 import { workersAllowed } from '../master/worker-pool.js';
 import { assertDispatchable, HeadlessWorkerExit, workerRunHandle, type WorkerRun } from '../master/dispatch.js';
-import type { ExhaustionSignal } from '../model/capacity.js';
+import { providerLimit, type ExhaustionSignal } from '../model/capacity.js';
 import { endedRuntimeStates } from '../model/sessions.js';
 import { checkoutTrustLine, type CheckoutTrustFleet } from '../harness.js';
 import { detectRuntimeExhaustion } from '../master/runtime-prompt.js';
@@ -765,7 +765,7 @@ async function dispatchStep(cycle: Cycle) {
     // Each newer runtime version is offered to one launch at a time, the canary; the rest stay pinned.
     const canaries = offers;
     offers = [];
-    for (const offer of canaries) state.canaries[offer.runtime] = { entry: offer.entry, version: offer.version, work: item.key, epoch: null, startedAt: new Date(clock).toISOString(), failed: null };
+    for (const offer of canaries) state.canaries[offer.runtime] = { entry: offer.entry, version: offer.version, work: item.key, epoch: null, startedAt: new Date(clock).toISOString(), failed: null, inconclusive: state.canaries[offer.runtime]?.inconclusive ?? null };
     const before = ahead.filter(entry => entry.priority < item.priority);
     let settled!: () => void;
     ahead.push({ key, priority: item.priority, done: new Promise<void>(resolve => { settled = resolve; }) });
@@ -960,9 +960,10 @@ async function launchWorker(cycle: Cycle, item: Work, key: string, profile: Work
     for (const offer of canaries) {
       const claimed = state.canaries[offer.runtime];
       if (claimed?.work !== item.key || claimed.epoch !== null) continue;
-      if (canary?.runtime !== offer.runtime) delete state.canaries[offer.runtime];
+      // An inconclusive canary no launch took stays offered, its notice kept for status (GY-3883).
+      if (canary?.runtime !== offer.runtime) { if (claimed.inconclusive) state.canaries[offer.runtime] = { ...claimed, startedAt: null }; else delete state.canaries[offer.runtime]; }
       else if (canary.failed) await failCanary(cycle, offer.runtime, `${item.key}: ${canary.failed}`);
-      else state.canaries[offer.runtime] = { ...claimed, epoch: epoch ?? item.epoch + 1, startedAt: startedAt ?? new Date(now()).toISOString() };
+      else state.canaries[offer.runtime] = { ...claimed, epoch: epoch ?? item.epoch + 1, startedAt: startedAt ?? new Date(now()).toISOString(), inconclusive: null };
     }
   };
   const attempts = (state.actions[key]?.attempts ?? 0) + 1;
@@ -1019,6 +1020,7 @@ async function runtimeCanaries(cycle: Cycle, runtimes: AgentRegistry['runtimes']
       if (offer) offers.push(offer);
       continue;
     }
+    if (canary.inconclusive && canary.startedAt === null) { offers.push(offer); continue; }
     if (canary.failed || canary.epoch === null) continue;
     const item = snapshot.work.find(entry => entry.key === canary.work);
     if (!item) { delete state.canaries[runtime.name]; continue; }
@@ -1026,7 +1028,8 @@ async function runtimeCanaries(cycle: Cycle, runtimes: AgentRegistry['runtimes']
     if (!verdict) continue;
     if (!verdict.passed) {
       const incident = state.actions[earlyExitKey(item)];
-      await failCanary(cycle, runtime.name, incident?.epoch === canary.epoch ? incident.detail : `${item.key} epoch ${canary.epoch}: ${verdict.why}`);
+      const spent = item.capacity?.exhaustions.findLast(entry => entry.role === 'worker' && entry.epoch === canary.epoch);
+      await failCanary(cycle, runtime.name, incident?.epoch === canary.epoch ? incident.detail : `${item.key} epoch ${canary.epoch}: ${verdict.why}`, spent && { reason: spent.reason, resetsAt: spent.resetsAt });
       continue;
     }
     const reason = `Canary ${item.key} epoch ${canary.epoch} on ${runtime.name} ${canary.version} ${verdict.why}; ${runtime.name} now launches from ${canary.entry} instead of ${pinnedInstall(runtime)?.entry}`.slice(0, 500);
@@ -1038,10 +1041,20 @@ async function runtimeCanaries(cycle: Cycle, runtimes: AgentRegistry['runtimes']
   }
   return offers;
 }
-/** A failed canary keeps its runtime pinned and wakes the master with the error (masterCauses). */
-async function failCanary(cycle: Cycle, runtime: string, error: string) {
+/**
+ * A failed canary keeps its runtime pinned and wakes the master with the error (masterCauses).
+ * GY-3883: one that stopped on its provider's limit notice judged the account, not the version: it
+ * is inconclusive, and runs again on the runtime's next launch (another account, or this one after its reset).
+ */
+async function failCanary(cycle: Cycle, runtime: string, error: string, spent?: ExhaustionSignal | null) {
   const canary = cycle.state.canaries[runtime];
   if (!canary) return;
+  const notice = spent ?? providerLimit(error, cycle.clock);
+  if (notice) {
+    Object.assign(canary, { epoch: null, startedAt: null, inconclusive: { notice: notice.reason.slice(0, 500), resetsAt: notice.resetsAt } });
+    await note(cycle, `runtime-canary:${runtime}`, 'judgement', canary.work, 'waiting', `The canary of ${runtime} ${canary.version} stopped on its provider's limit notice, so it is inconclusive: retried on another ${runtime} account or after ${notice.resetsAt ?? 'the reset'}. ${notice.reason}`);
+    return;
+  }
   canary.failed = error.slice(0, 500);
   await note(cycle, `runtime-canary:${runtime}`, 'judgement', canary.work, 'failed', `The canary of ${runtime} ${canary.version} failed, so ${runtime} stays on its pinned version: ${error}`);
 }
