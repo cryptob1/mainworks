@@ -40,6 +40,7 @@ test('integration:trial-known-flaky — a trial failing only on tests red on the
   const flaky = world(['tests/flaky.test.ts']);
   assert.equal((await mergeOne(flaky.ports, candidate)).outcome, 'refused');
   assert.deepEqual(flaky.events.at(-1), { kind: 'refused', head, reason: `${trialFailurePrefix}: tests tests/flaky.test.ts` });
+  assert.deepEqual(flaky.notes, [], 'the open flaky item excuses nothing');
 
   // Only tests that fail on the base tip too, case for case: a known red, noted on the candidate, which lands.
   const red = world(['tests/red.test.ts'], { tip, files: ['tests/red.test.ts'], tests: ['red case'], cases: ['red case'] });
