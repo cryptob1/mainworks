@@ -189,10 +189,21 @@ export async function adoptTrialRun(ref: { key: string; head: string; mergeSha: 
  * completion still settles. Null while the run has written neither.
  */
 export async function finishedTrialRun(directory: string): Promise<{ run: MergeTrialRun } | { error: Error } | null> {
-  const outcome = await readOutcome(directory);
-  if (outcome) return outcome.ok ? { run: outcome.run } : { error: reconstructTrialError(outcome.error) };
-  const exit = readExit(directory);
-  return exit === null ? null : { error: new Error(`the detached trial run in ${directory} exited ${exit} and reached no verdict`) };
+  const outcome = await readOutcome(directory) ?? await afterExit(() => readOutcome(directory), () => readExit(directory));
+  if (!outcome) return null;
+  if ('exit' in outcome) return { error: new Error(`the detached trial run in ${directory} exited ${outcome.exit} and reached no verdict`) };
+  return outcome.ok ? { run: outcome.run } : { error: reconstructTrialError(outcome.error) };
+}
+
+/**
+ * GY-3881: once a run has ended (an exit recorded, or `gone`), its outcome read again, else its exit;
+ * null while it runs. A run writes its result just before it exits, so a result that appears after
+ * the caller's first read is that run's verdict, never a run that reached none.
+ */
+export async function afterExit<T>(outcome: () => Promise<T | null>, exit: () => string | null, gone: () => boolean = () => false): Promise<T | { exit: string | null } | null> {
+  const code = exit();
+  if (code === null && !gone()) return null;
+  return await outcome() ?? { exit: code };
 }
 
 /** Stops a detached run nobody will read (a head returned, replaced or delivered): signalled, and its reason recorded beside it. */
@@ -264,8 +275,10 @@ function watchTrialRun(directory: string, meta: RunMeta, spec: Pick<TrialRunSpec
     if (outcome) return settle(() => outcome.ok ? resolveResult(outcome.run) : rejectResult(reconstructTrialError(outcome.error)));
     const stopped = readStopped(directory);
     if (stopped?.reason === 'cancelled') return settle(() => rejectResult(new TrialCancelledError(stopped.detail)));
-    const exit = readExit(directory);
-    if (exit !== null || !runAlive(meta)) {
+    const ended = await afterExit(() => readOutcome(directory), () => readExit(directory), () => !runAlive(meta));
+    if (ended && !('exit' in ended)) return settle(() => ended.ok ? resolveResult(ended.run) : rejectResult(reconstructTrialError(ended.error)));
+    if (ended) {
+      const exit = ended.exit;
       const stderr = (await readFile(runFiles(directory).stderr, 'utf8').catch(() => '')).trim().slice(-1200);
       return settle(() => rejectResult(new Error(`the detached trial run of ${spec.mergeSha.slice(0, 12)} reached no verdict${exit !== null ? ` (its process exited ${exit})` : ''}: ${stderr || 'it left no output'}`)));
     }
