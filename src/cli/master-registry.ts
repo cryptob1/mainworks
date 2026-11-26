@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { MasterConfig } from '../master.js';
-import { checkAccountLive, discoverHostLogins, installDirectory, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
+import { discoverHostLogins, installDirectory, probeRegistryAccount, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
 import { smokePiWorker } from '../runner/pi-launch.js';
 import type { SmokeResult } from '../runner/pi.js';
 import { seedPrices } from '../model/price-sheet.js';
@@ -69,7 +69,7 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Par
     const account = current.accounts.find(entry => entry.name === name && entry.credential.host === master.hostId);
     const runtime = current.runtimes.find(entry => entry.name === account?.runtime);
     if (!account || !runtime) throw new Error(`${name} is not a registry account on ${master.hostId}; master registry lists this host's accounts`);
-    const quota = await checkAccountLive(account, runtime, { smoke: options.smoke }, current.models.find(model => model.name === account.model)?.id ?? null);
+    const quota = await probeRegistryAccount(current, account, runtime, { smoke: options.smoke });
     await api.write('agent-registry/observe', { host: master.hostId, observations: [{ account: name, quota }] });
     return quota.fault ? `${name}: ${quota.fault} (quota left ${quota.state})`
       : quota.state === 'available' ? `${name} passed its live check`

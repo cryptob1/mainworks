@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { accessSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { defaultPiModel, piRunner, piSmoke, runEnvironment, type SmokeResult } from './pi.js';
 import { headlessConfinementWrapper, launcherCoordinatorRoot } from '../master/launch.js';
@@ -127,10 +127,11 @@ function zaiKeyInOpencodeData(directory: string): string | null {
 
 /** Extract the file path a `!` key command reads (skipping `/dev/*` redirections), or null. */
 function keyCommandPath(command: string): string | null {
-  const matches = command.match(/(?:'([^']+)'|"([^"]+)"|(\/[^\s'"]+))/g);
+  const matches = command.match(/(?:'([^']+)'|"([^"]+)"|((?:~|\/)[^\s'"]+))/g);
   if (!matches) return null;
   for (let i = matches.length - 1; i >= 0; i--) {
     const raw = matches[i]!.replace(/^['"]|['"]$/g, '');
+    if (raw.startsWith('~/')) return join(homedir(), raw.slice(2));
     if (raw.startsWith('/') && !raw.startsWith('/dev/')) return raw;
   }
   return null;
@@ -141,8 +142,14 @@ function keyCommandPath(command: string): string | null {
  * XDG_DATA_HOME to the account's home, or to its `opencode` folder as `opencode-b` does, or only HOME.
  */
 function readZaiKeyFromOpencode(readPath: string): string | null {
-  if (!readPath.endsWith('/opencode/auth.json')) return null;
-  const home = dirname(dirname(readPath));
+  const direct = zaiKeyInOpencodeData(dirname(readPath));
+  if (direct) return direct;
+  const home = readPath.endsWith('/.local/share/opencode/auth.json') || readPath.endsWith('/.config/opencode/auth.json')
+    ? dirname(dirname(dirname(dirname(readPath))))
+    : readPath.endsWith('/opencode/auth.json') ? dirname(dirname(readPath))
+    : readPath.endsWith('/auth.json') ? dirname(readPath)
+    : null;
+  if (!home) return null;
   for (const env of [{ XDG_DATA_HOME: home }, { XDG_DATA_HOME: join(home, 'opencode') }, { HOME: home }]) {
     const found = zaiKeyInOpencodeData(opencodeDataDirectory(env));
     if (found) return found;
@@ -311,23 +318,38 @@ export function agySmoke(account: Pick<FleetLaunchAccount, 'name' | 'home' | 'fl
       effectiveConfigDir = resolve(account.home);
     }
   }
+  const agyLogLine = /^[IWEF]\d{4}\s+\d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\S+:\d+\]/;
   const model = withModel('agy', [], account.fleet.contract, account.fleet.modelId);
   return new Promise<SmokeResult>(settle => {
-    let output = '';
+    let stdout = '', stderr = '', stderrPending = '', stderrRaw = '';
+    const ingestStderr = (chunk: string, flush = false) => {
+      stderrRaw = (stderrRaw + chunk).slice(-4000);
+      const parts = (stderrPending + chunk).split('\n');
+      stderrPending = flush ? '' : parts.pop() ?? '';
+      for (const rawLine of parts) {
+        const line = rawLine.trim();
+        if (line && !agyLogLine.test(line)) stderr = (stderr + `${line}\n`).slice(-4000);
+      }
+    };
     const child = spawn(command, [...model, '--print', 'Reply with the single word OK.'], {
       cwd: options.cwd ?? scratch.work,
       env: { ...process.env, ...scratch.env, ...account.fleet.contract.environment, HOME: scratch.home, ...(effectiveConfigDir ? { AGY_CONFIG_DIR: effectiveConfigDir } : {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const bound = setTimeout(() => { child.kill('SIGKILL'); settle({ ok: false, error: `${command} started but gave no answer within ${Math.round(timeoutMs / 1000)}s${/authentication/i.test(output) ? ': it is waiting for a login' : ''}` }); }, timeoutMs);
-    child.stdout!.on('data', chunk => { output = (output + chunk).slice(-4000); });
-    child.stderr!.on('data', chunk => { output = (output + chunk).slice(-4000); });
+    const bound = setTimeout(() => { child.kill('SIGKILL'); settle({ ok: false, error: `${command} started but gave no answer within ${Math.round(timeoutMs / 1000)}s${/authentication/i.test(`${stdout}\n${stderrRaw}`) ? ': it is waiting for a login' : ''}` }); }, timeoutMs);
+    child.stdout!.on('data', chunk => { stdout = (stdout + chunk).slice(-4000); });
+    child.stderr!.on('data', chunk => { ingestStderr(String(chunk)); });
     child.on('error', error => { clearTimeout(bound); settle({ ok: false, error: `${command} could not be started: ${error.message}` }); });
     child.on('close', code => {
       clearTimeout(bound);
-      const error = output.trim().split('\n').slice(-3).join(' ').slice(0, 400) || `${command} exited with code ${code} without answering`;
-      const scratchFailure = output.includes(scratch.root) && /\b(?:ENOENT|EACCES|EPERM|EROFS|EEXIST|ENOSPC)\b/i.test(output);
-      settle(code === 0 && /\bOK\b/.test(output) ? { ok: true, error: null } : { ok: false, error: scratchFailure ? `the smoke test's scratch home ${scratch.home} failed, not the account's login: ${error}` : error });
+      ingestStderr('', true);
+      if (code === 0 && /\bOK\b/.test(stdout)) return settle({ ok: true, error: null });
+      const meaningful = [stdout, stderr].filter(Boolean).join('\n').split('\n').map(line => line.trim()).filter(line => Boolean(line) && !agyLogLine.test(line));
+      const error = meaningful.slice(-3).join('\n').slice(0, 400) || `${command} exited with code ${code} without answering`;
+      const combined = [stdout, stderrRaw].filter(Boolean).join('\n');
+      const scratchFailure = combined.includes(scratch.root) && /\b(?:ENOENT|EACCES|EPERM|EROFS|EEXIST|ENOSPC)\b/i.test(combined);
+      const scratchDetail = meaningful.length ? error : combined.trim().split('\n').slice(-3).join(' ').slice(0, 400);
+      settle({ ok: false, error: scratchFailure ? `the smoke test's scratch home ${scratch.home} failed, not the account's login: ${scratchDetail}` : error });
     });
   }).finally(() => rmSync(scratch.root, { recursive: true, force: true }));
 }
