@@ -209,7 +209,7 @@ export function pipelineLoop(where: Where, options: { gate: boolean; attribute?:
 }
 
 /** Runs `loop`'s cycles until `done` answers true, or fails naming `what` and the loop's journal. */
-export async function cycleUntil(loop: ReturnType<typeof pipelineLoop>, what: string, done: () => boolean | Promise<boolean>, deadlineMs = 90_000) {
+export async function cycleUntil(loop: Omit<ReturnType<typeof pipelineLoop>, 'reworks'>, what: string, done: () => boolean | Promise<boolean>, deadlineMs = 90_000) {
   for (const start = Date.now(); ;) {
     await loop.cycle();
     if (await done()) return;
