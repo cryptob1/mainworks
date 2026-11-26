@@ -54,9 +54,8 @@ export const commands = {
   // refuses until then.
   heartbeat: z.object({ epoch, syncedPolicyRevision: z.number().int().positive().optional(), acknowledgedMessages: z.array(z.string().min(1).max(20)).max(200).optional() }).strict(),
   // GY-860 AC-2: `failure` releases a claim whose worktree the host could not create. The attempt
-  // is undone — the epoch returns, the untouched reservation and timeline entry go, the lease is
-  // released — and the ledger keeps the git message, so the failure is on the item without
-  // consuming an attempt or cooling off the profile.
+  // ends and the ledger keeps the git message, so the failure is on the item without cooling off
+  // the profile; its epoch is never reused (GY-3905).
   // `cause` is why the attempt ended, for a release its watch supervisor makes after the session is
   // gone (GY-1008): it is kept on the release event and never stands as a blocker on the item.
   release: z.object({ epoch, cause: z.string().trim().min(1).max(2000).optional(), failure: z.object({ message: z.string().trim().min(1).max(2000) }).strict().optional() }).strict(),

@@ -122,16 +122,17 @@ test('integration:dispatch-worktree-failure-isolated — git refuses the highest
   const state = emptyDaemonState(await loadMasterConfig(root));
   const broken = await readyItem('GY-9901', 0);
   await readyItem('GY-9902', 1);
-  // Something already sits where GY-9901's worktree goes, so the real `git worktree add` refuses it.
-  const occupied = join(root, '.graphyard', 'worktrees', 'GY-9901-1');
-  await mkdir(occupied, { recursive: true }); await writeFile(join(occupied, 'left-behind.txt'), 'x\n');
-  const attempts = () => state.actions[`dispatch:${broken}:0`]?.attempts ?? 0;
+  // Something already sits where GY-9901's first two worktrees go, so the real `git worktree add` refuses them.
+  // A released attempt's epoch is never reused (GY-3905), so each retry claims the next number.
+  const occupied = [1, 2].map(epoch => join(root, '.graphyard', 'worktrees', `GY-9901-${epoch}`));
+  for (const path of occupied) { await mkdir(path, { recursive: true }); await writeFile(join(path, 'left-behind.txt'), 'x\n'); }
+  const attempts = () => state.launchBackoff[`claude:${broken}`]?.failures ?? 0;
 
   // Cycle 1: the first item's launch fails in git; the second launches on the free slot in the same cycle.
   await cycle(state);
   assert.equal(state.actions[`dispatch:${broken}:0`].state, 'failed');
   assert.deepEqual(running(), ['GY-9902'], JSON.stringify(Object.values(state.actions).map(action => action.detail)));
-  assert.deepEqual([(await item('GY-9901')).epoch, (await item('GY-9901')).lease], [0, null], 'the failed claim is handed back: no lease, and the epoch returns');
+  assert.deepEqual([(await item('GY-9901')).epoch, (await item('GY-9901')).lease], [1, null], 'the failed claim is released: no lease, and its epoch is spent');
   const leased = await item('GY-9902');
   assert.deepEqual([leased.epoch, leased.lease?.owner], [1, 'worker-a-2']);
   // Only the failed item backs off, on the runtime that failed, and its reason is the child's own error.
@@ -149,7 +150,7 @@ test('integration:dispatch-worktree-failure-isolated — git refuses the highest
   assert.equal(attempts(), 1);
   skew += 61_000; await cycle(state);
   assert.equal(attempts(), 2, 'the retry waited for the back-off to expire');
-  assert.deepEqual([(await item('GY-9901')).epoch, (await item('GY-9901')).lease], [0, null]);
+  assert.deepEqual([(await item('GY-9901')).epoch, (await item('GY-9901')).lease], [2, null]);
   assert.ok(Object.keys(state.launchBackoff).every(key => key.endsWith(`:${broken}`)), 'the second failure still backs off this item alone');
   assert.equal(state.launchBackoff[`claude:${broken}`].failures, 2);
   assert.deepEqual([(await item('GY-9902')).epoch, (await item('GY-9902')).lease?.owner], [1, 'worker-a-2'], 'the running attempt keeps its own lease and epoch');
@@ -160,7 +161,7 @@ test('integration:dispatch-worktree-failure-isolated — git refuses the highest
   assert.deepEqual(running(), ['GY-9902', 'GY-9903']);
 
   // The workspace is repaired and the back-off over, but the worker role is full: capacity still holds the launch.
-  await rm(occupied, { recursive: true });
+  for (const path of occupied) await rm(path, { recursive: true });
   skew += 121_000; await cycle(state);
   assert.deepEqual(running(), ['GY-9902', 'GY-9903']);
   assert.equal((await item('GY-9901')).lease, null);
@@ -178,7 +179,7 @@ test('integration:dispatch-worktree-failure-isolated — git refuses the highest
   // With the slot free and the host cool, the repaired item launches with nobody's help.
   await cycle(state);
   assert.deepEqual(running(), ['GY-9901', 'GY-9903'], JSON.stringify(Object.values(state.actions).map(action => action.detail)));
-  assert.deepEqual([(await item('GY-9901')).epoch, !!(await item('GY-9901')).lease], [1, true]);
+  assert.deepEqual([(await item('GY-9901')).epoch, !!(await item('GY-9901')).lease], [3, true]);
   // The submitted candidate is as its worker left it: same epoch and head, unleased, its review and proof still owed.
   const after = await item('GY-9902');
   assert.deepEqual([after.epoch, after.lease, after.submission, after.candidate?.sha], [1, null, submitted.submission, submitted.candidate?.sha]);
