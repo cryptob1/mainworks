@@ -687,6 +687,43 @@ test('unit:trial-checkout-outside-temp — with /tmp a tmpfs and the process tmp
 });
 
 // Alone, before the concurrent suite: its 100 ms window judges a choice made on an idle host.
+/**
+ * A reclamation the test releases by hand, and a signal for the moment the choice awaits it. The choice is judged by
+ * which comes first — its answer or its wait on the reclamation — never by a timer: under a loaded merge trial the
+ * choice's own mkdir outran the 100 ms the check once raced it against (GY-3927).
+ */
+function gatedReclaim(trials: string) {
+  let releaseReclaim = () => {}, reclaimSettled: Promise<string[]> = Promise.resolve([]), awaitedReclaim = () => {};
+  const reclaimAwaited = new Promise<void>(resolve => { awaitedReclaim = resolve; });
+  const gate = () => {
+    const taking = new Promise<string[]>(resolve => { releaseReclaim = () => { reclaimSettled = reclaimTrialCheckouts(trials); resolve(reclaimSettled); }; });
+    const then = taking.then.bind(taking);
+    taking.then = ((...args: Parameters<typeof then>) => { awaitedReclaim(); return then(...args); }) as typeof taking.then;
+    return taking;
+  };
+  return { gate, reclaimAwaited, releaseReclaim: () => releaseReclaim(), settled: () => reclaimSettled };
+}
+async function choiceBeforeReclaim(trials: string, probe: FilesystemProbe, { gate, reclaimAwaited }: ReturnType<typeof gatedReclaim>) {
+  const gated = trialCheckoutRoot([trials], 2e9, probe, [], gate);
+  const answered = await Promise.race([gated.then(value => `chosen ${value}`), reclaimAwaited.then(() => 'still waiting')]);
+  return { answered, gated };
+}
+test('unit:trial-merge-pinned — a clean root whose choice answers only after the 100 ms the reclaim check once raced it against is still read as chosen before the reclamation, never as waiting on it (GY-3927)', async () => {
+  const home = await temporaryDirectory('gy-trial-home', tmpdir());
+  const [trials] = trialCheckoutRoots(home);
+  mkdirSync(trials!, { recursive: true });
+  const reclaim = gatedReclaim(trials!);
+  // The one condition: a choice slower than the old timer, as a loaded merge trial's mkdir made it.
+  const timerFired = new Promise(resolve => setTimeout(resolve, 100));
+  let poisoned = false;
+  const late: FilesystemProbe = async path => { await timerFired; poisoned = lookupPoisoned(trials!); return { probed: path, volatile: null, freeBytes: 1e12 }; };
+  const { answered, gated } = await choiceBeforeReclaim(trials!, late, reclaim);
+  assert.equal(answered, poisoned ? 'still waiting' : `chosen ${trials}`, 'the choice is judged by its answer, not by a timer');
+  reclaim.releaseReclaim();
+  await reclaim.settled();
+  await gated;
+});
+
 nodeTest('unit:trial-checkout-reclaim-durable — a crashed checkout that left the trials folder short of space is taken back before the root is given up on, while a removal that fails keeps its owner marker and is taken back by a later pass (GY-2020, GY-2963)', async () => {
   const home = await temporaryDirectory('gy-trial-home', tmpdir());
   const [trials] = trialCheckoutRoots(home);
@@ -703,16 +740,13 @@ nodeTest('unit:trial-checkout-reclaim-durable — a crashed checkout that left t
   // root this file's trials share with every concurrently running file can gain and lose a stray node_modules, .git
   // or package.json between a choice and its assertion (a merge trial's suite runs many files at once), so an outcome
   // is judged by the environment its own choice read, never by a later snapshot (GY-3171's trial refusal).
-  let releaseReclaim = () => {};
-  let reclaimSettled: Promise<string[]> = Promise.resolve([]);
-  const gate = () => new Promise<string[]>(resolve => { releaseReclaim = () => { reclaimSettled = reclaimTrialCheckouts(trials!); resolve(reclaimSettled); }; });
+  const reclaim = gatedReclaim(trials!), { gate, releaseReclaim, settled } = reclaim;
   const poisonedAtRoomy: boolean[] = [];
   const roomy: FilesystemProbe = async path => { poisonedAtRoomy.push(lookupPoisoned(trials!)); return { probed: path, volatile: null, freeBytes: 1e12 }; };
-  const gated = trialCheckoutRoot([trials!], 2e9, roomy, [], gate);
-  const answered = await Promise.race([gated.then(value => `chosen ${value}`), new Promise(resolve => setTimeout(() => resolve('still waiting'), 100))]);
+  const { answered, gated } = await choiceBeforeReclaim(trials!, roomy, reclaim);
   assert.equal(answered, poisonedAtRoomy[0] ? 'still waiting' : `chosen ${trials}`, 'a clean root is chosen immediately; a poisoned root retries after reclamation');
   releaseReclaim();
-  await reclaimSettled;
+  await settled();
   assert.equal(await gated, poisonedAtRoomy.at(-1) ? null : trials, 'reclamation never makes an ancestor-poisoned root usable');
   await reclaimTrialCheckouts(trials!);
   assert.deepEqual([existsSync(crashed), existsSync(tempOwnerMarker(crashed))], [false, false], 'the stale checkout is taken back beside the choice');

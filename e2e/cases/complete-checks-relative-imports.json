@@ -1,0 +1,15 @@
+{
+  "id": "complete-checks-relative-imports",
+  "title": "complete refuses a missing relative import before any trial",
+  "description": "On a running test install, a worker completing a head with a missing relative import is refused with the file, import and line; no submission or merge trial is recorded. Committing the missing helper allows submission.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "complete refuses a missing relative import before any trial",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:complete-checks-relative-imports tests/complete-checks-relative-imports.test.ts",
+      "timeoutSeconds": 60
+    }
+  ]
+}

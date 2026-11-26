@@ -42,6 +42,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tsx": "4.23.13",
+    "typescript": "5.9.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -52,7 +53,6 @@
     "@types/react-dom": "^19.0.0",
     "@xterm/xterm": "6.0.0",
     "knip": "6.48.0",
-    "typescript": "5.9.3",
     "vite": "^7.3.6"
   }
 }
