@@ -412,6 +412,31 @@ async function hasTsTests(git: (args: string[]) => Promise<string>, head: string
   } catch { return false; }
 }
 
+/** GY-3892: the fast static rule test files the trial always adds (GY-3826). */
+const staticRuleTests = [
+  'tests/architecture.test.ts',
+  'tests/architecture-pinned.test.ts',
+  'tests/barrel-imports.test.ts',
+  'tests/import-cycles.test.ts',
+  'tests/no-old-name.test.ts',
+  'tests/knip-clean.test.ts',
+] as const;
+
+/** First failing detail line from a static-rule test run: an offending `path:line:...` line if present, else the first assertion/error line. */
+function firstFailingLine(output: string): string | null {
+  const cleaned = output.split('\n').map(raw => raw.replace(rerunTimestamp, '').replace(rerunAnsi, '').trim());
+  const start = Math.max(0, cleaned.findIndex(line => failureMarker(line) !== null));
+  const slice = cleaned.slice(start);
+  for (const line of slice) {
+    const match = /^[-+]?\s*['"]?([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+:\d+:[^'"]*)/.exec(line);
+    if (match && !match[1]!.startsWith('node:')) return match[1]!.trim();
+  }
+  for (const line of slice) {
+    if (/^(?:AssertionError\b|Error:|\+ |actual:)/.test(line)) return line;
+  }
+  return slice.find(line => line && !failureMarker(line)) ?? null;
+}
+
 /**
  * GY-3638: fast local preflight before `complete` submits a head. Refuses in seconds what the
  * merge writer would refuse after review, the queue and trial start-up — reusing the executor's
@@ -419,7 +444,8 @@ async function hasTsTests(git: (args: string[]) => Promise<string>, head: string
  * 1. `git merge-tree --write-tree` against the fetched base (`refs/remotes/origin/<baseBranch>`);
  * 2. `requiredProofFailure` over `proofTestFiles` for each non-bootstrap unit/integration proof;
  * 3. `featureCaseFailure` over the files added or modified by the head;
- * 4. `workerFastGates` when the repository carries them (`workerFastGatesPresent`).
+ * 4. `workerFastGates` when the repository carries them (`workerFastGatesPresent`);
+ * 5. `staticRuleTests` (GY-3826 / GY-3892) when the repository carries any of them.
  */
 export async function completePreflight(
   root: string,
@@ -509,6 +535,29 @@ export async function completePreflight(
         },
       });
       throw new Error(reason ?? `${trialFailurePrefix}: tests ${workerFastGates.tests.join(', ')}`);
+    }
+  }
+
+  // 5. GY-3892: static rule test files the trial always adds (GY-3826).
+  const presentStaticRules = staticRuleTests.filter(file => existsSync(join(root, file)));
+  if (presentStaticRules.length) {
+    const staticRun = await rerunTrialFiles(root, presentStaticRules, run);
+    if (!staticRun.ok) {
+      const cases = rerunFailingCases(staticRun.output, presentStaticRules);
+      const failed = [...new Set(cases.map(entry => entry.file).filter((file): file is string => Boolean(file)))];
+      const failingFiles = failed.length ? failed : [...presentStaticRules];
+      const firstLine = firstFailingLine(staticRun.output);
+      const failingCase = firstLine ?? (cases[0] ? locateRerunCase(cases[0]) : undefined);
+      const reason = trialFailureReason({
+        run: {
+          build: 'pass',
+          tests: { passed: 0, failed: failingFiles, files: presentStaticRules.length },
+          failingCase,
+          timedOut: staticRun.timedOut,
+          logTail: staticRun.output,
+        },
+      });
+      throw new Error(reason ?? `${trialFailurePrefix}: tests ${failingFiles.join(', ')}${firstLine ? `: ${firstLine}` : ''}`);
     }
   }
 }

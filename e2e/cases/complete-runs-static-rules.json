@@ -1,0 +1,15 @@
+{
+  "id": "complete-runs-static-rules",
+  "title": "complete refuses a head with an old-name line before any trial",
+  "description": "On a running test install (temporary Postgres control plane and HTTP server), a worker completing a head that adds an unallowlisted old-name line is refused at complete naming tests/no-old-name.test.ts and its first failing line, leaving the item in build with no merge.trial event; after fixing the line, complete submits.",
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Worker completing a head with an old-name line is refused at complete before any trial",
+      "run": "node --import tsx tests/helpers/run-tests.ts --test-name-pattern=^e2e:complete-runs-static-rules tests/complete-runs-static-rules.test.ts",
+      "timeoutSeconds": 60
+    }
+  ]
+}
