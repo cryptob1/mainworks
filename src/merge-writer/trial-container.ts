@@ -4,13 +4,13 @@ import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSy
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkoutGitDirectory, checkoutGitProblem } from '../master/checkout-git.js';
-import { copyFile, writeFile, readFile } from 'node:fs/promises';
+import { copyFile, writeFile } from 'node:fs/promises';
 import type { ChildRun } from '../child-runner.js';
 import { runTrialE2eCases, serveOutputName, type TrialE2eCase } from './e2e-trial.js';
 import { addressPoolsSpent, composeBounds, composeProjectName, composeServiceContainer, composeStack, dockerEnvironment } from '../compose-preview.js';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { trialAdmission, type TrialLoad } from './trial-load.js';
 import { appArmorEnabled, trialAppArmorProfile } from './trial-apparmor.js';
 import { setting } from '../setting.js';
@@ -167,6 +167,25 @@ export function trialContainerDependencies(root: string): string[] {
   return [...new Set([checkout, join(root, 'node_modules'), harnessModules].filter((path): path is string => !!path && existsSync(path)))];
 }
 
+/** GY-3914: per-run nonce framing for harness verdicts reported on the harness's own output stream. */
+const trialVerdictPrefix = 'mainworks-verdict:';
+export const trialVerdictMissingNonce = 'trial verdict missing valid run nonce';
+export const generateTrialVerdictNonce = () => randomBytes(16).toString('hex');
+export function parseTrialVerdict<T>(output: string, nonce: string): { ok: true; value: T; stripped: string } | { ok: false; reason: string; stripped: string } {
+  const marker = `${trialVerdictPrefix}${nonce} `;
+  let matched: string | null = null;
+  const kept: string[] = [];
+  for (const line of output.split('\n')) {
+    if (line.startsWith(marker)) { matched = line.slice(marker.length); continue; }
+    if (line.startsWith(trialVerdictPrefix)) continue;
+    kept.push(line);
+  }
+  const stripped = kept.join('\n');
+  if (matched === null) return { ok: false, reason: trialVerdictMissingNonce, stripped };
+  try { return { ok: true, value: JSON.parse(matched) as T, stripped }; }
+  catch { return { ok: false, reason: trialVerdictMissingNonce, stripped }; }
+}
+
 /** Only trusted orchestration receives Docker access; candidate commands receive a private root. */
 export async function containerTrialE2e(input: {
   worktree: string; mergeSha: string; proofs: readonly string[]; env: Record<string, string>;
@@ -199,21 +218,24 @@ export async function containerTrialE2e(input: {
         origin = 'http://127.0.0.1:' + target.port;
       }
       const directory = await mkdtemp(join(input.scratch, 'e2e-'));
-      const result = join(directory, 'result.json'), script = join(directory, 'run.mjs');
+      const script = join(directory, 'run.mjs');
+      const nonce = generateTrialVerdictNonce();
       const data = { worktree: input.worktree, mergeSha: input.mergeSha, env: input.env, scratch: directory, budgetMs: left() };
+      // GY-3914: the nonce travels on stdin only (never in candidate env or files) and the harness reports its verdict on stdout; any result file the candidate writes is ignored.
       await writeFile(script, `
+import { readFileSync } from 'node:fs';
 import { runTrialE2eGroup } from '${trialHarness}/src/merge-writer/e2e-trial.ts';
-import { writeFileSync } from 'node:fs';
+const nonce = readFileSync(0, 'utf8').trim();
 const cases = await runTrialE2eGroup(${JSON.stringify(target)}, ${JSON.stringify(proofs)},
   { ...${JSON.stringify(data)}, proofs: [], holds: async () => true, log: console.log }, ${JSON.stringify(origin)});
-writeFileSync(${JSON.stringify(result)}, JSON.stringify(cases));
+process.stdout.write('\\n' + ${JSON.stringify(trialVerdictPrefix)} + nonce + ' ' + JSON.stringify(cases) + '\\n');
 `);
       // GY-3180: the group answers for every case the head fails, so a runner that ended with no answer never judged the head; one out of budget stays the merge's.
+      let output: string;
       try {
-        input.log(String(await input.run('node', ['--import', `${trialHarness}/node_modules/tsx/dist/loader.mjs`, script], {
-          cwd: input.worktree, env: input.env, timeoutMs: left(), wrapper,
-        })));
-        return JSON.parse(await readFile(result, 'utf8')) as TrialE2eCase[];
+        output = String(await input.run('node', ['--import', `${trialHarness}/node_modules/tsx/dist/loader.mjs`, script], {
+          cwd: input.worktree, env: input.env, timeoutMs: left(), wrapper, input: `${nonce}\n`,
+        }));
       } catch (error) {
         if ((error as { timedOut?: boolean }).timedOut) throw error;
         return proofs.map(proof => ({ proof, case: proof.slice(4), executed: 0, failed: 1, hostFailure: true,
@@ -222,6 +244,12 @@ writeFileSync(${JSON.stringify(result)}, JSON.stringify(cases));
         const log = serveOutputName(target.id, input.mergeSha);
         if (input.runDirectory) await copyFile(join(directory, log), join(input.runDirectory, log)).catch(() => {});
       }
+      const parsed = parseTrialVerdict<TrialE2eCase[]>(output, nonce);
+      input.log(parsed.stripped);
+      if (!parsed.ok || !Array.isArray(parsed.value)) {
+        return proofs.map(proof => ({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep: trialVerdictMissingNonce }));
+      }
+      return parsed.value;
     } catch (error) {
       // GY-3316: a network Docker refused for spent address pools is the trial host's fault, not a failed case.
       if (error instanceof Error && error.message.includes(addressPoolsSpent)) throw error;

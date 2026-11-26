@@ -42,6 +42,8 @@ RUN python3 -m venv /opt/graphyard-hard-math-oracle \
     && /opt/graphyard-hard-math-oracle/bin/pip install --no-cache-dir -r /opt/hard-math-requirements.txt \
     && chmod -R a-w /opt/graphyard-hard-math-oracle
 ENV HARD_MATH_PYTHON=/opt/graphyard-hard-math-oracle/bin/python
+# Writable by the non-root trial user (node, uid 1000) for unprivileged warm-image builds (GY-3914).
+RUN mkdir -p /deps /warm && chown node:node /deps /warm
 # Last, so a new commit rebuilds no layer above: the commit a published trial image was built from.
 ARG GRAPHYARD_BUILD_SHA=
 LABEL org.opencontainers.image.revision="${GRAPHYARD_BUILD_SHA}"

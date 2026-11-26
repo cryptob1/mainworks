@@ -2,7 +2,7 @@ import { trialCpuMonitor, trialOverloadFault, type TrialCpuReading } from './tri
 // Concern: the merge writer's trial merge — the exact merge commit of a head onto main, and its build and affected tests in a credential-free checkout.
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statfsSync } from 'node:fs';
-import { chmod, cp, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { availableParallelism, constants, homedir, hostname, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
@@ -1691,22 +1691,38 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       // A selection child the host killed or could not start is no verdict (GY-1832); only one that exits non-zero fails the selection.
       // GY-3787: it takes no container slot and waits on no sensor: it is one short process, and every test waits on it.
       // GY-3192: the base tip lets the selection narrow each changed file to the declarations its diff touches.
-      // GY-3635: unless the candidate's change to the selector was approved in review, run the base commit's copy of the selector script against the candidate's worktree so candidate new tests still run.
-      const selectorScript = input.baseTip && !input.selectorApproved
-        ? selector.slice(1).find(arg => !arg.startsWith('-') && /\.(?:[cm]?js|ts)$/.test(arg))
-        : undefined;
-      let restoreSelector: (() => Promise<void>) | null = null;
+      // GY-3635, GY-3914: unless the candidate's change to the selector was approved in review, write the base commit's copy of the selector script into the trial's own temporary directory and run it from there — never write inside the candidate's tree.
+      const selectorArgs = selector.slice(1);
+      const selectorIndex = input.baseTip && !input.selectorApproved
+        ? selectorArgs.findIndex(arg => !arg.startsWith('-') && /\.(?:[cm]?js|ts)$/.test(arg))
+        : -1;
+      const selectorScript = selectorIndex >= 0 ? selectorArgs[selectorIndex] : undefined;
+      let selectorDirectory: string | null = null;
       if (selectorScript) {
         const baseSelector = await Promise.resolve(run('git', ['-C', input.root, 'show', `${input.baseTip}:${selectorScript}`], { timeoutMs: remaining() })).then(String, () => null);
         if (baseSelector !== null) {
-          const scriptPath = join(worktree, selectorScript);
-          const originalSelector = await readFile(scriptPath, 'utf8').catch(() => null);
-          if (originalSelector !== baseSelector) {
-            await writeFile(scriptPath, baseSelector, 'utf8');
-            restoreSelector = async () => {
-              if (originalSelector !== null) await writeFile(scriptPath, originalSelector, 'utf8');
-              else await rm(scriptPath, { force: true });
-            };
+          const segments = selectorScript.split('/').filter(part => part && part !== '.');
+          let safeInTree = segments.length > 0;
+          for (let depth = 1; safeInTree && depth <= segments.length; depth++) {
+            const info = await lstat(join(worktree, ...segments.slice(0, depth))).catch(() => null);
+            safeInTree = !!info && !info.isSymbolicLink() && (depth < segments.length ? info.isDirectory() : info.isFile());
+          }
+          const matchesBase = safeInTree && await readFile(join(worktree, ...segments), 'utf8').catch(() => null) === baseSelector;
+          if (!matchesBase) {
+            selectorDirectory = await mkdtemp(join(temporary!, 'selector-'));
+            for (let depth = 0; depth < segments.length; depth++) {
+              const sourceDirectory = join(worktree, ...segments.slice(0, depth));
+              const targetDirectory = join(selectorDirectory, ...segments.slice(0, depth));
+              await mkdir(targetDirectory, { recursive: true });
+              const info = await lstat(sourceDirectory).catch(() => null);
+              if (!info?.isDirectory()) continue;
+              for (const entry of await readdir(sourceDirectory).catch(() => [] as string[])) {
+                if (entry !== segments[depth]) await symlink(join(sourceDirectory, entry), join(targetDirectory, entry));
+              }
+            }
+            const copiedSelector = join(selectorDirectory, ...segments);
+            await writeFile(copiedSelector, baseSelector, 'utf8');
+            selectorArgs[selectorIndex] = copiedSelector;
           }
         }
       }
@@ -1714,9 +1730,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       // GY-3866: an item's trial narrows to the direct importers of its changed files; the batch gate and reruns keep the transitive selection.
       const narrow = input.key !== gateTrialKey && !input.rerun;
       try {
-        selection = await child('selection', selector[0]!, [...selector.slice(1), ...input.changedFiles], input.baseTip ? { wrapper: unqueued, env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : { wrapper: unqueued });
+        selection = await child('selection', selector[0]!, [...selectorArgs, ...input.changedFiles], input.baseTip ? { wrapper: unqueued, env: { ...env, GRAPHYARD_SELECTION_BASE: input.baseTip, ...(narrow ? { GRAPHYARD_SELECTION_IMPORTERS: '1' } : {}) } } : { wrapper: unqueued });
       } finally {
-        if (restoreSelector) await restoreSelector().catch(() => {});
+        if (selectorDirectory) await rm(selectorDirectory, { recursive: true, force: true }).catch(() => {});
       }
       if (hostEnded(selection)) throw runnerFailure('selection', selection);
       if (!selection.ok) return null;
@@ -1804,7 +1820,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         const list = join(checkout.directory, `tests-${index + 1}.txt`), records = join(checkout.directory, `tests-${index + 1}.jsonl`);
         const argv = (list: string, records: string) => [...check.argv.slice(1), ...input.reporter?.args ?? [], '--files-from', list, '--durations', records, `--test-concurrency=${breadth}`, `--file-timeout=${trialFileTimeoutMs}`];
         const shardAt = now();
-        let tests: Ended, recordText: string;
+        let tests: Ended, recordText: string, verdictError: string | undefined;
         try {
           if (remote) {
             // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
@@ -1816,6 +1832,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);
             tests = { ok: ended.ok, out: ended.out, status: ended.status, signal: null, cause: undefined };
             recordText = ended.records;
+            verdictError = ended.verdictError;
           } else {
             await writeFile(list, `${group.join('\n')}\n`);
             tests = await onThisMachine(() => child('tests', check.argv[0]!, argv(list, records), { entries }));
@@ -1826,9 +1843,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         const recorded = runnerRecords(recordText);
         // Only the shard's own files count: the records and the log may name a file a test ran or printed itself (GY-1645).
         const namedByRecords = recorded.filter(record => !record.passed && group.includes(record.file)).map(record => record.file);
-        const failing = [...new Set(namedByRecords.length ? namedByRecords : tests.ok ? [] : failingFilesInLog(tests.out, group))];
-        // GY-3418: the files that passed — the whole shard when it exited 0 naming none, else those its records name passing.
-        const passed = tests.ok && !failing.length ? group : recorded.filter(record => record.passed && group.includes(record.file) && !failing.includes(record.file)).map(record => record.file);
+        const reportedPassing = recorded.filter(record => record.passed && group.includes(record.file)).map(record => record.file);
+        const failing = verdictError ? [verdictError]
+          : [...new Set(namedByRecords.length ? namedByRecords : tests.ok ? [] : failingFilesInLog(tests.out, group))];
+        // GY-3418: the files that passed — the whole shard when it exited 0 naming none, else those its records name passing (never when the verdict lacked a valid nonce or the shard failed without naming a file).
+        const passed = verdictError || (!tests.ok && !failing.length) ? [] : tests.ok && !failing.length ? group : reportedPassing.filter(file => !failing.includes(file));
         settledShards[index] = { group: { files: group, status: tests.status, signal: tests.signal, failed: failing }, entries, passed, records: recordText,
           unattributed: !tests.ok && !failing.length ? runnerFailure('tests', tests, group, recorded.filter(record => group.includes(record.file)).length) : null };
         const ended = settledShards.filter(shard => shard !== undefined), slowest = slowestFile(ended.map(shard => shard.records).join('\n'));

@@ -110,7 +110,7 @@ test('unit:small-change-selects-declaration-importers — the bound proof file a
       await mkdir(join(worktree, 'scripts'), { recursive: true });
       await writeFile(join(worktree, 'graphyard.json'), readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8'));
     }
-    if (command === 'node' && args[0] === 'scripts/ci-tests.mjs') { selectionEnv = options?.env ?? {}; return 'affected: selected 1 of 7 reachable: the change is confined to function bodies or non-exported code of 1 file(s)\ntests/widen.test.ts\n'; }
+    if (command === 'node' && args[0]?.endsWith('scripts/ci-tests.mjs')) { selectionEnv = options?.env ?? {}; return 'affected: selected 1 of 7 reachable: the change is confined to function bodies or non-exported code of 1 file(s)\ntests/widen.test.ts\n'; }
     if (command === 'node' && args.includes('tests/helpers/run-tests.ts')) {
       const group = (await (await import('node:fs/promises')).readFile(args[args.indexOf('--files-from') + 1]!, 'utf8')).split('\n').filter(Boolean);
       listed.push(...group);
@@ -139,7 +139,7 @@ test('unit:small-change-selects-declaration-importers — a rerun of a failing f
       await mkdir(join(worktree, 'scripts'), { recursive: true });
       await writeFile(join(worktree, 'graphyard.json'), readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8'));
     }
-    if (command === 'node' && args[0] === 'scripts/ci-tests.mjs') { envs.push(options?.env ?? {}); return 'affected: selected 1 of 7 reachable: the change is confined to function bodies or non-exported code of 1 file(s)\ntests/widen.test.ts\n'; }
+    if (command === 'node' && args[0]?.endsWith('scripts/ci-tests.mjs')) { envs.push(options?.env ?? {}); return 'affected: selected 1 of 7 reachable: the change is confined to function bodies or non-exported code of 1 file(s)\ntests/widen.test.ts\n'; }
     if (command === 'node' && args.includes('tests/helpers/run-tests.ts')) {
       const group = (await (await import('node:fs/promises')).readFile(args[args.indexOf('--files-from') + 1]!, 'utf8')).split('\n').filter(Boolean);
       // tests/widen.test.ts fails once, then passes its rerun.

@@ -421,11 +421,15 @@ else:
             request = json.load(sys.stdin)
         except ValueError:
             refuse()
-        if not isinstance(request, dict) or set(request) != ({'files', 'argv', 'cpus', 'deadline'} if verb == 'run-shard' else {'file', 'services', 'argv', 'cpus', 'deadline'}):
+        if verb == 'run-shard':
+            if not isinstance(request, dict) or not ({'files', 'argv', 'cpus', 'deadline'} <= set(request) <= {'files', 'argv', 'cpus', 'deadline', 'nonce'}):
+                refuse()
+        elif not isinstance(request, dict) or set(request) != {'file', 'services', 'argv', 'cpus', 'deadline'}:
             refuse()
         argv, cpus, deadline = request['argv'], request['cpus'], request['deadline']
         strings = lambda values, forbidden: isinstance(values, list) and 0 < len(values) <= 5000 and all(isinstance(value, str) and not set(forbidden) & set(value) for value in values)
-        if not strings(argv, '\\0') or type(cpus) is not int or type(deadline) is not int:
+        nonce = request.get('nonce') if verb == 'run-shard' else None
+        if not strings(argv, '\\0') or type(cpus) is not int or type(deadline) is not int or (nonce is not None and not (isinstance(nonce, str) and re.fullmatch(r'[0-9a-f]{16,128}', nonce))):
             refuse()
     if not os.path.isdir(run):
         sys.exit('graphyard-host-shim: no run ' + args[0])
@@ -507,7 +511,16 @@ else:
         listed, records = os.path.join(run, 'tests-' + args[1] + '.txt'), os.path.join(run, 'tests-' + args[1] + '.jsonl')
         with open(listed, 'w') as file:
             file.write('\\n'.join(files) + '\\n')
-        sys.exit(launch('none', [{'{list}': listed, '{records}': records}.get(word, word) for word in argv]))
+        code = launch('none', [{'{list}': listed, '{records}': records}.get(word, word) for word in argv])
+        # GY-3914: the shim reports the shard's verdict on its own output stream carrying the per-run nonce (never passed into the container).
+        if nonce is not None:
+            try:
+                records_text = open(records).read()
+            except OSError:
+                records_text = ''
+            sys.stdout.write('\\nmainworks-verdict:' + nonce + ' ' + json.dumps({'status': code, 'records': records_text}) + '\\n')
+            sys.stdout.flush()
+        sys.exit(code)
     else:
         file, services = request['file'], request['services']
         if not isinstance(file, str) or not file or file.startswith('/') or '..' in file.split('/') or '\\0' in file or not isinstance(services, list) or not 0 < len(services) <= 8 \

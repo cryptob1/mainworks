@@ -43,6 +43,8 @@ export interface ChildRunOptions {
   signal?: AbortSignal;
   /** Each chunk of captured stderr as it arrives: a trial launcher's waiting line, shown while it waits (GY-3332). */
   onStderr?: (chunk: string) => void;
+  /** Optional text written to the child's stdin (closed immediately after). */
+  input?: string;
 }
 /**
  * The dependency every runtime-calling helper takes. A test hands in a synchronous stub that
@@ -93,8 +95,9 @@ export function runChild(command: string, args: string[], options: ChildRunOptio
   return new Promise<string>((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     const [file, ...argv] = [...(options.wrapper ?? []), command, ...args];
-    try { child = spawn(file!, argv, { cwd: options.cwd, env, detached: !!options.group, stdio: ['ignore', options.stdout === 'inherit' ? 'inherit' : 'pipe', options.stderr === 'inherit' ? 'inherit' : 'pipe', ...(options.extraFds ?? [])] }); }
+    try { child = spawn(file!, argv, { cwd: options.cwd, env, detached: !!options.group, stdio: [options.input !== undefined ? 'pipe' : 'ignore', options.stdout === 'inherit' ? 'inherit' : 'pipe', options.stderr === 'inherit' ? 'inherit' : 'pipe', ...(options.extraFds ?? [])] }); }
     catch (error) { reject(new ChildProcessError(command, args, { stdout: '', stderr: '', status: null, signal: null, timedOut: false, cause: error })); return; }
+    if (options.input !== undefined) child.stdin?.end(options.input);
     const out: Buffer[] = [], err: Buffer[] = [];
     let outBytes = 0, errBytes = 0, timedOut = false, startupTimedOut = false, settled = false, spawnFailure: unknown;
     let killTimer: NodeJS.Timeout | undefined;

@@ -12,7 +12,7 @@ import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
 import { probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
-import { harnessModules, trialImage } from './trial-container.js';
+import { generateTrialVerdictNonce, harnessModules, parseTrialVerdict, trialImage, trialVerdictMissingNonce } from './trial-container.js';
 import { fileURLToPath } from 'node:url';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 import { stateDirectory } from '../install/layout.js';
@@ -232,12 +232,14 @@ export type ShardSshSession = ReturnType<typeof shardSshSession>;
 /** GY-3645: what a check run whole on a host answered: its output, its exit code and how long the host took over each step. */
 export interface RemoteCheckEnd { out: string; status: number; steps: { step: string; ms: number }[] }
 /** What a remote shard answered: its exit and output, and the per-file records it wrote. */
-export interface RemoteShardEnd { ok: boolean; out: string; status: number | null; records: string }
+export interface RemoteShardEnd { ok: boolean; out: string; status: number | null; records: string; verdictError?: string }
 
 /** The name of this checkout's mirror on a host (~/.graphyard/mirrors/NAME.git): one per checkout this install trials from. */
 export const mirrorName = (root: string) => `${createHash('sha1').update(root).digest('hex').slice(0, 8)}-${basename(root).replace(/[^A-Za-z0-9._-]/g, '-')}`.slice(0, 100);
 /** GY-3627: where the warm image stores its filled Node compile cache. */
 const warmCompileCacheDirectory = '/warm/compile-cache';
+/** GY-3914: warm-image builds run dependency installation and build steps unprivileged with all capabilities dropped. */
+const warmBuildDockerFlags = '--user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges';
 
 /** The warm image for a trial image's digest, a lockfile's hash (`none` without one), and the commit it was built from. */
 export const warmImageTag = (digest: string, lockHash: string, commit?: string) =>
@@ -294,9 +296,9 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
   if (active) return active;
   const build = (async (): Promise<string> => {
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
-    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && npm ci --no-audit --no-fund >/dev/null';
+    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null';
     try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
       await local('docker', ['commit', name, tag]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return tag;
@@ -325,14 +327,15 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
     const name = `graphyard-warm-${randomUUID().slice(0, 8)}`;
     const script = [
       'set -e',
+      'export HOME=/tmp',
       'mkdir -p /deps /warm/build /warm/dist /warm/compile-cache',
       'cd /warm/build && tar -xf -',
-      'if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --no-audit --no-fund >/dev/null) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi',
-      `if [ -f bin/built-entry.mjs ] && [ -d node_modules ]; then node bin/built-entry.mjs && mv dist/cli.mjs /warm/dist/cli.mjs && mv dist/server.mjs /warm/dist/server.mjs && ln -s /warm/dist/cli.mjs dist/cli.mjs && ln -s /warm/dist/server.mjs dist/server.mjs && printf '%s\\n' ${shellQuote(input.commit)} > /warm/commit && chmod -R a+rX /warm && chmod 777 /warm/compile-cache && python3 -c 'import os, subprocess; (os.setuid(1000) if os.getuid() == 0 else None); subprocess.check_call(["node", "bin/graphyard.mjs", "--help"], stdout=subprocess.DEVNULL, env={**os.environ, "HOME": "/tmp", "NODE_COMPILE_CACHE": "/warm/compile-cache"})'; fi`,
+      'if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi',
+      `if [ -f bin/built-entry.mjs ] && [ -d node_modules ]; then node bin/built-entry.mjs && mv dist/cli.mjs /warm/dist/cli.mjs && mv dist/server.mjs /warm/dist/server.mjs && ln -s /warm/dist/cli.mjs dist/cli.mjs && ln -s /warm/dist/server.mjs dist/server.mjs && printf '%s\\n' ${shellQuote(input.commit)} > /warm/commit && chmod -R a+rX /warm && chmod 777 /warm/compile-cache && NODE_COMPILE_CACHE=/warm/compile-cache node bin/graphyard.mjs --help >/dev/null; fi`,
       'rm -rf /warm/build',
     ].join(' && ');
     try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
       await local('docker', ['commit', '--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`, name, tag]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return { tag, built: true };
@@ -483,7 +486,8 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
     async run(target: string, index: number, files: readonly string[], argv: (list: string, records: string) => string[], cpus: number): Promise<RemoteShardEnd> {
       if (!ready.has(target)) ready.set(target, prepare(target));
       const run = await ready.get(target)!, shard = index + 1;
-      const request = JSON.stringify({ files, argv: argv('{list}', '{records}'), cpus, deadline: input.deadline });
+      const nonce = generateTrialVerdictNonce();
+      const request = JSON.stringify({ files, argv: argv('{list}', '{records}'), cpus, deadline: input.deadline, nonce });
       let end: Omit<RemoteShardEnd, 'records'>;
       try { end = { ok: true, out: String(await transport.session(target, words => input.run('sh', ['-c', `printf '%s' ${shellQuote(request)} | ${['ssh', ...words, `run-shard ${run} ${shard}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining(), ...(input.signal ? { signal: input.signal } : {}) }))), status: 0 }; }
       catch (error) {
@@ -491,7 +495,6 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
         if (failed.timedOut) throw error;
         end = { ok: false, out: `${String(failed.stdout ?? '')}${String(failed.stderr ?? '')}`, status: failed.status ?? null };
       }
-      const records = end.ok || end.status !== 255 ? await shim(target, `fetch-records ${run} ${shard}`) : '';
       // SSH's own failure (255), a launcher that gave up on the host's heat or disk, or a shard that died
       // without a verdict (no records): the shard runs on another host, its output's tail kept in the trial log
       // (less the launcher's own waiting lines, which on a hot host would fill it).
@@ -499,8 +502,18 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       // A session over a shared connection that lost its host prints nothing of its own, so name that loss.
       // GY-3907: a module it could not resolve is named from Node's first error line, which the tail's stack pushes out.
       const said = /Cannot find (?:package|module) '[^'\n]+'[^\n]*/.exec(end.out)?.[0] ?? end.out.replace(/^(?:graphyard|mainworks) trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
-      if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
-      return { ...end, records };
+      if (!end.ok && (end.status === 255 || end.status === null || fault)) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
+      // GY-3914: take the remote shard's verdict and records from the shim's own nonce-authenticated output stream; a verdict without the right nonce fails the trial with one line saying so.
+      const parsed = parseTrialVerdict<{ status?: unknown; records?: unknown }>(end.out, nonce);
+      if (!parsed.ok || typeof parsed.value !== 'object' || parsed.value === null) {
+        if (!end.ok && /graphyard-host-shim refuses:/i.test(end.out)) throw new HostDroppedError(target, said);
+        return { ok: false, out: `${parsed.stripped ? `${parsed.stripped}\n` : ''}${trialVerdictMissingNonce}`, status: end.status || 1, records: '', verdictError: trialVerdictMissingNonce };
+      }
+      const records = typeof parsed.value.records === 'string' ? parsed.value.records : '';
+      const status = typeof parsed.value.status === 'number' ? parsed.value.status : end.status;
+      const ok = end.ok && status === 0;
+      if (!ok && !records.trim()) throw new HostDroppedError(target, said || `the SSH connection to ${target} closed mid-shard (exit ${status ?? 'signal'})`);
+      return { ok, out: parsed.stripped, status, records };
     },
     /** GY-3645: run a whole check on `target`: its Compose services started in the run directory, `argv` run on their network, the project removed. */
     async check(target: string, check: { file: string; services: { service: string; port: number }[]; argv: string[]; cpus: number }): Promise<RemoteCheckEnd> {
@@ -655,7 +668,7 @@ async function catalogImage(input: { root: string; commit: string; image: string
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
   const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
   try {
-    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
+    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
     await local('docker', ['commit', name, tag]);
   } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
   await pruneWarmImageFamily(tag, local);
@@ -681,6 +694,7 @@ export async function catalogHosts(input: { root: string; commit: string; run: C
     run: async (host: string, index: number, cases: readonly string[]): Promise<import('./e2e-trial.js').TrialE2eCase[]> => {
       const files = cases.map(proof => `e2e/cases/${proof.slice(4)}.json`), reading = readings.find(entry => entry.name === host);
       const ended = await session.run(host, index, files, (list, records) => ['sh', '-c', `exec node --import "${catalogHarness}/node_modules/tsx/dist/loader.mjs" "${catalogHarness}/scripts/e2e-shard.mjs" "$@"`, 'sh', list, records, String(Math.max(1_000, input.deadline - Date.now()))], Math.max(1, Math.floor(reading?.cores ?? 1)));
+      if (ended.verdictError) return cases.map(proof => ({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep: ended.verdictError! }));
       return ended.records.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as import('./e2e-trial.js').TrialE2eCase);
     },
     close: () => session.close(),

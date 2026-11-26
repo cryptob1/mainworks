@@ -300,10 +300,9 @@ process.exit(ok ? 0 : 1);
       assert.ok(existsSync(join(options!.cwd!, 'tests/candidate-only.test.ts')));
       overlayEntered();
       await overlayGate;
-      const match = /writeFileSync\(([^,]+),/.exec(readFileSync(args[2], 'utf8'));
-      assert.ok(match, 'result path in e2e script');
-      writeFileSync(JSON.parse(match[1]!), JSON.stringify([{ proof: 'e2e:demo', case: 'demo', executed: 1, failed: 0 }]));
-      return '';
+      const nonce = (options?.input ?? '').trim();
+      assert.ok(nonce, 'verdict nonce passed on stdin');
+      return `mainworks-verdict:${nonce} ${JSON.stringify([{ proof: 'e2e:demo', case: 'demo', executed: 1, failed: 0 }])}\n`;
     }
     return run(command, args, options);
   };

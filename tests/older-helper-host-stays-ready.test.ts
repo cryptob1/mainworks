@@ -116,7 +116,10 @@ test(`${proof} — placement uses both a v1 host and a v2 host, sending v1 calls
       hostImages[target]!.add(tag!);
       return '';
     }
-    if (verb.startsWith('run-shard ')) return 'ok\n';
+    if (verb.startsWith('run-shard ')) {
+      const nonce = /"nonce":"([0-9a-f]+)"/.exec(pipeline ?? '')?.[1] ?? '';
+      return `ok\nmainworks-verdict:${nonce} ${JSON.stringify({ status: 0, records: '{"file":"tests/a.test.ts","passed":true,"durationMs":1}\n' })}\n`;
+    }
     if (verb.startsWith('fetch-records ')) return '{"file":"tests/a.test.ts","passed":true,"durationMs":1}\n';
     if (verb.startsWith('run-check ')) return 'check output\nmainworks-check services 10\nmainworks-check command 20\nmainworks-check teardown 5\nmainworks-check exit 0\n';
     if (verb.startsWith('clean ')) return '';

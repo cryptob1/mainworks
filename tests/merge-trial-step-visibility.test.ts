@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -364,11 +364,11 @@ test('integration:trial-step-timings — bound E2E success and failure have sepa
     if (command === 'npm') { clock += 10; return ''; }
     if (command === 'node' && args.at(-1)?.endsWith('/run.mjs')) {
       clock += failed ? 900 : 300;
-      // GY-3180: a runner that throws never judged the head, so the failing trial is a case that failed a step.
-      await writeFile(join(dirname(args.at(-1)!), 'result.json'), JSON.stringify([
+      // GY-3180, GY-3914: a runner that throws never judged the head, so the failing trial is a case that failed a step, reported on stdout with the run nonce.
+      const nonce = ((options as { input?: string } | undefined)?.input ?? '').trim();
+      return `mainworks-verdict:${nonce} ${JSON.stringify([
         { proof: 'e2e:timed', case: 'timed', executed: 1, failed: failed ? 1 : 0, ...(failed ? { failingStep: 'step 1 failed' } : {}) },
-      ]));
-      return '';
+      ])}\n`;
     }
     return defaultChildRun(command, args, options);
   }) as never;

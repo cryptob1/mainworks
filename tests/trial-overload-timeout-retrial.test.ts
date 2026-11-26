@@ -69,13 +69,11 @@ for (const mode of ['serve', 'test', 'file', 'web-server', 'deadline'] as const)
         throw Object.assign(new Error('test failed'), { status: 1, ...(mode === 'deadline' ? { timedOut: true } : {}), stdout: mode === 'test' ? testTimeout : mode === 'file' ? 'not ok - tests/one.test.ts\n  test at tests/one.test.ts:1:1\n  test file timed out after 300000ms' : webTimeout, stderr: '' });
       }
       if (command === 'npm') { cpu.step(); return ''; }
-      // The E2E container returns the serve-ready timeout in its normal result file.
+      // The E2E container returns the serve-ready timeout on its nonce-authenticated verdict stream.
       if (command === 'node' && args.at(-1)?.endsWith('/run.mjs')) {
-        const script = await readFile(args.at(-1)!, 'utf8');
-        const path = /writeFileSync\(("[^"\n]+")/.exec(script)![1]!;
+        const nonce = (options.input ?? '').trim();
         cpu.step();
-        await writeFile(JSON.parse(path), JSON.stringify([{ proof: 'e2e:fixture', case: 'fixture', executed: 0, failed: 1, failingStep: serveTimeout }]));
-        return '';
+        return `mainworks-verdict:${nonce} ${JSON.stringify([{ proof: 'e2e:fixture', case: 'fixture', executed: 0, failed: 1, failingStep: serveTimeout }])}\n`;
       }
       return defaultChildRun(command, args, options);
     };
