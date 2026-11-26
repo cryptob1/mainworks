@@ -29,6 +29,8 @@ export function checkEnvironmentFault(reason: string | null | undefined): string
 }
 const jsonOpening = /\{\s*["']/;
 const cliBanner = /^(?:Reading (?:additional )?(?:input|prompt) from stdin\.{0,3}|-{3,})$/i;
+/** Go glog lines (such as agy's `E1125 ... file_watcher.go:194] skipping empty or temp file`) are runtime diagnostics, never the provider's failure sentence. */
+const glogLine = /^[IWEF]\d{4}\s+\d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\S+:\d+\]/;
 const cleanLine = (line: string) => line.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
 const sanitizePlain = (line: string): { text: string; tail: string } => {
   const idx = line.search(jsonOpening);
@@ -79,7 +81,7 @@ export function parseProbeFailure(
     reason = whole.reason;
     apiError = whole.apiError;
   } else {
-    const lines = raw.replace(/\r/g, '').split('\n').map(cleanLine).filter(line => Boolean(line) && !cliBanner.test(line));
+    const lines = raw.replace(/\r/g, '').split('\n').map(cleanLine).filter(line => Boolean(line) && !cliBanner.test(line) && !glogLine.test(line));
     let fallbackJson: { reason: string; apiError: string | null } | null = null;
     for (let i = lines.length - 1; i >= 0; i--) {
       const parsed = lines[i]!.startsWith('{') ? extractJsonMessage(lines[i]!) : null;
