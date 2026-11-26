@@ -18,6 +18,7 @@ import { syncWork } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -201,9 +202,9 @@ function submittedWork(source: 'control-plane' | undefined, ledger: Work['mergeL
   const candidate = { sha, baseSha: base, pr: 41, branch: 'graphyard/gy-41-1', author: 'implementer' };
   const observation: Observation = { ...(source ? { source } : {}), candidate, checks: [], reviews: [], protected: source ? false : true, mergeable: source ? true : false, merged: false, mergeSha: null, baseTip: base, baseTipContained: true, files: ['src/a.ts'],
     scopeFiles: [{ path: 'src/a.ts', status: 'modified', sha: 'd'.repeat(40), baseSha: 'e'.repeat(40), additions: 1, deletions: 1, binary: false }], at, ...overrides };
-  return { id: 'id-41', key: 'GY-41', title: 'Gates', description: '', type: 'feature', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:gates'] }], policy: { checks: ['test'], review: true }, stage: 'test', revision: 3, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null, workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 41 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], observation, blocker: null, gates: [], violations: [], ...(ledger === undefined ? {} : { mergeLedger: ledger }) } as unknown as Work;
+  return workFixture({ key: 'GY-41', title: 'Gates', criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:gates'] }], stage: 'test', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 41 }, observation,
+    gates: [], ...(ledger === undefined ? {} : { mergeLedger: ledger }) });
 }
 const reasonsOf = (work: Work) => Object.fromEntries(evaluate(work, [work], new Date('2026-10-08T12:30:00.000Z')).gates.map(gate => [gate.name, gate.reasons]));
 

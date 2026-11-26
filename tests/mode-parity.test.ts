@@ -18,6 +18,7 @@ import type { Observation, Work } from '../src/model/work.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { git } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1528: mode parity. One fixture item runs through evaluate (the landability verdict, and the
@@ -38,16 +39,14 @@ function fixture(source: 'control-plane' | null): Work {
     { kind: 'merge.intent', payload: { key: 'GY-1', head, baseTip: base, mergeSha: sha('parity-merge'), risk: 'normal', at: new Date(at).toISOString() } },
     { kind: mergeTrialKind, payload: { head, baseTip: base, mergeSha: sha('parity-merge'), proofs: { 'unit:item-works': { executed: 3, failed: 0 }, 'integration:item-holds': { executed: 1, failed: 0 } } } },
   ])['GY-1'];
-  return {
-    id: 'parity', key: 'GY-1', title: 'parity fixture', type: 'feature', description: '', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks', 'e2e:item-ships'] }],
-    policy: { checks: ['test'], review: true }, stage: 'build', revision: 3, policyRevision: 1, ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-1-1', epoch: 1, owner: 'worker' }], submission: { epoch: 1, pr: 7 }, candidate, reworkRequested: false,
-    scenarioRequirements: [], blocker: null, gates: [], violations: [], createdAt: new Date(at).toISOString(), updatedAt: new Date(at).toISOString(), stageEnteredAt: new Date(at).toISOString(),
-    evidence: [{ id: 'e1', proof: 'unit:item-works', result: 'fail', trusted: true, executed: 3, skipped: 0, failed: 1, producer: 'producer-a', sha: head, baseSha: base, policyRevision: 1, at: new Date(at).toISOString() }],
-    autoDispatch: { review: null, history: [], producers: [{ id: 'p1', kind: 'producer', group: 'unit', proofs: ['integration:item-holds'], sha: head, baseSha: base, policyRevision: 1, requestedAt: new Date(at).toISOString(), state: 'requested', reason: 'prove it' }] },
+  return workFixture({ id: 'parity', key: 'GY-1', title: 'parity fixture', priority: 1,
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks', 'e2e:item-ships'] }], stage: 'build', revision: 3, epoch: 1,
+    workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-1-1', epoch: 1, owner: 'worker' }], submission: { epoch: 1, pr: 7 }, candidate,
+    gates: [], createdAt: new Date(at).toISOString(), updatedAt: new Date(at).toISOString(), stageEnteredAt: new Date(at).toISOString(),
+    evidence: [{ id: 'e1', proof: 'unit:item-works', result: 'fail', trusted: true, executed: 3, skipped: 0, failed: 1, producer: 'producer-a', sha: head, baseSha: base, policyRevision: 1, at: new Date(at).toISOString() }] as never,
+    autoDispatch: { review: null, history: [], producers: [{ id: 'p1', kind: 'producer', group: 'unit', proofs: ['integration:item-holds'], sha: head, baseSha: base, policyRevision: 1, requestedAt: new Date(at).toISOString(), state: 'requested', reason: 'prove it' }] } as never,
     observation, mergeLedger: ledger,
-  } as unknown as Work;
+  });
 }
 
 /** The fixture through evaluate and dispatch, as plain data. */

@@ -9,6 +9,7 @@ import { loadMasterConfig, setupMaster } from '../src/master.js';
 import { launchReview, saveReviewerProfile } from '../src/reviewer.js';
 import type { UpDependencies, UpEvent, UpRequest } from '../src/up.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-1850: reviewer profiles exist before the first review, and a review launch refused for an
@@ -40,16 +41,11 @@ async function reviewerMaster(label: string) {
 function work(clock: number): Work {
   const candidate = { sha: H, baseSha: B, pr: 1850, branch: 'graphyard/gy-1850-1', author: 'implementer' };
   const at = new Date(clock).toISOString();
-  return {
-    id: 'work-1850', key: 'GY-1850', title: 'Reviewer profiles before the first review', description: '', type: 'bug', priority: 0, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x'] }],
-    policy: { checks: [], review: true, reviewProvider: 'github' }, stage: 'review', revision: 1, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [], candidate, submission: { epoch: 1, pr: 1850 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+  return workFixture({ id: 'work-1850', key: 'GY-1850', title: 'Reviewer profiles before the first review', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x'] }],
+    policy: { checks: [], review: true, reviewProvider: 'github' }, stage: 'review', createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    candidate, submission: { epoch: 1, pr: 1850 }, gates: [],
     observation: { source: 'control-plane', candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: true, baseTip: B, baseTree: sha40('7b'), baseTipContained: true },
-    blocker: null, gates: [], violations: [],
-  } as unknown as Work;
+      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: true, baseTip: B, baseTree: sha40('7b'), baseTipContained: true } as never });
 }
 
 test('unit:unknown-profile-escalates — three review launches refused for an unknown reviewer profile are counted, later attempts back off to once per five minutes naming mainworks master environments --apply until the profiles change', async () => {

@@ -12,6 +12,7 @@ import { runDispatchTick } from '../src/dispatch/tick.js';
 import { cliUnreachableRefusal, launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { fleet, requested } from './helpers/review-fleet.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2995: a self-deployed install runs its CLI from a checkout under the operator config home
 // (~/.config/graphyard/<install>/deploy/build, the launcher at bin/graphyard.mjs), and its
@@ -163,16 +164,12 @@ function planeWork(clock: number, type: 'bug' | 'feature'): Work {
   const H = sha40('c1'), B = sha40('b1');
   const candidate = { sha: H, baseSha: B, pr: 2995, branch: 'graphyard/gy-2995-1', author: 'implementer' };
   const at = new Date(clock).toISOString();
-  return {
-    id: '5f0d2b6e-1c4b-4a2a-9e1f-000000299500', key: 'GY-2995', title: 'Masked sessions reach their own CLI', description: '', type, priority: 0, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Posts', proofs: ['integration:masked-session-reaches-own-cli'] }],
-    policy: { checks: [], review: true }, stage: 'review', revision: 1, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [], candidate, submission: { epoch: 1, pr: 2995 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+  return workFixture({ id: '5f0d2b6e-1c4b-4a2a-9e1f-000000299500', key: 'GY-2995', title: 'Masked sessions reach their own CLI', type, priority: 0,
+    criteria: [{ id: 'AC-1', text: 'Posts', proofs: ['integration:masked-session-reaches-own-cli'] }], policy: { checks: [], review: true }, stage: 'review',
+    createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 2995 }, gates: [],
     observation: { source: 'control-plane', candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: B, baseTree: sha40('7b'), baseTipContained: true },
-    blocker: null, gates: [], violations: [],
-  } as unknown as Work;
+      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: B, baseTree: sha40('7b'), baseTipContained: true } as never,
+  });
 }
 
 test('integration:masked-session-missing-cli-refused — a review launch whose sandbox cannot reach the CLI the prompt names are refused before any session starts', async () => {

@@ -14,6 +14,7 @@ import { acquireVerificationSlot, readHeavyDrain, requestHeavyDrain, resumeHeavy
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { join } from 'node:path';
 
 /** The host lock directory this process reads the drain from (GY-3290), inside the test's own directory. */
@@ -42,14 +43,13 @@ function world(directory: string) {
     const delivered = events.some(event => event.kind === 'reconciled');
     const ledger = intent ? { key: `GY-${n}`, state: delivered ? 'reconciled' : landed ? 'pushed' : 'intent', head: intent.head, baseTip: intent.baseTip, mergeSha: intent.mergeSha, risk: intent.risk, intentAt: intent.at, pushedAt: landed ? iso(start) : null, observedTip: delivered ? main[0] : null, refusal: null, events: events.length } : null;
     const candidate = { sha: head(n), baseSha: sha('base'), pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-    return {
-      id: `w${n}`, key: `GY-${n}`, description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-      policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000),
-      ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [], mergeLedger: ledger,
+    return workFixture({
+      id: `w${n}`, key: `GY-${n}`, title: undefined, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+      createdAt: iso(start + n * 1000), updatedAt: iso(start), stageEnteredAt: iso(start + n * 1000), epoch: 1, submission: { epoch: 1, pr: n }, candidate, mergeLedger: ledger,
       observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: delivered, mergeSha: delivered ? ledger!.mergeSha : null, mergeable: true, protected: false, baseTip: main[0], baseTipContained: true, at: iso(start) },
       gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: name !== 'test' && name !== 'merge', reasons: [] })),
       ...(delivered ? { stage: 'done', delivery: { mergedAt: iso(start), mergeSha: ledger!.mergeSha!, authorizationRevision: 1 } } : { stage: 'build' }),
-    } as unknown as Work;
+    } as never);
   });
   const ports = (): MergeWriterReads => ({
     baseBranch: 'main', now: () => start, parallel: 1, drain: () => readHeavyDrain(directory),

@@ -13,6 +13,7 @@ import { loadMasterConfig, selectAccount, setupMaster } from '../src/master.js';
 import { saveReviewerProfile } from '../src/reviewer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3608 AC-2: a head already approved by the code reviewer that still owes a product review
 // never stalls on 'cannot be reviewed and no executor step answers it', and the next dispatch tick
@@ -24,16 +25,12 @@ const shaOf = (seed: string) => createHash('sha1').update(seed).digest('hex');
 
 function codeApprovedFeature(key: string): Work {
   const candidate = { sha: H, baseSha: B, pr: 0, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker-1' };
-  return {
-    id: randomUUID(), key, title: `Feature ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
+  return workFixture({
+    id: randomUUID(), key, title: `Feature ${key}`, priority: 1, stage: 'review', revision: 3, epoch: 1,
     criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:smoke'] }],
-    policy: { checks: ['test'], review: true }, stage: 'review', revision: 3, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
+    createdAt: at, updatedAt: at, stageEnteredAt: at, candidate, submission: { epoch: 1, pr: 0 }, gates: [], implementers: ['worker-1'],
     workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }],
-    candidate, submission: { epoch: 1, pr: 0 }, reworkRequested: false,
-    scenarioRequirements: [],
     evidence: [{ id: 'e1', proof: 'e2e:smoke', sha: H, baseSha: B, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
-    blocker: null, gates: [], violations: [], implementers: ['worker-1'],
     observation: {
       source: 'control-plane', at, candidate, checks: [],
       reviews: [{ id: 1, reviewer: 'review-codex', state: 'APPROVED', sha: H, submittedAt: at }],
@@ -41,9 +38,9 @@ function codeApprovedFeature(key: string): Work {
       files: ['web/feature.ts'],
       scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(key), additions: 10, deletions: 0, binary: false }],
       baseTip: B, baseTipContained: true, mergeBase: B,
-    },
+    } as never,
     productReview: null,
-  } as unknown as Work;
+  });
 }
 
 test('unit:approved-head-gets-its-product-review — a code-approved head owing a product review asks for the product review and the next dispatch tick launches it', async () => {

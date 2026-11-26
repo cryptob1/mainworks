@@ -21,6 +21,7 @@ import { coordinationHistoryLimit, coordinationViewHeader, coordinationSnapshot 
 import { assertTiming, minimumSamples, steadyState } from './helpers/timing.js';
 import { rowBytes } from './helpers/row-bytes.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // A ledger the size production reached and beyond: 100 items, each carrying the history a long-lived
 // item accumulates (evidence for every head it ever had, the per-file scope comparison of its last
@@ -48,19 +49,15 @@ function ledgerItem(index: number, now: Date): Work {
     url: `https://ci.example/runs/${index}-${h}`, scopeFiles: Array.from({ length: 30 }, (_, file) => `src/module-${file}/component-${index}.ts`),
     artifacts: Array.from({ length: 4 }, (_, n) => ({ kind: 'report', label: `report ${n}`, mediaType: 'application/json', size: 20_000, digest: `sha256:${'d'.repeat(64)}`, availability: 'available', reference: { requestId: randomUUID(), artifactId: randomUUID() } })) as Evidence['artifacts'],
   });
-  const work = {
-    id, key, title: `Ledger item ${key}`, description: 'An item with the history a long-lived ledger accumulates. '.repeat(20), type: 'feature', priority: index % 3,
-    dependencies: [], criteria: proofs.map((proof, n) => ({ id: `AC-${n + 1}`, text: `Criterion ${n + 1} of ${key}`, proofs: [proof] })),
-    policy: { checks: ['test', 'typecheck'], review: true }, stage, revision: 400, policyRevision: 1,
-    createdAt: new Date(now.getTime() - 86_400_000).toISOString(), updatedAt: now.toISOString(), stageEnteredAt: now.toISOString(), ready: true, epoch: 2,
-    lease: null, workspaces: [], implementers: ['worker-a'], submission: { epoch: 2, pr: index + 1 },
-    candidate: { sha: head, baseSha: base, pr: index + 1, branch: `graphyard/gy-${index + 1}-2`, author: 'worker-a' },
-    reworkRequested: false, scenarioRequirements: [], evidence, blocker: null,
+  const work = workFixture({
+    id, key, title: `Ledger item ${key}`, description: 'An item with the history a long-lived ledger accumulates. '.repeat(20), priority: index % 3,
+    criteria: proofs.map((proof, n) => ({ id: `AC-${n + 1}`, text: `Criterion ${n + 1} of ${key}`, proofs: [proof] })), policy: { checks: ['test', 'typecheck'], review: true }, stage, revision: 400,
+    createdAt: new Date(now.getTime() - 86_400_000).toISOString(), updatedAt: now.toISOString(), stageEnteredAt: now.toISOString(), epoch: 2, implementers: ['worker-a'], submission: { epoch: 2, pr: index + 1 },
+    candidate: { sha: head, baseSha: base, pr: index + 1, branch: `graphyard/gy-${index + 1}-2`, author: 'worker-a' }, evidence,
     observation: { at: now.toISOString(), candidate: { sha: head, baseSha: base, pr: index + 1 }, files: ['src/server/index.ts', 'tests/example.test.ts'], checks: [{ name: 'test', conclusion: 'success' }], reviews: [], draft: false, prState: 'open', mergeable: true, baseTip: base, baseTipContained: true,
       scopeFiles: Array.from({ length: 200 }, (_, file) => ({ path: `src/generated/file-${file}.ts`, sha: 'e'.repeat(40), base: 'f'.repeat(40), status: 'unchanged' })) },
     gates: [{ name: 'build', passed: true, reasons: [] }, { name: 'review', passed: stage !== 'review', reasons: stage === 'review' ? ['Independent approval of the current commit is required'] : [] }],
-    violations: [],
-  } as unknown as Work;
+  } as never);
   if (stage !== 'done') reconcileAutoDispatch(work, [work], now);
   // Every head before the current one left its resolved requests behind.
   const resolved: DispatchRequest[] = [];

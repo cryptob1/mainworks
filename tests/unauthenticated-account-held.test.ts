@@ -20,6 +20,7 @@ import { liveRun } from '../src/runner/registry.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3218: an account whose agent reports it is not logged in is held, and the launch moves to
 // another account. The agent here is a real child process: a stub `claude` binary that exits 1 with
@@ -85,13 +86,11 @@ after(async () => {
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
 function reviewItem(key: string): Work {
   const candidate = { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
-  return { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'The flag reads held', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
+  return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'The flag reads held', proofs: ['unit:works'] }],
+    stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1, workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }],
+    candidate, submission: { epoch: 1, pr: 7 }, gates: [], implementers: ['graphyard-claude-1'],
     observation: { source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['feature.ts'], scopeFiles: [{ path: 'feature.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true } } as unknown as Work;
+      files: ['feature.ts'], scopeFiles: [{ path: 'feature.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }], baseTip: base, baseTipContained: true } });
 }
 /** git really runs; Herdr is a refusal, so a pane would fail the launch. */
 const run = (command: string, args: string[], options?: { cwd?: string }) => {

@@ -7,6 +7,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterCauses } from '../src/daemon/master-stalled-delivery.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const proof = 'unit:repeated-failure-requires-diagnosis';
 // Reached dynamically, so this file loads on a base without the module and each case fails on its own.
@@ -20,13 +21,12 @@ const config: MasterConfig = masterConfigSchema.parse({ version: 1, url: 'https:
 /** A submitted item sent back by the loop's rework of a standing verdict: a review refusal. */
 function item(epoch: number, rework: Work['lastRework'], overrides: Partial<Work> = {}): Work {
   const at = minute(0);
-  return {
-    id: 'id-GY-9', key: 'GY-9', title: 'Flaky widget', description: '', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:x'] }],
-    policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch, lease: null, workspaces: [], candidate: { sha: 'a'.repeat(40) }, submission: { epoch, pr: 1 }, reworkRequested: true, lastRework: rework,
-    pipeline: { attempts: [], submittedAt: minute(1), resubmittedAt: null }, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: [] }], violations: [], ...overrides,
-  } as unknown as Work;
+  return workFixture({
+    key: 'GY-9', title: 'Flaky widget', type: 'bug', priority: 1, stage: 'build', createdAt: at, updatedAt: at, stageEnteredAt: at, epoch,
+    candidate: { sha: 'a'.repeat(40) } as never, submission: { epoch, pr: 1 }, reworkRequested: true, lastRework: rework,
+    pipeline: { attempts: [], submittedAt: minute(1), resubmittedAt: null } as never,
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: [] }], ...overrides,
+  });
 }
 const verdict = (n: number, sha: string) => ({ reason: `GY-9: review-codex-${n} requested changes on ${sha.slice(0, 12)}: BLOCKING: tests/widget.test.ts:${40 + n} still fails at ${minute(n)} for graphyard-codex-a`, binding: `${sha}:verdict:review-codex-${n}`, at: minute(10 * n) });
 

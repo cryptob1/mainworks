@@ -16,6 +16,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const workerToken = 'worker-token-'.padEnd(40, 'x');
@@ -40,16 +41,8 @@ const iso = (offsetMs: number) => new Date(Date.parse('2030-01-01T00:00:00Z') + 
 const clock = Date.parse('2030-01-01T00:00:00Z');
 
 function work(overrides: Partial<Work> = {}): Work {
-  return {
-    id: 'work-1', key: 'GY-42', title: 'Prove the durable loop', description: '', type: 'feature', priority: 1,
-    dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:loop'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 3, policyRevision: 1,
-    createdAt: iso(-4 * hour), updatedAt: iso(0), stageEnteredAt: iso(-2 * hour), ready: true, epoch: 0,
-    lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [], ...overrides,
-  } as Work;
+  return workFixture({ id: 'work-1', key: 'GY-42', title: 'Prove the durable loop', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:loop'] }],
+    revision: 3, createdAt: iso(-4 * hour), updatedAt: iso(0), stageEnteredAt: iso(-2 * hour), ...overrides });
 }
 const submitted = (overrides: Partial<Work> = {}) => work({
   stage: 'review', epoch: 1, submission: { epoch: 1, pr: 42 },
@@ -477,12 +470,8 @@ test('unit:fast-failure-backoff — a transient read failure costs seconds, not 
   const flakyName = 'unit:fleet-panel-renders — the fleet panel renders';
 
   /** An item as the snapshot lists it, around the fields the old flake filer read. */
-  const item = (fields: Record<string, unknown>) => ({
-    description: '', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item'] }],
-    policy: { checks: ['test', 'typecheck'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start),
-    stageEnteredAt: iso(start), ready: true, epoch: 1, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [], gates: [], ...fields,
-  }) as unknown as Work;
+  const item = (fields: Record<string, unknown>) => workFixture({ type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item'] }],
+    policy: { checks: ['test', 'typecheck'], review: true }, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), epoch: 1, gates: [], ...fields });
 
   test('unit:daemon-passed-reruns — a day of loop cycles over passed reruns and recorded trial flakes files no work item, though the filing effect and the failed-log read stand ready', async () => {
     const state = emptyDaemonState(config);
@@ -532,14 +521,12 @@ test('unit:fast-failure-backoff — a transient read failure costs seconds, not 
   const passed = ['ready', 'build', 'review', 'test'];
   const submitted = (n: number, minutesAgo: number) => {
     const candidate = { sha: sha(`head${n}`), baseSha: tip, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' };
-    return {
-      id: `w${n}`, key: `GY-${n}`, description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-      policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start),
-      stageEnteredAt: iso(start - minutesAgo * 60_000), ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: n }, candidate, reworkRequested: false,
-      scenarioRequirements: [], evidence: [], blocker: null, violations: [], stage: 'build',
+    return workFixture({
+      id: `w${n}`, key: `GY-${n}`, title: undefined, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], createdAt: iso(start), updatedAt: iso(start),
+      stageEnteredAt: iso(start - minutesAgo * 60_000), epoch: 1, submission: { epoch: 1, pr: n }, candidate, stage: 'build',
       gates: ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: passed.includes(name), reasons: passed.includes(name) ? [] : [`${name} refused`] })),
-      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip },
-    } as unknown as Work;
+      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip } as never,
+    });
   };
 
   test('unit:daemon-single-merge-trial — a cycle with submitted heads starts exactly one trial (the merge writer\'s), a cursor preserves old shadow verdicts as passive data, and master status has no shadowGate', async () => {

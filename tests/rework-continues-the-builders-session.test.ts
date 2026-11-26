@@ -7,6 +7,7 @@ import { headlessArgs } from '../src/headless-argv.js';
 import { runtimeSessionId } from '../src/model/token-costs.js';
 import { attemptLabel, readAttemptLaunch } from '../src/master/session-resume.js';
 import { builderFixture } from './helpers/builder-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3632: a change sent back for rework returns to the Builder that wrote it: the same account's
 // runtime continues its own session in the same worktree, with the rework reason as its next
@@ -35,9 +36,8 @@ async function scenario(label: string) {
   let claims = 0;
   // The worktree command gives a rework its branch's last path (reworkWorktreePath); a moved worktree is a fresh path.
   const prepare = (moved = false) => async () => ({ epoch: ++claims, path: moved ? join(yard.root, 'moved') : path, base: 'c'.repeat(40) });
-  const item = { id: 'work-1', key: 'GY-1', title: 'Widgets', description: '', type: 'feature', priority: 1, dependencies: [], lane: 'low', pipeline: { reworkRounds: 0, attempts: [] },
-    criteria: [{ id: 'AC-1', text: 'Two widgets', proofs: [proof] }], policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] } as any;
+  const item = workFixture({ id: 'work-1', key: 'GY-1', title: 'Widgets', priority: 1, lane: 'low', pipeline: { reworkRounds: 0, attempts: [] },
+    criteria: [{ id: 'AC-1', text: 'Two widgets', proofs: [proof] }], createdAt: '', updatedAt: '', stageEnteredAt: '' } as never) as any;
   const dispatch = (work: any, moved = false) => dispatchWork(yard.root, work, yard.profile, { allWork: [work], prepare: prepare(moved), release: async () => {}, headless: yard.exec, probe: yard.probe(), startupMs: 2_000 });
   const first = await dispatch(item);
   const sentBack = () => ({ ...item, epoch: claims, stage: 'build', reworkRequested: true, submission: { epoch: claims, head: 'a'.repeat(40) }, candidate: { sha: 'a'.repeat(40), branch: 'graphyard/gy-1-1' },

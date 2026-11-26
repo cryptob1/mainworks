@@ -7,6 +7,7 @@ import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import { keptTrialAheadOfReview, mergeCandidateHold, mergeOne, mergeOpeningHold, mergeRecordKinds, trialAheadOfReviewReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3164 AC-1: the merge writer starts a head's trial once its build gate passed (worker
 // verification recorded), beside review; the push to main still requires the review gate for that
@@ -46,14 +47,10 @@ class World {
   }
   item(): Work {
     const candidate = { sha: this.candidate, baseSha: tip, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' };
-    return {
-      id: 'w1', key: 'GY-1', description: '', type: 'feature', priority: 1, dependencies: [],
-      criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true },
-      revision: 1, policyRevision: 1, createdAt: iso(start - 10 * minute), updatedAt: iso(start), stageEnteredAt: iso(start - 10 * minute),
-      ready: true, epoch: 1, lease: null, workspaces: [], submission: { epoch: 1, pr: 1 }, candidate, reworkRequested: false,
-      scenarioRequirements: [], evidence: [], observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip, baseTipContained: true, at: iso(start) },
-      blocker: null, violations: [], gates: gatesOf(this.gate), mergeLedger: this.ledger(), stage: 'build',
-    } as unknown as Work;
+    return workFixture({ id: 'w1', key: 'GY-1', title: undefined, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+      createdAt: iso(start - 10 * minute), updatedAt: iso(start), stageEnteredAt: iso(start - 10 * minute), epoch: 1, submission: { epoch: 1, pr: 1 }, candidate,
+      observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, baseTip: tip, baseTipContained: true, at: iso(start) } as never,
+      gates: gatesOf(this.gate), mergeLedger: this.ledger(), stage: 'build' });
   }
   ports(): MergePorts {
     const world = this;

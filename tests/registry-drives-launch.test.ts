@@ -18,6 +18,7 @@ import { startedAtOnce } from './helpers/launch-shell.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-170 AC-2: each registry role carries its launch policy — flags such as a permission mode or
@@ -103,9 +104,8 @@ function herdr(calls: string[][]) {
 const valueOf = (args: string[], flag: string) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : undefined; };
 
 function item(key: string): Work {
-  return { id: `id-${key}`, key, title: 'Registry launch', description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-2', text: 'Launch', proofs: ['integration:registry-drives-launch'] }],
-    policy: { checks: ['test'], review: true }, stage: 'review', revision: 1, policyRevision: 1, createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 1, lease: null, workspaces: [], candidate: null,
-    submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: [], observation: null, autoDispatch: { review: null, producers: [], history: [] } } as unknown as Work;
+  return workFixture({ key, title: 'Registry launch', priority: 1, criteria: [{ id: 'AC-2', text: 'Launch', proofs: ['integration:registry-drives-launch'] }], stage: 'review',
+    createdAt: '', updatedAt: '', stageEnteredAt: '', epoch: 1, gates: [], implementers: [], autoDispatch: { review: null, producers: [], history: [] } as never });
 }
 
 test('integration:registry-drives-launch — a role the registry does not define is refused, never launched from the local profile', async () => {

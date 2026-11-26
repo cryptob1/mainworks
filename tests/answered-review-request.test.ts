@@ -17,6 +17,7 @@ import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-10-01 verdict timestamps are the recorded GY-1083 instances and only order replayed verdicts; observedAt, closedAt, requestedAt and expiry are built relative to Date.now().
 
 // GY-1083: eleven review-convergence faults in 24 hours, every one a review-conflict: the reviewer
@@ -55,13 +56,11 @@ function item(instance: Instance, observedAt = new Date(Date.now() - verdictInge
   const candidate = { sha: instance.sha, baseSha: base, pr: instance.pr, branch: `graphyard/${instance.key.toLowerCase()}-1`, author: 'implementer' };
   const observation: Observation = { candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/a.ts'], scopeFiles: [], at: observedAt,
     prState: 'open', draft: false, baseTip: base, baseTree: '7b'.padEnd(40, '0'), baseTipContained: true };
-  const work = { id: `work-${instance.key}`, key: instance.key, title: 'Instance', description: '', type: 'bug', priority: 0, dependencies: [],
+  const work = workFixture({ id: `work-${instance.key}`, key: instance.key, title: 'Instance', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x'] }], policy: { checks: [], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, policyRevision: instance.policyRevision,
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: instance.pr }, reworkRequested: false,
-    scenarioRequirements: [], observation, blocker: null, violations: [],
+    epoch: 1, workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: instance.pr }, observation,
     evidence: [{ id: 'evidence-1', proof: 'unit:x', sha: instance.sha, baseSha: base, policyRevision: instance.policyRevision, producer: 'ci-runner', trusted: true, result: 'pass', executed: 3, skipped: 0, at: new Date().toISOString() }],
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] } as unknown as Work;
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
   reconcileAutoDispatch(work, [work], new Date());
   // The request the instance's two verdicts answered.
   work.autoDispatch!.review = { ...work.autoDispatch!.review!, id: instance.requestId };

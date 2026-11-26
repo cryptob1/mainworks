@@ -14,6 +14,7 @@ import { recordReviewLaunch, recordReviewVerdict, tokenHashOf } from '../src/ser
 import type { Principal, Work } from '../src/model.js';
 import type { ProductReview } from '../src/model/product-review.js';
 import type { Store } from '../src/store.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3684 AC-1: a product review verdict on a head satisfies the product review gate for that head
 // after main moves; a new product review is required only when the head itself changes or its merge
@@ -32,16 +33,11 @@ const shaOf = (seed: string) => createHash('sha1').update(seed).digest('hex');
 
 function featureOn(key: string, head: string, base: string, at: string, options: { mergeBase?: string | null; conflicting?: boolean } = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 1, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker-1' };
-  return {
-    id: randomUUID(), key, title: `Feature ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:smoke'] }],
-    policy: { checks: ['test'], review: true }, stage: 'review', revision: 3, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }],
-    candidate, submission: { epoch: 1, pr: 1 }, reworkRequested: false,
-    scenarioRequirements: [],
+  return workFixture({ id: randomUUID(), key, title: `Feature ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:smoke'] }],
+    stage: 'review', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }], candidate, submission: { epoch: 1, pr: 1 },
     evidence: [{ id: 'e1', proof: 'e2e:smoke', sha: head, baseSha: base, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
-    blocker: null, gates: [], violations: [], implementers: ['worker-1'],
+    gates: [], implementers: ['worker-1'],
     pipeline: { attempts: [], submittedAt: at, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
     observation: {
       source: 'control-plane', at, candidate, checks: [],
@@ -51,9 +47,9 @@ function featureOn(key: string, head: string, base: string, at: string, options:
       scopeFiles: [{ path: 'web/feature.ts', status: 'added' as const, sha: shaOf(`${key}:${head}`), additions: 10, deletions: 0, binary: false }],
       baseTip: base, baseTipContained: base === B0,
       ...(options.mergeBase !== null ? { mergeBase: options.mergeBase ?? B0 } : {}),
-    },
+    } as never,
     productReview: null,
-  } as unknown as Work;
+  });
 }
 
 function moveMain(work: Work, newBase: string, at: string, options: { keepMergeBase?: boolean; conflicting?: boolean } = {}) {

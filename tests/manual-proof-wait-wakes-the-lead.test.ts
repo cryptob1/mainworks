@@ -12,6 +12,7 @@ import { flowNumbers, type FlowItem } from '../src/flow-numbers.js';
 import { trialAheadOfReviewReason } from '../src/model/merge-queue.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const at = '2026-11-24T12:00:00Z';
 const head = 'a'.repeat(40);
@@ -21,35 +22,12 @@ const acceptanceRefusal = (p = proof) => `AC-1: ${p} needs trusted passing evide
 
 function signoffItem(overrides: Partial<Work> = {}): Work {
   const candidate = { pr: 1, sha: head, baseSha: base };
-  return {
-    id: 'work-signoff',
-    key: 'GY-42',
-    title: 'Finished change awaiting sign-off',
-    description: '',
-    type: 'bug',
-    priority: 1,
-    dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Lead verifies the docs', proofs: [proof] }],
-    producerProofs: [],
-    policy: { checks: ['test'], review: true },
-    stage: 'acceptance',
-    revision: 5,
-    policyRevision: 1,
-    createdAt: at,
-    updatedAt: at,
-    stageEnteredAt: at,
-    ready: true,
-    epoch: 1,
-    lease: null,
-    workspaces: [],
-    submission: { epoch: 1, pr: 1, sha: head },
-    candidate,
-    reworkRequested: false,
-    scenarioRequirements: [],
-    evidence: [],
-    blocker: null,
-    violations: [],
-    observation: { at, source: 'control-plane', candidate, prState: 'open', draft: false, mergeable: true, protected: true, checks: [], reviews: [] },
+  return workFixture({
+    id: 'work-signoff', key: 'GY-42', title: 'Finished change awaiting sign-off', type: 'bug', priority: 1,
+    criteria: [{ id: 'AC-1', text: 'Lead verifies the docs', proofs: [proof] }], producerProofs: [],
+    stage: 'acceptance', revision: 5, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    submission: { epoch: 1, pr: 1, sha: head } as never, candidate: candidate as never,
+    observation: { at, source: 'control-plane', candidate, prState: 'open', draft: false, mergeable: true, protected: true, checks: [], reviews: [] } as never,
     mergeLedger: {
       key: 'GY-42',
       state: 'refused',
@@ -74,7 +52,7 @@ function signoffItem(overrides: Partial<Work> = {}): Work {
     ],
     autoDispatch: { review: null, producers: [], history: [] },
     ...overrides,
-  } as unknown as Work;
+  });
 }
 
 async function fixture(initialWork: Work[]) {

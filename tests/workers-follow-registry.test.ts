@@ -24,6 +24,7 @@ import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3285: an install runs as many workers as its registry's worker role allows. The real control
 // plane, agent registry, loop cycle, CLI claim/worktree/watch and headless dispatch; the only
@@ -97,10 +98,8 @@ const snapshot = () => api('GET', 'work-snapshot') as Promise<{ work: Work[]; no
 async function readyItems(from: number) {
   const at = new Date().toISOString();
   for (let n = from; n < from + 6; n++) {
-    const work = { id: randomUUID(), key: `GY-${n}`, title: `Item ${n}`, description: 'Write change.txt.', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }],
-      policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-      ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-      gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] };
+    const work = workFixture({ id: randomUUID(), key: `GY-${n}`, title: `Item ${n}`, description: 'Write change.txt.', type: 'bug', priority: 1,
+      criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }], createdAt: at, updatedAt: at, stageEnteredAt: at });
     await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
   }
 }

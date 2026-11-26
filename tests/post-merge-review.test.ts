@@ -17,6 +17,7 @@ import { selectReviewerProfile } from '../src/dispatch/launch-failover.js';
 import { controlPlaneRefusal, controlPlaneVerdict, staleReviewReason, type ReviewRecord } from '../src/reviewer.js';
 import { readProjectMemory } from '../src/project-memory.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-10-08 `at` fixtures are already past, so a delivery, launch or expiry stamped with them reads the same on any later day; Date.now()/new Date() only stamp the live-API launch and its filing.
 
 // GY-1525 AC-4: a normal-risk delta the merge writer delivered owes one post-merge review of its
@@ -32,15 +33,14 @@ const clock = Date.parse(at);
 
 function delivered(key: string, fields: Record<string, unknown> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
-  return { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'done', revision: 9, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-7-1', epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'], postMergeReview: 'owed',
+  return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+    stage: 'done', revision: 9, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 7 },
+    workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-7-1', epoch: 1, owner: 'graphyard-claude-1' }],
+    gates: [], implementers: ['graphyard-claude-1'], postMergeReview: 'owed',
     delivery: { mergedAt: at, mergeSha: M, authorizationRevision: 8 },
     mergeLedger: { key, state: 'reconciled', head: H, baseTip: B, mergeSha: M, risk: 'normal', intentAt: at, pushedAt: at, observedTip: M, refusal: null, events: 3 },
-    observation: { source: 'control-plane', at, candidate, checks: [], reviews: [], merged: true, mergeSha: M, mergedAt: at, mergeable: true, protected: false, files: ['src/feature.ts'], scopeFiles: [{ path: 'src/feature.ts', status: 'modified', sha: sha('f'), additions: 2, deletions: 1, binary: false }], baseTip: B, baseTipContained: true },
-    ...fields } as unknown as Work;
+    observation: { source: 'control-plane', at, candidate, checks: [], reviews: [], merged: true, mergeSha: M, mergedAt: at, mergeable: true, protected: false, files: ['src/feature.ts'], scopeFiles: [{ path: 'src/feature.ts', status: 'modified', sha: sha('f'), additions: 2, deletions: 1, binary: false }], baseTip: B, baseTipContained: true } as never,
+    ...fields });
 }
 const planeHead = (key: string, files: string[]) => {
   const candidate = { sha: H, baseSha: B, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };

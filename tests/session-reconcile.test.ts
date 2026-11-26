@@ -14,6 +14,7 @@ import type { Observation, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { workFixture } from './helpers/work-fixture.js';
 
 /** A fresh registry per launch: the registry alone grants the reviewer its slot. */
 const reviewProbe = () => registryFixture(hostname(), ['claude'], ['reviewer']).probe;
@@ -44,11 +45,9 @@ function observation(candidate: { sha: string; baseSha: string }): Observation {
 }
 function work(): Work {
   const candidate = { sha: H, baseSha: B, pr: 127, branch: 'graphyard/gy-127-1', author: 'implementer' };
-  return { id: 'work-127', key: 'GY-127', title: 'Queue tip approval', description: '', type: 'bug', priority: 0, dependencies: [],
+  return workFixture({ id: 'work-127', key: 'GY-127', title: 'Queue tip approval', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['integration:absent-pane-resolves-request'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'review', revision: 7, policyRevision: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString(), ready: true, epoch: 1,
-    lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 127 }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: observation(candidate), blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], violations: [] } as unknown as Work;
+    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 127 }, observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
 }
 
 /**

@@ -21,6 +21,7 @@ import { liveRun } from '../src/runner/registry.js';
 import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3581: a head whose dashboard is built by the repository's build step (dist/ is untracked) runs
 // that build in its review checkout before the serve command, so GET / answers 200, never 500.
@@ -95,13 +96,11 @@ after(async () => {
 
 function productItem(key: string, head: string): Work {
   const candidate = { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
-  return { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'The dashboard answers', proofs: ['integration:product-review-builds-before-serve'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'], pipeline: { attempts: [], submittedAt: null, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
+  return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1,
+    criteria: [{ id: 'AC-1', text: 'The dashboard answers', proofs: ['integration:product-review-builds-before-serve'] }], stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1,
+    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 }, gates: [], implementers: ['graphyard-claude-1'], pipeline: { attempts: [], submittedAt: null, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
     observation: { source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['build.mjs'], scopeFiles: [{ path: 'build.mjs', status: 'modified', sha: head, additions: 1, deletions: 1, binary: false }], baseTip: base, baseTipContained: true } } as unknown as Work;
+      files: ['build.mjs'], scopeFiles: [{ path: 'build.mjs', status: 'modified', sha: head, additions: 1, deletions: 1, binary: false }], baseTip: base, baseTipContained: true } });
 }
 // The launch's commands run as themselves: git, and the repository's build.
 const run = async (command: string, args: string[], options?: { cwd?: string }) => {

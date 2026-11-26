@@ -14,6 +14,7 @@ import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { workFixture } from './helpers/work-fixture.js';
 
 // Optimistic dispatch: file overlap never holds an item. Holding on overlap (GY-112, then
 // bounded, then relaxed for open pull requests in GY-194) still left most of the fleet idle behind
@@ -28,13 +29,7 @@ const hour = 3_600_000;
 
 function work(key: string, overrides: Partial<Work> = {}): Work {
   const at = new Date(Date.now() - 3_600_000).toISOString();
-  return {
-    id: `id-${key}`, key, title: key, description: '', type: 'feature', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [],
-    ...overrides,
-  } as Work;
+  return workFixture({ key, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:x'] }], createdAt: at, updatedAt: at, stageEnteredAt: at, ...overrides });
 }
 /** Claimed `sinceMs` ago with a live lease; no candidate yet, so it excludes on nothing. */
 const claimed = (key: string, sinceMs = hour, overrides: Partial<Work> = {}) => work(key, { stage: 'build', epoch: 1, lease: { owner: `${key}-worker`, epoch: 1, expiresAt: iso(10 * hour) },

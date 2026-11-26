@@ -16,6 +16,7 @@ import { openHumanOnly } from '../src/model/human-request.js';
 import MasterPage from '../web/pages/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3280: a worker blocker raises attention at once and the master acts on it within one cycle.
 // The cycle the blocker lands, master status carries it as an attention line naming the item, the
@@ -33,17 +34,15 @@ const blocker = 'the staging database is unreachable: psql: error: connection re
 
 /** An open item a worker blocked: the blocker and its stamp are on the record, the attempt ended, nothing is leased. */
 function blockedItem(fields: Partial<Work> = {}): Work {
-  return {
-    id: 'w-3280', key: 'GY-1', title: 'Fix the export', description: '', type: 'bug', priority: 1, stage: 'ready', ready: true,
-    epoch: 1, revision: 3, policyRevision: 1, dependencies: [], createdAt: iso(start - 3 * 60 * minute), updatedAt: iso(start - minute),
-    stageEnteredAt: iso(start - minute), lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], observation: null, violations: [], sessions: [],
-    criteria: [{ id: 'AC-1', text: 'The export works', proofs: ['unit:export'] }], policy: { checks: ['test'], review: true },
+  return workFixture({
+    id: 'w-3280', title: 'Fix the export', type: 'bug', priority: 1, epoch: 1, revision: 3, sessions: [],
+    createdAt: iso(start - 3 * 60 * minute), updatedAt: iso(start - minute), stageEnteredAt: iso(start - minute),
+    criteria: [{ id: 'AC-1', text: 'The export works', proofs: ['unit:export'] }],
     gates: [{ name: 'ready', passed: false, reasons: [blocker] }], blocker, blockedAt: iso(start - minute),
     pipeline: { attempts: [{ epoch: 1, owner: 'worker-1', claimedAt: iso(start - 2 * minute), endedAt: iso(start - minute), end: 'released' }],
       submittedAt: null, resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 1, requirements: 0 } },
     ...fields,
-  } as unknown as Work;
+  });
 }
 
 async function fixture(visible = true) {

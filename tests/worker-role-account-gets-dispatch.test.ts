@@ -13,6 +13,7 @@ import { foldObservations } from '../src/model/registry-sessions.js';
 import { workersAllowed } from '../src/master/worker-pool.js';
 import { workersCommand } from '../src/cli/master-registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-3730: the registry's worker role decides who builds. master.json holds only a claude profile
@@ -47,9 +48,8 @@ test('unit:worker-role-account-gets-dispatch — role order pi, claude with no P
   await mkdir(dirname(master.credentialFile), { recursive: true });
   // The only profile master.json holds is a claude one: no Pi profile exists.
   const profile: WorkerProfile = { name: 'claude-primary', principal: 'graphyard-worker-1', agentName: 'eng-claude', mode: 'launch', kind: 'claude', credentialFile, agentArgs: [], approvals: 'auto', environment: {} };
-  const item = { id: 'work-3730', key: 'GY-3730', title: 'Role builds', description: '', type: 'feature', priority: 1, dependencies: [], lane: 'low', pipeline: { reworkRounds: 0, attempts: [] },
-    criteria: [{ id: 'AC-1', text: 'Edits src/master/worker-pool.ts and tests/worker-role-account-gets-dispatch.test.ts', proofs: ['unit:worker-role-account-gets-dispatch'] }], policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] } as any;
+  const item = workFixture({ id: 'work-3730', key: 'GY-3730', title: 'Role builds', priority: 1, lane: 'low', pipeline: { reworkRounds: 0, attempts: [] } as never, createdAt: '', updatedAt: '', stageEnteredAt: '',
+    criteria: [{ id: 'AC-1', text: 'Edits src/master/worker-pool.ts and tests/worker-role-account-gets-dispatch.test.ts', proofs: ['unit:worker-role-account-gets-dispatch'] }] }) as any;
 
   const at = new Date().toISOString();
   let registry = registryWith(hostId, ['pi-a', 'claude-b']);

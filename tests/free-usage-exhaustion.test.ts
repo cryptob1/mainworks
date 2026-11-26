@@ -9,6 +9,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { loadMasterConfig, saveWorkerProfile, setupMaster } from '../src/master/config.js';
@@ -68,10 +69,8 @@ const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 async function readyItem(key: string): Promise<Work> {
   const at = now();
-  const work = { id: randomUUID(), key, title: `Item ${key}`, description: 'Write change.txt.', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [] } as unknown as Work;
+  const work = workFixture({ id: randomUUID(), key, title: `Item ${key}`, description: 'Write change.txt.', type: 'bug', priority: 1,
+    criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }], createdAt: at, updatedAt: at, stageEnteredAt: at });
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
   return work;
 }

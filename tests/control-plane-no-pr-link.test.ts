@@ -6,6 +6,7 @@ import { plainStatus } from '../src/model/plain-status.js';
 import { CandidatePr } from '../web/candidate.js';
 import WorkPage from '../web/pages/work.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 
 // GY-3173: the control plane is the merge writer and opens no pull request. The number a
@@ -36,14 +37,11 @@ const refusing = (gate: string, reasons: string[]) => passed().map(entry => entr
 
 /** One item in each shape its sentences are read in; only `fields` turns the scenario. */
 function item(fields: Partial<Work> = {}): Work {
-  return {
-    id: 'w-GY-31', key: 'GY-31', title: 'Name the merge commit', type: 'bug', description: '', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:control-plane-no-pr-link'] }], policy: { checks: ['test'], review: true },
-    stage: 'done', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null, workspaces: [],
-    submission: { epoch: 1, pr: 12 }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: observation(true, true), blocker: null, gates: passed(), violations: [],
+  return workFixture({ id: 'w-GY-31', key: 'GY-31', title: 'Name the merge commit', type: 'bug', priority: 1,
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:control-plane-no-pr-link'] }], stage: 'done', epoch: 1,
+    submission: { epoch: 1, pr: 12 }, candidate, observation: observation(true, true), gates: passed(),
     createdAt: iso(-5 * 60 * minute), updatedAt: iso(-30 * minute), stageEnteredAt: iso(-30 * minute), ...fields,
-  } as unknown as Work;
+  });
 }
 
 test('unit:tests/control-plane-no-pr-link.test.ts — a control-plane item\'s plain status names its commit, never a pull request; a pull-request item keeps its PR', () => {

@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // Loaded inside each case, so a tree without this change fails these cases rather than the file.
 const modules = async () => ({ ...await import('../src/model/post-merge-proofs.js'), ...await import('../src/model.js'), ...await import('../src/model/bootstrap.js'), ...await import('../src/model-boundary/landability.js'), ...await import('../src/reviewer.js'), ...await import('../src/cli/master/intent.js') });
@@ -165,10 +166,9 @@ test('unit:post-deploy-criteria — the reviewer judges a declared criterion on 
 const mergeSha = 'd'.repeat(40);
 function delivered(overrides: Partial<Work> = {}): Work {
   const at = new Date(Date.now() - 3_600_000).toISOString();
-  return { id: 'e4b2a3c8-1c0e-4d0a-9b4e-1f2a3b4c5d6e', key: 'GY-42', title: 'Harness remedy', description: '', type: 'bug', priority: 1, dependencies: [],
+  return workFixture({ id: 'e4b2a3c8-1c0e-4d0a-9b4e-1f2a3b4c5d6e', key: 'GY-42', title: 'Harness remedy', type: 'bug', priority: 1,
     criteria: [{ id: 'AC-1', text: 'A test covers it', proofs: ['unit:covered'] }, { ...gy1652, proofs: ['manual:post-deploy/harness-drift-cleared'] }],
-    policy: { checks: ['test'], review: true }, stage: 'done', revision: 3, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null, workspaces: [], candidate: null,
-    reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, gates: [], violations: [], delivery: { mergedAt: at, mergeSha, authorizationRevision: 2 }, ...overrides } as Work;
+    stage: 'done', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, submission: undefined, gates: [], delivery: { mergedAt: at, mergeSha, authorizationRevision: 2 }, ...overrides });
 }
 
 // The linked instances of GY-1685's pattern, as their criteria were written when each item blocked, each run below

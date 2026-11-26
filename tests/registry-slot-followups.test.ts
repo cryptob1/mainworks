@@ -10,6 +10,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-205: a follow-up the independent review of GY-190 left. A reviewer or producer launch the
@@ -40,11 +41,10 @@ function observation(candidate: { sha: string; baseSha: string; pr: number; bran
 /** A submitted head with a standing review request and a unit producer request. */
 function requested(): Work {
   const candidate = { sha: 'a'.repeat(40), baseSha: 'b'.repeat(40), pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
-  const make = (evidence: Work['evidence']) => ({ id: 'work-64', key: 'GY-64', title: 'Slots', description: '', type: 'feature', priority: 0, dependencies: [], 
-    criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:slots'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, policyRevision: 1,
-    createdAt: iso(0), updatedAt: iso(0), stageEnteredAt: iso(0), ready: true, epoch: 1, lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 64 }, reworkRequested: false,
-    scenarioRequirements: [], evidence, observation: observation(candidate), blocker: null, violations: [],
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] }) as unknown as Work;
+  const make = (evidence: Work['evidence']) => workFixture({ id: 'work-64', key: 'GY-64', title: 'Slots', priority: 0, criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:slots'] }],
+    policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, createdAt: iso(0), updatedAt: iso(0), stageEnteredAt: iso(0), epoch: 1, candidate, submission: { epoch: 1, pr: 64 },
+    evidence, observation: observation(candidate),
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
   // Review is not held for proofs since GY-1235, so reconciling raises the review request at once.
   const item = make([]); reconcileAutoDispatch(item, [item], new Date(clock));
   // Dispatch opens no producer request any more; a standing one (built by hand) is still launched.

@@ -6,6 +6,7 @@ import { actionAccount } from '../src/model-boundary/next-action.js';
 import { humanNeededActions } from '../src/model/next-action.js';
 import { unproducedManualProofs } from '../src/model/unproduced-attestation.js';
 import { stalledItems } from '../src/model-boundary/action-account.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-521, 2026-09-26: GY-374 (manual:fault-class-configuration) and GY-393 sat in acceptance for over
 // two hours with an approved review and passing CI. No producer session may run their proof, so only
@@ -19,19 +20,18 @@ const refusal = `AC-1: ${proof} needs trusted passing evidence, with executed > 
 
 function item(head = sha, overrides: Partial<Work> = {}): Work {
   const candidate = { pr: 374, sha: head, baseSha };
-  return {
-    id: 'work-374', key: 'GY-374', title: 'Fault class: configuration', description: '', type: 'bug', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'The configuration fault class no longer recurs', proofs: [proof] }], producerProofs: [],
-    policy: { checks: ['test'], review: true }, stage: 'acceptance', revision: 20, policyRevision: 2,
-    createdAt: iso(-3 * 60 * 60_000), updatedAt: iso(0), stageEnteredAt: iso(-2 * 60 * 60_000), ready: true, epoch: 1, lease: null, workspaces: [],
-    submission: { epoch: 1, pr: 374, sha: head }, candidate, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, violations: [],
-    observation: { at: iso(-30_000), candidate, prState: 'open', draft: false, mergeable: true, protected: true, checks: [], reviews: [] },
+  return workFixture({
+    id: 'work-374', key: 'GY-374', title: 'Fault class: configuration', type: 'bug', priority: 1, producerProofs: [],
+    criteria: [{ id: 'AC-1', text: 'The configuration fault class no longer recurs', proofs: [proof] }], stage: 'acceptance', revision: 20, policyRevision: 2,
+    createdAt: iso(-3 * 60 * 60_000), updatedAt: iso(0), stageEnteredAt: iso(-2 * 60 * 60_000), epoch: 1,
+    submission: { epoch: 1, pr: 374, sha: head } as never, candidate: candidate as never,
+    observation: { at: iso(-30_000), candidate, prState: 'open', draft: false, mergeable: true, protected: true, checks: [], reviews: [] } as never,
     gates: [
       { name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: true, reasons: [] },
       { name: 'test', passed: true, reasons: [] }, { name: 'acceptance', passed: false, reasons: [refusal] }, { name: 'merge', passed: true, reasons: [] },
     ],
     autoDispatch: { review: null, producers: [], history: [] }, ...overrides,
-  } as unknown as Work;
+  });
 }
 
 test('unit:unproduced-manual-proof-owned-by-loop — an unproduced manual proof is never a human step: re-evaluated it requires attestation, and a stored request is still the loop\'s', () => {

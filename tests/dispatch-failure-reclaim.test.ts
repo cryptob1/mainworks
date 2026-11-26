@@ -16,6 +16,7 @@ import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-1078: GY-859 waited 5.4 hours through about forty failed dispatches because a session worktree
 // left in an interactive rebase still held its branch, git lists such a worktree as detached so
@@ -172,10 +173,7 @@ const loopConfig = (credentialFile: string): MasterConfig => masterConfigSchema.
   githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, mergeMethod: 'merge', workers: ['one', 'two', 'three'].map(name => launchProfile(name, credentialFile)) });
 function ready(overrides: Partial<Work> = {}): Work {
   const at = new Date(Date.now() - 3_600_000).toISOString();
-  return { id: 'item-7', key: 'GY-7', title: 'GY-7', description: '', type: 'bug', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:x'] }],
-    policy: { checks: ['test'], review: true }, stage: 'ready', revision: 1, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at,
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }], violations: [], ...overrides } as Work;
+  return workFixture({ id: 'item-7', key: 'GY-7', type: 'bug', priority: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ...overrides });
 }
 /** The loop's effects over one item the control plane holds. */
 function loopEffects(work: Work[], dispatch: DaemonEffects['dispatch']) {

@@ -21,6 +21,7 @@ import { assertReviewCandidate, readReviewLedger, reviewRecordSchema, reviewProm
 import { loadMasterConfig, setupMaster } from '../src/master.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
@@ -45,12 +46,10 @@ const planeObservation = (candidate: Work['candidate'], files: string[]) => ({
 });
 function item(key: string, fields: Record<string, unknown> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
-  return { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-7-1', epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 7 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
-    observation: planeObservation(candidate, ['src/feature.ts']), ...fields } as unknown as Work;
+  return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+    stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1, candidate, submission: { epoch: 1, pr: 7 },
+    workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-7-1', epoch: 1, owner: 'graphyard-claude-1' }],
+    gates: [], implementers: ['graphyard-claude-1'], observation: planeObservation(candidate, ['src/feature.ts']), ...fields });
 }
 const reviewGate = (work: Work) => evaluate(work, [work], new Date()).gates.find(gate => gate.name === 'review')!;
 

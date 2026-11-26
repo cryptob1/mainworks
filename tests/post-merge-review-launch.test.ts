@@ -24,6 +24,7 @@ import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Every instant this file holds is derived from the run's own clock (GY-1694): a base reading taken
 // at load and offsets from it. No calendar literal is constructed, so no wall-clock reading here is
 // judged against a fixed date.
@@ -43,16 +44,14 @@ const at = (offsetMs = 0) => new Date(base.getTime() + offsetMs).toISOString();
 /** A delivered control-plane merge with no pull request anywhere: the candidate and submission carry no pr, so the post-merge request reads pr 0. */
 function deliveredPrLess(key: string): Work {
   const candidate = { sha: H, baseSha: B, branch: `graphyard/${key.toLowerCase()}-1`, author: 'graphyard-opencode-1' };
-  return { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'feature', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'done', revision: 9, policyRevision: 1, createdAt: at(), updatedAt: at(), stageEnteredAt: at(), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: candidate.author }], candidate, submission: { epoch: 1 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: [candidate.author], postMergeReview: 'owed', systemDriven: true,
+  return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+    stage: 'done', revision: 9, createdAt: at(), updatedAt: at(), stageEnteredAt: at(), epoch: 1,
+    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: candidate.author }], candidate, submission: { epoch: 1 }, gates: [], implementers: [candidate.author], postMergeReview: 'owed',
     delivery: { mergedAt: at(), mergeSha: M, authorizationRevision: 8 },
     mergeLedger: { key, state: 'reconciled', head: H, baseTip: B, mergeSha: M, risk: 'normal', intentAt: at(), pushedAt: at(), observedTip: M, refusal: null, events: 3 },
     observation: { source: 'control-plane', at: at(), candidate, checks: [], reviews: [], merged: true, mergeSha: M, mergedAt: at(), mergeable: true, protected: false,
       files: ['src/feature.ts'], scopeFiles: [{ path: 'src/feature.ts', status: 'modified', sha: sha('f'), additions: 2, deletions: 1, binary: false }], baseTip: B, baseTipContained: true },
-  } as unknown as Work;
+  } as never);
 }
 
 const repository = 'owner/project';

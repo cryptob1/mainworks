@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -25,18 +26,15 @@ const minute = 60_000;
 
 /** GY-1457 epoch 1's shape: a renewing lease, a running session, no submission, no candidate, claimed `heldMs` ago. */
 function held(heldMs: number, overrides: Partial<Work> = {}): Work {
-  return {
-    id: 'work-1457', key: 'GY-1457', title: 'GY-1457', description: '', type: 'bug', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, stage: 'build', revision: 3, policyRevision: 1,
-    createdAt: iso(-heldMs - minute), updatedAt: iso(-10_000), stageEnteredAt: iso(-heldMs), ready: true, epoch: 1,
+  return workFixture({
+    id: 'work-1457', key: 'GY-1457', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], stage: 'build', revision: 3,
+    createdAt: iso(-heldMs - minute), updatedAt: iso(-10_000), stageEnteredAt: iso(-heldMs), epoch: 1,
     lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: iso(110_000) },
     lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: iso(-heldMs) },
     workspaces: [{ host: 'machine-a', path: '/srv/worktrees/GY-1457-1', epoch: 1, owner: 'graphyard-claude-1', branch: 'graphyard/gy-1457-1' }],
-    candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null,
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], violations: [],
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
     ...overrides,
-  } as unknown as Work;
+  });
 }
 /**
  * The product's bound and its readers, imported when a case runs: against the base, where none is

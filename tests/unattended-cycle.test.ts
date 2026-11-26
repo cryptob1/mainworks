@@ -11,6 +11,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2031-03-01 clockStart is the loop's injected now and every verdict/lease instant and loopLiveness call takes it explicitly; new Date() only stamps an empty snapshot for a lockless status.
 
 /**
@@ -54,17 +55,11 @@ function plane(scripts: Script[], options: { hostId?: string; delivered?: number
   const github = { merging: true };
   let now = clockStart;
   const iso = (at: number = now) => new Date(at).toISOString();
-  const work: Work[] = scripts.map((script, index) => ({
-    id: `id-${script.key}`, key: script.key, title: `Deliver ${script.key}`, description: '', type: 'feature', priority: 2,
-    dependencies: [], criteria: [{ id: 'AC-1', text: 'Proven end to end', proofs: ['integration:loop'] }],
-    policy: { checks: ['test'], review: true },
-    stage: 'ready', revision: 1, policyRevision: 1, createdAt: iso(now - 30 * minute), updatedAt: iso(), stageEnteredAt: iso(now - minute),
-    ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [],
-
+  const work: Work[] = scripts.map((script, index) => workFixture({ key: script.key, title: `Deliver ${script.key}`,
+    criteria: [{ id: 'AC-1', text: 'Proven end to end', proofs: ['integration:loop'] }], createdAt: iso(now - 30 * minute), updatedAt: iso(), stageEnteredAt: iso(now - minute),
     gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
     pr: 100 + index,
-  } as unknown as Work));
+  }));
   // The ledger an installation already holds: items delivered before this loop ever watched them,
   // reported the way the control plane reports a delivery — a submission, no rework requested,
   // every gate passing — which is exactly what an open, approved, mergeable candidate looks like.

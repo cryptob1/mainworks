@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { resourceConflicts } from '../src/coordination.js';
@@ -11,11 +12,9 @@ let store: Store, engine: Engine;
 const worker: Principal = { id: 'peer-worker', role: 'worker' };
 const at = new Date().toISOString();
 function item(n: number): Work {
-  return { id: randomUUID(), key: `GY-${n}`, title: `Item ${n}`, description: '', type: 'chore', priority: 2,
-    dependencies: [], exclusiveResources: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:decision-reads-peers'] }],
-    policy: { checks: [], review: false }, stage: 'build', ready: true, epoch: 0, revision: 1, policyRevision: 1,
-    createdAt: at, updatedAt: at, stageEnteredAt: at, scenarioRequirements: [], lease: null, workspaces: [], candidate: null, submission: null,
-    reworkRequested: false, evidence: [], observation: null, blocker: null, gates: [], violations: [] } as Work;
+  return workFixture({ id: randomUUID(), key: `GY-${n}`, title: `Item ${n}`, type: 'chore', exclusiveResources: [],
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:decision-reads-peers'] }], policy: { checks: [], review: false },
+    stage: 'build', createdAt: at, updatedAt: at, stageEnteredAt: at, gates: [] });
 }
 useTestStore('decision-reads-peers', {}, ctx => { ({ store, engine } = ctx); });
 

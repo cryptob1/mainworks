@@ -11,6 +11,7 @@ import { criterionSchema } from '../src/model-boundary/policy.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { diagnose, obligationLedger, proofPreview } from '../src/coordination.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -68,20 +69,17 @@ async function prove(work: Work, proof: string, overrides: Record<string, unknow
 const declaration = { reason: 'This change introduces the herdr-recovery harness', contractPaths: [contract], declaredBy: 'operator', declaredAt: '2026-09-18T00:00:00.000Z', policyRevision: 2 };
 function fixture(overrides: Partial<Work> = {}): Work {
   const at = new Date().toISOString();
-  return { id: 'origin', key: 'GY-2', title: 'Introduce the harness', description: '', type: 'feature', priority: 2, dependencies: [],
+  return workFixture({ id: 'origin', key: 'GY-2', title: 'Introduce the harness',
     criteria: [{ id: 'AC-1', text: 'Recovery is proven', proofs: [harnessProof], bootstrap: { ...declaration } }, { id: 'AC-2', text: 'Supervisor stops cleanly', proofs: ['unit:supervisor-stop'] }],
-    policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'acceptance', revision: 4, policyRevision: 2, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true,
-    epoch: 1, lease: null, workspaces: [{ host: 'h', path: '/p', branch: 'graphyard/gy-2-1', epoch: 1, owner: 'implementer' }],
-    candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-2-1', author: 'implementer' },
-    submission: { epoch: 1, pr: 7 }, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null,
-    gates: [], violations: [],
+    policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'acceptance', revision: 4, policyRevision: 2,
+    epoch: 1, workspaces: [{ host: 'h', path: '/p', branch: 'graphyard/gy-2-1', epoch: 1, owner: 'implementer' }],
+    candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-2-1', author: 'implementer' }, submission: { epoch: 1, pr: 7 }, gates: [],
     observation: { candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-2-1', author: 'implementer' },
       checks: [{ name: 'test', result: 'success', appId: 15368 }], reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }],
       merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [], at, prState: 'open', draft: false },
     // The merge writer's passing trial of the head (GY-2010: the test gate reads the merge ledger).
     mergeLedger: { key: 'GY-2', state: 'intent', head, baseTip: base, mergeSha: null, risk: null, intentAt: at, pushedAt: null, observedTip: null, refusal: null, events: 2 },
-    ...overrides } as Work;
+    ...overrides });
 }
 /** The fixture item whose candidate was observed to change `files`. */
 const touching = (files: string[], overrides: Partial<Work> = {}) => fixture({ ...overrides, observation: { ...fixture().observation!, files } });

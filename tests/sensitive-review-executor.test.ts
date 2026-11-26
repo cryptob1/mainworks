@@ -23,6 +23,7 @@ import { dispatchEffects } from '../src/dispatch/effects.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-3421: a sensitive delta (a dependency manifest) implemented on a claude account owes one
@@ -63,14 +64,11 @@ after(async () => { await close?.(); if (store) await store.close(); });
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 function sensitiveItem(key: string): Work {
   const candidate = { sha: head, baseSha: base, pr: 14, branch: 'graphyard/gy-14-1', author: 'graphyard-claude-1' };
-  return { id: randomUUID(), key, title: `Item ${key}`, description: '', type: 'bug', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'The dependency is pinned', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), ready: true, epoch: 1, lease: null,
-    lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, runtime: 'claude' },
-    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 14 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-claude-1'],
+  return workFixture({ id: randomUUID(), key, title: `Item ${key}`, type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'The dependency is pinned', proofs: ['unit:works'] }],
+    stage: 'review', revision: 3, createdAt: now(), updatedAt: now(), stageEnteredAt: now(), epoch: 1, lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, runtime: 'claude' } as never,
+    workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-claude-1' }], candidate, submission: { epoch: 1, pr: 14 }, gates: [], implementers: ['graphyard-claude-1'],
     observation: { source: 'control-plane', at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-      files: ['go.mod'], scopeFiles: [{ path: 'go.mod', status: 'modified', sha: head, additions: 2, deletions: 0, binary: false }], baseTip: base, baseTipContained: true } } as unknown as Work;
+      files: ['go.mod'], scopeFiles: [{ path: 'go.mod', status: 'modified', sha: head, additions: 2, deletions: 0, binary: false }], baseTip: base, baseTipContained: true } as never });
 }
 
 /** claude-a and cursor-a, both logged in; each runtime's executable records that it ran and answers APPROVE. */
