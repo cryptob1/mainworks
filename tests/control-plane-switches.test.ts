@@ -14,6 +14,7 @@ import { masterConfigSchema } from '../src/master.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model/work.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-1528: the control-plane merger switches off the gates the decided model retired — producer
 // sessions and budget blockers — while github mode keeps each
@@ -29,14 +30,12 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
 const scoped = (path: string) => ({ path, status: 'modified' as const, sha: sha(path), baseSha: sha(`base:${path}`), additions: 1, deletions: 1, binary: false });
 const observation = (source: 'control-plane' | null, paths: string[]) => observationFixture({ sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' },
   { ...(source ? { source } : {}), files: paths, at: iso(start), scopeFiles: paths.map(scoped) });
-const item = (source: 'control-plane' | null, paths: string[], fields: Record<string, unknown> = {}): Work => ({
-  id: 'w1', key: 'GY-1', title: 'switch fixture', type: 'feature', description: '', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks', 'e2e:item-ships'] }],
-  policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-  workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-1-1', epoch: 1, owner: 'worker' }], submission: { epoch: 1, pr: 7 },
-  candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-  observation: observation(source, paths), blocker: null, gates: [], violations: [], createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), ...fields,
-} as unknown as Work);
+const item = (source: 'control-plane' | null, paths: string[], fields: Record<string, unknown> = {}): Work => workFixture({
+  id: 'w1', title: 'switch fixture', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks', 'e2e:item-ships'] }],
+  stage: 'build', epoch: 1, workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-1-1', epoch: 1, owner: 'worker' }], submission: { epoch: 1, pr: 7 },
+  candidate: { sha: head, baseSha: base, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' },
+  observation: observation(source, paths), gates: [], createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), ...fields,
+});
 const trialLedger = (proofs: Record<string, { executed: number; failed: number }>, tried = head) =>
   foldMergeLedger([
     { kind: 'merge.intent', payload: { key: 'GY-1', head: tried, baseTip: base, mergeSha: sha('merge'), risk: 'normal', at: iso(start) } },

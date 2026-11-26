@@ -28,6 +28,7 @@ import { completionBody } from '../src/cli/complete.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { isolatedTestEnvironment } from '../src/cli/test-isolation.js';
 import { trialPhases, type TrialPhaseDurations } from '../src/merge-writer/trial.js';
 import { runCommandStep, runProcess } from '../src/e2e/steps.js';
@@ -49,12 +50,9 @@ const tip = sha('main-tip'), newerTip = sha('newer-tip');
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
 const gates = (passed: Record<string, boolean>) => ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: passed[name] ?? false, reasons: passed[name] ?? false ? [] : [`${name} refused`] }));
-const item = (fields: Record<string, unknown>) => ({
-  description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks'] }],
-  policy: { checks: ['test', 'typecheck'], review: true }, revision: 1, policyRevision: 1, createdAt: iso(start), updatedAt: iso(start),
-  stageEnteredAt: iso(start), ready: true, epoch: 1, lease: null, workspaces: [], submission: null, candidate: null, reworkRequested: false,
-  scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [], gates: gates({ ready: true, build: true, review: true, test: true }), stage: 'build', ...fields,
-}) as unknown as Work;
+const item = (fields: Record<string, unknown>) => workFixture({ priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works', 'integration:item-holds', 'manual:item-looks'] }],
+  policy: { checks: ['test', 'typecheck'], review: true }, createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start), epoch: 1,
+  gates: gates({ ready: true, build: true, review: true, test: true }), stage: 'build', ...fields });
 /** A control-plane candidate submitted `minutesAgo` minutes ago, its delta touching `files`. */
 const submitted = (n: number, minutesAgo: number, files: string[] = ['src/app.ts'], fields: Record<string, unknown> = {}) => item({ id: `w${n}`, key: `GY-${n}`, stageEnteredAt: iso(start - minutesAgo * minute),
   submission: { epoch: 1, pr: n }, candidate: { sha: sha(`head${n}`), baseSha: tip, pr: n, branch: `graphyard/gy-${n}-1`, author: 'worker' },

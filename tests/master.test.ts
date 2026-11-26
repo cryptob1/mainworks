@@ -133,7 +133,7 @@ test('dispatch starts one headless run under watch with the instruction as its o
     const credential = join(credentialDirectory, 'worker.token'); await writeFile(credential, workerToken, { mode: 0o600 });
     await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch);
     const profile = { name: 'launch', principal: 'worker-a', agentName: 'eng-a', mode: 'launch' as const, kind: 'codex' as const, credentialFile: credential, agentArgs: [], approvals: 'auto' as const, environment: {} };
-    const ready = () => work({ stage: 'ready', lease: null, submission: null, candidate: null, mergeAuthorization: null });
+    const ready = () => work({ stage: 'ready', submission: null, candidate: null, mergeAuthorization: null });
     const result = await dispatch(root, ready(), profile, { prepare: async () => ({ epoch: 4, path: join(root, 'assigned'), base: 'c'.repeat(40) }) });
     assert.match(result.ownership, /supervising/); assert.equal(result.epoch, 4); assert.match(result.run, /^[0-9a-f-]{36}$/);
     const [run] = runs;
@@ -176,11 +176,11 @@ test('a Muse launch profile is saved for its own worker principal, and its claim
 });
 
 test('dispatch claimability permits operator-authorized rework independent of display stage', () => {
-  const rework = work({ stage: 'build', reworkRequested: true, lease: null });
+  const rework = work({ stage: 'build', reworkRequested: true });
   assert.doesNotThrow(() => assertDispatchable(rework, [rework], '2030-01-01T00:00:00Z'));
   assert.throws(() => assertDispatchable(work({ stage: 'merge', reworkRequested: false }), [], '2030-01-01T00:00:00Z'), /operator-authorized rework/);
   assert.throws(() => assertDispatchable(work({ stage: 'ready', submission: null, lease: { owner: 'worker-a', epoch: 2, expiresAt: '2030-01-01T00:01:00Z' } }), [], '2030-01-01T00:00:00Z'), /active owner/);
-  const candidate = work({ id: 'candidate', key: 'GY-43', stage: 'ready', submission: null, lease: null, exclusiveResources: ['staging'] });
+  const candidate = work({ id: 'candidate', key: 'GY-43', stage: 'ready', submission: null, exclusiveResources: ['staging'] });
   const holder = work({ id: 'holder', key: 'GY-44', lease: { owner: 'worker-b', epoch: 3, expiresAt: '2030-01-01T00:05:00Z' }, exclusiveResources: ['staging'] });
   assert.throws(() => assertDispatchable(candidate, [candidate, holder], '2030-01-01T00:00:00Z'), /staging held by GY-44/);
 });

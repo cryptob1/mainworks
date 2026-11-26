@@ -35,13 +35,11 @@ function featureItem(key: string, head: string, base: string, requestedAt: Date)
   const work = workFixture({
     id: randomUUID(), key, title: `Feature ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works end to end', proofs: ['e2e:smoke'] }], stage: 'review', revision: 3,
     createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: 'h', path: `/w/${key}`, branch: candidate.branch, epoch: 1, owner: 'worker-1' }],
-    candidate, submission: { epoch: 1, pr: 1 },
+    candidate, submission: { epoch: 1, pr: 1 }, gates: [], implementers: ['worker-1'], productReview: null,
     evidence: [{ id: `ev-${key}`, proof: 'e2e:smoke', sha: head, baseSha: base, policyRevision: 1, producer: 'merge-trial', trusted: true, result: 'pass', executed: 1, skipped: 0, at }],
-    gates: [], implementers: ['worker-1'],
     observation: observationFixture(candidate, { source: 'control-plane', at, reviews: [{ id: 1, reviewer: 'code-reviewer', state: 'APPROVED', sha: head, submittedAt: at }],
       protected: false, files: ['web/feature.ts'], mergeBase: base,
       scopeFiles: [{ path: 'web/feature.ts', status: 'added', sha: shaOf(`${key}-file`), additions: 10, deletions: 0, binary: false }] }),
-    productReview: null,
   });
   work.gates = evaluate(work, [work], requestedAt).gates;
   reconcileAutoDispatch(work, [work], requestedAt);

@@ -11,6 +11,7 @@ import { deployRecordPath, readDeployRecord, servingReport, watchMain, type Depl
 import { MERGE_PROTOCOL } from '../src/protocol-version.js';
 import type { ChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3347: the rexera-remote episode (2026-11-15) — with the compose stack down, the loop
 // crash-looped on 'fetch failed' and graphyard-deploy ('upgrade --watch') sat idle, because it
@@ -156,12 +157,8 @@ test('integration:stopped-plane-restarts — a loop started against an unreachab
   // The plane this loop polls: a real HTTP server, held off the port until the loop has been
   // started against it unreachable.
   const now = () => new Date().toISOString();
-  const item = {
-    id: 'blocked-1', key: 'GY-70', title: 'Needs an operator', stage: 'ready', ready: true, blocker: 'Waiting on an external contract', priority: 1, epoch: 0, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['integration:loop'] }], policy: { checks: ['test'], review: true }, workspaces: [], evidence: [],
-    gates: [{ name: 'ready', passed: false, reasons: ['Waiting on an external contract'] }], violations: [], createdAt: now(), updatedAt: now(), stageEnteredAt: now(),
-    lease: null, candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], observation: null, revision: 1, policyRevision: 1,
-  };
+  const item = workFixture({ id: 'blocked-1', key: 'GY-70', title: 'Needs an operator', blocker: 'Waiting on an external contract', priority: 1,
+    criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['integration:loop'] }], gates: [{ name: 'ready', passed: false, reasons: ['Waiting on an external contract'] }] });
   let snapshots = 0;
   const plane = createHttpServer((request, response) => {
     response.setHeader('Content-Type', 'application/json');

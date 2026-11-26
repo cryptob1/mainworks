@@ -34,8 +34,7 @@ function config(credentialFile: string, overrides: Partial<Omit<MasterConfig, 'r
 }
 function work(overrides: Partial<Work> = {}): Work {
   return workFixture({ id: 'work-1', key: 'GY-125', title: 'Never block the loop on a child', type: 'bug', priority: 1,
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:child-wait-attributed'] }], revision: 3,
-    createdAt: iso(-3_600_000), updatedAt: iso(0), stageEnteredAt: iso(-3_600_000), ...overrides });
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:child-wait-attributed'] }], revision: 3, createdAt: iso(-3_600_000), updatedAt: iso(0), stageEnteredAt: iso(-3_600_000), ...overrides });
 }
 function effects(overrides: Partial<DaemonEffects> = {}): DaemonEffects {
   return {

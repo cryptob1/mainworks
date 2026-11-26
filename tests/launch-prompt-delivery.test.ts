@@ -53,8 +53,7 @@ const producerVerify = (principal: string) => async () => ({ actor: { id: princi
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 93, branch: 'graphyard/gy-93-1', author: 'implementer' };
   return workFixture({ id: 'work-93', key: 'GY-93', title: 'Launched sessions refuse their own prompt', type: 'bug', priority: 0,
-    criteria: [{ id: 'AC-1', text: 'Request', proofs: ['integration:launch-prompt-is-a-request'] }],
-    stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
+    criteria: [{ id: 'AC-1', text: 'Request', proofs: ['integration:launch-prompt-is-a-request'] }], stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
     workspaces: [{ host: 'h', path: '/w/gy-93', branch: 'graphyard/gy-93-1', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 93 },
     observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }

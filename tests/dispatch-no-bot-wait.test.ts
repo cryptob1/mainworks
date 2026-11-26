@@ -28,8 +28,7 @@ function work(): Work {
     baseTip: B, baseTree: sha40('7b'), baseTipContained: true } as Observation;
   return workFixture({ id: 'work-64', key: 'GY-64', title: 'No bot wait', priority: 0, criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:a'] }], stage: 'review', revision: 7,
     createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: 'h', path: '/w/gy-64', branch: 'graphyard/gy-64-1', epoch: 1, owner: 'implementer' }],
-    candidate, submission: { epoch: 1, pr: 64 }, observation,
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
+    candidate, submission: { epoch: 1, pr: 64 }, observation, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
 }
 /** A head whose unit proof passed, so the control plane has raised its review request. */
 function reviewRequested(): Work {

@@ -9,8 +9,8 @@ import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { masterConfigSchema } from '../src/master.js';
-import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3032 AC-1: a merge serves and tests its head once. The trial serves the head from
 // delivery.applications and runs its bound case; no per-merge preview serves it again, even where
@@ -57,12 +57,8 @@ test('unit:one-serve-per-merge — one merge of a static-site head starts one se
   let landed = false;
   const ports: MergePorts = { ...reads, now: () => 1_893_456_000_000, fetch: async () => landed ? mergeSha : tip, merge: async () => ({ mergeSha, files: ['site/index.html', 'e2e/cases/home.json'], addedOrModified: ['e2e/cases/home.json'] }),
     push: async () => { landed = true; return 'pushed'; }, holds: async () => false };
-  const work = {
-    id: 'w1', key: 'GY-1', description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'The home page answers', proofs: ['e2e:home'] }],
-    policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1, stage: 'build', ready: true, epoch: 1, lease: null, workspaces: [],
-    submission: { epoch: 1, pr: 1 }, candidate: { sha: mergeSha, baseSha: tip, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: null, blocker: null, violations: [], gates: [], mergeLedger: null,
-  } as unknown as Work;
+  const work = workFixture({ id: 'w1', title: undefined, priority: 1, criteria: [{ id: 'AC-1', text: 'The home page answers', proofs: ['e2e:home'] }], systemDriven: undefined,
+    stage: 'build', epoch: 1, submission: { epoch: 1, pr: 1 }, candidate: { sha: mergeSha, baseSha: tip, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' }, gates: [], mergeLedger: null });
 
   const outcome = await mergeOne(ports, work);
   assert.equal(outcome.outcome, 'merged', JSON.stringify({ outcome, events }));

@@ -17,6 +17,7 @@ import { parseCase } from '../src/e2e/case.js';
 import { projectCaseSuite } from '../src/release-project.js';
 import type { E2eReport } from '../src/e2e/runner.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2988 AC-2 on this head: the Work page shows an item in review as 'In review' and a merged,
 // served, verified item as 'Live and verified'. The case itself is e2e/cases/plain-status-words.json,
@@ -33,16 +34,12 @@ before(() => { if (!existsSync('dist/index.html')) execFileSync(process.execPath
 function earlierMerge(n: number) {
   const at = new Date().toISOString(), other = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd';
   const candidate = { sha: other, baseSha: other, pr: n, branch: `graphyard/gy-earlier-${n}`, author: 'w', createdAt: at };
-  return {
-    id: randomUUID(), key: `GY-EARLIER-${n}`, title: 'An earlier case merged this', description: 'Merged by an earlier case.',
-    type: 'chore', priority: 2, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
-    policy: { checks: ['test'], review: true }, policyRevision: 1, revision: 1, stageEnteredAt: at,
-    ready: true, epoch: 1, lease: null, workspaces: [], evidence: [], violations: [], createdAt: at, updatedAt: at,
-    stage: 'done', candidate, submission: { epoch: 1, pr: n },
+  return workFixture({ id: randomUUID(), key: `GY-EARLIER-${n}`, title: 'An earlier case merged this', description: 'Merged by an earlier case.', type: 'chore',
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], systemDriven: undefined, stageEnteredAt: at, createdAt: at, updatedAt: at, epoch: 1, stage: 'done', candidate, submission: { epoch: 1, pr: n },
     observation: { candidate, checks: [], reviews: [], protected: true, mergeable: true, merged: true, mergeSha: other, mergedAt: at, files: [], scopeFiles: [], at },
     delivery: { mergeSha: other, mergedAt: at, authorizationRevision: 1, pr: n },
     gates: ['ready', 'build', 'review', 'test', 'acceptance', 'merge'].map(name => ({ name, passed: true, reasons: [] })),
-  };
+  } as never);
 }
 
 /** Runs the case `runs` times in a row on one control plane, an earlier case's merge landing before each run; each run's verdict, up to the first failure. */

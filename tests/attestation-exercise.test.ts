@@ -20,8 +20,7 @@ function item(evidence: Partial<Evidence>[] = [], extra: Partial<Work> = {}): Wo
     createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 393 }, gates: [],
     evidence: evidence.map(entry => ({ id: 'e1', proof: PROOF, sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 1, skipped: 0, producer: 'master-operator', trusted: false, at, ...entry })) as never,
     observation: { candidate, checks: [{ appId: 15368, name: 'test', result: 'success' }], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true, conversations: { required: true, unresolved: [] } } as never,
-    ...extra,
+      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true, conversations: { required: true, unresolved: [] } } as never, ...extra,
   });
 }
 const unexercised = { unexercised: `${PROOF} does not exercise AC-1: it passed, but no run of it against a tree with the criterion's behaviour removed was recorded` };

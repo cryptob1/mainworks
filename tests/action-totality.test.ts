@@ -23,6 +23,7 @@ import { boardFromStatus } from '../src/model/board.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { itemObservation } from './helpers/observation-fixture.js';
+import { workFixture } from './helpers/work-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-21 `now` is handed explicitly to nextAction and actionAccount over fixtures built from it; new Date() serves the engine tests and stamps observations.
@@ -210,13 +211,10 @@ const gatesFailingAt = (first: string, reasons: string[]): Gate[] => {
 test('unit:actionless-item-visible — an item with no action and nothing moving it is named by the control plane and on the dashboard, with how long it has held its gate and what is missing; items waiting on another item are counted apart', () => {
   const now = new Date('2026-09-21T12:00:00.000Z');
   const held = new Date(now.getTime() - 3 * 3_600_000).toISOString();
-  const shell = (key: string, overrides: Partial<Work>): Work => ({
-    id: `id-${key}`, key, title: `Item ${key}`, type: 'feature', priority: 1, epoch: 1, revision: 1, policyRevision: 1,
-    stage: 'review', ready: true, createdAt: held, updatedAt: held, stageEnteredAt: held,
-    criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF] }], dependencies: [], evidence: [],
-    workspaces: [], violations: [], gates: [], blocker: null, lease: null, submission: null, candidate: null, observation: null,
-    policy: { checks: ['test'], review: true }, ...overrides,
-  } as unknown as Work);
+  const shell = (key: string, overrides: Partial<Work>): Work => workFixture({
+    key, title: `Item ${key}`, priority: 1, epoch: 1, stage: 'review', createdAt: held, updatedAt: held, stageEnteredAt: held,
+    criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF] }], gates: [], systemDriven: undefined, ...overrides,
+  });
 
   // Four items with no computed action, and only one of them is a problem.
   const mute = shell('GY-MUTE', { submission: { epoch: 1, pr: 42 } as Work['submission'], gates: gatesFailingAt('review', []) });

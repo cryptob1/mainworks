@@ -7,6 +7,7 @@ import { Store } from '../src/store.js';
 import { isClosed, type Principal, type Work } from '../src/model.js';
 import * as model from '../src/model.js';
 import type { Services } from '../src/server/routes.js';
+import { workFixture } from './helpers/work-fixture.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -19,14 +20,10 @@ const sha = (seed: string) => seed.repeat(40).slice(0, 40);
 const filed = sha('a'), serving = sha('b'), mergeSha = sha('c');
 const parentId = '11111111-1111-4111-8111-111111111111';
 const proof = 'manual:post-deploy/webhook-deliveries-clean-24h', own = 'manual:webhook-deliveries-clean-24h-on-serving-release';
-const base = (n: number, extra: Partial<Work> = {}): Work => ({
-  id: `00000000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`, key: `GY-${n}`, title: `Item ${n}`, description: '', type: 'chore', priority: 1, stage: 'ready', ready: true, epoch: 0, revision: 3, policyRevision: 1,
-  createdAt: iso(now - 30 * hour), updatedAt: iso(now - 2 * hour), stageEnteredAt: iso(now - 2 * hour), lease: null, lastAssignment: null, systemDriven: true, implementers: [],
-  workspaces: [], sessions: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [], criteria: [],
-  policy: { checks: ['test', 'typecheck'], review: true }, dependencies: [],
-  gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
-  ...extra,
-}) as unknown as Work;
+const base = (n: number, extra: Partial<Work> = {}): Work => workFixture({
+  id: `00000000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`, key: `GY-${n}`, title: `Item ${n}`, type: 'chore', priority: 1, revision: 3,
+  createdAt: iso(now - 30 * hour), updatedAt: iso(now - 2 * hour), stageEnteredAt: iso(now - 2 * hour), lastAssignment: null as never, implementers: [], sessions: [], criteria: [],
+  policy: { checks: ['test', 'typecheck'], review: true }, gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], ...extra });
 const parent = base(1700, { id: parentId, stage: 'done', ready: true, criteria: [{ id: 'AC-2', text: 'A 24-hour window of live GitHub activity shows zero failed webhook deliveries', proofs: [proof] }],
   delivery: { mergeSha, mergedAt: iso(now - 40 * hour), deployment: { sha: filed, mergeSha, source: 'endpoint', observedAt: iso(now - 30 * hour), covers: 'descendant', at: iso(now - 30 * hour), observer: 'graphyard-master' } } } as Partial<Work>);
 /** A follow-up the filer filed for `parent` AC-2 on the filed release, window closed an hour ago. */

@@ -9,6 +9,7 @@ import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../sr
 import { runPlanner } from '../src/master/planner.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 const proof = 'integration:planner-sees-rejected';
 const now = Date.parse('2026-11-26T14:30:00Z');
@@ -17,28 +18,7 @@ const day = 24 * hour;
 
 function makeWork(key: string, overrides: Partial<Work> = {}): Work {
   const createdAt = new Date(now - 2 * day).toISOString();
-  return {
-    id: `id-${key}`,
-    key,
-    title: 'Sample work',
-    stage: 'backlog',
-    ready: false,
-    epoch: 0,
-    revision: 1,
-    policyRevision: 1,
-    priority: 2,
-    type: 'feature',
-    criteria: [],
-    dependencies: [],
-    evidence: [],
-    gates: [],
-    workspaces: [],
-    sessions: [],
-    createdAt,
-    updatedAt: createdAt,
-    stageEnteredAt: createdAt,
-    ...overrides,
-  } as unknown as Work;
+  return workFixture({ key, title: 'Sample work', stage: 'backlog', ready: false, criteria: [], gates: [], sessions: [], createdAt, updatedAt: createdAt, stageEnteredAt: createdAt, ...overrides });
 }
 
 test(`${proof} — planner prompt lists planner drafts closed in the last 7 days with their close reasons under their own heading`, async () => {

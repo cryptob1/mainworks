@@ -57,9 +57,7 @@ function plane(scripts: Script[], options: { hostId?: string; delivered?: number
   const iso = (at: number = now) => new Date(at).toISOString();
   const work: Work[] = scripts.map((script, index) => workFixture({ key: script.key, title: `Deliver ${script.key}`,
     criteria: [{ id: 'AC-1', text: 'Proven end to end', proofs: ['integration:loop'] }], createdAt: iso(now - 30 * minute), updatedAt: iso(), stageEnteredAt: iso(now - minute),
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
-    pr: 100 + index,
-  }));
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], pr: 100 + index }));
   // The ledger an installation already holds: items delivered before this loop ever watched them,
   // reported the way the control plane reports a delivery — a submission, no rework requested,
   // every gate passing — which is exactly what an open, approved, mergeable candidate looks like.

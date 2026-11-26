@@ -12,6 +12,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { computeAccount } from '../src/model/next-action.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3503: an item parked on a human request waits on that request — never a dispatch, never "a
@@ -24,9 +25,7 @@ const hour = 60 * 60_000;
 const at = (ms: number) => new Date(ms).toISOString();
 
 function item(key: string, extra: Partial<Work> = {}): Work {
-  return { id: `id-${key}`, key, title: key, stage: 'ready', ready: true, epoch: 0, revision: 1, policyRevision: 1, priority: 1, type: 'bug', blocker: null,
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], gates: [], workspaces: [], sessions: [], violations: [],
-    createdAt: at(now - 3 * hour), updatedAt: at(now - 3 * hour), ...extra } as unknown as Work;
+  return workFixture({ key, priority: 1, type: 'bug', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], gates: [], sessions: [], createdAt: at(now - 3 * hour), updatedAt: at(now - 3 * hour), ...extra });
 }
 
 const request = { id: 'req-1', kind: 'goals-and-priorities', reason: 'The owner decides which goal comes first', needed: 'Which goal ships first? A choice between the two.',

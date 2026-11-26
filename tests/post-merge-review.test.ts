@@ -36,8 +36,7 @@ function delivered(key: string, fields: Record<string, unknown> = {}): Work {
   return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
     stage: 'done', revision: 9, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate, submission: { epoch: 1, pr: 7 },
     workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-7-1', epoch: 1, owner: 'graphyard-claude-1' }],
-    gates: [], implementers: ['graphyard-claude-1'], postMergeReview: 'owed',
-    delivery: { mergedAt: at, mergeSha: M, authorizationRevision: 8 },
+    gates: [], implementers: ['graphyard-claude-1'], postMergeReview: 'owed', delivery: { mergedAt: at, mergeSha: M, authorizationRevision: 8 },
     mergeLedger: { key, state: 'reconciled', head: H, baseTip: B, mergeSha: M, risk: 'normal', intentAt: at, pushedAt: at, observedTip: M, refusal: null, events: 3 },
     observation: { source: 'control-plane', at, candidate, checks: [], reviews: [], merged: true, mergeSha: M, mergedAt: at, mergeable: true, protected: false, files: ['src/feature.ts'], scopeFiles: [{ path: 'src/feature.ts', status: 'modified', sha: sha('f'), additions: 2, deletions: 1, binary: false }], baseTip: B, baseTipContained: true } as never,
     ...fields });

@@ -45,9 +45,7 @@ function fixture(source: 'control-plane' | null): Work {
     workspaces: [{ host: 'h', path: '/w', branch: 'graphyard/gy-1-1', epoch: 1, owner: 'worker' }], submission: { epoch: 1, pr: 7 }, candidate,
     gates: [], createdAt: new Date(at).toISOString(), updatedAt: new Date(at).toISOString(), stageEnteredAt: new Date(at).toISOString(),
     evidence: [{ id: 'e1', proof: 'unit:item-works', result: 'fail', trusted: true, executed: 3, skipped: 0, failed: 1, producer: 'producer-a', sha: head, baseSha: base, policyRevision: 1, at: new Date(at).toISOString() }] as never,
-    autoDispatch: { review: null, history: [], producers: [{ id: 'p1', kind: 'producer', group: 'unit', proofs: ['integration:item-holds'], sha: head, baseSha: base, policyRevision: 1, requestedAt: new Date(at).toISOString(), state: 'requested', reason: 'prove it' }] } as never,
-    observation, mergeLedger: ledger,
-  });
+    autoDispatch: { review: null, history: [], producers: [{ id: 'p1', kind: 'producer', group: 'unit', proofs: ['integration:item-holds'], sha: head, baseSha: base, policyRevision: 1, requestedAt: new Date(at).toISOString(), state: 'requested', reason: 'prove it' }] } as never, observation, mergeLedger: ledger });
 }
 
 /** The fixture through evaluate and dispatch, as plain data. */

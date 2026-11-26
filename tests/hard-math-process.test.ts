@@ -10,6 +10,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master.js';
 import { type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 
 const adapter=(timeoutMs=10_000)=>boundedChildRun({deadline:Date.now()+timeoutMs,signal:new AbortController().signal,enforce:()=>{},capture:()=>{}});
@@ -51,10 +52,8 @@ test('hard math real Git conflict through the daemon bounded adapter records nat
   await git(root,'push','-q','origin','main');
   const tip=await git(root,'rev-parse','HEAD'),at=new Date().toISOString();
   const config=masterConfigSchema.parse({version:1,url:'http://unused',credentialFile:'/fixture/coordinator.token',cliPath:'/bin/graphyard',repository:'scratch/hard-math',baseBranch:'main',githubAppId:0,hostId:'fixture',masterAgentName:'fixture-master',workers:[]});
-  const item={id:'component',key:'GY-1',title:'Component',type:'chore',description:'',priority:1,dependencies:[],criteria:[{id:'AC-1',text:'Works',proofs:['unit:component']}],policy:{checks:['test'],review:true},policyRevision:1,stage:'build',ready:true,epoch:1,lease:null,workspaces:[],submission:{epoch:1,pr:1},candidate:{sha:head,baseSha:base,pr:1,branch:'component',author:'worker'},reworkRequested:false,scenarioRequirements:[],evidence:[],violations:[],createdAt:at,updatedAt:at,stageEnteredAt:at,
-    observation:{source:'control-plane',candidate:{sha:head,baseSha:base},checks:[],reviews:[],merged:false,mergeSha:null,mergeable:true,files:['shared.txt'],at,baseTip:tip},
-    gates:['ready','build','review'].map(name=>({name,passed:true,reasons:[]})),
-  } as unknown as Work;
+  const item=workFixture({id:'component',title:'Component',type:'chore',priority:1,criteria:[{id:'AC-1',text:'Works',proofs:['unit:component']}],stage:'build',epoch:1,submission:{epoch:1,pr:1},candidate:{sha:head,baseSha:base,pr:1,branch:'component',author:'worker'} as never,
+    observation:{source:'control-plane',candidate:{sha:head,baseSha:base},checks:[],reviews:[],merged:false,mergeSha:null,mergeable:true,files:['shared.txt'],at,baseTip:tip} as never,gates:['ready','build','review'].map(name=>({name,passed:true,reasons:[]}))});
   const events:MergeRecordEvent[]=[],reworked:{head:string;reason:string}[]=[];
   let mergeCalls=0;
   const run=adapter();

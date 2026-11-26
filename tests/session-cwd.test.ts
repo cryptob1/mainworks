@@ -38,7 +38,7 @@ function work(overrides: Partial<Work> = {}): Work {
     workspaces: [{ host: 'h', path: '/w/gy-866', branch: 'graphyard/gy-866-7', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 866 },
     observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
-const ready = () => work({ stage: 'ready', lease: null, submission: null, candidate: null, observation: null, gates: [{ name: 'ready', passed: true, reasons: [] }] });
+const ready = () => work({ stage: 'ready', submission: null, candidate: null, observation: null, gates: [{ name: 'ready', passed: true, reasons: [] }] });
 /**
  * A master installed in a throwaway repository — the coordinator checkout of these tests — with
  * its credentials beside it, an approver and an operator-agent, and the managed worktree root

@@ -21,12 +21,9 @@ const config: MasterConfig = masterConfigSchema.parse({ version: 1, url: 'https:
 /** A submitted item sent back by the loop's rework of a standing verdict: a review refusal. */
 function item(epoch: number, rework: Work['lastRework'], overrides: Partial<Work> = {}): Work {
   const at = minute(0);
-  return workFixture({
-    key: 'GY-9', title: 'Flaky widget', type: 'bug', priority: 1, stage: 'build', createdAt: at, updatedAt: at, stageEnteredAt: at, epoch,
-    candidate: { sha: 'a'.repeat(40) } as never, submission: { epoch, pr: 1 }, reworkRequested: true, lastRework: rework,
-    pipeline: { attempts: [], submittedAt: minute(1), resubmittedAt: null } as never,
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: [] }], ...overrides,
-  });
+  return workFixture({ key: 'GY-9', title: 'Flaky widget', type: 'bug', priority: 1, stage: 'build', createdAt: at, updatedAt: at, stageEnteredAt: at, epoch,
+    candidate: { sha: 'a'.repeat(40) } as never, submission: { epoch, pr: 1 }, reworkRequested: true, lastRework: rework, pipeline: { attempts: [], submittedAt: minute(1), resubmittedAt: null } as never,
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: [] }], ...overrides });
 }
 const verdict = (n: number, sha: string) => ({ reason: `GY-9: review-codex-${n} requested changes on ${sha.slice(0, 12)}: BLOCKING: tests/widget.test.ts:${40 + n} still fails at ${minute(n)} for graphyard-codex-a`, binding: `${sha}:verdict:review-codex-${n}`, at: minute(10 * n) });
 

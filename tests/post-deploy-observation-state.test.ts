@@ -5,6 +5,7 @@ import { upNextHold } from '../src/model/board.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import * as model from '../src/model.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // Read at call time, so a tree without the export fails a test case rather than the file's import.
 const loopObservation = (work: Work, at: Date, all: unknown[] = []) => (model as unknown as { loopObservation: (work: Work, at: Date, all: unknown[]) => unknown }).loopObservation(work, at, all);
@@ -16,14 +17,12 @@ const hour = 3_600_000, now = Date.parse('2026-10-12T12:00:00.000Z');
 const iso = (at: number) => new Date(at).toISOString();
 const manual = [{ id: 'AC-1', text: 'The loop reads the rate on the serving release', proofs: ['manual:post-deploy/rate-on-serving-release'] }];
 const code = [{ id: 'AC-1', text: 'The dispatcher skips it', proofs: ['unit:skips'] }, ...manual.map(criterion => ({ ...criterion, id: 'AC-2' }))];
-const item = (n: number, extra: Partial<Work> = {}): Work => ({
-  id: `00000000-0000-4000-8000-00000000000${n}`, key: `GY-${n}`, title: `Observation ${n}`, description: '', type: 'chore', priority: 2, stage: 'ready', ready: true, epoch: 0, revision: 5, policyRevision: 1,
-  createdAt: iso(now - 40 * hour), updatedAt: iso(now - 33 * hour), stageEnteredAt: iso(now - 33 * hour), lease: null, lastAssignment: null, systemDriven: true,
-  workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], observation: null, blocker: null, violations: [], criteria: manual,
-  policy: { checks: ['test', 'typecheck'], review: true }, dependencies: [], 
+const item = (n: number, extra: Partial<Work> = {}): Work => workFixture({
+  id: `00000000-0000-4000-8000-00000000000${n}`, key: `GY-${n}`, title: `Observation ${n}`, type: 'chore', revision: 5, criteria: manual, lastAssignment: null as never,
+  createdAt: iso(now - 40 * hour), updatedAt: iso(now - 33 * hour), stageEnteredAt: iso(now - 33 * hour), policy: { checks: ['test', 'typecheck'], review: true },
   gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
   ...extra,
-}) as unknown as Work;
+});
 
 test('unit:observation-item-not-dispatched — the dispatcher skips an all-manual post-deploy item and dispatches one with a code criterion or a hand-driven one', () => {
   const observing = item(1), withCode = item(2, { criteria: code }), handDriven = item(3, { systemDriven: false });

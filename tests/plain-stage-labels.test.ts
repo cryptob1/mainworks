@@ -6,20 +6,15 @@ import { prSteps } from '../src/model/pr-steps.js';
 import { type ReleaseView } from '../src/model/release.js';
 import type { Work } from '../src/model/work.js';
 import { stages, type Stage } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2988 AC-1: every derived stage maps to exactly one plain label, master status items carry
 // it, and this test walks each stage.
 
-const base = {
-  id: 'id', key: 'GY-1', title: 'Plain stage', description: '', type: 'chore' as const, priority: 2,
-  dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
-  policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1,
-  createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', stageEnteredAt: '2026-01-01T00:00:00Z',
-  ready: true, epoch: 1, lease: null, workspaces: [], candidate: null, submission: null,
-  gates: [], evidence: [], violations: [],
-};
-
-const item = (stage: Stage, extra: Partial<Work> = {}): Work => ({ ...base, stage, ...extra } as Work);
+const item = (stage: Stage, extra: Partial<Work> = {}): Work => workFixture({
+  id: 'id', title: 'Plain stage', type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], epoch: 1, gates: [], systemDriven: undefined,
+  createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', stageEnteredAt: '2026-01-01T00:00:00Z', stage, ...extra,
+});
 // A worker holds it: an item at build with no lease and no running session reads Waiting (GY-3095).
 const held = { lease: { epoch: 1, owner: 'worker', expiresAt: '2999-01-01T00:00:00Z' } } as Partial<Work>;
 

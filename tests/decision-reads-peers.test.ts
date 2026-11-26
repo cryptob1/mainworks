@@ -14,8 +14,7 @@ const worker: Principal = { id: 'peer-worker', role: 'worker' };
 const at = new Date().toISOString();
 function item(n: number): Work {
   return workFixture({ id: randomUUID(), key: `GY-${n}`, title: `Item ${n}`, type: 'chore', exclusiveResources: [],
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:decision-reads-peers'] }], policy: { checks: [], review: false },
-    stage: 'build', createdAt: at, updatedAt: at, stageEnteredAt: at, gates: [] });
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:decision-reads-peers'] }], policy: { checks: [], review: false }, stage: 'build', createdAt: at, updatedAt: at, stageEnteredAt: at, gates: [] });
 }
 useTestStore('decision-reads-peers', {}, ctx => { ({ store, engine } = ctx); });
 

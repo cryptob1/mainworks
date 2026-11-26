@@ -12,6 +12,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3502: the stall alarm names the cause that holds work now. A launch failure counts only while
 // its back-off runs and its item is open; the loop deletes the rest the same cycle. With no such
@@ -25,8 +26,8 @@ const doneError = 'codex exited 1: the done item failed to launch';
 const expiredError = 'git worktree add .graphyard/worktrees/GY-3446-1: fatal: could not create work tree';
 
 function item(key: string, extra: Partial<Work> = {}): Work {
-  return { id: `id-${key}`, key, title: key, stage: 'ready', ready: true, epoch: 0, revision: 1, policyRevision: 1, priority: 1, type: 'bug',
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], gates: [], workspaces: [], sessions: [], createdAt: at(start), updatedAt: at(start), ...extra } as unknown as Work;
+  return workFixture({ key, priority: 1, type: 'bug', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], gates: [], sessions: [],
+    createdAt: at(start), updatedAt: at(start), ...extra });
 }
 
 async function fixture() {

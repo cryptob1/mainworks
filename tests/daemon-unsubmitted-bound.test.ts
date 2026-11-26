@@ -27,15 +27,11 @@ const minute = 60_000;
 
 /** GY-1457 epoch 1's shape: a renewing lease, a running session, no submission, no candidate, claimed `heldMs` ago. */
 function held(heldMs: number, overrides: Partial<Work> = {}): Work {
-  return workFixture({
-    id: 'work-1457', key: 'GY-1457', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], stage: 'build', revision: 3,
+  return workFixture({ id: 'work-1457', key: 'GY-1457', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], stage: 'build', revision: 3,
     createdAt: iso(-heldMs - minute), updatedAt: iso(-10_000), stageEnteredAt: iso(-heldMs), epoch: 1,
-    lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: iso(110_000) },
-    lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: iso(-heldMs) },
+    lease: { owner: 'graphyard-claude-1', epoch: 1, expiresAt: iso(110_000) }, lastAssignment: { owner: 'graphyard-claude-1', epoch: 1, claimedAt: iso(-heldMs) },
     workspaces: [{ host: 'machine-a', path: '/srv/worktrees/GY-1457-1', epoch: 1, owner: 'graphyard-claude-1', branch: 'graphyard/gy-1457-1' }],
-    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }],
-    ...overrides,
-  });
+    gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: false, reasons: ['Worker has not submitted implementation for this attempt'] }], ...overrides });
 }
 /**
  * The product's bound and its readers, imported when a case runs: against the base, where none is

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mergeCandidateHold, mergeOpeningHold, mergeOne, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3151 AC-1: another head merges while this head's trial runs, so the snapshot's candidate.baseSha
 // moves to the new tip. The head and policy revision are unchanged, so the trial is not refused as
@@ -14,10 +15,10 @@ const head = sha('head'), base = sha('base'), moved = sha('moved');
 
 const item = (baseSha: string): Work => {
   const candidate = { sha: head, baseSha, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' };
-  return { id: 'w1', key: 'GY-1', type: 'feature', stage: 'build', epoch: 1, lease: null, policyRevision: 2, reworkRequested: false, submission: { epoch: 1, pr: 1 }, candidate,
-    dependencies: [], workspaces: [], violations: [], ready: true, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], policy: { checks: ['test'], review: true }, evidence: [], mergeLedger: null,
+  return workFixture({ id: 'w1', stage: 'build', epoch: 1, policyRevision: 2, submission: { epoch: 1, pr: 1 }, candidate, mergeLedger: null,
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
     observation: { source: 'control-plane', candidate, files: ['src/app.ts'], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, at: '2030-01-01T00:00:00.000Z' },
-    gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })) } as unknown as Work;
+    gates: ['ready', 'build', 'review'].map(name => ({ name, passed: true, reasons: [] })) });
 };
 
 function world(conflictOnMoved = false) {

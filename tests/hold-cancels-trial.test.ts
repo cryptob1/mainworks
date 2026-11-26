@@ -9,6 +9,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { mergeRecordKinds, type MergePorts } from '../src/merge-writer/executor.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3728: holding an item ends its running merge trial the next cycle and frees its slot for the
 // next head; a held item is not trialled again until it is released.
@@ -20,16 +21,10 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });
 const base = sha('base');
 const candidateOf = (key: string) => ({ sha: sha(`head:${key}`), baseSha: base, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' });
-const item = (key: string, ageMinutes: number): Work => ({
-  id: `w-${key}`, key, title: key, type: 'feature', description: '', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-  workspaces: [], submission: { epoch: 1, pr: 7 }, candidate: candidateOf(key), reworkRequested: false, scenarioRequirements: [], evidence: [],
-  observation: { source: 'control-plane', candidate: candidateOf(key), checks: [], reviews: [], merged: false, mergeSha: null,
-    mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip: base } as unknown as Observation,
-  blocker: null, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), violations: [],
-  createdAt: iso(start - ageMinutes * 60_000), updatedAt: iso(start), stageEnteredAt: iso(start - ageMinutes * 60_000),
-} as unknown as Work);
+const item = (key: string, ageMinutes: number): Work => workFixture({ id: `w-${key}`, key, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
+  stage: 'build', epoch: 1, submission: { epoch: 1, pr: 7 }, candidate: candidateOf(key), observation: { source: 'control-plane', candidate: candidateOf(key), checks: [], reviews: [], merged: false, mergeSha: null,
+    mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip: base } as unknown as Observation, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })),
+  createdAt: iso(start - ageMinutes * 60_000), updatedAt: iso(start), stageEnteredAt: iso(start - ageMinutes * 60_000) });
 
 /** One trial lane over `work`: `hang`'s trials run until cancelled, every other one passes and delivers. */
 function harness(work: Work[], hang: string) {

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { evaluate } from '../src/model-boundary/gates.js';
@@ -144,12 +145,10 @@ function unexercisedItem(options: { finding?: boolean } = {}): Work {
   const observation: Observation = { clockOffset: { min: 0, max: 0 }, candidate: { sha: head, baseSha: base, pr: 421, branch: 'graphyard/gy-421-1', author: 'implementer' },
     checks: [{ name: 'test', result: 'success', appId: CI_APP }, { name: 'typecheck', result: 'success', appId: CI_APP }], reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null,
     files: ['src/tmp.ts'], scopeFiles: [], at: ago(1), prState: 'open', draft: false, baseTip: base, baseTipContained: true } as Observation;
-  const work = { id: '22222222-3333-4444-8555-666666666666', key: 'GY-421', title: 'Unexercised fixture', description: '', type: 'bug', priority: 2, dependencies: [],
-    criteria: [{ id: 'AC-3', text: 'An old tsx directory is reclaimed', proofs: [UNIT] }], policy: { checks: ['test', 'typecheck'], review: true }, producerProofs: [],
-    stage: 'build', revision: 5, policyRevision: 1, createdAt: ago(120), updatedAt: ago(5), stageEnteredAt: ago(60), ready: true, epoch: 1, lease: null,
-    workspaces: [{ host: 'machine-a', path: '/tmp/gy-421', branch: 'graphyard/gy-421-1', epoch: 1, owner: 'agent-a' }], implementers: ['agent-a'], lastAssignment: { owner: 'agent-a', epoch: 1 },
-    candidate: observation.candidate, submission: { epoch: 1, pr: 421 }, evidence: options.finding === false ? [] : [record], observation,
-    gates: [], violations: [], blocker: null, queue: null, queueSequence: 0, queueHistory: [] } as unknown as Work;
+  const work = workFixture({ id: '22222222-3333-4444-8555-666666666666', key: 'GY-421', title: 'Unexercised fixture', type: 'bug', systemDriven: undefined, stage: 'build', revision: 5, epoch: 1,
+    criteria: [{ id: 'AC-3', text: 'An old tsx directory is reclaimed', proofs: [UNIT] }], policy: { checks: ['test', 'typecheck'], review: true }, producerProofs: [], gates: [],
+    createdAt: ago(120), updatedAt: ago(5), stageEnteredAt: ago(60), implementers: ['agent-a'], lastAssignment: { owner: 'agent-a', epoch: 1 }, candidate: observation.candidate, submission: { epoch: 1, pr: 421 },
+    workspaces: [{ host: 'machine-a', path: '/tmp/gy-421', branch: 'graphyard/gy-421-1', epoch: 1, owner: 'agent-a' }], evidence: options.finding === false ? [] : [record], observation, queue: null, queueSequence: 0, queueHistory: [] });
   const graded = evaluate(work, [work], clock);
   const copy = structuredClone({ ...work, stage: graded.stage, gates: graded.gates, violations: graded.violations });
   // The unit request GY-421 held. Since GY-1235 the reconciler opens none (proofs gate nothing), so

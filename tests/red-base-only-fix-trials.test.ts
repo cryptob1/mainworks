@@ -12,6 +12,7 @@ import type { ChildRun } from '../src/child-runner.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3451: main e27e5826 failed its word-budget tests; GY-3449 merged on top without touching them,
 // main stayed red, and the merge writer started trialling every queued head again because the tip had
@@ -31,16 +32,12 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
 const reason = baseFailureReason({ tip: red, files: [failingTest], tests: ['unit:budget'] });
 const refusedOn = (key: string, head: string, why: string): MergeLedgerState => ({ key, state: 'refused', head, baseTip: null, mergeSha: null, risk: null, intentAt: null, pushedAt: null, observedTip: null, refusal: { kind: 'merge', reason: why }, events: 1 });
 
-const item = (id: string, key: string, head: string, created: number, extra: Partial<Work> = {}): Work => ({
-  id, key, title: key, type: 'bug', description: '', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-  workspaces: [], submission: { epoch: 1, pr: 7 },
-  candidate: { sha: head, baseSha: red, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+const item = (id: string, key: string, head: string, created: number, extra: Partial<Work> = {}): Work => workFixture({
+  id, key, type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], stage: 'build', epoch: 1, submission: { epoch: 1, pr: 7 },
+  candidate: { sha: head, baseSha: red, pr: 7, branch: `graphyard/${key.toLowerCase()}-1`, author: 'worker' },
   observation: { source: 'control-plane', candidate: { sha: head, baseSha: red }, checks: [], reviews: [], merged: false, mergeSha: null, at: iso(start), baseTip: red } as unknown as Observation,
-  blocker: null, gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), violations: [],
-  createdAt: iso(created), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), ...extra,
-} as unknown as Work);
+  gates: ['build', 'review'].map(name => ({ name, passed: true, reasons: [] })), createdAt: iso(created), updatedAt: iso(start), stageEnteredAt: iso(start - 60_000), ...extra,
+});
 
 /**
  * A git host whose main tip is `tip.at`. The failing test reads docs/guide.md; the fix head changes

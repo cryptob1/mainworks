@@ -22,6 +22,7 @@ import { firstParentHolds, runTrial, trialCheckoutPrefix, trialMerge } from '../
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Observation, Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
@@ -45,19 +46,15 @@ const minute = 60_000;
 const head = sha('head:GY-1');
 
 /** The submitted item, its control-plane observation carrying no pull request and its merge gate held by the writer. */
-const item = (candidate = head, baseTip = base): Work => ({
-  id: 'w-GY-1', key: 'GY-1', title: 'GY-1', type: 'feature', description: '', priority: 1, dependencies: [],
-  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
-  policy: { checks: ['test'], review: true }, stage: 'build', revision: 1, policyRevision: 1, ready: true, epoch: 1, lease: null,
-  workspaces: [], submission: { epoch: 1, pr: 7 }, nextAction: null,
-  candidate: { sha: candidate, baseSha: baseTip, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' }, reworkRequested: false, scenarioRequirements: [], evidence: [],
+const item = (candidate = head, baseTip = base): Work => workFixture({
+  id: 'w-GY-1', key: 'GY-1', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }], stage: 'build', epoch: 1,
+  submission: { epoch: 1, pr: 7 }, nextAction: null, candidate: { sha: candidate, baseSha: baseTip, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' },
   observation: { source: 'control-plane', candidate: { sha: candidate, baseSha: baseTip, pr: 7, branch: 'graphyard/gy-1-1', author: 'worker' }, checks: [], reviews: [], merged: false, mergeSha: null,
     mergeable: true, protected: true, files: ['src/app.ts'], at: iso(start), baseTip } as unknown as Observation,
-  blocker: null,
   gates: [{ name: 'build', passed: true, reasons: [] }, { name: 'review', passed: true, reasons: [] }, { name: 'test', passed: true, reasons: [] }, { name: 'merge', passed: false, reasons: [`merge writer has not pushed ${candidate.slice(0, 12)}`] }],
-  violations: [], createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 30 * minute),
+  createdAt: iso(start), updatedAt: iso(start), stageEnteredAt: iso(start - 30 * minute),
   pipeline: { attempts: [], submittedAt: iso(start - 30 * minute), resubmittedAt: null, reworkRounds: 0, interventions: { blocked: 0, requirements: 0 } },
-}) as unknown as Work;
+});
 
 interface StepHarness {
   work: Work[];

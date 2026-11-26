@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createSchema } from '../src/model-boundary/work.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { type Observation, type Work } from '../src/model.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 // GY-406 gave the control-plane App a ruleset bypass the main guard still lands its reverts with.
 // GY-1234 removed the repair lane built on it: under GitHub delivery GitHub merges on its own
@@ -16,12 +17,10 @@ test('unit:legacy-repair-field — stored repair fields load and evaluate withou
 
   // An item stored before the removal — its document as work_items holds it — loads and evaluates.
   const candidate = { sha: head, baseSha: base, pr: 206, branch: 'graphyard/gy-9-1', author: 'worker' };
-  const stored = JSON.stringify({ id: 'work-9', key: 'GY-9', title: 'Fix the merge path', description: '', type: 'bug', priority: 0, dependencies: [], criteria: [{ id: 'AC-1', text: 'Merges', proofs: ['unit:merges'] }],
-    policy: { checks: ['test'], review: true }, repair: 'merge-path', stage: 'build', revision: 9, policyRevision: 1,
-    createdAt: '2026-09-25T00:00:00.000Z', updatedAt: '2026-09-25T00:00:00.000Z', stageEnteredAt: '2026-09-25T00:00:00.000Z', ready: true, epoch: 1, lease: null, workspaces: [], candidate, submission: { epoch: 1, pr: 206 },
-    reworkRequested: false, scenarioRequirements: [], evidence: [],
-    observation: { at: '2026-09-25T00:01:00.000Z', candidate, reviews: [], checks: [], protected: true, mergeable: true, merged: false, prState: 'open', draft: false } as unknown as Observation,
-    blocker: null, gates: [], violations: [] });
+  const stored = JSON.stringify(workFixture({ id: 'work-9', key: 'GY-9', title: 'Fix the merge path', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Merges', proofs: ['unit:merges'] }],
+    systemDriven: undefined, repair: 'merge-path', stage: 'build', revision: 9, epoch: 1, candidate, submission: { epoch: 1, pr: 206 }, gates: [],
+    createdAt: '2026-09-25T00:00:00.000Z', updatedAt: '2026-09-25T00:00:00.000Z', stageEnteredAt: '2026-09-25T00:00:00.000Z',
+    observation: { at: '2026-09-25T00:01:00.000Z', candidate, reviews: [], checks: [], protected: true, mergeable: true, merged: false, prState: 'open', draft: false } as unknown as Observation }));
   const loaded = JSON.parse(stored) as Work;
   assert.equal(loaded.repair, 'merge-path');
   const evaluated = evaluate(loaded, [loaded], new Date('2026-09-25T00:02:00.000Z'));

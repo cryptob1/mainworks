@@ -33,6 +33,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { dispatchKey } from '../src/daemon/reconcile.js';
 import { listen } from './helpers/http-server.js';
+import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-09-20 at/now/resetsAt trio is the fixed clock handed to fleetView, chooseSession and sessionEnded; Date.now() only builds relative expiries and reset times.
 
 const operator: Principal = { id: 'operator', role: 'admin' };
@@ -120,9 +121,7 @@ const herdr = (calls: string[][]) => (_command: string, args: string[]) => {
     : args[0] === 'pane' && args[1] === 'list' ? { panes: [] } : {} });
 };
 let items = 0;
-const readyWork = (key = `GY-${++items + 900}`) => ({ id: `work-${key}`, key, title: 'Registry fixture', description: '', type: 'feature', priority: 1, dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:x'] }], policy: { checks: ['test'], review: true },
-  stage: 'ready', revision: 1, policyRevision: 1, createdAt: '', updatedAt: '', stageEnteredAt: '', ready: true, epoch: 0, lease: null, workspaces: [], candidate: null, submission: null, reworkRequested: false, scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], observation: null,
-   }) as unknown as Work;
+const readyWork = (key = `GY-${++items + 900}`) => workFixture({ id: `work-${key}`, key, title: 'Registry fixture', priority: 1, createdAt: '', updatedAt: '', stageEnteredAt: '', gates: [], systemDriven: undefined });
 /** A candidate ready for its independent review, as the loop reads one out of the snapshot. */
 function reviewWork(key: string, sha: string): Work {
   const candidate = { sha, baseSha: 'b'.repeat(40), pr: 93, branch: `graphyard/${key.toLowerCase()}-1`, author: 'implementer' };

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { itemLine } from '../src/cli/master-status.js';
 import { prSteps } from '../src/model/pr-steps.js';
 import type { Work } from '../src/model/work.js';
+import { workFixture } from './helpers/work-fixture.js';
 
 /**
  * GY-3095 AC-2: on 2026-11-04 nothing could launch for 2.5 hours, yet every item at build read
@@ -11,14 +12,9 @@ import type { Work } from '../src/model/work.js';
  */
 
 const now = Date.parse('2026-11-05T02:00:00Z');
-const base = {
-  id: 'id', key: 'GY-7', title: 'Waits', description: '', type: 'bug', priority: 0, stage: 'build',
-  dependencies: [], criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
-  policy: { checks: ['test'], review: true }, revision: 1, policyRevision: 1,
-  createdAt: '2026-11-04T00:00:00Z', updatedAt: '2026-11-04T00:00:00Z', stageEnteredAt: '2026-11-04T00:00:00Z',
-  ready: true, epoch: 1, lease: null, workspaces: [], candidate: null, submission: null, gates: [], evidence: [], violations: [],
-};
-const item = (extra: Record<string, unknown> = {}) => ({ ...base, ...extra }) as unknown as Work;
+const item = (extra: Record<string, unknown> = {}) => workFixture({ id: 'id', key: 'GY-7', title: 'Waits', type: 'bug', priority: 0, stage: 'build',
+  criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }], createdAt: '2026-11-04T00:00:00Z', updatedAt: '2026-11-04T00:00:00Z', stageEnteredAt: '2026-11-04T00:00:00Z',
+  epoch: 1, gates: [], ...extra });
 const dispatch = (history: { event: string; reason: string; result?: string | null }[]) => ({ actionQueue: { history: [], actions: [{
   id: 'a', kind: 'dispatch', work: 'id', key: 'GY-7', inputs: {}, gate: 'build', refusal: null, reason: 'GY-7 is ready and unassigned', binding: 'dispatch:1',
   requestedBy: 'graphyard', requestedAt: '2026-11-04T23:00:00Z', state: 'pending', claim: null, attempts: history.length,

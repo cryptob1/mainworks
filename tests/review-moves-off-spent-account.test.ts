@@ -8,6 +8,7 @@ import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { workFixture } from './helpers/work-fixture.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
@@ -116,20 +117,18 @@ const gitRun = (command: string, args: string[], options?: { cwd?: string }) => 
 test('e2e:review-moves-off-spent-account — marks first reviewer exhausted after launch was requested and asserts another account posts the verdict', async () => {
   const at = now();
   const candidate = { sha: head, baseSha: base, pr: 17, branch: 'graphyard/gy-9601-1', author: 'graphyard-worker-1' };
-  const work: Work = {
-    id: randomUUID(), key: 'GY-9601', title: 'Review moves off spent account', description: '', type: 'bug', priority: 1, dependencies: [],
-    criteria: [{ id: 'AC-1', text: 'feature.ts exports moved', proofs: ['unit:works'] }], policy: { checks: ['test'], review: true },
-    stage: 'review', revision: 3, policyRevision: 1, createdAt: at, updatedAt: at, stageEnteredAt: at, ready: true, epoch: 1, lease: null,
+  const work = workFixture({ id: randomUUID(), key: 'GY-9601', title: 'Review moves off spent account', type: 'bug', priority: 1,
+    criteria: [{ id: 'AC-1', text: 'feature.ts exports moved', proofs: ['unit:works'] }],
+    stage: 'review', revision: 3, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
     workspaces: [{ host: hostId, path: '/w', branch: candidate.branch, epoch: 1, owner: 'graphyard-worker-1' }],
-    candidate, submission: { epoch: 1, pr: 17 }, reworkRequested: false,
-    scenarioRequirements: [], evidence: [], blocker: null, gates: [], violations: [], implementers: ['graphyard-worker-1'],
+    candidate, submission: { epoch: 1, pr: 17 }, gates: [], implementers: ['graphyard-worker-1'],
     autoDispatch: {
       review: { id: 'req-9601', kind: 'review', provider: 'github', pr: 17, sha: head, baseSha: base, policyRevision: 1, state: 'requested', requestedAt: at, reason: 'review required' },
       producers: [], history: [],
     },
     observation: observationFixture(candidate, { source: 'control-plane', at, protected: false,
       files: ['feature.ts'], scopeFiles: [{ path: 'feature.ts', status: 'added', sha: head, additions: 1, deletions: 0, binary: false }] }),
-  } as unknown as Work;
+  } as never);
   await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]);
 
   // After the review launch is requested, mark the first reviewer account (claude-a) exhausted until later.

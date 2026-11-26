@@ -36,10 +36,8 @@ const refusing = (gate: string, reasons: string[]) => passed().map(entry => entr
 /** One item in each shape its sentences are read in; only `fields` turns the scenario. */
 function item(fields: Partial<Work> = {}): Work {
   return workFixture({ id: 'w-GY-31', key: 'GY-31', title: 'Name the merge commit', type: 'bug', priority: 1,
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:control-plane-no-pr-link'] }], stage: 'done', epoch: 1,
-    submission: { epoch: 1, pr: 12 }, candidate, observation: observation(true, true), gates: passed(),
-    createdAt: iso(-5 * 60 * minute), updatedAt: iso(-30 * minute), stageEnteredAt: iso(-30 * minute), ...fields,
-  });
+    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:control-plane-no-pr-link'] }], stage: 'done', epoch: 1, submission: { epoch: 1, pr: 12 }, candidate,
+    observation: observation(true, true), gates: passed(), createdAt: iso(-5 * 60 * minute), updatedAt: iso(-30 * minute), stageEnteredAt: iso(-30 * minute), ...fields });
 }
 
 test('unit:tests/control-plane-no-pr-link.test.ts — a control-plane item\'s plain status names its commit, never a pull request; a pull-request item keeps its PR', () => {

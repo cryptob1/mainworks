@@ -124,7 +124,7 @@ function work(overrides: Partial<Work> = {}) {
     observation: { at: new Date().toISOString(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [], prState: 'open', draft: false },
     ...overrides });
 }
-const ready = () => work({ stage: 'ready', lease: null, submission: null, candidate: null, observation: null } as any);
+const ready = () => work({ stage: 'ready', submission: null, candidate: null, observation: null } as any);
 const herdr = (calls: string[][], answer: (args: string[]) => unknown = () => ({})) => (_command: string, args: string[]) => {
   calls.push(args);
   const custom = answer(args);

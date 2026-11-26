@@ -111,9 +111,9 @@ test('unit:overlap-holds-nothing — whatever the priority or pull-request state
     submitted('GY-168', ['src/'], '2'.repeat(40), { priority: 0, observation: { files: [hotspot], prState: 'closed' } as any, lease: { owner: 'w', epoch: 2, expiresAt: later } }),
   ];
   const candidates = [
-    work('GY-172', { priority: 2 }),
-    work('GY-177', { priority: 2 }),
-    submitted('GY-175', ['src/'], '3'.repeat(40), { priority: 2, reworkRequested: true, observation: { files: [hotspot], prState: 'open' } as any }),
+    work('GY-172'),
+    work('GY-177'),
+    submitted('GY-175', ['src/'], '3'.repeat(40), { reworkRequested: true, observation: { files: [hotspot], prState: 'open' } as any }),
   ];
   const all = [...ahead, ...candidates];
   assert.ok(concurrentOverlap(candidates[2], all, clock).length > 0, 'GY-175 overlaps work in flight');
