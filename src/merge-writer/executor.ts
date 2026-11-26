@@ -377,21 +377,14 @@ export const openFlakyItem = (work: readonly Work[], check: string) =>
   work.find(item => item.stage !== 'done' && (item.faultKey === `flake:${check}` || item.title === `Flaky check on main: ${check}`)) ?? null;
 
 /**
- * GY-3545: a trial's failures that are not the candidate's: the build passed, no E2E case failed,
- * and every failing test file has an open flaky-check item or fails on the base tip too, case for
- * case (`failureIsBase`) where a `note` can record it as a known red. Null when any failure is the candidate's.
+ * GY-3545, GY-3881: a trial's failures that are not the candidate's: the build passed, no E2E case failed,
+ * and every failing test file fails on the base tip too, case for case (`failureIsBase`), where a `note`
+ * can record it as a known red. An open flaky-check item never excuses a file the base tip passes.
+ * Null when any failure is the candidate's.
  */
-async function knownFailures(ports: Pick<MergePorts, 'flaky' | 'note'>, run: MergeTrialRun): Promise<{ flaky: { file: string; item: Pick<Work, 'id' | 'key'> }[]; red: string[] } | null> {
+function knownRed(ports: Pick<MergePorts, 'note'>, run: MergeTrialRun): string[] | null {
   if (run.build !== 'pass' || !run.tests.failed.length || run.tests.failed[0] === 'secret-scan' || run.e2e?.some(entry => entry.missing || entry.failingStep)) return null;
-  const onBase = !!ports.note && !!run.base && run.base.cases.length > 0 && run.base.cases.every(test => run.base!.tests.includes(test));
-  const flaky: { file: string; item: Pick<Work, 'id' | 'key'> }[] = [], red: string[] = [];
-  for (const file of run.tests.failed) {
-    const item = await ports.flaky?.(`test:${file}`);
-    if (item) flaky.push({ file, item });
-    else if (onBase && run.base!.files.includes(file)) red.push(file);
-    else return null;
-  }
-  return { flaky, red };
+  return ports.note && failureIsBase(run) ? [...run.tests.failed] : null;
 }
 
 /**
@@ -932,16 +925,12 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
       await ports.record(item, { kind: 'trial', head, baseTip, mergeSha, outcome: last.outcome, phase: last.phase, reason: last.reason, phases: last.phases, attempts, durationMs: Math.round(Object.values(last.phases).reduce((sum, value) => sum + value, 0)) });
       throw error;
     }
-    // GY-3545: failures that are tests with an open flaky-check item, or red on the base tip too, are not
-    // the candidate's: each is noted where it belongs and the candidate goes on to its remaining gates.
-    const known = await knownFailures(ports, run);
+    // GY-3545, GY-3881: failures red on the base tip too are not the candidate's: they are noted and the candidate goes on to its remaining gates.
+    const known = knownRed(ports, run);
     // GY-1834: with nowhere to record a known red, a failure every file of which fails on the base tip too is held, never reworked.
     baseHeld = !known && failureIsBase(run) ? baseFailureReason(run.base!) : null;
     failure = baseHeld ?? trialFailureReason({ run: known ? { ...run, tests: { ...run.tests, failed: [] } } : run }) ?? requiredProofFailure(item, run) ?? featureCaseFailure(item, merged.addedOrModified ?? []);
-    if (known && !failure) {
-      for (const { file, item: flakyItem } of known.flaky) await ports.note?.(flakyItem, `${file} failed in ${item.key}'s merge trial on ${mergeSha.slice(0, 12)}; it has this open flaky item, so ${item.key} was not sent back.`, `trial-flaky:${flakyItem.key}:${mergeSha}:${file}`);
-      if (known.red.length) await ports.note?.(item, `Known red: ${known.red.slice(0, 10).join(', ')}${known.red.length > 10 ? ` and ${known.red.length - 10} more` : ''} also fail on main (${baseTip.slice(0, 12)}), so they were not counted against this change.`, `trial-known-red:${mergeSha}`);
-    }
+    if (known && !failure) await ports.note?.(item, `Known red: ${known.slice(0, 10).join(', ')}${known.length > 10 ? ` and ${known.length - 10} more` : ''} also fail on main (${baseTip.slice(0, 12)}), so they were not counted against this change.`, `trial-known-red:${mergeSha}`);
     await fileFlakes(ports, run, item.key, mergeSha, merged.added ?? []);
     // GY-1834: a flake rides on the trial record, refused or not, so it is durable before anything else happens.
     const flaked = run.flaked ? trialFlaked({ flaked: run.flaked, assertions: run.assertions }, at()) : null;
