@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // GY-3925: README.md is the owner-approved draft text (proto/readme/README.draft.md at
-// 49560036020d0743676db3df811b32a750083250) without the five MEDIA comments or unresolved
-// docs/media/* references, with current rounded numbers in 'How fast is it?', prerequisites
+// 49560036020d0743676db3df811b32a750083250) without the five MEDIA comments; its five docs/media
+// image lines (GY-3926) are checked by readme-media-exist-and-fit and set aside here. With current rounded numbers in 'How fast is it?', prerequisites
 // in docs/setup.md as a list, where-things-run.svg linked only from docs/architecture.md
 // (at most 250 words), and package.json's description matching the README's first bold line.
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -103,7 +103,7 @@ mainworks host add you@other-machine
 Mainworks was previously called Graphyard; the \`graphyard\` command and settings still work.`;
 
 test('unit:readme-is-the-approved-text — README.md matches the owner-approved draft text, setup prerequisites live in docs/setup.md, where-things-run.svg is linked only from docs/architecture.md, and package.json description matches the first bold line', () => {
-  const readme = read('README.md').trim();
+  const readme = read('README.md').replace(/^\[?!\[[^\]]*\]\(docs\/media\/[^\n]*\n\n/gm, '').trim();
   const [before, rest] = readme.split('\n| Changes merged per day |');
   assert.equal(before, expectedBeforeTable, 'README text before the speed table matches the approved draft word for word');
   assert.ok(rest, 'README carries the speed table');

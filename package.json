@@ -32,7 +32,8 @@
     "test": "node --import tsx tests/helpers/run-tests.ts",
     "test:affected": "node scripts/test-affected.mjs",
     "typecheck": "node --import tsx tests/helpers/run-tests.ts --typecheck",
-    "test:browser": "node --import tsx tests/helpers/run-tests.ts --browser"
+    "test:browser": "node --import tsx tests/helpers/run-tests.ts --browser",
+    "docs:media": "node scripts/docs-media.mjs"
   },
   "dependencies": {
     "embedded-postgres": "^18.4.0-beta.17",
