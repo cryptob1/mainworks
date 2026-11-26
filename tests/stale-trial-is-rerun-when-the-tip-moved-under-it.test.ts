@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { mergeOne, type MergePorts, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { keptTrialAheadOfReview, mergeOne, pushPassedTrial, trialAheadOfReviewReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { moveTouches } from '../src/merge-writer/stale-trial.js';
 import { riskOf } from '../src/model-boundary/risk-class.js';
 import { emptyMergeWriterState, mergeWriterSummary } from '../src/daemon/cycle-merge-writer.js';
@@ -42,7 +42,8 @@ async function repository(t: { after(fn: () => unknown): void }) {
     'internal/inspect/score.go': 'package inspect\n\nfunc Score() {}\n',
   }, 'base');
   const move = async (files: Record<string, string>) => { git('checkout', '-q', '--detach', base); return write(files, 'move'); };
-  return { base, move, git: async (args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env }) };
+  const merge = (head: string, into: string) => { git('checkout', '-q', '--detach', into); git('merge', '-q', '--no-ff', '-m', 'merge', head); return git('rev-parse', 'HEAD'); };
+  return { base, move, merge, git: async (args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env }) };
 }
 
 function world(repo: { base: string; git: (args: string[]) => Promise<string> }, movedTo: string, files: string[]) {
@@ -57,10 +58,10 @@ function world(repo: { base: string; git: (args: string[]) => Promise<string> },
     baseBranch: 'main', now: () => 0, holds: async () => false, record: async () => {},
     // The trial runs on the base; the tip moves before the push lands.
     fetch: async () => fetches++ === 0 ? repo.base : movedTo,
-    merge: async (_head, baseTip) => ({ mergeSha: sha(`merge:${baseTip}`), files }),
+    merge: async (_head, baseTip) => ({ mergeSha: baseTip, files }),
     trial: async mergeSha => { trials.push(mergeSha); return run; },
     push: async () => pushes++ === 0 ? 'rejected' : 'pushed',
-    moveTouches: (from, to, watched) => moveTouches(repo.git, from, to, watched),
+    moveTouches: (from, to, watched, at) => moveTouches(repo.git, from, to, watched, at),
   };
   return { item, ports, trials };
 }
@@ -78,19 +79,19 @@ test('unit:stale-trial-is-rerun-when-the-tip-moved-under-it — each branch: sen
   const landed = await mergeOne(fast.ports, fast.item);
   assert.equal(landed.outcome, 'merged');
   assert.equal(landed.outcome === 'merged' && landed.untrialled, true);
-  assert.deepEqual(fast.trials, [sha(`merge:${repo.base}`)]);
+  assert.deepEqual(fast.trials, [repo.base]);
 
   // A sensitive head (an unknown change is sensitive) is trialled again on the new merge, whatever the move touched.
   const sensitive = world(repo, other, []);
   assert.equal(riskOf(sensitive.item).risk, 'sensitive');
   const again = await mergeOne(sensitive.ports, sensitive.item);
-  assert.deepEqual(sensitive.trials, [sha(`merge:${repo.base}`), sha(`merge:${other}`)]);
+  assert.deepEqual(sensitive.trials, [repo.base, other]);
   assert.equal(again.outcome === 'merged' && again.untrialled, undefined);
 
   // The move touches src/deep.ts: the head's src/app.ts imports src/lib.ts, which imports it (one level through).
   const through = world(repo, deep, ['src/app.ts']);
   await mergeOne(through.ports, through.item);
-  assert.deepEqual(through.trials, [sha(`merge:${repo.base}`), sha(`merge:${deep}`)]);
+  assert.deepEqual(through.trials, [repo.base, deep]);
 
   // The selected test file counts too: tests/app.test.ts imports src/app.ts, which imports src/lib.ts (one level through); src/deep.ts is a level further.
   const lib = await repo.move({ 'src/lib.ts': "import { deep } from './deep.js';\nexport const lib = deep + 1;\n" });
@@ -98,12 +99,52 @@ test('unit:stale-trial-is-rerun-when-the-tip-moved-under-it — each branch: sen
   assert.equal(await moveTouches(repo.git, repo.base, deep, ['src/other.ts', 'tests/app.test.ts']), null);
   assert.equal(await moveTouches(repo.git, repo.base, deeper, ['src/app.ts']), null, 'a file nothing imports is never a reason');
 
+  // A file added by the head (e.g. a new proof test file absent at `to`) is read at the new merge commit, not `to`.
+  const addedHead = await repo.move({ 'tests/added.test.ts': "import { lib } from '../src/lib.js';\nvoid lib;\n" });
+  const mergedWithLib = repo.merge(addedHead, lib);
+  const mergedWithDeep = repo.merge(addedHead, deep);
+  assert.equal(await moveTouches(repo.git, repo.base, lib, ['tests/added.test.ts'], mergedWithLib), 'src/lib.ts');
+  assert.equal(await moveTouches(repo.git, repo.base, deep, ['tests/added.test.ts'], mergedWithDeep), 'src/deep.ts');
+
   // Two heads in one Go package (the hwd-backend incident): one landed report.go, the other changed score.go.
   const goHead = world(repo, sibling, ['internal/inspect/score.go']);
   assert.equal(riskOf(goHead.item).risk, 'normal');
   const rerun = await mergeOne(goHead.ports, goHead.item);
   assert.equal(rerun.outcome, 'merged');
-  assert.deepEqual(goHead.trials, [sha(`merge:${repo.base}`), sha(`merge:${sibling}`)]);
+  assert.deepEqual(goHead.trials, [repo.base, sibling]);
+
+  // pushPassedTrial never runs a trial synchronously when a kept trial needs a retrial; it returns false so a tracked flight runs it.
+  const keptFor = (files: string[], movedTo: string) => {
+    const head = sha(`kept:${files.join()}`);
+    const events: MergeRecordEvent[] = [], trials: string[] = [];
+    const item = { id: 'w1', key: 'GY-1', title: 'A change', type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+      candidate: { sha: head, baseSha: repo.base, pr: 1, branch: 'graphyard/gy-1-1', author: 'worker' }, submission: { epoch: 1, pr: 1 },
+      observation: { source: 'control-plane', candidate: { sha: head, baseSha: repo.base }, files },
+      mergeLedger: { state: 'refused', head, baseTip: repo.base, mergeSha: repo.base, refusal: { kind: 'merge', reason: trialAheadOfReviewReason('GY-1'), at: '2026-01-01T00:00:00Z' },
+        trial: { head, mergeSha: repo.base, passedBaseTip: repo.base, files: ['tests/app.test.ts'], proofs: { 'unit:works': { executed: 1, failed: 0 } } } } } as unknown as Work;
+    assert.equal(keptTrialAheadOfReview(item.candidate, item.mergeLedger), true);
+    const ports: MergePorts = {
+      baseBranch: 'main', now: () => 0, holds: async () => false,
+      fetch: async () => movedTo,
+      merge: async (_head, baseTip) => ({ mergeSha: baseTip, files }),
+      trial: async mergeSha => { trials.push(mergeSha); throw new Error('pushPassedTrial must not run a trial'); },
+      push: async () => 'pushed',
+      record: async (_item, event) => { events.push(event); },
+      moveTouches: (from, to, watched, at) => moveTouches(repo.git, from, to, watched, at),
+    };
+    return { item, ports, events, trials };
+  };
+  const keptSensitive = keptFor([], other);
+  assert.equal(await pushPassedTrial(keptSensitive.ports, keptSensitive.item), false);
+  assert.deepEqual(keptSensitive.trials, []);
+  assert.deepEqual(keptSensitive.events, []);
+  const keptTouched = keptFor(['src/app.ts'], deep);
+  assert.equal(await pushPassedTrial(keptTouched.ports, keptTouched.item), false);
+  assert.deepEqual(keptTouched.trials, []);
+  assert.deepEqual(keptTouched.events, []);
+  const keptFast = keptFor(['src/app.ts'], other);
+  assert.deepEqual(await pushPassedTrial(keptFast.ports, keptFast.item), { untrialled: true });
+  assert.deepEqual(keptFast.trials, []);
 
   // Status counts the fast-path landings.
   assert.equal(mergeWriterSummary({ ...emptyMergeWriterState(), untrialledLandings: 1 }).untrialledLandings, 1);

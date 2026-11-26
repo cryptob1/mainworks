@@ -164,7 +164,7 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     itemPreviews: { root, base: options.base, timeoutMs: trialTimeoutMinutes * 60_000, run, hostEnvironment: options.environment, now: options.now,
       delivery: () => loadProjectDelivery(options.environment ?? process.env, root), baseTip: tip, record: (item, preview, site) => options.record(item, previewRecordEvent(preview, site)), ...options.itemPreviews },
     // GY-3881: whether the commits that moved the tip after a trial touch what the head's files import.
-    moveTouches: (from, to, files) => moveTouches(args => git(...args), from, to, files),
+    moveTouches: (from, to, files, at) => moveTouches(args => git(...args), from, to, files, at),
     // Only git's own stale-lease wording is a rejection the executor re-reads the tip for; a remote's refusal (a branch rule, a hook) or a transport failure is thrown as it came, with git's stderr in the message (GY-2940).
     push: async (mergeSha, baseTip) => {
       try { await run('git', ['-C', root, ...pushArgs(base, baseTip, mergeSha, remote)], { env: pushEnvironment(settings, options.environment) }); return 'pushed'; }

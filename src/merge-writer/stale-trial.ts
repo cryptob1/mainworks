@@ -43,13 +43,14 @@ async function importsOf(git: StaleTrialGit, sha: string, files: readonly string
 
 /**
  * The first file the commits from `from` to `to` change that `files` are, or import directly or
- * through one level (`importsOf` read on `to`), or null when the move touches none of them.
+ * through one level (`importsOf` read on `at`, the new merge commit, defaulting to `to`), or null
+ * when the move touches none of them.
  */
-export async function moveTouches(git: StaleTrialGit, from: string, to: string, files: readonly string[]): Promise<string | null> {
+export async function moveTouches(git: StaleTrialGit, from: string, to: string, files: readonly string[], at: string = to): Promise<string | null> {
   const moved = (await git(['diff', '--name-only', from, to])).split('\n').filter(Boolean);
   if (!moved.length) return null;
-  const tree = new Set((await git(['ls-tree', '-r', '--name-only', to])).split('\n').filter(Boolean));
-  const direct = await importsOf(git, to, files, tree);
-  const reach = new Set([...files, ...direct, ...await importsOf(git, to, direct, tree)]);
+  const tree = new Set([...(await git(['ls-tree', '-r', '--name-only', at])).split('\n').filter(Boolean), ...moved]);
+  const direct = await importsOf(git, at, files, tree);
+  const reach = new Set([...files, ...direct, ...await importsOf(git, at, direct, tree)]);
   return moved.find(file => reach.has(file)) ?? null;
 }
