@@ -838,13 +838,16 @@ export interface MergePorts {
   onStep?: (step: string, report?: TrialStepReport) => void;
   /** GY-3545: the open "Flaky check on main" item for `check` (`test:FILE`), or null; absent, no failure is excused as flaky. */
   flaky?(check: string): Promise<Pick<Work, 'id' | 'key'> | null>;
+  /** GY-3881: the first file the commits from `from` to `to` change that `files` import, directly or through one level (`moveTouches` in stale-trial.ts), or null. */
+  moveTouches?(from: string, to: string, files: readonly string[]): Promise<string | null>;
   /** GY-3735: files the batch gate's "Flaky check on main: CHECK" item, or notes the one the fault key already has; absent, a trial's flake is only recorded on its trial. */
   fileFlaky?(check: string, text: string): Promise<unknown>;
   /** GY-3545: records `text` as a note on `item` under `idempotencyKey`; absent, nothing is noted and a base-tip failure holds the head as before (GY-1834). */
   note?(item: Pick<Work, 'id' | 'key'>, text: string, idempotencyKey: string): Promise<unknown>;
 }
 export type MergeOutcome =
-  | { outcome: 'merged'; mergeSha: string; baseTip: string; observedTip: string; pushes: number }
+  /** `untrialled`: GY-3881's fast path — it landed on a tip that moved after its trial, with no second trial. */
+  | { outcome: 'merged'; mergeSha: string; baseTip: string; observedTip: string; pushes: number; untrialled?: true }
   | { outcome: 'refused'; reason: string; trial: MergeTrialRun | null; conflict: string[] }
   | { outcome: 'requeued'; reason: string; pushes: number }
   | { outcome: 'reconciled'; mergeSha: string; observedTip: string };
@@ -940,7 +943,19 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
       ...(run.e2e?.length ? { e2e: run.e2e.map(({ output: _output, screenshot: _screenshot, ...entry }) => entry) } : {}),
       ...(run.screenshots?.length ? { screenshots: run.screenshots } : {}) });
   }
-  return land(ports, item, { head, baseTip, mergeSha, failure, baseHeld, run });
+  // GY-3881: a kept trial ran on the intent's base; the files it watches are the head's and the tests its trial selected.
+  const trialBase = kept ? state!.trial?.passedBaseTip ?? state!.baseTip ?? baseTip : baseTip;
+  return land(ports, item, { head, baseTip, mergeSha, failure, baseHeld, run, trialBase, watched: [...merged.files, ...(run?.files ?? (kept ? state!.trial?.files ?? [] : []))] });
+}
+
+/**
+ * GY-3881: why a head whose trial passed on `trialBase` must be trialled again before it lands on `tip`:
+ * it is sensitive, or the commits from `trialBase` to `tip` touch a file its changed or selected test
+ * files import, directly or through one level (`moveTouches`). Null is the fast path (GY-3120).
+ */
+async function retrialReason(ports: Pick<MergePorts, 'moveTouches'>, item: Work, watched: readonly string[], trialBase: string, tip: string): Promise<string | null> {
+  if (riskOf(item).risk === 'sensitive') return 'sensitive';
+  return await ports.moveTouches?.(trialBase, tip, watched) ?? null;
 }
 
 /**
@@ -948,9 +963,9 @@ export async function mergeOne(ports: MergePorts, item: Work): Promise<MergeOutc
  * leased push of `mergeSha` onto `baseTip`; a push rejected because the tip moved re-merges the same head onto
  * the new tip with no second trial (GY-3120), and a conflict there is refused for rework.
  */
-async function land(ports: MergePorts, item: Work, landing: { head: string; baseTip: string; mergeSha: string; failure: string | null; baseHeld: string | null; run: MergeTrialRun | null }): Promise<MergeOutcome> {
+async function land(ports: MergePorts, item: Work, landing: { head: string; baseTip: string; mergeSha: string; failure: string | null; baseHeld: string | null; run: MergeTrialRun | null; trialBase: string; watched: readonly string[] }): Promise<MergeOutcome> {
   let { baseTip, mergeSha } = landing;
-  const { head, failure, baseHeld, run } = landing, at = () => new Date(ports.now()).toISOString();
+  const { head, failure, baseHeld, run, trialBase } = landing, at = () => new Date(ports.now()).toISOString();
   const held = async () => ports.hold ? ports.hold(item) : null;
   const conflicted = async (conflict: string[]): Promise<MergeOutcome> => {
     const reason = trialFailureReason({ conflict })!;
@@ -974,12 +989,14 @@ async function land(ports: MergePorts, item: Work, landing: { head: string; base
       await ports.record(item, { kind: 'refused', head, reason: hold });
       return { outcome: 'requeued', reason: hold, pushes };
     }
+    // GY-3881: a trial that ran on an older base is run again on this merge when the head is sensitive or the move touches what it imports.
+    if (baseTip !== trialBase && await retrialReason(ports, item, landing.watched, trialBase, baseTip)) return mergeOne(ports, { ...item, mergeLedger: null });
     pushes += 1;
     if (await ports.push(mergeSha, baseTip) === 'pushed') {
       await ports.record(item, { kind: 'pushed', mergeSha, pushedAt: at() });
       const observedTip = await ports.fetch();
       await ports.record(item, { kind: 'reconciled', mergeSha, observedTip });
-      return { outcome: 'merged', mergeSha, baseTip, observedTip, pushes };
+      return { outcome: 'merged', mergeSha, baseTip, observedTip, pushes, ...(baseTip !== trialBase ? { untrialled: true as const } : {}) };
     }
     // Rejected: only a tip that moved (confirmed by re-reading it) re-merges, never a remote's refusal of the same tip.
     const movedTo = await ports.fetch();
@@ -988,7 +1005,7 @@ async function land(ports: MergePorts, item: Work, landing: { head: string; base
       await ports.record(item, { kind: 'refused', head, reason });
       return { outcome: 'requeued', reason, pushes };
     }
-    // GY-3120: the passing head lands on the moved tip without a new trial; only a conflict returns it for rework.
+    // GY-3120: the passing head lands on the moved tip without a new trial unless GY-3881's check above asks for one; only a conflict returns it for rework.
     const remerged = await ports.merge(head, movedTo, item);
     if ('conflict' in remerged) return conflicted(remerged.conflict);
     baseTip = movedTo; mergeSha = remerged.mergeSha;
@@ -1001,7 +1018,7 @@ async function land(ports: MergePorts, item: Work, landing: { head: string; base
  * ahead of review or acceptance re-merged onto the moved tip as its flight would, so a head whose gates
  * clear while every slot is busy never waits out other heads' trials.
  */
-export async function pushPassedTrial(ports: MergePorts, item: Work): Promise<boolean> {
+export async function pushPassedTrial(ports: MergePorts, item: Work): Promise<false | { untrialled: boolean }> {
   const state = item.mergeLedger, head = item.candidate?.sha.toLowerCase(), kept = keptTrialAheadOfReview(item.candidate, state);
   const exact = !!state && !!head && state.head === head && !!state.mergeSha && !!state.baseTip && (state.state === 'intent' || kept)
     && state.trial?.head === head && state.trial.mergeSha === state.mergeSha && state.trial.passedBaseTip === state.baseTip;
@@ -1009,15 +1026,15 @@ export async function pushPassedTrial(ports: MergePorts, item: Work): Promise<bo
   const moved = await ports.fetch() !== state!.baseTip;
   if ((moved && !kept) || await ports.hold?.(item)) return false;
   if (!exact || moved) {
-    const outcome = (await mergeOne(ports, item)).outcome;
-    return outcome === 'merged' || outcome === 'reconciled';
+    const outcome = await mergeOne(ports, item);
+    return outcome.outcome === 'merged' ? { untrialled: !!outcome.untrialled } : outcome.outcome === 'reconciled' && { untrialled: false };
   }
   // A kept review verdict has a refused intent; reopen it before recording its push.
   if (state!.state === 'refused') await ports.record(item, { kind: 'intent', head: head!, baseTip: state!.baseTip!, mergeSha: state!.mergeSha!, risk: riskOf(item).risk, at: new Date(ports.now()).toISOString() });
   if (await ports.push(state!.mergeSha!, state!.baseTip!) !== 'pushed') return false;
   await ports.record(item, { kind: 'pushed', mergeSha: state!.mergeSha!, pushedAt: new Date(ports.now()).toISOString() });
   await ports.record(item, { kind: 'reconciled', mergeSha: state!.mergeSha!, observedTip: await ports.fetch() });
-  return true;
+  return { untrialled: false };
 }
 
 /** What one queued head came to: its merge outcome, or the error that left it queued. */
@@ -1099,7 +1116,7 @@ async function trialBatch(ports: MergePorts, items: readonly Work[], onStep?: (i
         // GY-3849: the batch's one trial flaked once, so its flake rides on the first item's record.
         ...(run.flaked && index === 0 ? { flaked: trialFlaked({ flaked: run.flaked, assertions: run.assertions }, at()) } : {}),
         ...(run.e2e?.length ? { e2e: run.e2e.filter(entry => own.has(entry.proof)).map(({ output: _output, screenshot: _screenshot, ...entry }) => entry) } : {}) });
-      results.push({ work: item, outcome: await land(ports, item, { head, baseTip: base, mergeSha, failure: null, baseHeld: null, run }) });
+      results.push({ work: item, outcome: await land(ports, item, { head, baseTip: base, mergeSha, failure: null, baseHeld: null, run, trialBase: base, watched: [...merges[index]!.files, ...run.files] }) });
     } catch (error) { results.push({ work: item, error }); }
   }
   return results;

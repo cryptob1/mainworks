@@ -103,9 +103,11 @@ export function foldMergeLedger(events: readonly MergeLedgerEvent[]): Record<str
       if (!trial || !state) continue;
       const preview = previewVerdictSchema.safeParse((event.payload as { preview?: unknown }).preview);
       const passing = passingTrialSchema.safeParse(event.payload);
+      const files = z.array(z.string()).safeParse((event.payload as { files?: unknown }).files);
       state.trial = { head: trial.head, mergeSha: trial.mergeSha,
         ...(passing.success && (!preview.success || preview.data.result === 'pass') ? { passedBaseTip: passing.data.baseTip } : {}), proofs: Object.fromEntries(Object.entries(trial.proofs).map(([proof, counts]) => [proof, { executed: counts.executed, failed: counts.failed }])),
-        ...(trial.build ? { build: trial.build } : {}), ...(trial.tests ? { testFiles: trial.tests.files } : {}), ...(preview.success ? { preview: preview.data } : {}) };
+        ...(trial.build ? { build: trial.build } : {}), ...(trial.tests ? { testFiles: trial.tests.files } : {}), ...(preview.success ? { preview: preview.data } : {}),
+        ...(files.success ? { files: files.data } : {}) };
       const flaked = trialFlakedSchema.safeParse((event.payload as { flaked?: unknown }).flaked);
       if (flaked.success) state.flakes = [...(state.flakes ?? []).filter(flake => flake.mergeSha !== trial.mergeSha), { head: trial.head, mergeSha: trial.mergeSha, ...flaked.data }].slice(-mergeLedgerFlakeLimit);
     }

@@ -331,7 +331,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     workerVerifications: snapshot.workerVerifications ?? [],
     items: open.map((item, index) => itemLine(item, now, launched[index])),
     ...(personalScopes > 0 ? { personalScopes: `${personalScopes} items in personal scopes` } : {}),
-    mergeWriter: (({ queue, inFlight, inFlights, lastMergeAt, refusals, serveRevert, trials, stepMedians }) => ({ queue, inFlight, ...(inFlights ? { inFlights } : {}), lastMergeAt, trials: trials ?? [], stepMedians: stepMedians ?? {}, lastRefusal: refusals.at(-1) ?? null,
+    mergeWriter: (({ queue, inFlight, inFlights, lastMergeAt, untrialledLandings, refusals, serveRevert, trials, stepMedians }) => ({ queue, inFlight, ...(inFlights ? { inFlights } : {}), lastMergeAt,
+      // GY-3881: landings that went onto a moved tip without a second trial.
+      untrialledLandings: untrialledLandings ?? 0, trials: trials ?? [], stepMedians: stepMedians ?? {}, lastRefusal: refusals.at(-1) ?? null,
       // GY-2990: a revert that failed its own trial is held here, with the serve and reason that held it.
       serveRevert: serveRevert?.held ?? null }))(mergeWriterSummary(state?.mergeWriter, now)),
     trialTests,
