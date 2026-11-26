@@ -467,7 +467,9 @@ export async function observeStart(pane: string, kind: string, command: string, 
     detail: 'mise stopped the launch before the agent started; select the installed runtime PATH and MISE_NO_CONFIG=1 in the registry runtime environment',
   };
   const holder = await readForeground();
-  if (agent?.agent === kind && (holder === 'shell' || !showing && holder && typeof holder === 'object')) return {
+  const expectedKind = basename(kind);
+  const matchedAgent = agent?.agent && expectedKind && basename(agent.agent) === expectedKind ? agent : null;
+  if (matchedAgent && (holder === 'shell' || !showing && holder && typeof holder === 'object')) return {
     state: 'absent', agent: null, line,
     detail: holder === 'shell' ? 'the pane shell is still in the foreground; no agent runtime began' : `the pane foreground is held by ${holder.other}, not the agent runtime`,
   };
@@ -479,20 +481,20 @@ export async function observeStart(pane: string, kind: string, command: string, 
   if (warning) return { state: 'blocked', agent, detail: warning, line };
   // An unread pane rules nothing out: an idle runtime may be sitting on a consent prompt, so it is
   // polled again until a read shows its screen, never taken as ready without one.
-  if (screen === null && agent?.agent === kind && readyStates.includes(agent.agent_status ?? '')) return { state: 'starting', agent, detail: `Herdr reports the ${kind} runtime ${agent.agent_status} but its pane could not be read, so a consent prompt is not ruled out`, line };
+  if (screen === null && matchedAgent && readyStates.includes(matchedAgent.agent_status ?? '')) return { state: 'starting', agent, detail: `Herdr reports the ${kind} runtime ${matchedAgent.agent_status} but its pane could not be read, so a consent prompt is not ruled out`, line };
   // A wrapper/supervisor's argv can name the runtime before it executes it. For
   // known runtimes require their own screen as well; unknown runtimes have only
   // the foreground-process contract to judge by.
-  if (agent?.agent === kind && readyStates.includes(agent.agent_status ?? '') && (showing || !runtimeAdapter(kind)?.screen && holder === 'runtime')) return { state: 'ready', agent, detail: `Herdr reports the ${kind} runtime ${agent.agent_status}`, line: '' };
+  if (matchedAgent && readyStates.includes(matchedAgent.agent_status ?? '') && (showing || !runtimeAdapter(kind)?.screen && holder === 'runtime')) return { state: 'ready', agent, detail: `Herdr reports the ${kind} runtime ${matchedAgent.agent_status}`, line: '' };
   // Blocked on a dialog nothing above recognises: the refusal names what the dialog asked (GY-1561).
-  const dialog = agent?.agent === kind && agent.agent_status === 'blocked' ? screenDialog(screen) : null;
-  if (agent?.agent === kind && agent.agent_status === 'blocked') return { state: 'blocked', agent, detail: dialog ? `Herdr reports it blocked on a dialog the launcher does not recognise: "${dialog}"` : 'Herdr reports it blocked', line };
+  const dialog = matchedAgent && matchedAgent.agent_status === 'blocked' ? screenDialog(screen) : null;
+  if (matchedAgent && matchedAgent.agent_status === 'blocked') return { state: 'blocked', agent, detail: dialog ? `Herdr reports it blocked on a dialog the launcher does not recognise: "${dialog}"` : 'Herdr reports it blocked', line };
   // Herdr sees the runtime's process and its screen is showing: a session at work that Herdr has
   // not classified yet, adopted rather than closed — unless it is still to be prompted, when only
   // Herdr's idle counts.
-  if (agent?.agent === kind && showing && readyStates.includes('working')) return { state: 'ready', agent, detail: `the ${kind} runtime is on screen while Herdr reports it ${agent.agent_status ?? 'unknown'}`, line };
-  if (agent?.agent === kind) return { state: 'starting', agent, detail: `the ${kind} runtime process exists under the pane, Herdr reports it ${agent.agent_status ?? 'unknown'}${showing ? ', its screen showing' : ''}`, line };
-  if (agent?.agent && agent.agent !== kind) return { state: 'absent', agent: null, detail: `the pane holds ${agent.agent}, not ${kind}`, line };
+  if (matchedAgent && showing && readyStates.includes('working')) return { state: 'ready', agent, detail: `the ${kind} runtime is on screen while Herdr reports it ${matchedAgent.agent_status ?? 'unknown'}`, line };
+  if (matchedAgent) return { state: 'starting', agent, detail: `the ${kind} runtime process exists under the pane, Herdr reports it ${matchedAgent.agent_status ?? 'unknown'}${showing ? ', its screen showing' : ''}`, line };
+  if (agent?.agent && !matchedAgent) return { state: 'absent', agent: null, detail: `the pane holds ${agent.agent}, not ${kind}`, line };
   if (showing) return { state: 'starting', agent: null, detail: `the ${kind} banner is on screen`, line };
   // The launch command is on screen and still holds the pane's foreground: its supervisor is
   // setting up — containment calls to a control plane that may be slow under load — before it

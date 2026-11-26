@@ -1,0 +1,16 @@
+{
+  "id": "runtime-kind-basename",
+  "title": "A session launched by absolute binary path reads as started when Herdr reports its basename",
+  "description": "Starts a test install and launches a session whose runtime kind is an absolute binary path (process.execPath) while Herdr reports the binary basename, verifying that observeStart and launchSession recognise it as started while still refusing a different runtime.",
+  "tags": ["runtime", "launch"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Verify runtime kind basename matching in observeStart and launchSession",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/runtime-kind-basename.test.ts",
+      "timeoutSeconds": 120
+    }
+  ]
+}
