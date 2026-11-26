@@ -5,11 +5,12 @@ import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Store, save } from '../src/store.js';
 import { Engine, sameBesideBookkeeping } from '../src/engine.js';
-import type { Observation, Principal, Work } from '../src/model.js';
+import type { Principal, Work } from '../src/model.js';
 import type { ActionRow } from '../src/model/actions.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -51,15 +52,6 @@ async function submitted() {
   assert.equal(item.nextAction?.kind, 'resync', 'a submitted candidate nobody has observed owes a resync');
   return item;
 }
-function observation(item: Work): Observation {
-  return {
-    clockOffset: { min: 0, max: 0 },
-    candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-    reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [],
-    at: new Date().toISOString(), prState: 'open', draft: false, baseTip: base, baseTree: 'c'.repeat(40), baseTipContained: true,
-  };
-}
 const claimResync = async (id: string) => (await claimFixture(store, executor, { host: 'host-1', kinds: ['resync'], work: id })).action!;
 const settle = (row: ActionRow, result: 'done' | 'failed', reason: string) => settleFixture(store, executor, row.id, { result, reason });
 test('unit:action-claim-keeps-observation — an action claimed, renewed and settled between an observation\'s read and its save does not discard the observation', async () => {
@@ -74,7 +66,7 @@ test('unit:action-claim-keeps-observation — an action claimed, renewed and set
   const moved = await reload(item.id);
   assert.ok(moved.revision > read.revision, 'the claim and the settlement saved the item');
   // ...and the observation taken on the read is still saved.
-  const taken = observation(read);
+  const taken = itemObservation(read, head, base);
   const observed = await engine.observe(item.id, read.revision, taken);
   assert.equal(observed.observation?.at, taken.at, 'the observation is saved');
   assert.equal((await reload(item.id)).observation?.at, taken.at);
@@ -84,7 +76,7 @@ test('unit:action-claim-keeps-observation — an action claimed, renewed and set
     'the action state written meanwhile is kept, not overwritten by the read');
 
   // Any change beside action bookkeeping still refuses: the observation saved above moved the item.
-  await assert.rejects(engine.observe(item.id, read.revision, observation(read)), /Task changed while GitHub was being observed; retry/);
+  await assert.rejects(engine.observe(item.id, read.revision, itemObservation(read, head, base)), /Task changed while GitHub was being observed; retry/);
 });
 
 test('unit:waked-observation-survives-loop-bookkeeping — the loop\'s own bookkeeping saved between an observation\'s read and its save does not discard the observation', async () => {
@@ -98,7 +90,7 @@ test('unit:waked-observation-survives-loop-bookkeeping — the loop\'s own bookk
   const moved = await reload(item.id);
   assert.ok(moved.revision > read.revision, 'the loop\'s session writes saved the item');
   // ...and the observation the loop woke is saved, not rescheduled as "Task changed while GitHub was being observed; retry".
-  const taken = observation(read);
+  const taken = itemObservation(read, head, base);
   const observed = await engine.observe(item.id, read.revision, taken);
   assert.equal(observed.observation?.at, taken.at, 'the woken observation lands');
   assert.ok((await reload(item.id)).sessions?.some(entry => entry.id === handle.id), 'the session the loop wrote meanwhile is kept');
@@ -109,7 +101,7 @@ test('unit:waked-observation-survives-loop-bookkeeping — the loop\'s own bookk
   assert.ok(!sameBesideBookkeeping(moved, { ...moved, submission: { epoch: moved.submission!.epoch, pr: moved.submission!.pr + 1 } }), 'a moved submission is not');
   assert.ok(!sameBesideBookkeeping(moved, { ...moved, candidate: { ...moved.candidate!, sha: 'f'.repeat(40) } } as Work), 'a moved candidate is not');
   // Any change to the work itself still refuses: the observation saved above moved the item.
-  await assert.rejects(engine.observe(item.id, read.revision, observation(read)), /Task changed while GitHub was being observed; retry/);
+  await assert.rejects(engine.observe(item.id, read.revision, itemObservation(read, head, base)), /Task changed while GitHub was being observed; retry/);
 });
 
 test('unit:observation-saved-on-revision-change — a save that moved nothing the observation read leaves the poll saved, newer than the resync claimed meanwhile', async () => {
@@ -131,7 +123,7 @@ test('unit:observation-saved-on-revision-change — a save that moved nothing th
   assert.ok(moved.revision > read.revision + 1, 'the claim and the unrelated writes saved the item');
   assert.ok(!sameBesideBookkeeping(read, moved), 'the moves are not bookkeeping: before GY-1310 the poll was discarded');
   // ...and the poll that read the item before them is saved, not rescheduled.
-  const taken = observation(read);
+  const taken = itemObservation(read, head, base);
   const observed = await engine.observe(item.id, read.revision, taken);
   assert.equal(observed.observation?.at, taken.at, 'the observation is saved');
   const after = await reload(item.id);
@@ -151,5 +143,5 @@ test('unit:observation-saved-on-revision-change — a save that moved nothing th
   const unrelated = structuredClone(after); unrelated.title = 'retitled again'; unrelated.priority = 3; unrelated.sessions = [];
   assert.ok(sameObservationInputs(after, unrelated), 'a title, priority or session move does not');
   // The saved observation itself moved the item, so the same read is refused now.
-  await assert.rejects(engine.observe(item.id, read.revision, observation(read)), /Task changed while GitHub was being observed; retry/);
+  await assert.rejects(engine.observe(item.id, read.revision, itemObservation(read, head, base)), /Task changed while GitHub was being observed; retry/);
 });

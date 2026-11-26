@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { assertOutsideWorktrees, autonomousSession, dispatchWork, selectAccount, herdrWorkspaceHealth, liveMasterConfig, loadMasterConfig, masterConfigChanges, masterConfigSchema, masterHarness, prepareSessionHarness, removeProducerProfile, replaceProducerProfile, saveProducerProfile, sessionHarnessFile, sessionHarnessPlan, setupMaster, sustainedActivityMs, workerHarnessPlan, workerPrompt, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master.js';
 import { launchAuthorization } from '../src/repository-setup.js';
@@ -30,6 +30,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 // Time-bomb allowance (GY-1694): the 2026-09-19 at dates the fixture item (createdAt/stageEnteredAt, already past) and the 2026-10-09 lock start is only rendered; the launcher runs on the real clock with relative registerLaunch expiries.
 
 // Each test is named for the proof it produces (GY-69): integration:producer-session-retry,
@@ -46,17 +47,13 @@ const iso = (offsetMs: number) => new Date(clock + offsetMs).toISOString();
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
 
-function observation(candidate: { sha: string; baseSha: string }, extra: Partial<Observation> = {}): Observation {
-  return { candidate: { ...candidate, pr: 69, branch: 'graphyard/gy-69-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true, ...extra };
-}
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 69, branch: 'graphyard/gy-69-1', author: 'implementer' };
   return workFixture({ id: 'work-69', key: 'GY-69', title: 'Master loop resilience', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Retry', proofs: ['integration:producer-session-retry', 'unit:autonomous-session-prompts'] }],
     policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
     workspaces: [{ host: 'h', path: '/w/gy-69', branch: 'graphyard/gy-69-1', epoch: 1, owner: 'implementer' }], candidate, submission: { epoch: 1, pr: 69 },
-    observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 /**
  * Under GitHub delivery (GY-1235) the control plane requests a review at once and no producer. The

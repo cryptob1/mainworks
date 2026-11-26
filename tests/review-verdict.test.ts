@@ -25,6 +25,7 @@ import { workFixture } from './helpers/work-fixture.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 /** A fresh registry per launch: the registry alone grants the reviewer its slot. */
 const reviewProbe = () => registryFixture(hostname(), ['claude'], ['reviewer']).probe;
@@ -40,10 +41,8 @@ const hashOf = (token: string) => createHash('sha256').update(token, 'utf8').dig
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const now = () => new Date().toISOString();
 
-const planeObservation = (candidate: Work['candidate'], files: string[]) => ({
-  source: 'control-plane' as const, at: now(), candidate: candidate!, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false,
-  files, scopeFiles: files.map(path => ({ path, status: 'modified' as const, sha: sha(path), additions: 1, deletions: 0, binary: false })), baseTip: candidate!.baseSha, baseTipContained: true,
-});
+const planeObservation = (candidate: Work['candidate'], files: string[]) => observationFixture(candidate!, { source: 'control-plane', protected: false,
+  files, scopeFiles: files.map(path => ({ path, status: 'modified' as const, sha: sha(path), additions: 1, deletions: 0, binary: false })) });
 function item(key: string, fields: Record<string, unknown> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 7, branch: 'graphyard/gy-7-1', author: 'graphyard-claude-1' };
   return workFixture({ id: randomUUID(), key, title: `Item ${key}`, priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
@@ -88,11 +87,11 @@ test('unit:review-gate-by-risk — with a control-plane observation a sensitive 
 
 test('unit:review-gate-github-snapshot — a GitHub-observed item keeps the review gate reasons it had: the plain approval refusal, whatever its paths touch, and no post-merge mark', () => {
   const candidate = { sha: H, baseSha: B, pr: 7, branch: 'b', author: 'worker' };
-  const github = item('GY-5', { observation: { at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/feature.ts'], scopeFiles: [], prState: 'open', draft: false } });
+  const github = item('GY-5', { observation: observationFixture(candidate, { files: ['src/feature.ts'] }) });
   const result = evaluate(github, [github], new Date());
   assert.deepEqual(result.gates.find(gate => gate.name === 'review'), { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] });
   assert.equal('postMergeReview' in result, false);
-  const reset = item('GY-6', { formalReviewResetRequired: true, observation: { at: now(), candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: ['src/store/x.ts'], scopeFiles: [], prState: 'open', draft: false } });
+  const reset = item('GY-6', { formalReviewResetRequired: true, observation: observationFixture(candidate, { files: ['src/store/x.ts'] }) });
   assert.deepEqual(reviewGate(reset).reasons, ['A new independent approval after the requirement-review baseline is required']);
 });
 
@@ -433,7 +432,7 @@ test('integration:review-verdict-recorded-once — the verdict is appended to ob
   assert.ok([400, 422].includes((await request(tokenOf(coordinator), `work/${normal.id}/review-verdict`, { event: 'MAYBE', body: 'x', sha: H, token: changes })).status));
   assert.equal((await request(tokenOf(coordinator), `work/${randomUUID()}/review-launch`, launchBody(freshToken()))).status, 404);
   // A github-observed item has no API verdict: its review posts through gh.
-  const github = await insert(item('GY-9006', { observation: { at: now(), candidate: { sha: H, baseSha: B, pr: 7, branch: 'b', author: 'w' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, files: [], scopeFiles: [], prState: 'open', draft: false } }));
+  const github = await insert(item('GY-9006', { observation: observationFixture({ sha: H, baseSha: B, pr: 7, branch: 'b', author: 'w' }, { files: [] }) }));
   assert.equal((await request(tokenOf(coordinator), `work/${github.id}/review-launch`, launchBody(freshToken()))).status, 409);
 });
 

@@ -17,6 +17,7 @@ import { unknownFeatures } from '../web/features.js';
 // @ts-expect-error Dependency-free fixture and screenshot script.
 import { fixtureApi, fixtureStatus, fixtureWork, NOW } from '../scripts/dashboard-fixture.mjs';
 import { live } from '../browser-tests/ui-board.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-1521: the risk class of a change is judged from the delta the merge would apply to main,
 // beside the path-glob lane that still gates github mode. The class is computed on read, never
@@ -94,12 +95,9 @@ test('unit:risk-class-unknown-sensitive — an empty file list is sensitive with
 
 const base = (overrides: Partial<Work> = {}): Pick<Work, 'candidate' | 'observation'> => ({
   candidate: { sha: 'head1', baseSha: 'bound1', pr: 7 } as Work['candidate'],
-  observation: {
-    candidate: { sha: 'head1', baseSha: 'bound1', pr: 7 }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true, at: NOW,
-    files: ['src/model/policy.ts'], baseTip: 'tip2',
+  observation: observationFixture({ sha: 'head1', baseSha: 'bound1', pr: 7 }, { at: NOW, files: ['src/model/policy.ts'], baseTip: 'tip2',
     scopeFiles: [{ path: 'src/install/host.ts', status: 'modified', sha: 'a', additions: 1, deletions: 0, binary: false }],
-    landing: { base: 'tip2', files: [{ path: 'docs/dashboard.md', status: 'modified', sha: 'b', additions: 1, deletions: 0, binary: false }] },
-  } as unknown as Work['observation'],
+    landing: { base: 'tip2', files: [{ path: 'docs/dashboard.md', status: 'modified', sha: 'b', additions: 1, deletions: 0, binary: false }] } }),
   ...overrides,
 });
 

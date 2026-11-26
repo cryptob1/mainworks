@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluate } from '../src/model-boundary/gates.js';
-import { type Evidence, type Observation, type Work } from '../src/model.js';
+import { type Evidence, type Work } from '../src/model.js';
 import { automatableOutcomes, producerGroupDecisions, producerManualFailures, evidenceProves } from '../src/model/mechanical-proofs.js';
 import { deliveredProof } from '../src/model/bootstrap.js';
 import { classifyProofs } from '../src/cli/verify.js';
 import { proofOutcome } from '../src/producer.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import { neededRework, proofRework } from '../src/daemon/rework.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-895. The producer prompts already state the manual-proof rule — a manual: proof is judged,
 // not counted from titles — but the scorer still applied the unit title rule to it, so a trusted
@@ -29,17 +30,6 @@ const MANUAL = 'manual:review-followups-triaged', UNIT = 'unit:manual-proof-scor
 function evidence(proof: string, entry: Partial<Evidence>): Evidence {
   return { id: 'e1', proof, sha: head, baseSha: base, policyRevision: 1, producer: 'trusted-producer', trusted: true, result: 'pass', executed: 0, skipped: 0, at, ...entry } as Evidence;
 }
-function observation(overrides: Partial<Observation> = {}): Observation {
-  return {
-    clockOffset: { min: 0, max: 0 },
-    candidate: { sha: head, baseSha: base, pr: 895, branch: 'graphyard/gy-895-1', author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: CI_APP }, { name: 'typecheck', result: 'success', appId: CI_APP }],
-    reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], protected: true, mergeable: true, merged: false, mergeSha: null,
-    // GY-883: a public API path keeps the item in the high lane, which still demands the manual proof this test scores.
-    files: ['src/server/routes/followups.ts'], scopeFiles: [{ path: 'src/server/routes/followups.ts', status: 'modified' as const, sha: 'f'.repeat(40), additions: 1, deletions: 1, binary: false }], at, prState: 'open', draft: false, baseTip: base, baseTipContained: true,
-    ...overrides,
-  };
-}
 /** A submitted, approved item whose criteria name the manual proof and a unit proof, graded by the real evaluator. */
 function item(evidenceEntries: Partial<Evidence>[] = [], extra: Partial<Work> = {}): Work {
   const candidate = { sha: head, baseSha: base, pr: 895, branch: 'graphyard/gy-895-1', author: 'implementer' };
@@ -51,7 +41,11 @@ function item(evidenceEntries: Partial<Evidence>[] = [], extra: Partial<Work> = 
     epoch: 1, lease: null, workspaces: [{ host: 'machine-a', path: '/tmp/gy-895', branch: 'graphyard/gy-895-1', epoch: 1, owner: 'agent-a' }],
     implementers: ['agent-a'], lastAssignment: { owner: 'agent-a', epoch: 1 }, candidate, submission: { epoch: 1, pr: 895 },
     evidence: evidenceEntries.map(entry => evidence((entry.proof as string) ?? MANUAL, entry)),
-    observation: observation(), gates: [], violations: [], blocker: null, queue: null, queueSequence: 0, queueHistory: [],
+    // GY-883: a public API path keeps the item in the high lane, which still demands the manual proof this test scores.
+    observation: observationFixture(candidate, { checks: [{ name: 'test', result: 'success', appId: CI_APP }, { name: 'typecheck', result: 'success', appId: CI_APP }],
+      reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: ['src/server/routes/followups.ts'], at,
+      scopeFiles: [{ path: 'src/server/routes/followups.ts', status: 'modified', sha: 'f'.repeat(40), additions: 1, deletions: 1, binary: false }] }),
+    gates: [], violations: [], blocker: null, queue: null, queueSequence: 0, queueHistory: [],
     ...extra,
   } as unknown as Work;
   const graded = evaluate(work, [work], now);

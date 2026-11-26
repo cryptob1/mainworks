@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { neededRework } from '../src/daemon/rework.js';
-import type { Work } from '../src/model.js';
+import type { Observation, Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // 2026-09-25: GY-245's refreshed head a3b75653db55 failed its required `test` check and nothing
 // requested the round, so the loop gained a failed-CI rework ground. GY-2010 removed it: checks were
@@ -16,9 +17,7 @@ function item(checks: Check[], extra: Partial<Work> = {}): Work {
     id: 'gy-245', key: 'GY-245', title: 'Single merger', type: 'bug', priority: 0, criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }],
     policy: { checks: ['test', 'typecheck'], review: true }, stage: 'test', revision: 4, policyRevision: 2, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, candidate,
     submission: { epoch: 1, pr: 198 }, gates: [],
-    observation: { candidate, checks: checks.map(check => ({ appId: 15368, ...check })), reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTree: base, baseTipContained: true,
-      conversations: { required: true, unresolved: [] } },
+    observation: observationFixture(candidate, { checks: checks.map(check => ({ appId: 15368, ...check })), at, baseTree: base, conversations: { required: true, unresolved: [] } } as Partial<Observation>),
     ...extra,
   } as never);
 }

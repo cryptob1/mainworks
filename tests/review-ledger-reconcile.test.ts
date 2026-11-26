@@ -9,7 +9,7 @@ import { loadMasterConfig, sessionHarnessPlan, setupMaster, type MasterConfig } 
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { readReviewLedger, reconcileReviews, reviewIdleGraceMs, reviewPrompt, reviewRetryPrompt, saveReviewerProfile, staleReviewReason, type ReviewRecord } from '../src/reviewer.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
@@ -17,6 +17,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // Each test is named for the proof it produces, so acceptance evidence maps to one executed
 // case per required proof: integration:review-ledger-reconcile and
@@ -42,19 +43,15 @@ async function boundMaster() {
   return { root, credentialDirectory, cleanup: async () => { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); } };
 }
 
-function observation(candidate: { sha: string; baseSha: string }, extra: Partial<Observation> = {}): Observation {
-  return { candidate: { ...candidate, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true, ...extra };
-}
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
   return workFixture({ id: 'work-64', key: 'GY-64', title: 'Reviewer ledger', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['integration:review-ledger-reconcile'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 64 }, observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 64 }, observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 const moved = () => {
   const candidate = { sha: H2, baseSha: B, pr: 64, branch: 'graphyard/gy-64-1', author: 'implementer' };
-  return work({ candidate, observation: observation(candidate) });
+  return work({ candidate, observation: observationFixture(candidate) });
 };
 /** A Herdr run stub: the tab create names pane-review, pane list reports the panes gone. */
 const herdrRun = (calls: string[][], failClose = false) => (_command: string, args: string[]) => {

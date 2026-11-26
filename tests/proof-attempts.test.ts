@@ -5,7 +5,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { lostRun, producerIdleGraceMs, readProducerLedger, reconcileProducers, sessionRetry, type ProducerRecord } from '../src/producer.js';
@@ -13,6 +13,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-496: GY-421 waited over seventy minutes in review with its unit proofs missing. All four of
 // its unit-producer runs were headless Pi runs a loop restart killed (exit 143); each counted as an
@@ -26,16 +27,12 @@ const at = '2026-09-25T23:05:00.000Z';
 const clock = Date.parse(at);
 const iso = (offsetMs: number) => new Date(clock + offsetMs).toISOString();
 
-function observation(candidate: { sha: string; baseSha: string }, extra: Partial<Observation> = {}): Observation {
-  return { candidate: { ...candidate, pr: 421, branch: 'graphyard/gy-421-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true, ...extra };
-}
 function work(overrides: Partial<Work> = {}): Work {
   const candidate = { sha: H, baseSha: B, pr: 421, branch: 'graphyard/gy-421-1', author: 'implementer' };
   return workFixture({ id: 'work-421', key: 'GY-421', title: 'Exhaustion notice', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Notice', proofs: ['unit:exhaustion-only-provider-notice', 'unit:tmp-reclaim'] }],
     policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 7, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1,
-    candidate, submission: { epoch: 1, pr: 421 }, observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
+    candidate, submission: { epoch: 1, pr: 421 }, observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }], ...overrides });
 }
 /**
  * An item holding the unit producer request. Since GY-1235 the reconciler opens none (proofs gate

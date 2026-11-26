@@ -19,6 +19,7 @@ import { mergeIntent } from './helpers/merge-ledger.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // The merge writer merges (GY-1524, GY-2010): what it may push is a head its trial passed with every
@@ -56,6 +57,8 @@ const aiAdmin: Principal = { id: 'automation-admin', role: 'admin', sessionKind:
 const undeclaredAdmin: Principal = { id: 'legacy-admin', role: 'admin' };
 const roster = [admin, lead, infraLead, docsLead, workerA, workerB, workerC, reviewer, coordinator, aiAdmin, undeclaredAdmin];
 const head = 'a'.repeat(40), base = 'b'.repeat(40), redone = 'c'.repeat(40);
+/** A merge-ready observation's independent approval of `sha`. */
+const approvedAt = (sha: string) => ({ reviews: [{ reviewer: 'independent-reviewer', sha, state: 'APPROVED' }], files: ['src/delegation.ts'] });
 let store: Store, engine: Engine;
 let url: string;
 const credentials = roster.map(principal => ({ ...principal, token: `delegation-${principal.id}-${'x'.repeat(32)}` }));
@@ -63,12 +66,6 @@ let pr = 500;
 const id = () => randomUUID();
 const input = (title: string, slice?: SliceId) => ({ type: 'chore', title, ...(slice ? { slice } : {}), criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] });
 const proof = (overrides: Record<string, unknown> = {}) => ({ proof: 'unit:works', sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 4, skipped: 0, exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 }, ...overrides });
-function observation(work: Work, sha = head): Observation {
-  return { clockOffset: { min: 0, max: 0 }, candidate: { sha, baseSha: base, pr: work.submission!.pr, branch: work.workspaces.at(-1)!.branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-    reviews: [{ reviewer: 'independent-reviewer', sha, state: 'APPROVED' }], protected: true, mergeable: true,
-    merged: false, mergeSha: null, files: ['src/delegation.ts'], scopeFiles: [], at: new Date().toISOString() };
-}
 // Drive an item to an observed candidate. Submission ends the lease, so later tests
 // in the same slice are not blocked by a stale active engineer.
 async function candidate(actor: Principal, title: string, slice?: SliceId) {
@@ -78,16 +75,16 @@ async function candidate(actor: Principal, title: string, slice?: SliceId) {
   work = await engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'delegation-host', path: `/tmp/delegation/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, id());
   work = await engine.execute(actor, 'submit', work.id, { epoch: work.epoch, pr: ++pr }, id());
   assert.equal(work.lease, null, 'complete ends the implementation lease');
-  return engine.observe(work.id, work.revision, observation(work));
+  return engine.observe(work.id, work.revision, itemObservation(work, head, base, approvedAt(head)));
 }
 const reload = async (work: Work) => (await store.list()).find(item => item.id === work.id)!;
 // A proven candidate observed merge-ready, so delegation refusals are exercised
 // against the same state the broker really sees.
 async function publish(work: Work, sha = head) {
-  return engine.observe(work.id, (await reload(work)).revision, observation(work, sha));
+  return engine.observe(work.id, (await reload(work)).revision, itemObservation(work, sha, base, approvedAt(sha)));
 }
 async function proven(work: Work, sha = head) {
-  const observed = await engine.observe(work.id, (await reload(work)).revision, observation(work, sha));
+  const observed = await engine.observe(work.id, (await reload(work)).revision, itemObservation(work, sha, base, approvedAt(sha)));
   // The merge writer's trial of the head is what opens the test gate (GY-2010).
   return publish(await mergeIntent(engine, await engine.execute(reviewer, 'evidence', observed.id, proof({ sha }), id())), sha);
 }
@@ -249,7 +246,7 @@ test('integration:lead-enforcement — violating lead actions are refused server
   assert.equal(mergeAuthorized(await reload(ready)), false);
   // Re-evaluation never quietly reissues authorization while the hold stands.
   let held = await reload(ready);
-  held = await engine.observe(ready.id, held.revision, observation(held));
+  held = await engine.observe(ready.id, held.revision, itemObservation(held, head, base, approvedAt(head)));
   assert.equal(mergeAuthorized(held), false);
   assert.equal(held.leadHold!.action, 'send-back');
   await engine.reconcile();
@@ -360,7 +357,7 @@ test('integration:ownership-and-delivery-invariants — Mainworks owns leases, w
   other = await engine.execute(workerB, 'claim', other.id, {}, id());
   await assert.rejects(engine.execute(workerB, 'workspace', other.id, { ...workspace, epoch: other.epoch }, id()), /reserved or overlaps/);
   item = await engine.execute(workerA, 'submit', item.id, { epoch: item.epoch, pr: ++pr }, id());
-  item = await engine.observe(item.id, item.revision, observation(item));
+  item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, approvedAt(head)));
   // GitHub merges the head whose gates pass (GY-1235): no proof gate stands in between and
   // Mainworks issues no merge authorization of its own.
   assert.equal(item.gates.find(gate => gate.name === 'acceptance')?.passed, false);
@@ -454,7 +451,7 @@ test('integration:exact-candidate-validation — trusted evidence binds the exac
   // A prior epoch's implementer remains disqualified even though it is no longer the current assignment.
   await assert.rejects(engine.execute({ ...workerA, role: 'producer', proofs: ['unit:works'] }, 'evidence', item.id, proof(), id()), /distinct from its implementers/);
   await assert.rejects(engine.execute({ ...workerB, role: 'producer', proofs: ['unit:works'] }, 'evidence', item.id, proof(), id()), /distinct from its implementers/);
-  item = await engine.observe(item.id, item.revision, observation(item));
+  item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, approvedAt(head)));
   item = await engine.execute(reviewer, 'evidence', item.id, proof(), id());
   const accepted = item.evidence.at(-1)!;
   assert.equal(accepted.trusted, true);
@@ -502,7 +499,7 @@ test('integration:exact-candidate-validation — trusted evidence binds the exac
   // Resubmitting the unchanged candidate does not revive the superseded evidence.
   revoked = await engine.execute(producerWorker, 'workspace', revoked.id, { epoch: revoked.epoch, host: 'delegation-host', path: `/tmp/delegation/${revoked.id}-producer`, branch: revoked.workspaces[0].branch }, id());
   revoked = await engine.execute(producerWorker, 'submit', revoked.id, { epoch: revoked.epoch, pr: revoked.submission!.pr }, id());
-  revoked = await engine.observe(revoked.id, revoked.revision, observation(revoked));
+  revoked = await engine.observe(revoked.id, revoked.revision, itemObservation(revoked, head, base, approvedAt(head)));
   assert.equal(revoked.candidate!.sha, head, 'the candidate head is unchanged');
   assert.equal(acceptance(revoked), false, 'the superseded evidence is not revived');
   // Re-proving it requires a producer still independent of every implementer.
@@ -752,7 +749,7 @@ test('integration:bootstrap-compatibility — the single-agent bootstrap flow is
   item = await bootstrap.execute(workerA, 'evidence', item.id, proof(), id());
   assert.equal(item.evidence.at(-1)!.trusted, false);
   assert.equal(currentEvidence(item, 'unit:works', new Date()), undefined);
-  item = await bootstrap.observe(item.id, item.revision, observation(item));
+  item = await bootstrap.observe(item.id, item.revision, itemObservation(item, head, base, approvedAt(head)));
   item = await bootstrap.execute(reviewer, 'evidence', item.id, proof(), id());
   assert.equal(item.evidence.at(-1)!.trusted, true);
   assert.ok(currentEvidence(item, 'unit:works', new Date()));

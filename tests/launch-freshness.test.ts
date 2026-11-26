@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import type { DispatchRequest } from '../src/model/dispatch.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { assertReviewCandidate } from '../src/reviewer.js';
@@ -12,6 +12,7 @@ import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 /**
  * GY-710. On 2026-09-26 review requests waited hours for a reviewer: every launch was refused with
@@ -26,17 +27,13 @@ const iso = (offsetMs: number) => new Date(clock + offsetMs).toISOString();
 const minute = 60_000;
 const head = 'a'.repeat(40), moved = 'c'.repeat(40), base = 'b'.repeat(40);
 
-function observation(sha: string, at: string, extra: Partial<Observation> = {}): Observation {
-  return { clockOffset: { min: 0, max: 0 }, candidate: { sha, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, checks: [], reviews: [],
-    protected: true, mergeable: true, merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [], at, prState: 'open', draft: false, baseTip: base, baseTipContained: true, ...extra } as Observation;
-}
 function reviewRequest(overrides: Partial<DispatchRequest> = {}): DispatchRequest {
   return { id: 'b8693b4c-0000-4000-8000-000000000001', kind: 'review', sha: head, baseSha: base, policyRevision: 1, pr: 42, provider: 'github', requestedAt: iso(-20 * minute), reason: 'independent approval', state: 'requested', ...overrides };
 }
 function item(observedAt: string, overrides: Partial<Work> = {}): Work {
   return workFixture({ id: 'work-42', key: 'GY-42', title: 'Launch on the head', type: 'bug', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:loop'] }],
     policy: { checks: ['test'], review: true, reviewProvider: 'github' }, stage: 'review', revision: 5, createdAt: iso(-4 * 60 * minute), updatedAt: iso(0), stageEnteredAt: iso(-30 * minute), epoch: 1,
-    submission: { epoch: 1, pr: 42 }, candidate: { sha: head, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, observation: observation(head, observedAt),
+    submission: { epoch: 1, pr: 42 }, candidate: { sha: head, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, observation: observationFixture({ sha: head, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, { at: observedAt }),
     gates: [{ name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }],
     autoDispatch: { review: reviewRequest(), producers: [], history: [] }, ...overrides });
 }
@@ -73,7 +70,7 @@ test('unit:launch-binds-head-not-age — a 20-minute-old observation of the requ
     assert.deepEqual(launched, [head]);
 
     // The item's latest observation is of a head the request does not bind: the request is superseded.
-    const movedItem = item(iso(-20 * minute), { candidate: { sha: moved, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, observation: observation(moved, iso(-20 * minute)) });
+    const movedItem = item(iso(-20 * minute), { candidate: { sha: moved, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, observation: observationFixture({ sha: moved, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, { at: iso(-20 * minute) }) });
     const movedLaunches: string[] = [];
     const refused = await runDispatchTick(config, emptyDispatchCursor(config), dispatchEffects(() => [movedItem], movedLaunches), () => clock);
     assert.deepEqual(movedLaunches, [], 'no reviewer is launched for a head that moved');
@@ -84,7 +81,7 @@ test('unit:launch-binds-head-not-age — a 20-minute-old observation of the requ
     assert.doesNotThrow(() => assertReviewCandidate(item(iso(-20 * minute)), iso(0), reviewRequest({ baseSha: 'd'.repeat(40) })));
     assert.throws(() => assertReviewCandidate(item(iso(-20 * minute)), iso(0), reviewRequest({ policyRevision: 99 })), /superseded/);
     // The observation must still be of the candidate itself.
-    assert.throws(() => assertReviewCandidate(item(iso(-20 * minute), { observation: observation(moved, iso(-20 * minute)) }), iso(0), reviewRequest()), /does not match the current candidate/);
+    assert.throws(() => assertReviewCandidate(item(iso(-20 * minute), { observation: observationFixture({ sha: moved, baseSha: base, pr: 42, branch: 'graphyard/gy-42-1', author: 'worker' }, { at: iso(-20 * minute) }) }), iso(0), reviewRequest()), /does not match the current candidate/);
 
     // GitHub merges (GY-1235): no merge is held on the observation's age either; the gates bind
     // the head, as tests/github-delivery.test.ts asserts for a ten-minute-old observation.

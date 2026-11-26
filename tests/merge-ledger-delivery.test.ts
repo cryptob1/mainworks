@@ -4,12 +4,13 @@ import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import type { Observation, Principal, Work } from '../src/model.js';
+import type { Principal } from '../src/model.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 import { fixtureMergeSha, mergeDelivered, mergeIntent } from './helpers/merge-ledger.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 
 /**
  * GY-3005 AC-1: delivery is recorded only by the merge writer's record. The unit:merge-ledger
@@ -22,6 +23,7 @@ const operator: Principal = { id: 'operator', role: 'admin', sessionKind: 'human
 const worker: Principal = { id: 'agent-a', role: 'worker', runtime: 'claude' };
 const executor: Principal = { id: 'executor-a', role: 'coordinator' };
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
+const appScope = { source: 'control-plane' as const, files: ['src/app.ts'], scopeFiles: [{ path: 'src/app.ts', status: 'modified' as const, sha: null, additions: 1, deletions: 0, binary: false }] };
 
 let store: Store, engine: Engine;
 const queries: string[] = [];
@@ -52,24 +54,15 @@ async function submitted() {
   item = await engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
   return item;
 }
-function observation(item: Work): Observation {
-  return {
-    source: 'control-plane', clockOffset: { min: 0, max: 0 },
-    candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-    reviews: [], protected: true, mergeable: true, merged: false, mergeSha: null, files: ['src/app.ts'], scopeFiles: [{ path: 'src/app.ts', status: 'modified', sha: null, additions: 1, deletions: 0, binary: false }],
-    at: new Date().toISOString(), prState: 'open',
-  };
-}
 
 test('unit:merge-ledger — the merge writer\'s record is the one delivery: recording intent, push and reconcile for the item\'s submitted head leaves it done with one delivery', async () => {
   // An observed submitted candidate, as the merge writer finds it.
   const created = await submitted();
-  let work = await engine.observe(created.id, created.revision, observation(created));
+  let work = await engine.observe(created.id, created.revision, itemObservation(created, head, base, appScope));
   assert.equal(work.candidate?.sha, head, 'the observed candidate is the head the record names');
 
   // Even a historical observer reporting a merge cannot deliver outside the writer's ledger.
-  work = await engine.observe(work.id, work.revision, { ...observation(work), merged: true, mergeSha: fixtureMergeSha(work), mergedAt: new Date().toISOString() });
+  work = await engine.observe(work.id, work.revision, { ...itemObservation(work, head, base, appScope), merged: true, mergeSha: fixtureMergeSha(work), mergedAt: new Date().toISOString() });
   assert.notEqual(work.stage, 'done', 'an observation alone does not deliver');
   assert.equal(work.delivery, undefined);
   assert.deepEqual(work.violations, [], 'observations no longer judge merge authorization');
@@ -96,7 +89,7 @@ test('unit:five-step-cycle — reconciliation never reads retired merge windows 
   queries.length = 0;
   await fresh.reconcile();
   const item = await submitted();
-  await fresh.observe(item.id, item.revision, observation(item));
+  await fresh.observe(item.id, item.revision, itemObservation(item, head, base, appScope));
   await fresh.reconcile();
   await fresh.reconcile();
   assert.ok(queries.length > 0, 'the passes reached the database');
@@ -107,7 +100,7 @@ test('unit:revert-survives-reinstall — coordinator revert outcomes append hist
   const { recordMergeEvent } = await import('../src/server/merge-record.js');
   const { mergeRecordKey } = await import('../src/merge-writer/executor.js');
   const created = await submitted();
-  let work = await engine.observe(created.id, created.revision, observation(created));
+  let work = await engine.observe(created.id, created.revision, itemObservation(created, head, base, appScope));
   work = await mergeDelivered(engine, work);
   const services = { engine } as unknown as import('../src/server/routes.js').Services;
   const refused = { kind: 'serve-revert' as const, serve: head, mergeSha: work.delivery!.mergeSha,

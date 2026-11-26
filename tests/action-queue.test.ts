@@ -7,7 +7,7 @@ import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { evaluate } from '../src/model-boundary/gates.js';
-import { type Observation, type Principal, type Work } from '../src/model.js';
+import { type Principal, type Work } from '../src/model.js';
 import { actionClaimMs, claimAction, idleActionable, openActions, queueSnapshot, settleAction } from '../src/model/actions.js';
 import { reconcileActions } from '../src/model-boundary/actions.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
@@ -28,6 +28,7 @@ import WorkDetails from '../web/pages/work-details.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-01 boundAt is reviewer config and the 2026-09-20 `at`/clock is the fixed now handed to reconcileActions and evaluate; Date.now() serves only the live engine tests.
@@ -77,17 +78,6 @@ async function submitted(actor: Principal = worker) {
   item = await engine.execute(actor, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/inverted/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
   return engine.execute(actor, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
 }
-/** The provider's view of a candidate: approved, both checks green, mergeable and protected. */
-function observation(item: Work, overrides: Partial<Observation> = {}): Observation {
-  return {
-    clockOffset: { min: 0, max: 0 },
-    candidate: { sha: head, baseSha: base, pr: item.submission!.pr, branch: item.workspaces.at(-1)!.branch, author: 'implementer' },
-    checks: [{ name: 'test', result: 'success', appId: 15368 }, { name: 'typecheck', result: 'success', appId: 15368 }],
-    reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], protected: true, mergeable: true,
-    merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [], at: new Date().toISOString(),
-    prState: 'open', draft: false, baseTip: base, baseTree: sha40('7e'), baseTipContained: true, ...overrides,
-  };
-}
 // ---- AC-1: the control plane computes a typed next action ------------------------------------
 
 test('integration:typed-next-action — the control plane names one typed action per open item, with the inputs it needs, and every gate refusal maps to exactly one action or to escalate', async () => {
@@ -117,7 +107,7 @@ test('integration:typed-next-action — the control plane names one typed action
 
   // Observed and without an approval: the review request, bound to the exact head, base and policy.
   // No proof holds it (GY-1235): unit tests run in CI and e2e in UAT, so the reviewer is asked at once.
-  item = await engine.observe(item.id, item.revision, observation(item, { reviews: [] }));
+  item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, { reviews: [] }));
   assert.equal(item.nextAction!.kind, 'request-review');
   assert.deepEqual(inputs(item), { kind: 'request-review', provider: 'github', requestId: item.autoDispatch!.review!.id, pr: item.submission!.pr, sha: head, baseSha: base, policyRevision: 1 });
   assert.equal(item.autoDispatch!.producers.length, 0, 'and no producer is asked for a proof');
@@ -126,7 +116,7 @@ test('integration:typed-next-action — the control plane names one typed action
   // A reviewer that requested changes on this exact head: no review can be asked for it again, so
   // the item is named as owing a new head. Naming `request-review` here is the silence AC-1 ends —
   // no review request stands, so no executor could ever complete the action it was handed.
-  item = await engine.observe(item.id, item.revision, observation(item, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'CHANGES_REQUESTED' }] }));
+  item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'CHANGES_REQUESTED' }] }));
   assert.equal(item.nextAction!.kind, 'request-rework');
   assert.equal(item.nextAction!.gate, 'review');
   assert.equal(item.nextAction!.llmRole, 'judge-rework', 'a new head is a judgment owed, not a step an executor runs');
@@ -136,7 +126,7 @@ test('integration:typed-next-action — the control plane names one typed action
 
   // A head that does not contain the base tip and conflicts with it (GY-191: behind alone is
   // reviewed as it stands) is answered by a fresh reading and a sync, not a review.
-  item = await engine.observe(item.id, item.revision, observation(item, { reviews: [], baseTipContained: false, baseTip: sha40('ef'), mergeable: false, conflicting: true }));
+  item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, { reviews: [], baseTipContained: false, baseTip: sha40('ef'), mergeable: false, conflicting: true }));
   assert.equal(item.nextAction!.kind, 'resync');
   assert.equal(item.nextAction!.gate, 'review');
   assert.match(item.nextAction!.reason, /does not contain the base tip [0-9a-f]{12}/);
@@ -160,7 +150,7 @@ test('integration:typed-next-action — the control plane names one typed action
   const reviewable = await reload(item);
   const providerProbe = (policy: Record<string, unknown>, overrides: Partial<Work> = {}) => {
     const probe = { ...structuredClone(reviewable), lease: null, policy: { ...reviewable.policy, ...policy },
-      observation: observation(reviewable, { reviews: [], baseTipContained: true, baseTip: base }), ...structuredClone(overrides) } as unknown as Work;
+      observation: itemObservation(reviewable, head, base, { reviews: [], baseTipContained: true, baseTip: base }), ...structuredClone(overrides) } as unknown as Work;
     Object.assign(probe, evaluate(probe, [probe], new Date()));
     return probe;
   };
@@ -180,7 +170,7 @@ test('integration:typed-next-action — the control plane names one typed action
 
   // Approved: the merge writer trials and merges it (GY-2010), so nothing is named — the item
   // waits on the writer, and its reconciled record delivers it.
-  item = await engine.observe(item.id, item.revision, observation(item, { baseTipContained: true, baseTip: base }));
+  item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], baseTree: sha40('7e') }));
   assert.equal(item.nextAction, null, 'no executor step merges');
   const merging = actionAccount(item, [item], new Date());
   assert.equal(merging.wait?.kind, 'session'); assert.equal(merging.wait?.on, 'merge-writer');
@@ -219,7 +209,7 @@ test('integration:typed-next-action — the control plane names one typed action
   assert.equal(refusalAction(all[0], 'review', 'Independent approval of the current commit is required', undefined, new Date()), 'request-review');
   assert.equal(refusalAction(all[0], 'nowhere', 'A refusal nobody has written a rule for yet', undefined, new Date()), 'attention', 'an unmapped refusal escalates rather than vanishing');
   // The merge writer's trial and push are its own merge step (GY-2010), whatever GitHub check a pull-request-era observation carries.
-  const failing = { ...all[0], observation: { ...observation(item), checks: [{ name: 'test', result: 'failure', appId: 15368 }] } } as Work;
+  const failing = { ...all[0], observation: itemObservation(item, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], baseTree: sha40('7e'), checks: [{ name: 'test', result: 'failure', appId: 15368 }] }) } as Work;
   assert.equal(refusalAction(failing, 'test', `merge writer has not trialled ${head.slice(0, 12)} on ${base.slice(0, 12)}`, undefined, new Date()), 'merge');
   assert.equal(refusalAction(failing, 'merge', `merge writer has not pushed ${head.slice(0, 12)}`, undefined, new Date()), 'merge');
 });
@@ -608,7 +598,7 @@ test('integration:session-handles-visible — the reviewer launcher records a ha
   // is the relaying the handle exists to end. The dispatcher records one for each launch, from
   // the coordinates the launcher itself returns.
   const item = await submitted();
-  await engine.observe(item.id, item.revision, observation(item, { reviews: [] }));
+  await engine.observe(item.id, item.revision, itemObservation(item, head, base, { reviews: [] }));
   const reviewable = await reload(item);
   // No proof holds the review (GY-1235): the reviewer is asked at once, and no producer is.
   assert.ok(reviewable.autoDispatch?.review, 'the control plane asked for a review of this head');

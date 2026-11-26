@@ -10,11 +10,12 @@ import { startedAtOnce } from './helpers/launch-shell.js';
 import { readReviewLedger, reconcileReviews, saveReviewerProfile, type ReviewRecord } from '../src/reviewer.js';
 import { readProducerLedger, reconcileProducers, saveProducerLedger, type ProducerRecord } from '../src/producer.js';
 import { paneAlreadyGone } from '../src/request-settlement.js';
-import type { Observation, Work } from '../src/model.js';
+import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 /** A fresh registry per launch: the registry alone grants the reviewer its slot. */
 const reviewProbe = () => registryFixture(hostname(), ['claude'], ['reviewer']).probe;
@@ -39,15 +40,11 @@ async function boundMaster() {
   return { root, cleanup: async () => { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); } };
 }
 
-function observation(candidate: { sha: string; baseSha: string }): Observation {
-  return { candidate: { ...candidate, pr: 127, branch: 'graphyard/gy-127-1', author: 'implementer' }, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-    files: ['src/a.ts'], scopeFiles: [], at: new Date().toISOString(), prState: 'open', draft: false, baseTip: candidate.baseSha, baseTree: sha40('7b'), baseTipContained: true } as Observation;
-}
 function work(): Work {
   const candidate = { sha: H, baseSha: B, pr: 127, branch: 'graphyard/gy-127-1', author: 'implementer' };
   return workFixture({ id: 'work-127', key: 'GY-127', title: 'Queue tip approval', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Review', proofs: ['integration:absent-pane-resolves-request'] }], policy: { checks: ['test'], review: true, reviewProvider: 'github' },
-    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 127 }, observation: observation(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
+    stage: 'review', revision: 7, epoch: 1, candidate, submission: { epoch: 1, pr: 127 }, observation: observationFixture(candidate), gates: [{ name: 'ready', passed: true, reasons: [] }, { name: 'build', passed: true, reasons: [] }, { name: 'review', passed: false, reasons: ['Independent approval of the current commit is required'] }] });
 }
 
 /**

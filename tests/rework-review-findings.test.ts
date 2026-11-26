@@ -4,6 +4,7 @@ import { neededRework, standingVerdict } from '../src/daemon/rework.js';
 import { appliedReworkBrief, reworkBriefMax, reworkBriefSection } from '../src/master/rework-brief.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 
 // GY-2946: a control-plane CHANGES_REQUESTED verdict's rework reason carries the review body and
 // its BLOCKING findings, so the next worker's request names what to fix instead of only the sha.
@@ -16,11 +17,8 @@ function item(review: { body?: string; blocking?: string[] }): Work {
   return workFixture({ id: 'gy-64', key: 'GY-64', title: 'Vehicle parking', type: 'bug', priority: 0,
     criteria: [{ id: 'AC-1', text: 'Specified work', proofs: ['e2e:fixture'] }], stage: 'review', revision: 4,
     createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 2, candidate, submission: { epoch: 2, pr: 64 }, gates: [],
-    observation: {
-      candidate, checks: [], merged: false, mergeSha: null, mergeable: true, protected: true,
-      files: ['src/a.ts'], scopeFiles: [], at, baseTip: base, baseTree: base, baseTipContained: true,
-      reviews: [{ reviewer: 'review-claude-a', sha: head, state: 'CHANGES_REQUESTED', submittedAt: at, source: 'control-plane', ...review }],
-    } as never,
+    observation: observationFixture(candidate, { at, baseTree: base,
+      reviews: [{ reviewer: 'review-claude-a', sha: head, state: 'CHANGES_REQUESTED', submittedAt: at, source: 'control-plane', ...review }] }),
   });
 }
 

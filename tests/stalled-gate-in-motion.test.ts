@@ -11,6 +11,7 @@ import type { Observation, Principal, Work } from '../src/model.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { observationFixture } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1557: two `actorless` submissions (GY-1522, GY-1526) were counted while the product's own remedy
@@ -43,8 +44,8 @@ const conflictText = (sha: string, base: string) => `Candidate ${sha.slice(0, 12
  */
 function submitted(instance: Instance, overrides: Partial<Work> = {}): Work {
   const candidate = { sha: instance.sha!, baseSha: instance.baseSha!, pr: instance.pr!, branch: `graphyard/${instance.subject.toLowerCase()}-${instance.epoch}`, author: 'implementer' };
-  const observation = { candidate, checks: [], reviews: [], merged: false, mergeSha: null, mergeable: instance.mergeable, conflicting: instance.conflicting, protected: true, files: ['src/a.ts'], scopeFiles: [],
-    at: instance.observedAt, prState: 'open', draft: false, baseTip: instance.baseTip, baseTree: instance.baseTip, baseTipContained: false } as unknown as Observation;
+  const observation = observationFixture(candidate, { mergeable: instance.mergeable, conflicting: instance.conflicting, at: instance.observedAt,
+    baseTip: instance.baseTip, baseTree: instance.baseTip, baseTipContained: false } as Partial<Observation>);
   const conflicts = instance.conflicts ?? [], last = conflicts.at(-1);
   const baseRefresh = last ? { from: { sha: instance.sha!, baseSha: last.baseSha }, base: last.base, baseTree: last.base, policyRevision: 1, at: last.at, head: null,
     conflict: conflictText(instance.sha!, last.base), conflictPaths: ['src/daemon/cycle.ts', 'src/daemon/state.ts'], trigger: 'conflict confirmed', conflictSince: conflicts[0]!.at } : null;
@@ -92,9 +93,8 @@ test('integration:base-hold-observed — the observation write records when the 
   const reload = async () => (await store.list()).find(entry => entry.id === item.id)!;
   const observe = async (at: string, reading: Partial<Record<keyof Observation, unknown>>) => {
     const current = await reload();
-    await engine.observe(item.id, current.revision, { clockOffset: { min: 0, max: 0 }, candidate: { sha: head, baseSha: base, pr: 77, branch: current.workspaces.at(-1)!.branch, author: 'implementer' },
-      checks: [], reviews: [], protected: true, merged: false, mergeSha: null, files: ['src/loop.ts'], scopeFiles: [], prState: 'open', draft: false, baseTree: 'd'.repeat(40),
-      at, baseTip: base, baseTipContained: false, mergeable: null, ...reading } as unknown as Observation);
+    await engine.observe(item.id, current.revision, observationFixture({ sha: head, baseSha: base, pr: 77, branch: current.workspaces.at(-1)!.branch }, { clockOffset: { min: 0, max: 0 },
+      files: ['src/loop.ts'], baseTree: 'd'.repeat(40), at, baseTipContained: false, mergeable: null, ...reading } as Partial<Observation>));
     return reload();
   };
   const first = await observe('2026-10-08T18:20:27.699Z', { mergeable: null });
