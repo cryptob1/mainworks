@@ -1,7 +1,7 @@
-import { before, after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { Validation } from '../src/validation.js';
@@ -42,11 +42,10 @@ let store: Store, engine: Engine, validation: Validation, delivery: Delivery;
 let serial = 0;
 
 /** An S3-compatible object store: path-style, SigV4-authenticated, MD5 ETags, and switches to fail or corrupt the next write. */
-before(async () => {
-  store = await withDatabase('recovery'); await store.init();
+useTestStore('recovery', { repository: 'test/repository' }, ctx => {
+  ({ store, engine } = ctx);
   engine = new Engine(store, 120, 'test/repository'); validation = new Validation(engine, principals, 'test/repository'); delivery = new Delivery(validation);
 });
-after(async () => { if (store) await store.close(); });
 const id = () => randomUUID();
 const at = (offsetSeconds: number, from = Date.now()) => new Date(from + offsetSeconds * 1000).toISOString();
 async function events(kind: string) { return (await store.pool.query('SELECT payload FROM events WHERE kind=$1 ORDER BY seq', [kind])).rows.map(r => r.payload); }

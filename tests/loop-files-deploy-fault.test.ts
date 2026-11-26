@@ -1,13 +1,10 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import type { Store } from '../src/store.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
@@ -31,17 +28,12 @@ const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 
 const credentials = [{ ...operator, token: `fault-${'x'.repeat(40)}` }];
 const b = 'b'.repeat(40), c = 'c'.repeat(40);
 
-let store: Store, http: ReturnType<typeof server>, url: string, credentialFile: string;
-before(async () => {
-  store = await withDatabase('loop-files-deploy-fault');
-  await store.init();
-  http = server(new Engine(store, 7200, 'cryptob1/graphyard'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+let url: string, credentialFile: string;
+useTestStore('loop-files-deploy-fault', { leaseSeconds: 7200, repository: 'cryptob1/graphyard', credentials: credentials }, async ctx => {
+  ({ url } = ctx);
   credentialFile = join(await temporaryDirectory('loop-files-deploy-fault-credential'), 'upstream.token');
   await writeFile(credentialFile, credentials[0]!.token, { mode: 0o600 });
 });
-after(async () => { http?.close(); await store?.close(); });
 
 const work = async (): Promise<Work[]> => {
   const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${credentials[0]!.token}` } });

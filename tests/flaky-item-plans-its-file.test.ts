@@ -1,10 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -27,7 +25,7 @@ const coordinator: Principal = { id: 'master-loop', role: 'coordinator', session
 const workers: Principal[] = ['a', 'b', 'c', 'd'].map(name => ({ id: `worker-${name}`, role: 'worker', sessionKind: 'ai' }));
 const credentials = [operator, coordinator, ...workers].map(principal => ({ ...principal, token: `flaky-plan-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
 const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -50,15 +48,7 @@ const masterConfig = (): MasterConfig => masterConfigSchema.parse({
   workers: workers.map((worker, index) => profile(`p${index}`, worker.id)),
 });
 
-before(async () => {
-  store = await withDatabase('flaky-item-plans-its-file');
-  await store.init();
-  engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('flaky-item-plans-its-file', { leaseSeconds: 300, repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 test('integration:flaky-item-plans-its-file — loop-filed flaky/known-red test items set plannedFiles to [F] and wait until an in-build item planning F merges or leaves build', async () => {
   const testFile = 'tests/flow-overlap.test.ts';

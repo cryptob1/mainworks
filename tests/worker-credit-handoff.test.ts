@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -6,9 +6,7 @@ import { appendFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { atomicPrivateWrite } from '../src/master/config.js';
 import { dispatchWork } from '../src/master/dispatch.js';
@@ -29,7 +27,7 @@ const workerB: Principal = { id: 'worker-b', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA, workerB].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
 const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -47,16 +45,7 @@ const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, bo
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-before(async () => {
-  store = await withDatabase('worker-credit-handoff');
-  await store.init();
-  engine = new Engine(store, 7200, 'owner/credit-work');
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('worker-credit-handoff', { leaseSeconds: 7200, repository: 'owner/credit-work', credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean-with-commits']) {
   test(`e2e:worker-credit-handoff — ${shape} survives a limit stop and reaches another account`, async () => {

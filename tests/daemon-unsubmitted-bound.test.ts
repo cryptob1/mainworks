@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -113,12 +113,7 @@ async function claimed(title: string) {
 const age = (work: Work, heldMs: number) => overwrite(work, document => { document.lastAssignment = { ...document.lastAssignment!, claimedAt: new Date(Date.now() - heldMs).toISOString() }; });
 const heartbeat = (work: Work, epoch = work.epoch) => engine.execute(worker, 'heartbeat', work.id, { epoch }, id());
 
-before(async () => {
-  store = await withDatabase('daemon-unsubmitted-bound'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker, replacement];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('daemon-unsubmitted-bound', { principals: [operator, worker, replacement] }, ctx => { ({ store, engine } = ctx); });
 
 test('integration:unsubmitted-attempt-reclaimed — past two bounds unsubmitted the server refuses renewal, the lease lapses, and the item goes to a fresh attempt', async () => {
   const { unsubmittedAttempt } = await bound();

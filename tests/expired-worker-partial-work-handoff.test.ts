@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -6,9 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
@@ -38,7 +36,7 @@ const workerB: Principal = { id: 'worker-b', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA, workerB].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, install: string;
+let store: Store, url: string, install: string;
 
 const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -56,19 +54,11 @@ const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, bo
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-before(async () => {
-  store = await withDatabase('expired-worker-partial-work-handoff');
-  await store.init();
-  // A five-second lease is the attempt's own time bound: every expiry below is the bound, in real time.
-  engine = new Engine(store, 5, 'owner/expired-work');
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+useTestStore('expired-worker-partial-work-handoff', { leaseSeconds: 5, repository: 'owner/expired-work', credentials: credentials }, async ctx => {
+  ({ store, url } = ctx);
   install = await temporaryDirectory('expired-work-install');
   await writeFile(join(install, 'coordinator.token'), `${'c'.repeat(40)}\n`, { mode: 0o600 });
 });
-
-after(async () => { http?.close(); await store?.close(); });
 
 test('integration:expired-worker-partial-work-handoff — a worker attempt ended by its lease bound with committed and uncommitted changes has both preserved on its branch and identified in the next worker\'s handoff before the worktree is cleaned, the old lease authority ended and the historical reservation retained', async () => {
   await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');

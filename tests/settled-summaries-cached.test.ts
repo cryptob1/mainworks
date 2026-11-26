@@ -1,8 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { Store, boundedSnapshot } from '../src/store.js';
 import type { Principal } from '../src/model.js';
@@ -17,12 +17,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('settled-summaries-cached');
-  await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('settled-summaries-cached', {}, ctx => { ({ store, engine } = ctx); });
 
 /** Every query text the bounded snapshot sends while `read` runs. */
 const queriesDuring = async (pool: pg.Pool, read: () => Promise<unknown>) => {

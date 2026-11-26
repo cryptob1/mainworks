@@ -1,9 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import type { Store } from '../src/store.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -24,7 +22,7 @@ const worker: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `release-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 const loopId = 'release-recorded-operator';
-let store: Store, http: ReturnType<typeof server>, url: string, agentToken: string;
+let store: Store, url: string, agentToken: string;
 
 const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...(path === 'work-snapshot' ? { [coordinationViewHeader]: 'coordination' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -36,15 +34,11 @@ const file = (title: string, extra: Record<string, unknown> = {}) => call(token(
   title, type: 'chore', description: 'The first description', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:release-recorded-hold-edit', 'e2e:fixture'] }], policy: { checks: ['test'], review: true }, ...extra }) as Promise<Work>;
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 
-before(async () => {
-  store = await withDatabase('release-recorded-hold-edit'); await store.init();
-  http = server(new Engine(store, 300, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+useTestStore('release-recorded-hold-edit', { leaseSeconds: 300, repository: repository, credentials: credentials }, async ctx => {
+  ({ store, url } = ctx);
   agentToken = `loop-agent-${randomUUID()}`;
   await call(token(operator.id), 'POST', 'operator-agents', { id: loopId, displayName: 'Loop', capabilities: [], scope: { repositories: [repository], workItems: ['*'] }, token: agentToken, reason: 'the loop applies its decisions' });
 });
-after(async () => { http?.close(); await store?.close(); });
 
 test('integration:release-recorded-hold-edit — the loop releases an unheld item as "loop" with a reason, skips a held one until an identity releases it, and a description edit is history and reaches the leased worker', async () => {
   const free = await file('Free item'), held = await file('Held item', { hold: true });

@@ -1,18 +1,15 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { checkAgentEnvironment } from '../src/master.js';
 import { observeAccount } from '../src/fleet.js';
 import { hostAccountsVariable } from '../src/host-accounts.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { emptyRegistry, fleetView, foldObservation, proposedRuntimes, utcClock, type AgentRegistry, type FleetView } from '../src/model/registry.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import { Store } from '../src/store.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import type { Principal } from '../src/model.js';
 
@@ -122,7 +119,7 @@ test('integration:claude-limit-list — limits[] is read as one window per entry
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const coordinator: Principal = { id: 'master-loop', role: 'coordinator', sessionKind: 'ai' };
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
-let store: Store, http: ReturnType<typeof server>, url: string;
+let url: string;
 const call = async (principal: Principal, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${credentials.find(entry => entry.id === principal.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
@@ -132,14 +129,7 @@ const call = async (principal: Principal, path: string, body?: unknown) => {
   return result;
 };
 
-before(async () => {
-  store = await withDatabase('claude-limit-list');
-  await store.init();
-  http = server(new Engine(store, 7200, 'owner/claude-limit-list'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('claude-limit-list', { leaseSeconds: 7200, repository: 'owner/claude-limit-list', credentials: credentials }, ctx => { ({ url } = ctx); });
 
 test('e2e:claude-limit-list — a stub usage answer with a weekly 40% and a Fable weekly 97% holds the account with the reason \'Fable weekly allowance 97% used, back <time>\', and master registry shows the extra-usage line', async () => {
   const root = await temporaryDirectory('claude-limit-e2e');

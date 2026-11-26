@@ -1,12 +1,11 @@
 import { freePort } from '../src/cli/test-isolation.js';
-import { before, after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
-import { Store } from '../src/store.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { applyDelivery, onboardingServe } from '../src/repository-setup.js';
 import * as onboarding from '../src/onboarding.js';
@@ -30,14 +29,12 @@ const servePolicy = { ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-b
 const failure: BaseFailure = { test: 'the suite fails on the base', check: 'test', baseSha: sha('a'), jobId: 7, url: 'https://ci.example/run/7', raisedAt: '2026-10-31T00:00:00.000Z', blocks: [], item: null, cleared: null };
 const delivered = { key: 'GY-1', title: 'Delivered item', policy: { checks: ['test'], review: true } };
 const finding = { text: 'the guard reads the stale copy', path: 'src/guard.ts', line: 3, paths: ['src/guard.ts'] };
-let store: Store, engine: Engine;
+let engine: Engine;
 const operator = { id: 'operator', role: 'admin' as const };
-before(async () => {
-  store = await withDatabase('self-filed-items-name-a-case'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
+useTestStore('self-filed-items-name-a-case', {}, ctx => {
+  ({ engine } = ctx);
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
 });
-after(async () => { if (store) await store.close(); });
 
 const selfFiled = () => [
   ['the base-failure repair', baseFailureItem(failure, 'main')],

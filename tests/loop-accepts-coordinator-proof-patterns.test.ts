@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -7,8 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Store } from '../src/store.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { MERGE_PROTOCOL } from '../src/protocol-version.js';
 import type { Principal } from '../src/model.js';
@@ -27,13 +26,9 @@ const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const coordinator: Principal = { id: 'master', role: 'coordinator', proofs: ['manual:*'] };
-let store: Store, engine: Engine;
+let engine: Engine;
 
-before(async () => {
-  store = await withDatabase('loop-accepts-coordinator-proof-patterns'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('loop-accepts-coordinator-proof-patterns', {}, ctx => { ({ engine } = ctx); });
 
 test('unit:loop-accepts-coordinator-proof-patterns — master run --once runs a cycle on a coordinator credential whose roster entry carries a proof pattern, and that credential\'s evidence submission is refused', async () => {
   const root = await temporaryDirectory('coordinator-proofs-run');

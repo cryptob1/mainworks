@@ -1,10 +1,10 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store, save } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { AgentRegistry } from '../src/agent-registry.js';
@@ -122,13 +122,10 @@ const coordinator: Principal = { id: 'master-loop', role: 'coordinator', session
 const worker: Principal = { id: 'engineer-a', role: 'worker', runtime: 'claude', sessionKind: 'ai' };
 
 let store: Store, engine: Engine, registry: AgentRegistry;
-before(async () => {
-  store = await withDatabase('locked-read'); await store.init();
-  engine = new Engine(store, 120, 'owner/locked');
-  engine.principals = [operator, coordinator, worker];
+useTestStore('locked-read', { repository: 'owner/locked', principals: [operator, coordinator, worker] }, ctx => {
+  ({ store, engine } = ctx);
   registry = new AgentRegistry(store);
 });
-after(async () => { if (store) await store.close(); });
 
 /**
  * How long each transaction held the coordination lock, by the operation that took it, and which

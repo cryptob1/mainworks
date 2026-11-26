@@ -1,8 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -52,12 +52,7 @@ const head = 'a'.repeat(40), base = 'b'.repeat(40), nextHead = 'd'.repeat(40), m
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
 
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('session-liveness'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker, coordinator, producer];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('session-liveness', { principals: [operator, worker, coordinator, producer] }, ctx => { ({ store, engine } = ctx); });
 
 const reload = async (item: Work | string) => (await store.list()).find(entry => entry.id === (typeof item === 'string' ? item : item.id))!;
 let sequence = 0;

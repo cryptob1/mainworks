@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -7,9 +7,8 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -40,22 +39,9 @@ const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 
 const credentials = [operator].map(principal => ({ ...principal, token: `bounded-${principal.id}-${'x'.repeat(32)}` }));
 const operatorToken = credentials[0].token;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, url: string;
 
-before(async () => {
-  store = await withDatabase('snapshot-bounded-reads');
-  await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = credentials;
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-
-after(async () => {
-  http?.close();
-  if (store) await store.close();
-});
+useTestStore('snapshot-bounded-reads', { principals: credentials, credentials: credentials }, ctx => { ({ store, engine, url } = ctx); });
 
 const get = async (path: string, token = operatorToken) => {
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${token}` } });

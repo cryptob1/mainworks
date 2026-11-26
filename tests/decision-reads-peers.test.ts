@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { resourceConflicts } from '../src/coordination.js';
@@ -17,11 +17,7 @@ function item(n: number): Work {
     createdAt: at, updatedAt: at, stageEnteredAt: at, scenarioRequirements: [], lease: null, workspaces: [], candidate: null, submission: null,
     reworkRequested: false, evidence: [], observation: null, blocker: null, gates: [], violations: [] } as Work;
 }
-before(async () => {
-  store = await withDatabase('decision-reads-peers');
-  await store.init(); engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { await store?.close(); });
+useTestStore('decision-reads-peers', {}, ctx => { ({ store, engine } = ctx); });
 
 test('unit:decision-reads-peers — a cold claim, submission and evaluation on 2,000 items read only focus and prerequisite documents under the item lock', async () => {
   const board = Array.from({ length: 2000 }, (_, n) => item(n + 1));

@@ -1,9 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -32,7 +30,7 @@ const worker: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
 const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -59,16 +57,7 @@ const item = async (key: string, title: string) => {
   return claimed;
 };
 
-before(async () => {
-  store = await withDatabase('attempt-bound-progress');
-  await store.init();
-  // An 11-hour lease keeps every fixture lease live under the clock, which runs nine hours ahead.
-  engine = new Engine(store, 40_000, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('attempt-bound-progress', { leaseSeconds: 40_000, repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 test('unit:attempt-bound-extends-while-progressing — an attempt whose worktree commits every ten minutes runs past the bound and is stopped only at the ceiling; one with no commit or file change is stopped at the bound', async () => {
   await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');

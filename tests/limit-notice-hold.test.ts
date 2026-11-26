@@ -1,10 +1,8 @@
 import { observeAccount } from '../src/fleet.js';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes, type AgentRegistry as Registry } from '../src/model/registry.js';
@@ -19,7 +17,7 @@ const worker: Principal = { id: 'graphyard-cursor-2', role: 'worker', sessionKin
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 const ok = async (principal: Principal, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -31,14 +29,7 @@ const ok = async (principal: Principal, path: string, body?: unknown) => {
   return result;
 };
 
-before(async () => {
-  store = await withDatabase('limit-notice-hold');
-  await store.init();
-  http = server(new Engine(store, 7200, 'owner/limit-notice'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('limit-notice-hold', { leaseSeconds: 7200, repository: 'owner/limit-notice', credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 test('unit:limit-notice-hold-persists — a session ended on its provider limit notice marks its account exhausted in the registry with the notice and reset, and a fresh loop\'s next selection for any role skips it', async () => {
   const runtime = proposedRuntimes.find(entry => entry.name === 'claude')!;
@@ -71,7 +62,6 @@ test('unit:limit-notice-hold-persists — a session ended on its provider limit 
   await new AgentRegistry(store).observe(coordinator, { host: HOST, observations: [{ account: 'claude-c', quota: checked.quota }] }, randomUUID());
   assert.equal(checked.quota.state, 'exhausted');
   assert.equal(checked.quota.resetsAt, resetsAt);
-
 
   // The pane closed, so the session no longer counts against the account's plan.
   await ok(coordinator, `agent-registry/sessions/${first.id}/end`, { reason: 'the pane closed on its limit notice' });

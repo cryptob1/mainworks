@@ -1,13 +1,10 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import { Store } from '../src/store.js';
 import { observeAccount } from '../src/fleet.js';
 import { hostAccountsVariable } from '../src/host-accounts.js';
 import { registryCommand } from '../src/cli/master-registry.js';
@@ -19,7 +16,7 @@ const HOST = 'zai-host';
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const coordinator: Principal = { id: 'master-loop', role: 'coordinator', sessionKind: 'ai' };
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
-let store: Store, http: ReturnType<typeof server>, url: string;
+let url: string;
 const call = async (principal: Principal, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${credentials.find(entry => entry.id === principal.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
@@ -29,14 +26,7 @@ const call = async (principal: Principal, path: string, body?: unknown) => {
   return result;
 };
 
-before(async () => {
-  store = await withDatabase('zai-usage-read');
-  await store.init();
-  http = server(new Engine(store, 7200, 'owner/zai-usage-read'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('zai-usage-read', { leaseSeconds: 7200, repository: 'owner/zai-usage-read', credentials: credentials }, ctx => { ({ url } = ctx); });
 
 test('e2e:zai-usage-read — master registry shows each Z.AI key\'s own allowance and reset, and a key reporting none as not reported', async () => {
   const root = await temporaryDirectory('zai-usage-e2e');

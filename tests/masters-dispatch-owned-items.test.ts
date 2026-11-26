@@ -1,7 +1,7 @@
-import { before, after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { masterConfigSchema } from '../src/master.js';
@@ -18,11 +18,10 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 const alice: Principal = { id: 'alice', role: 'admin', sessionKind: 'human' };
 const bob: Principal = { id: 'bob', role: 'admin', sessionKind: 'human' };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('masters-dispatch-owned-items'); await store.init();
+useTestStore('masters-dispatch-owned-items', {}, ctx => {
+  ({ store, engine } = ctx);
   engine = new Engine(store, 120, 'owner/project'); engine.principals = [alice, bob];
 });
-after(async () => { if (store) await store.close(); });
 const criteria = [{ id: 'AC-1', text: 'Ownership routes work', proofs: ['unit:masters-dispatch-owned-items', 'e2e:fixture'] }];
 const create = (owner?: string | null) => engine.execute(alice, 'create', null, { title: `Item ${owner ?? 'install'}`, type: 'chore', criteria, owner }, randomUUID());
 

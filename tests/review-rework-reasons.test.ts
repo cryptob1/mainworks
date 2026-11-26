@@ -1,15 +1,13 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -61,18 +59,10 @@ test('integration:review-rework-reasons — review and product-review rework of 
 const admin: Principal = { id: 'operator', role: 'admin' };
 const adminToken = `operator-${'t'.repeat(32)}`;
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
-before(async () => {
-  store = await withDatabase('review-rework-reasons'); await store.init();
-  engine = new Engine(store, 120, 'owner/game');
-  http = server(engine, [{ ...admin, token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }]);
+let engine: Engine, url: string;
+useTestStore('review-rework-reasons', { repository: 'owner/game', credentials: [{ ...admin, token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }] }, ctx => {
+  ({ engine, url } = ctx);
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
 });
 
 test('e2e:review-rework-reasons — with one changes-requested review, master status shows its reason label beside the rework causes', async () => {

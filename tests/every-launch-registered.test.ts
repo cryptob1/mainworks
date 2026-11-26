@@ -1,11 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -33,12 +33,7 @@ const coordinator: Principal = { id: 'executor-a', role: 'coordinator' };
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('every-launch-registered'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, coordinator];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('every-launch-registered', { principals: [operator, coordinator] }, ctx => { ({ store, engine } = ctx); });
 
 const reload = async (id: string) => (await store.list()).find(entry => entry.id === id)!;
 const mutate = async (path: string, body: unknown) => { const [, id, command] = path.split('/'); return engine.execute(coordinator, command as any, decodeURIComponent(id), body, randomUUID()); };

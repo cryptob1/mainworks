@@ -1,15 +1,12 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { Store } from '../src/store.js';
-import { server } from '../src/server.js';
 import { runBriefCommand } from '../src/master/brief.js';
 import { masterRequest } from '../src/master/master-session.js';
 import { workerPrompt } from '../src/master/dispatch.js';
@@ -124,21 +121,14 @@ test('e2e:product-brief — every master launch prompt includes the brief before
   assert.ok(!producer.includes('Product brief —'), 'a memory without a brief changes no prompt');
 });
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let url: string;
 const admin: Principal = { id: 'operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'implementer', role: 'worker', sessionKind: 'ai' };
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator', sessionKind: 'ai' };
 const principals = [admin, worker, coordinator];
 const tokens = new Map(principals.map(p => [p.id, `${p.id}-${'t'.repeat(32)}`]));
 
-before(async () => {
-  store = await withDatabase('product-brief'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('product-brief', { credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ url } = ctx); });
 
 test('e2e:product-brief — the control plane serves the mirrored brief and the Product page shows it read-only', async () => {
   const call = async (actor: Principal, method: string, body?: unknown) => {

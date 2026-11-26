@@ -2,14 +2,14 @@ import { headlessStartupMs, type HeadlessExec } from '../src/headless-session.js
 import { loopStateContext } from '../src/loop-state.js';
 import { clearRuns } from '../src/runner/registry.js';
 import { launchReview } from './helpers/pending-review.js';
-import { after, before } from 'node:test';
+
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -300,15 +300,12 @@ const producer: Principal = { id: 'ci-runner', role: 'producer', proofs: ['unit:
 /** The mechanical proof passing on the observed head: a review is requested only after it (GY-115). */
 const proven = (item: Work) => engine.execute(producer, 'evidence', item.id, { proof: 'unit:x', sha: item.candidate!.sha, baseSha: item.candidate!.baseSha, policyRevision: item.policyRevision, result: 'pass', executed: 3, skipped: 0, exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 }, scopeFiles: ['src/a.ts'] }, randomUUID());
 let store: Store, engine: Engine;
-before(async () => {
-  // verify runs this file directly, without the suite runner's host isolation.
+useTestStore('one-reviewer-per-request', {}, async ctx => {
+  ({ store, engine } = ctx);
   process.env[hostMemoryVariable] = 'unreadable';
   process.env.GRAPHYARD_DATA_HOME = await temporaryDirectory('gy124-data');
-
-  store = await withDatabase('one-reviewer-per-request'); await store.init();
   engine = new Engine(store, 120, 'owner/project'); engine.principals = [operator, implementer, producer];
 });
-after(async () => { if (store) await store.close(); });
 
 /** Create rejects retired providers; the default accepts the actual session verdict route. */
 async function sessionProviderContract() {

@@ -1,8 +1,8 @@
 import { claimFixture, settleFixture, renewFixture } from './helpers/action-fixtures.js';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store, save } from '../src/store.js';
 import { Engine, sameBesideBookkeeping } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -36,12 +36,7 @@ const PROOF = 'unit:resync-fixture';
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('action-claim-observation'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker, executor];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('action-claim-observation', { principals: [operator, worker, executor] }, ctx => { ({ store, engine } = ctx); });
 
 const reload = async (id: string) => (await store.list()).find(entry => entry.id === id)!;
 const resyncRow = (item: Work) => item.actionQueue!.actions.find(row => row.kind === 'resync')!;

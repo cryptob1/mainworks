@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -38,12 +38,7 @@ const producer: Principal = { id: 'producer-a', role: 'producer' };
 const worker: Principal = { id: 'agent-a', role: 'worker', runtime: 'claude' };
 
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('session-liveness-model'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, coordinator, worker, producer];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('session-liveness-model', { principals: [operator, coordinator, worker, producer] }, ctx => { ({ store, engine } = ctx); });
 
 const config = masterConfigSchema.parse({
   version: 1, url: 'https://graphyard.example', credentialFile: '/outside/master.token', cliPath: '/outside/graphyard.mjs',

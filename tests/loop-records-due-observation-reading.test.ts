@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import { isClosed, type Principal, type Work } from '../src/model.js';
@@ -42,11 +42,7 @@ const operator: Principal = { id: 'readings-operator', role: 'admin', sessionKin
 const coordinator: Principal = { id: 'readings-master', role: 'coordinator', sessionKind: 'ai', proofs: ['manual:*'] };
 const worker: Principal = { id: 'readings-worker', role: 'worker', sessionKind: 'ai' };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('loop-records-due-observation-reading'); await store.init();
-  engine = new Engine(store, 300, repository);
-});
-after(async () => { await store?.close(); });
+useTestStore('loop-records-due-observation-reading', { leaseSeconds: 300, repository: repository }, ctx => { ({ store, engine } = ctx); });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 /** An item created through the engine, then written as the control plane would have left it: the fixture for what the reading binds to. */
 async function plant(shape: Work): Promise<Work> {

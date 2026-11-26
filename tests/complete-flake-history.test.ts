@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal } from '../src/model.js';
@@ -18,11 +18,7 @@ const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
 let store: Store, engine: Engine;
 
-before(async () => {
-  store = await withDatabase('complete-flake-history'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('complete-flake-history', {}, ctx => { ({ store, engine } = ctx); });
 
 const flaked = [{ case: 'unit:outside-proof — case A', file: 'tests/flaky.test.ts', line: 59, durationMs: 30000 }];
 const baseFailures = [{ case: 'unit:outside-proof — case B', file: 'tests/broken-elsewhere.test.ts', line: 7, durationMs: null }];

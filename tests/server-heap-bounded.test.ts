@@ -1,12 +1,10 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
-import { withDatabase } from './helpers/postgres.js';
-import { Store } from '../src/store.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -32,15 +30,8 @@ const roster = [operator, coordinator, implementer];
 const credentials = roster.map(principal => ({ ...principal, token: `heap-${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
-before(async () => {
-  store = await withDatabase('server-heap-bounded'); await store.init();
-  engine = new Engine(store, 120, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); await store?.close(); });
+let engine: Engine, url: string;
+useTestStore('server-heap-bounded', { repository: repository, credentials: credentials }, ctx => { ({ engine, url } = ctx); });
 
 async function call(principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

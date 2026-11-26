@@ -1,9 +1,9 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -80,12 +80,7 @@ test('unit:base-hold-sighting — the hold\'s first sighting is set once per hea
 const operator: Principal = { id: 'operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'agent-a', role: 'worker', runtime: 'claude' };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('stalled-gate-in-motion'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('stalled-gate-in-motion', { principals: [operator, worker] }, ctx => { ({ store, engine } = ctx); });
 
 test('integration:base-hold-observed — the observation write records when the current head was first read withheld behind the base, keeps it across a base move, and clears it when GitHub reports the head mergeable', async () => {
   await holds();

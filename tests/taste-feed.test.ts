@@ -1,9 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { isDelivered, type Principal, type Work } from '../src/model.js';
 
@@ -20,7 +18,7 @@ const operator: Principal = { id: 'taste-operator', role: 'admin', sessionKind: 
 const worker: Principal = { id: 'taste-worker', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, worker].map(principal => ({ ...principal, token: `taste-${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
 const call = async (principal: Principal, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -50,14 +48,7 @@ async function delivered(title: string, why: string): Promise<Work> {
   return reload(created.id);
 }
 
-before(async () => {
-  store = await withDatabase('taste-feed'); await store.init();
-  engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('taste-feed', { leaseSeconds: 300, repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 test('integration:taste-looks-good — a delivered item’s snapshot summary carries its why, and the taste records without touching the delivery', async () => {
   const work = await delivered('A shipped thing', 'The delivery’s why sentence.');

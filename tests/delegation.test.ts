@@ -1,8 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import {
   activeEngineers, classifyIntake, defaultDelegationLimits, delegationLimits, delegationSnapshot, humanOnlyIntakeOrigins, implementerIdentities,
   leadMay, leadPermittedActions, leadRulingActions, mergeOrder, producerIndependenceRefusal, recordIntake, recordLeadRuling,
@@ -56,7 +56,7 @@ const undeclaredAdmin: Principal = { id: 'legacy-admin', role: 'admin' };
 const roster = [admin, lead, infraLead, docsLead, workerA, workerB, workerC, reviewer, coordinator, aiAdmin, undeclaredAdmin];
 const head = 'a'.repeat(40), base = 'b'.repeat(40), redone = 'c'.repeat(40);
 let store: Store, engine: Engine;
-let http: ReturnType<typeof server>, url: string;
+let url: string;
 const credentials = roster.map(principal => ({ ...principal, token: `delegation-${principal.id}-${'x'.repeat(32)}` }));
 let pr = 500;
 const id = () => randomUUID();
@@ -91,14 +91,10 @@ async function proven(work: Work, sha = head) {
   return publish(await mergeIntent(engine, await engine.execute(reviewer, 'evidence', observed.id, proof({ sha }), id())), sha);
 }
 
-before(async () => {
-  store = await withDatabase('delegation'); await store.init();
+useTestStore('delegation', { credentials: credentials }, ctx => {
+  ({ store, engine, url } = ctx);
   engine = new Engine(store); engine.principals = roster;
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
 });
-after(async () => { http?.close(); await store?.close(); });
 
 test('unit:slice-model — formal slices are first-class objects with data-driven session kinds', () => {
   assert.deepEqual(slices.map(s => s.id), ['product', 'infrastructure', 'docs-experience']);

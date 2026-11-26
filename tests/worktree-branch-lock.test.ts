@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { pipelineTimeline } from '../src/pipeline-speed.js';
@@ -332,10 +332,4 @@ function gitPath(cwd: string, name: string) {
 
 // The engine tests above run against a temporary real Postgres, isolated from every other file's.
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('worktree-branch-lock');
-  await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [{ id: 'human-operator', role: 'admin', sessionKind: 'human' as const }, { id: 'engineer-a', role: 'worker', sessionKind: 'ai' as const }];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('worktree-branch-lock', { principals: [{ id: 'human-operator', role: 'admin', sessionKind: 'human' as const }, { id: 'engineer-a', role: 'worker', sessionKind: 'ai' as const }] }, ctx => { ({ store, engine } = ctx); });

@@ -1,27 +1,16 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 
 // GY-3527: /api/status serves the Work page's speed line from the real ledger: release (the first
 // `ready` event) to merge over the last merges, the last merge time and the open item released longest ago.
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
-before(async () => {
-  store = await withDatabase('main-page-pipeline-time'); await store.init();
-  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+useTestStore('main-page-pipeline-time', { repository: 'owner/game', credentials: [{ ...operator, token }] }, ctx => { ({ store, url } = ctx); });
 
 const api = async (path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });

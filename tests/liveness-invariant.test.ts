@@ -1,9 +1,9 @@
 import { proveFixtureCase } from './helpers/ledger-delivery.js';
 import { claimFixture, settleFixture } from './helpers/action-fixtures.js';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -36,12 +36,7 @@ const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 let store: Store, engine: Engine;
 let serial = 0;
 
-before(async () => {
-  store = await withDatabase('liveness-invariant'); await store.init();
-  engine = new Engine(store, 120, repository);
-  engine.principals = [operator, worker, coordinator, producer];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('liveness-invariant', { repository: repository, principals: [operator, worker, coordinator, producer] }, ctx => { ({ store, engine } = ctx); });
 
 const id = () => randomUUID();
 const reload = async (work: Work) => (await store.list()).find(item => item.id === work.id)!;

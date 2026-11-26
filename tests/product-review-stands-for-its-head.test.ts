@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { reconcileAutoDispatch, productReviewNeed } from '../src/model-boundary/dispatch.js';
@@ -73,15 +73,9 @@ function moveMain(work: Work, newBase: string, at: string, options: { keepMergeB
 let store: Store;
 let engine: Engine;
 
-before(async () => {
-  store = await withDatabase('product-review-stands-for-its-head');
-  await store.init();
-  engine = new Engine(store, 120, 'owner/project');
+useTestStore('product-review-stands-for-its-head', {}, ctx => {
+  ({ store, engine } = ctx);
   engine.gitRunner = null;
-});
-
-after(async () => {
-  if (store) await store.close();
 });
 
 test('unit:product-review-stands-for-its-head — approved, main moves three times, still satisfied; head changes, required again; request-review binding excludes base tip', () => {

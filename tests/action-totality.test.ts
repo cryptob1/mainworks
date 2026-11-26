@@ -1,9 +1,9 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { evaluate } from '../src/model-boundary/gates.js';
@@ -49,12 +49,7 @@ const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
 
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('action-totality'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('action-totality', { principals: [operator, worker] }, ctx => { ({ store, engine } = ctx); });
 
 let sequence = 0;
 async function submitted() {

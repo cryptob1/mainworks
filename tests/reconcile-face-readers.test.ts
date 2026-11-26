@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -21,17 +21,9 @@ const operator: Principal = { id: 'operator', role: 'admin' };
 
 let store: Store, engine: Engine;
 
-before(async () => {
-  store = await withDatabase('reconcile-face-readers');
-  await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator];
-  // Only the clock-driven catch-up is full here; each test says when it wants one.
+useTestStore('reconcile-face-readers', { principals: [operator] }, ctx => {
+  ({ store, engine } = ctx);
   engine.reconcileFullEvaluationMs = 300_000;
-});
-
-after(async () => {
-  await store?.close();
 });
 
 let created = 0;

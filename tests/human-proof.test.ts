@@ -1,10 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { proofPreview } from '../src/coordination.js';
 import { neededRework } from '../src/daemon/rework.js';
@@ -32,15 +30,8 @@ const loop: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const credentials = [human, agentAdmin, loop].map(principal => ({ ...principal, token: `${principal.id}-token-${'x'.repeat(32)}` }));
 const tokenOf = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
-before(async () => {
-  store = await withDatabase('human-proof'); await store.init();
-  const engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+let store: Store, url: string;
+useTestStore('human-proof', { credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 async function post(principal: Principal, path: string, body: unknown, key = randomUUID()) {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${tokenOf(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });

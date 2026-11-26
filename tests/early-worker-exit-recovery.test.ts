@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -6,10 +6,8 @@ import { appendFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { server } from '../src/server.js';
 import { dispatchWork, masterConfigSchema } from '../src/master.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { emptyDaemonState, daemonStateSchema, pruneDaemonState } from '../src/daemon/state.js';
@@ -27,20 +25,14 @@ const operator: Principal = { id: 'operator', role: 'admin' }, coordinator: Prin
 const workers: Principal[] = ['worker-a', 'worker-b'].map(id => ({ id, role: 'worker' }));
 const token = (actor: Principal) => `${actor.id}-${'x'.repeat(40)}`;
 const host = 'exit-host', secret = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890';
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 async function api(actor: Principal, path: string, data?: unknown) {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(actor)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
   const result = await response.json() as any;
   assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`);
   return result;
 }
-before(async () => {
-  store = await withDatabase('early-worker-exit-recovery'); await store.init();
-  http = server(new Engine(store, 7200, 'owner/project'), [operator, coordinator, ...workers].map(actor => ({ ...actor, token: token(actor) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('early-worker-exit-recovery', { leaseSeconds: 7200, credentials: [operator, coordinator, ...workers].map(actor => ({ ...actor, token: token(actor) })) }, ctx => { ({ store, url } = ctx); });
 
 const proof = 'integration:early-worker-exit-recovery';
 test(`${proof} — a headless worker run that exits nonzero at once is a diagnosed, masked launch incident that cools off, routes around, wakes once, holds on the third and recovers`, { timeout: 180_000 }, async () => {

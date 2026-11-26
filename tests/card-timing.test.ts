@@ -1,11 +1,11 @@
 import { claimFixture, settleFixture } from './helpers/action-fixtures.js';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -192,14 +192,7 @@ const worker: Principal = { id: 'card-timing-worker', role: 'worker', sessionKin
 const executor: Principal = { id: 'card-timing-executor', role: 'coordinator' };
 let store: Store, engine: Engine;
 
-before(async () => {
-  store = await withDatabase('card-timing'); await store.init();
-  // A generous claim lease: this case reads the same recorded item at synthetic observation
-  // times, and a lease that lapses between them would change the status under the reading.
-  engine = new Engine(store, 3600, 'owner/project');
-  engine.principals = [operator, worker, executor];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('card-timing', { leaseSeconds: 3600, principals: [operator, worker, executor] }, ctx => { ({ store, engine } = ctx); });
 
 test('integration:status-duration-tracks-real-progress — a retry loop, a heartbeat and an observation leave the clock running; only entering a new status restarts it', async () => {
   const id = () => randomUUID();

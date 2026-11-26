@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import type { Principal, Work } from '../src/model.js';
 import { deliveryState } from '../src/model/delivery.js';
 import { actionAccount } from '../src/model-boundary/next-action.js';
@@ -80,12 +80,7 @@ test('unit:done-at-merge-board-and-goal — the board groups a merged item as sh
 const operator: Principal = { id: 'done-operator', role: 'admin', sessionKind: 'human' };
 const coordinator: Principal = { id: 'done-coordinator', role: 'coordinator', sessionKind: 'ai' };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('done-at-merge'); await store.init();
-  engine = new Engine(store, 120, 'owner/done-at-merge');
-  engine.principals = [operator, coordinator];
-});
-after(async () => { await store?.close(); });
+useTestStore('done-at-merge', { repository: 'owner/done-at-merge', principals: [operator, coordinator] }, ctx => { ({ store, engine } = ctx); });
 
 test('unit:verify-deployment-removed-history-loads — the kind, deployment command and master verify-deployment are gone, and a verify-deployment row, action or deployment event written earlier loads and settles', { timeout: 120_000 }, async () => {
   assert.ok(!(nextActionKinds as readonly string[]).includes('verify-deployment'), 'no verify-deployment action kind');

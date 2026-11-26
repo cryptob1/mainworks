@@ -1,9 +1,9 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store, save } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { boundLockedCache, isStandIn, lockedRows, lockedWork, rememberSaved, savedVersions, warmLockedReads, type Queryable } from '../src/store/locked-read.js';
@@ -16,12 +16,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'engineer-a', role: 'worker', runtime: 'claude', sessionKind: 'ai' };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('locked-read-cache'); await store.init();
-  engine = new Engine(store, 120, 'owner/followups');
-  engine.principals = [operator, worker];
-});
-after(async () => { boundLockedCache(); if (store) await store.close(); });
+useTestStore('locked-read-cache', { repository: 'owner/followups', principals: [operator, worker] }, ctx => { ({ store, engine } = ctx); });
 
 const create = (title: string, plannedFiles: string[]) => engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:x', 'e2e:fixture'] }] }, randomUUID());
 /** `db` with every query's text recorded. */

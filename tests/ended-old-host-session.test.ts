@@ -1,9 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -30,7 +28,7 @@ const workerB: Principal = { id: 'worker-b', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA, workerB].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
     method, headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), 'X-Graphyard-View': 'coordination' },
@@ -48,14 +46,7 @@ const claimed = async (worker: Principal, key: string, host: string) => {
   return work;
 };
 
-before(async () => {
-  store = await withDatabase('ended-old-host-session');
-  await store.init();
-  http = server(new Engine(store, 3_600, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('ended-old-host-session', { leaseSeconds: 3_600, repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 test('integration:ended-old-host-session — a Done item\'s session left running on a departed host is recorded finished with its reason, and master status counts only the live worker', async () => {
   // The Done item: its attempt ran on a host that has since left, and its record still says running.

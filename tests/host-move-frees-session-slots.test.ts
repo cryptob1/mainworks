@@ -1,14 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import { Store } from '../src/store.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
@@ -35,7 +32,7 @@ const coordinator: Principal = { id: 'master-loop', role: 'coordinator', session
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `move-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let url: string;
 const api = async (bearer: string, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const json = await response.json() as any;
@@ -56,14 +53,7 @@ const placeOn = (host: string) => api(token(operator.id), 'agent-registry/apply'
 });
 const select = (role: string, host: string, principal: string | null = null) => api(token(coordinator.id), 'agent-registry/select', { role, host, principal });
 
-before(async () => {
-  store = await withDatabase('host-move-frees-session-slots');
-  await store.init();
-  http = server(new Engine(store, 7200, 'owner/host-move'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('host-move-frees-session-slots', { leaseSeconds: 7200, repository: 'owner/host-move', credentials: credentials }, ctx => { ({ url } = ctx); });
 
 test(`${proof} — one loop cycle on host 'new' ends the master and worker sessions recorded on 'old', launches the master into the freed slot, frees the worker slots and leaves this host's live session alone`, async () => {
   const directory = await temporaryDirectory('host-move');

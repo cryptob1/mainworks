@@ -1,8 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { readFile } from 'node:fs/promises';
@@ -23,11 +23,7 @@ const worker: Principal = { id: 'implementer', role: 'worker' };
 let store: Store, engine: Engine;
 let serial = 0;
 
-before(async () => {
-  store = await withDatabase('receipt-retention'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('receipt-retention', {}, ctx => { ({ store, engine } = ctx); });
 
 const receipt = async (actor: string, key: string) => (await store.pool.query('SELECT result, created_at, pg_column_size(result) AS bytes FROM receipts WHERE actor=$1 AND key=$2', [actor, key])).rows[0] as { result: any; created_at: Date | null; bytes: number } | undefined;
 const age = (actor: string, key: string, ms: number) => store.pool.query("UPDATE receipts SET created_at = now() - ($3::text||' milliseconds')::interval WHERE actor=$1 AND key=$2", [actor, key, String(ms)]);

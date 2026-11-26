@@ -1,8 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
-import { Store } from '../src/store.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { answerHumanDecision, listHumanRequests, requestHumanDecision } from '../src/server/waits.js';
 import { buildBoard } from '../src/model/board.js';
@@ -21,14 +20,12 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
  */
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
-let store: Store, engine: Engine, services: Services;
+let engine: Engine, services: Services;
 
-before(async () => {
-  store = await withDatabase('blocker-is-plain-text'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
+useTestStore('blocker-is-plain-text', {}, ctx => {
+  ({ engine } = ctx);
   services = { engine, repository: 'owner/project', principals: [] } as unknown as Services;
 });
-after(async () => { if (store) await store.close(); });
 
 async function claimed(title: string) {
   let w = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:blocker-is-plain-text', 'e2e:fixture'] }] }, randomUUID());

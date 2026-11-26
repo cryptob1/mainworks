@@ -1,14 +1,12 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import type { AddressInfo } from 'node:net';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { eventHistoryLimits, routineEventKinds } from '../src/events-history.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -22,24 +20,15 @@ const worker: Principal = { id: 'worker-a', role: 'worker' };
 const tokens = { operator: 'o'.repeat(32), worker: 'w'.repeat(32) };
 
 let store: Store; let engine: Engine;
-let http: ReturnType<typeof server>; let url: string; let item: Work;
+let url: string; let item: Work;
 
 // Enough routine rows that the whole lifecycle sits well beyond a 300-row window, as it does on a
 // real item: 60-98% of a live ledger is github.observed and heartbeat.
 const NOISE = 600;
 
-before(async () => {
-  store = await withDatabase('events-pagination');
-  await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, [{ ...operator, token: tokens.operator }, { ...worker, token: tokens.worker }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+useTestStore('events-pagination', { credentials: [{ ...operator, token: tokens.operator }, { ...worker, token: tokens.worker }] }, async ctx => {
+  ({ store, engine, url } = ctx);
   item = await lifecycle();
-});
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
 });
 
 /** Routine rows exactly as the control plane writes them: the whole document, one row per pass. */

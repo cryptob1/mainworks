@@ -1,13 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { daemonStatePath, emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -45,7 +43,7 @@ const workerA: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA].map(principal => ({ ...principal, token: `cpu-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, body: await response.json() as any };
@@ -65,14 +63,7 @@ const file = async (title: string) => ok(token(operator.id), 'POST', 'work', {
   title, why: 'w', simplest: 's', type: 'chore', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: [proof, 'e2e:dispatch-waits-on-cpu-temperature'] }], policy: { checks: ['test'], review: true },
 }) as Promise<Work>;
 
-before(async () => {
-  store = await withDatabase('dispatch-waits-on-cpu-temperature');
-  await store.init();
-  http = server(new Engine(store, 7200, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('dispatch-waits-on-cpu-temperature', { leaseSeconds: 7200, repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 /** The two files the production effect reads, as texts an injected reading controls. */
 const pressureText = (avg60: number) => `some avg10=${avg60.toFixed(2)} avg60=${avg60.toFixed(2)} avg300=${avg60.toFixed(2)} total=987654321\nfull avg10=1.00 avg60=1.00 avg300=1.00 total=987654321\n`;

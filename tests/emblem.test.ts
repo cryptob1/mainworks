@@ -1,11 +1,9 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { emblemByteLimit, readEmblem, validateEmblem } from '../src/model/emblem.js';
 import TopBar from '../web/components/top-bar';
 import type { Principal } from '../src/model.js';
@@ -46,7 +44,7 @@ test('unit:emblem-header — the top bar renders the emblem as an image beside t
 });
 
 // The route side: POST /api/emblem with the master's identity, GET /favicon.svg with the result.
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 const operator: Principal = { id: 'operator', role: 'admin' };
 const master: Principal = { id: 'master', role: 'coordinator' };
 const reader: Principal = { id: 'reader', role: 'reader' };
@@ -59,14 +57,7 @@ const request = async (path: string, actor: Principal, body?: unknown) => {
   return { status: response.status, contentType: response.headers.get('content-type'), text: await response.text() };
 };
 
-before(async () => {
-  store = await withDatabase('emblem'); await store.init();
-  engine = new Engine(store, 120, 'owner/night-yard');
-  http = server(engine, principals.map(entry => ({ ...entry, token: token(entry) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('emblem', { repository: 'owner/night-yard', credentials: principals.map(entry => ({ ...entry, token: token(entry) })) }, ctx => { ({ store, url } = ctx); });
 
 test('integration:emblem-route — master emblem set records the emblem, serves it at /favicon.svg and refuses bad drawings with the reason', async () => {
   assert.equal(await readEmblem(store.pool), null, 'an install with no emblem event serves none');

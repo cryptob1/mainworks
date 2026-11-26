@@ -1,14 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
-import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { reviewPrompt, reviewStandard } from '../src/reviewer.js';
 import { pinnedCases, singleCaseWarnings } from '../src/model.js';
 import type { Principal } from '../src/model.js';
@@ -24,16 +21,9 @@ const multi = { id: 'AC-2', text: 'The campaign completes every mission on seeds
 const single = { id: 'AC-1', text: 'The campaign completes every mission on seed 42', proofs: ['unit:campaign-seed-42', 'e2e:fixture'] };
 
 const operator: Principal = { id: 'operator', role: 'admin' };
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, token: string;
+let url: string, token: string;
 
-before(async () => {
-  store = await withDatabase('single-case-criterion'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, [{ ...operator, token: token = `${operator.id}-${'t'.repeat(32)}` }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('single-case-criterion', { credentials: [{ ...operator, token: token = `${operator.id}-${'t'.repeat(32)}` }] }, ctx => { ({ url } = ctx); });
 
 const api = async (path: string, data?: unknown, key: string = randomUUID()) => {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',

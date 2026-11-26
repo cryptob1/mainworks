@@ -1,13 +1,12 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
 
@@ -22,7 +21,7 @@ const coordinator: Principal = { id: 'coordinator', role: 'coordinator', session
 const credentials = [operator, implementer, coordinator].map(principal => ({ ...principal, token: `reblocked-${principal.id}-${'x'.repeat(32)}` }));
 const master = { id: 'master-operator', token: `master-operator-${'m'.repeat(32)}`, capabilities: ['policy:requirements'] };
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, url: string;
 const call = async (credential: string, path: string, body: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() as any };
@@ -44,16 +43,11 @@ async function blockedAttempt(title: string) {
   return reload(work.id);
 }
 
-before(async () => {
-  store = await withDatabase('reblocked-attempt'); await store.init();
-  engine = new Engine(store, 120, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+useTestStore('reblocked-attempt', { repository: repository, credentials: credentials }, async ctx => {
+  ({ store, engine, url } = ctx);
   const agent = await call(token(operator), 'operator-agents', { id: master.id, displayName: master.id, capabilities: master.capabilities, scope: { repositories: [repository], workItems: ['*'] }, token: master.token, reason: 'Onboarding provisions the master operator agent' });
   assert.equal(agent.status, 200, JSON.stringify(agent.body));
 });
-after(async () => { http?.close(); await store?.close(); });
 
 test('integration:reblocked-attempt-ends-own-blocker — an interrupted report with endsBlocker ends the lease and the blocker that attempt wrote, and nothing else', async () => {
   // The attempt's own blocker ends with it, and the item is claimable again.

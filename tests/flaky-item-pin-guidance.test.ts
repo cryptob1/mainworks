@@ -1,11 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import { Store } from '../src/store.js';
+import { useTestStore } from './helpers/test-store.js';
 import { gateFiledItem } from '../src/daemon/control-plane.js';
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -22,7 +19,7 @@ const credentials = [{ ...operator, token: `flaky-pin-${operator.id}-${'x'.repea
 const token = credentials[0]!.token;
 const defaultAc1Text = 'The fault is fixed at its cause, not skipped or weakened; a new test pins it and fails without the fix';
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let url: string;
 
 const ok = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -42,15 +39,7 @@ const assertSeamGuidance = (text: string) => {
   assert.match(text, /fails on the base tip on every run/i);
 };
 
-before(async () => {
-  store = await withDatabase('flaky-item-pin-guidance');
-  await store.init();
-  engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('flaky-item-pin-guidance', { leaseSeconds: 300, repository: repository, credentials: credentials }, ctx => { ({ url } = ctx); });
 
 test('integration:flaky-item-pin-guidance — Flaky check on main items carry test-seam pin guidance while Known red and Diagnostic failure items keep today\'s AC-1 text', async () => {
   const testFile = 'tests/example-race.test.ts';

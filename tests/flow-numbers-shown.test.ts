@@ -1,12 +1,10 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -17,18 +15,9 @@ import type { Principal } from '../src/model.js';
 // two hours in review, so master status raises one attention line naming review and that item.
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
-before(async () => {
-  store = await withDatabase('flow-numbers-shown'); await store.init();
-  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+useTestStore('flow-numbers-shown', { repository: 'owner/game', credentials: [{ ...operator, token }] }, ctx => { ({ store, url } = ctx); });
 
 const api = async (path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });

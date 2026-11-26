@@ -1,11 +1,10 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { closeWork } from '../src/server/close.js';
 import { closeRequest } from '../src/cli/master-close.js';
@@ -30,7 +29,7 @@ const worker: Principal = { id: 'close-worker', role: 'worker', sessionKind: 'ai
 const producer: Principal = { id: 'close-producer', role: 'producer', proofs: ['unit:close'] };
 const credentials = [operator, coordinator, worker, producer].map(principal => ({ ...principal, token: `close-${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, url: string;
 
 const call = async (principal: Principal, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -54,14 +53,7 @@ async function patch(work: Work, change: Partial<Work>) {
   return reload(work.id);
 }
 
-before(async () => {
-  store = await withDatabase('close-work'); await store.init();
-  engine = new Engine(store, 300, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('close-work', { leaseSeconds: 300, repository: repository, credentials: credentials }, ctx => { ({ store, engine, url } = ctx); });
 
 test('integration:close-obsolete — a stuck item closed as obsolete is terminal, audited, not delivered and not stuck', async () => {
   const work = await patch(await released('obsolete noise'), { blocker: 'Nobody will ever answer this' });

@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { dispatchable } from '../src/coordination.js';
@@ -19,12 +19,7 @@ const id = () => randomUUID();
 const reload = async (work: Work) => (await store.list()).find(item => item.id === work.id)!;
 const minutes = (n: number) => n * 60_000;
 
-before(async () => {
-  store = await withDatabase('expiry-loop-stop'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [human, worker];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('expiry-loop-stop', { principals: [human, worker] }, ctx => { ({ store, engine } = ctx); });
 
 async function filed(title: string) {
   const work = await engine.execute(human, 'create', null, { title, type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, id());

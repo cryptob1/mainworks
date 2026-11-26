@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -32,11 +32,10 @@ const implementer: Principal = { id: 'implementer', role: 'worker' };
 const producer: Principal = { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*'] };
 let store: Store, engine: Engine;
 let pr = 1150;
-before(async () => {
-  store = await withDatabase('verify-before-review'); await store.init();
+useTestStore('verify-before-review', {}, ctx => {
+  ({ store, engine } = ctx);
   engine = new Engine(store, 120, 'owner/project'); engine.principals = [operator, implementer, producer];
 });
-after(async () => { if (store) await store.close(); });
 
 const events = async (item: Work, kind: string) => (await store.events(item.id)).filter(event => event.kind === kind).reverse();
 const reviewRequests = async (item: Work) => (await events(item, 'dispatch.requested')).filter(event => event.payload.details.kind === 'review');

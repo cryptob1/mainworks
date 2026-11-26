@@ -1,6 +1,6 @@
 import { launchLegacyReview as launchReview } from './helpers/pending-review.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
-import { after, before } from 'node:test';
+
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -8,7 +8,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -208,11 +208,10 @@ const runnerAsWorker: Principal = { id: 'proof-runner', role: 'worker' };
 const runner: Principal = { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*'] };
 const runnerB: Principal = { id: 'proof-runner-b', role: 'producer', proofs: ['unit:*', 'integration:*'] };
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('role-concurrency'); await store.init();
+useTestStore('role-concurrency', {}, ctx => {
+  ({ store, engine } = ctx);
   engine = new Engine(store, 120, 'owner/project'); engine.principals = [operator, runner, runnerB];
 });
-after(async () => { if (store) await store.close(); });
 
 test('integration:concurrent-producers — the control plane refuses evidence for an item from the principal that held an assignment on it, and trusts the same principal on an item it never touched', async () => {
   const H = sha40('c1');

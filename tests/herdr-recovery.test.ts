@@ -1,12 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
@@ -154,19 +153,10 @@ const leaseSeconds = 5;
 const shortFences = { leaseMs: leaseSeconds * 1000 };
 const operator: Principal = { id: 'recovery-operator', role: 'admin' };
 const machines = [1, 2].map(n => ({ id: `recovery-machine-${n}`, role: 'worker' as const, token: `test-machine-${n}-${'x'.repeat(32)}` }));
-let store: Store; let http: ReturnType<typeof server>; let url: string;
+let store: Store; let url: string;
 const identities = () => [{ ...operator, token: 'r'.repeat(32) }, ...machines];
 const run = (target: string, principals: unknown[], fences?: typeof shortFences, inventory = createInventory()) => exercise(target, principals, inventory, fences);
-before(async () => {
-  // The suite connects over TCP, so no Unix-domain socket is needed (GY-3001): disabling it
-// lets this run where socket creation is unavailable while changing nothing over TCP.
-
-  store = await withDatabase('herdr-recovery'); await store.init();
-  http = server(new Engine(store, leaseSeconds, 'owner/project'), [{ ...operator, token: 'r'.repeat(32) }, ...machines]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('herdr-recovery', { leaseSeconds: leaseSeconds, credentials: [{ ...operator, token: 'r'.repeat(32) }, ...machines] }, ctx => { ({ store, url } = ctx); });
 
 // Proxy the real server and weaken exactly one refusal, proving each case is not vacuous.
 // `preserve` passes that many genuine refusals on the route through untouched first, so a later

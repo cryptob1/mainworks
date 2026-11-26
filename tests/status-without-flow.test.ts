@@ -1,26 +1,15 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 
 // GY-3677: /api/status answers without reading the flow numbers; /api/flow still serves them.
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 
-before(async () => {
-  store = await withDatabase('status-without-flow'); await store.init();
-  http = server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+useTestStore('status-without-flow', { repository: 'owner/game', credentials: [{ ...operator, token }] }, ctx => { ({ store, url } = ctx); });
 
 const get = async (path: string) => {
   const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${token}` } });

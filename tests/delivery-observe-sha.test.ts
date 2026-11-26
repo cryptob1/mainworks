@@ -1,13 +1,12 @@
-import { before, after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { Validation } from '../src/validation.js';
 import { Delivery } from '../src/delivery.js';
-import { server } from '../src/server.js';
 import { deliveryOutcome, deliveryLabel, shortShas } from '../src/model/format.js';
 import type { Principal, Work, Observation } from '../src/model.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
@@ -32,19 +31,15 @@ const token = (p: Principal) => `${p.id}-token-${'x'.repeat(32)}`;
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const digestOf = (label: string) => `sha256:${label.repeat(64).slice(0, 64)}`;
 let store: Store, engine: Engine, validation: Validation, delivery: Delivery;
-let http: ReturnType<typeof server>, url: string;
+let url: string;
 let serial = 0;
 const production = { id: 'production', revision: 1 }, uat = { id: 'uat', revision: 1 };
-before(async () => {
-  store = await withDatabase('delivery-observe-sha'); await store.init();
+useTestStore('delivery-observe-sha', { repository: 'test/repository', credentials: principals.map(p => ({ ...p, token: token(p) })) }, async ctx => {
+  ({ store, engine, url } = ctx);
   engine = new Engine(store, 120, 'test/repository'); validation = new Validation(engine, principals, 'test/repository'); delivery = new Delivery(validation);
-  http = server(engine, principals.map(p => ({ ...p, token: token(p) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
   for (const [env, services] of [[production, ['api', 'web']], [uat, ['api', 'web']]] as const)
     await validation.define(operator, { kind: 'environment', id: env.id, expectedRevision: 0, repository: 'test/repository', url: `https://${env.id}.example.test`, instance: `instance-${env.id}`, immutable: true, services: [...services], resources: [`account-${env.id}`] }, id());
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
 const id = () => randomUUID();
 const reload = async (w: Work) => (await engine.store.workItem(w.id))!;
 const sha = (label: string) => label.repeat(40).slice(0, 40);

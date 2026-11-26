@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store, appendSave, applyWorkDelta, eventStats, resolvedPayloadSql, snapshotEvery, workDiff, type WorkDelta } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { readEventHistory, parseEventHistoryQuery } from '../src/events-history.js';
@@ -23,11 +23,7 @@ const worker: Principal = { id: 'implementer', role: 'worker' };
 let store: Store, engine: Engine;
 let serial = 0;
 
-before(async () => {
-  store = await withDatabase('event-ledger-delta'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('event-ledger-delta', {}, ctx => { ({ store, engine } = ctx); });
 
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const raw = async (id: string) => (await store.pool.query('SELECT seq, kind, payload, pg_column_size(payload) AS bytes FROM events WHERE work_id=$1 ORDER BY seq', [id])).rows as { seq: string; kind: string; payload: any; bytes: number }[];

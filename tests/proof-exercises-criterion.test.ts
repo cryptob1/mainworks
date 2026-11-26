@@ -1,10 +1,9 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { exerciseRefusal, type Evidence, type Observation, type Principal, type Work } from '../src/model.js';
 import { producerPrompt, proofOutcome } from '../src/producer.js';
@@ -31,17 +30,10 @@ const PROOF = 'integration:exercised', OTHER = 'unit:exercised-too';
 const BEHAVIOUR = 'the lease expiry check in claim()';
 
 let store: Store, engine: Engine;
-let http: ReturnType<typeof server>, url: string;
+let url: string;
 const id = () => randomUUID();
 
-before(async () => {
-  store = await withDatabase('proof-exercises-criterion'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('proof-exercises-criterion', { credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ store, engine, url } = ctx); });
 
 const create = () => engine.execute(operator, 'create', null, { type: 'chore',  title: 'Exercise fixture', criteria: [
   { id: 'AC-1', text: 'An expired lease cannot claim', proofs: [PROOF, 'e2e:fixture'] },

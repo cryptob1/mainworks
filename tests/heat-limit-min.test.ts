@@ -1,14 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import { Store } from '../src/store.js';
 import { daemonStatePath, emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
@@ -42,7 +39,7 @@ const worker: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `heat-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let url: string;
 const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const parsed = await response.json() as any;
@@ -55,14 +52,7 @@ const coordinationSnapshot = async () => {
   return response.json() as Promise<{ work: Work[]; now: string }>;
 };
 
-before(async () => {
-  store = await withDatabase('heat-limit-min');
-  await store.init();
-  http = server(new Engine(store, 7200, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('heat-limit-min', { leaseSeconds: 7200, repository: repository, credentials: credentials }, ctx => { ({ url } = ctx); });
 
 const pressureText = (avg60: number) => `some avg10=${avg60.toFixed(2)} avg60=${avg60.toFixed(2)} avg300=${avg60.toFixed(2)} total=987654321\nfull avg10=1.00 avg60=1.00 avg300=1.00 total=9876543\n`;
 const statText = (ticks: number) => `cpu  100 100 100 ${1000 + ticks} 10 10 10 0 0 0\ncpu0 100 100 100 ${1000 + ticks} 10 10 10 0 0 0\n`;

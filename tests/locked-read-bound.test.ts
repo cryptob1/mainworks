@@ -1,8 +1,8 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { advisoryLocks } from '../src/store/locks.js';
@@ -79,12 +79,7 @@ async function trivialLockHold(count: number): Promise<number> {
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 
 let store: Store, engine: Engine;
-before(async () => {
-  store = await withDatabase('locked-read-bound'); await store.init();
-  engine = new Engine(store, 120, 'owner/locked');
-  engine.principals = [operator];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('locked-read-bound', { repository: 'owner/locked', principals: [operator] }, ctx => { ({ store, engine } = ctx); });
 
 let template: Work;
 async function ensureTemplate() {

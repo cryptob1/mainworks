@@ -1,14 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { chmod, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import { Store } from '../src/store.js';
+import { useTestStore } from './helpers/test-store.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -27,7 +24,7 @@ const worker: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' };
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string, install: string;
+let url: string, install: string;
 const ok = async (principal: Principal, path: string, body: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', body: JSON.stringify(body),
     headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() } });
@@ -37,16 +34,11 @@ const ok = async (principal: Principal, path: string, body: unknown) => {
 };
 const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-before(async () => {
-  store = await withDatabase('reclaim-readonly-worktree');
-  await store.init();
-  http = server(new Engine(store, 1, 'owner/reclaim-readonly'), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+useTestStore('reclaim-readonly-worktree', { leaseSeconds: 1, repository: 'owner/reclaim-readonly', credentials: credentials }, async ctx => {
+  ({ url } = ctx);
   install = await temporaryDirectory('reclaim-readonly-install');
   await writeFile(join(install, 'coordinator.token'), `${'c'.repeat(40)}\n`, { mode: 0o600 });
 });
-after(async () => { http?.close(); await store?.close(); });
 
 test('e2e:reclaim-readonly-worktree — the loop removes an ended attempt\'s worktree holding a 0555 tree, retries a failed removal, and leaves an outside symlink target alone', async () => {
   const filed = await ok(operator, 'work', { why: 'w', simplest: 's', title: 'Reclaim a read-only worktree', type: 'chore',

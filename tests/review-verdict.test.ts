@@ -1,5 +1,5 @@
 import { launchLegacyReview as launchReview } from './helpers/pending-review.js';
-import { after, before } from 'node:test';
+
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -8,9 +8,8 @@ import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { evaluate } from '../src/model-boundary/gates.js';
@@ -27,7 +26,6 @@ import { hostname } from 'node:os';
 
 /** A fresh registry per launch: the registry alone grants the reviewer its slot. */
 const reviewProbe = () => registryFixture(hostname(), ['claude'], ['reviewer']).probe;
-
 
 // GY-1525: review by risk in control-plane mode. The reviewer launch binds a one-time verdict
 // token; `review post` sends the verdict to the API as that token; the server records it on the
@@ -338,14 +336,7 @@ const principals = [admin, coordinator, worker, retryReviewer];
 const credentials = principals.map(principal => ({ ...principal, token: `${principal.id}-token-${'x'.repeat(32)}` }));
 const tokenOf = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 let store: Store, http: ReturnType<typeof server>, url: string;
-before(async () => {
-  store = await withDatabase('review-verdict'); await store.init();
-  const engine = new Engine(store, 120, repository);
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('review-verdict', { repository: repository, credentials: credentials }, ctx => { ({ store, http, url } = ctx); });
 async function request(credential: string, path: string, body?: unknown, key: string = randomUUID()) {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() as any };

@@ -1,10 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
-import type { Store } from '../src/store.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
@@ -28,15 +25,8 @@ const credentials = [
 
 const sha = (n: number) => String(n).padStart(40, 'c');
 
-let store: Store, http: ReturnType<typeof server>, url: string;
-before(async () => {
-  store = await withDatabase('no-duplicate-repairs');
-  await store.init();
-  http = server(new Engine(store, 7200, mainworksRepository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+let url: string;
+useTestStore('no-duplicate-repairs', { leaseSeconds: 7200, repository: mainworksRepository, credentials: credentials }, ctx => { ({ url } = ctx); });
 
 const fetchSnapshot = async (): Promise<{ work: Work[]; now: string }> => {
   const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${coordinatorToken}` } });

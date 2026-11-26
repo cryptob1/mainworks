@@ -1,4 +1,4 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -6,11 +6,10 @@ import { chmod, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import type { CaseRun } from '../src/scenarios.js';
 import { caseDirectory, loadCases, parseCase, scenarioDefinition, selectCases, syncCases, type CaseFile } from '../src/e2e/case.js';
@@ -34,16 +33,9 @@ const tokens = new Map(principals.map(p => [p.id, `${p.id}-${'t'.repeat(32)}`]))
 const root = new URL('..', import.meta.url).pathname;
 const cli = new URL('../bin/graphyard.mjs', import.meta.url).pathname;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, url: string;
 
-before(async () => {
-  store = await withDatabase('e2e-cases'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('e2e-cases', { credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ store, engine, url } = ctx); });
 
 /** The CLI's authenticated request helper, as one principal. */
 const apiAs = (actor: Principal) => async (path: string, data?: unknown, key: string = randomUUID()) => {

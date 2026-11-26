@@ -1,10 +1,9 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import type { Observation, Principal, Work } from '../src/model.js';
 import { caseResult, flakiness, scenarioOf, type ScenarioRun } from '../src/model/test-cases.js';
 
@@ -27,17 +26,10 @@ const principals = [operator, worker, producer, runner, collector, builder];
 const tokens = new Map(principals.map(p => [p.id, `${p.id}-${'t'.repeat(32)}`]));
 const head = 'c'.repeat(40), base = 'd'.repeat(40), repository = 'owner/project';
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, url: string;
 let pullRequest = 300, cases = 0;
 
-before(async () => {
-  store = await withDatabase('test-case-repository'); await store.init();
-  engine = new Engine(store, 120, repository);
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+useTestStore('test-case-repository', { repository: repository, credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ store, engine, url } = ctx); });
 
 async function call(path: string, actor: Principal, data?: unknown, key = randomUUID()) {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',

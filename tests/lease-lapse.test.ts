@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -23,14 +23,10 @@ const reload = async (work: Work) => (await store.list()).find(item => item.id =
 const events = async (work: Work, kind: string) => (await store.events(work.id)).filter(event => event.kind === kind);
 const merge = (work: Work) => work.gates.find(gate => gate.name === 'merge')!;
 
-before(async () => {
-  store = await withDatabase('lease-lapse'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [human, master, worker, replacement];
-  // Leases granted by this engine expire at once, so reconciliation sees the lapse.
+useTestStore('lease-lapse', { principals: [human, master, worker, replacement] }, ctx => {
+  ({ store, engine } = ctx);
   expiring = new Engine(store, 0, 'owner/project'); expiring.principals = engine.principals;
 });
-after(async () => { if (store) await store.close(); });
 
 // A claim through the expiring engine has already lapsed by the time a workspace could be
 // registered, so that attempt is left without one, as a supervisor that never started leaves it.

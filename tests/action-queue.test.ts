@@ -1,12 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { type Observation, type Principal, type Work } from '../src/model.js';
 import { actionClaimMs, claimAction, idleActionable, openActions, queueSnapshot, settleAction } from '../src/model/actions.js';
@@ -58,16 +57,8 @@ const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
 
 let store: Store, engine: Engine;
-let http: ReturnType<typeof server>, url: string;
-before(async () => {
-  store = await withDatabase('action-queue'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker, otherWorker, executorA, executorB, producer];
-  http = server(engine, [{ ...operator, token: 'o'.repeat(32) }, { ...worker, token: 'w'.repeat(32) }, { ...executorA, token: 'x'.repeat(32) }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
-});
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+let url: string;
+useTestStore('action-queue', { principals: [operator, worker, otherWorker, executorA, executorB, producer], credentials: [{ ...operator, token: 'o'.repeat(32) }, { ...worker, token: 'w'.repeat(32) }, { ...executorA, token: 'x'.repeat(32) }] }, ctx => { ({ store, engine, url } = ctx); });
 
 const reload = async (item: Work | string) => (await store.list()).find(entry => entry.id === (typeof item === 'string' ? item : item.id))!;
 /** The computed action's inputs, untyped at the call site so one assertion cannot narrow the next. */

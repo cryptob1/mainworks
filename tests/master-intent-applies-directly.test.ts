@@ -1,8 +1,8 @@
-import { before, after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -20,13 +20,10 @@ const second: Principal = { id: 'worker-two', role: 'worker' };
 let store: Store, engine: Engine;
 const id = () => randomUUID();
 
-before(async () => {
-  store = await withDatabase('master-intent-applies-directly'); await store.init();
-  // A one-second lease, so the lapse is real time and not a fixture.
-  engine = new Engine(store, 1, 'owner/project');
+useTestStore('master-intent-applies-directly', { leaseSeconds: 1 }, ctx => {
+  ({ store, engine } = ctx);
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
 });
-after(async () => { if (store) await store.close(); });
 
 const criteria = [{ id: 'AC-1', text: 'The first behaviour holds', proofs: ['unit:first', 'e2e:fixture'] }, { id: 'AC-2', text: 'The second behaviour holds', proofs: ['unit:second'] }];
 const create = (title: string) => engine.execute(operator, 'create', null, { title, type: 'chore', priority: 2, criteria, dependencies: [], policy: { checks: ['test'], review: true } }, id());

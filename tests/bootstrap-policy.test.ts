@@ -1,9 +1,9 @@
-import { before, after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { bootstrapObligations, deliveredProof, inheritedObligations, pathScopeContains, pathScopesOverlap, requiredProofs, type Observation, type Principal, type Work } from '../src/model.js';
@@ -28,12 +28,10 @@ let store: Store, engine: Engine;
 let serial = 0;
 const id = () => randomUUID();
 
-before(async () => {
-  store = await withDatabase('bootstrap-policy'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
+useTestStore('bootstrap-policy', {}, ctx => {
+  ({ store, engine } = ctx);
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
 });
-after(async () => { if (store) await store.close(); });
 
 const current = async (workId: string) => (await store.list()).find(item => item.id === workId)!;
 const all = () => store.list();

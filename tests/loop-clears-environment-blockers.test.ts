@@ -1,13 +1,11 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { Engine } from '../src/engine.js';
-import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -30,7 +28,7 @@ const workerA: Principal = { id: 'worker-a', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA].map(principal => ({ ...principal, token: `env-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, url: string;
 const ok = async (bearer: string, path: string, body: unknown = {}) => {
   const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
   const result = await response.json() as any;
@@ -54,14 +52,7 @@ async function blocked(title: string, reason: string) {
   return item;
 }
 
-before(async () => {
-  store = await withDatabase('loop-clears-environment-blockers');
-  await store.init();
-  http = server(new Engine(store, 7200, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-});
-after(async () => { http?.close(); await store?.close(); });
+useTestStore('loop-clears-environment-blockers', { leaseSeconds: 7200, repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
 const profile = { name: 'w1', principal: workerA.id, agentName: 'agent-w1', mode: 'launch', kind: 'claude', credentialFile: '/outside/w1.token', agentArgs: [], environment: {} } as unknown as WorkerProfile;
 const makeConfig = async (): Promise<MasterConfig> => masterConfigSchema.parse({ version: 1, url, credentialFile: join(await temporaryDirectory('env-blockers-credentials'), 'coordinator.token'), cliPath: '/bin/graphyard',

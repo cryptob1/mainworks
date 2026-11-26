@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -25,12 +25,7 @@ const reload = async (work: Work) => (await store.list()).find(item => item.id =
 const events = async (work: Work, kind: string) => (await store.events(work.id)).filter(event => event.kind === kind);
 const merge = (work: Work) => work.gates.find(gate => gate.name === 'merge')!;
 
-before(async () => {
-  store = await withDatabase('lease-lifecycle'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-  engine.principals = [operator, worker, replacement];
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('lease-lifecycle', { principals: [operator, worker, replacement] }, ctx => { ({ store, engine } = ctx); });
 
 async function claimed(title: string, actor: Principal = worker) {
   let work = await engine.execute(operator, 'create', null, input(title), id());

@@ -1,7 +1,7 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { withDatabase } from './helpers/postgres.js';
+import { useTestStore } from './helpers/test-store.js';
 import { Store, applyWorkDelta, documentBefore, type WorkDelta } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -22,11 +22,7 @@ const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 let store: Store, engine: Engine;
 let serial = 0;
 
-before(async () => {
-  store = await withDatabase('event-snapshot-delta'); await store.init();
-  engine = new Engine(store, 120, 'owner/project');
-});
-after(async () => { if (store) await store.close(); });
+useTestStore('event-snapshot-delta', {}, ctx => { ({ store, engine } = ctx); });
 
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const rows = async (id: string) => (await store.pool.query('SELECT seq, kind, payload, created_at, pg_column_size(payload) AS bytes FROM events WHERE work_id=$1 ORDER BY seq', [id])).rows as { seq: string; kind: string; payload: any; created_at: Date; bytes: number }[];
