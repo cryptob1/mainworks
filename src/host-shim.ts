@@ -310,6 +310,8 @@ elif verb == 'update-shim':
     if not signed:
         sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
     signers = os.environ.get('MAINWORKS_SIGNERS', '')
+    if not signers and os.path.isfile('/etc/ssh/graphyard_helper_signers'):
+        signers = '/etc/ssh/graphyard_helper_signers'
     with tempfile.NamedTemporaryFile() as sig_file, tempfile.NamedTemporaryFile('w') as fallback_file:
         sig_file.write(signature + signed)
         sig_file.flush()
