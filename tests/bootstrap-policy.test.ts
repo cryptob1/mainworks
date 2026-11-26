@@ -12,6 +12,7 @@ import { evaluate } from '../src/model-boundary/gates.js';
 import { diagnose, obligationLedger, proofPreview } from '../src/coordination.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -49,12 +50,7 @@ async function submitted(input: Record<string, unknown>, observe: Partial<Observ
   const criteria = input.criteria as Work['criteria'];
   if (!criteria.some(ac => ac.proofs.some(proof => proof.startsWith('e2e:'))))
     input = { ...input, criteria: [...criteria, { id: 'AC-99', text: 'The served head works', proofs: ['e2e:fixture'] }] };
-  const n = ++serial;
-  let work = await engine.execute(operator, 'create', null, input, id());
-  work = await engine.execute(operator, 'ready', work.id, {}, id());
-  work = await engine.execute(worker, 'claim', work.id, {}, id());
-  work = await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'test', path: `/tmp/bootstrap-${n}`, branch: `graphyard/bootstrap-${n}` }, id());
-  work = await engine.execute(worker, 'submit', work.id, { epoch: work.epoch, pr: 1000 + n }, id());
+  const work = await lifecycle(engine, operator, input, { claim: worker, workspace: { host: 'test' }, submit: { pr: 1000 + ++serial } });
   return engine.observe(work.id, work.revision, observation(work, observe));
 }
 async function prove(work: Work, proof: string, overrides: Record<string, unknown> = {}) {

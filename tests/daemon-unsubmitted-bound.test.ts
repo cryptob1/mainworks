@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -101,12 +102,7 @@ async function overwrite(work: Work, mutate: (document: Work) => void) {
   await store.pool.query('UPDATE work_items SET document=$2::jsonb WHERE id=$1', [document.id, JSON.stringify(document)]);
   return document;
 }
-async function claimed(title: string) {
-  let work = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, id());
-  work = await engine.execute(operator, 'ready', work.id, {}, id());
-  work = await engine.execute(worker, 'claim', work.id, {}, id());
-  return engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'machine-a', path: `/srv/worktrees/${work.key}-${work.epoch}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, id());
-}
+const claimed = (title: string) => lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: worker });
 /** Moves the attempt's claim `heldMs` into the past, as an attempt that has held that long reads. */
 const age = (work: Work, heldMs: number) => overwrite(work, document => { document.lastAssignment = { ...document.lastAssignment!, claimedAt: new Date(Date.now() - heldMs).toISOString() }; });
 const heartbeat = (work: Work, epoch = work.epoch) => engine.execute(worker, 'heartbeat', work.id, { epoch }, id());

@@ -21,6 +21,7 @@ import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-21 `now` is handed explicitly to nextAction and actionAccount over fixtures built from it; new Date() serves the engine tests and stamps observations.
@@ -52,13 +53,7 @@ let store: Store, engine: Engine;
 useTestStore('action-totality', { principals: [operator, worker] }, ctx => { ({ store, engine } = ctx); });
 
 let sequence = 0;
-async function submitted() {
-  let item = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Totality ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/totality/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}` }, randomUUID());
-  return engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: 100 + sequence }, randomUUID());
-}
+const submitted = () => lifecycle(engine, operator, { type: 'chore',  title: `Totality ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }] }, { claim: worker, submit: { pr: 100 + sequence } });
 
 /** The provider's view of a candidate: approved, both checks green, mergeable, protected, in scope. */
 function observation(item: Work, overrides: Partial<Observation> = {}): Observation {

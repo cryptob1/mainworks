@@ -18,6 +18,7 @@ import type { Principal, Work } from '../src/model.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-558: lease renewals timed out waiting for a connection behind slow report and observation
@@ -39,14 +40,8 @@ function engineOn(store: Store, leaseSeconds = 120) {
   engine.principals = [operator, engineer, rival];
   return engine;
 }
-async function ready(engine: Engine, title: string, criteria = [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }]) {
-  const work = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria }, randomUUID());
-  return engine.execute(operator, 'ready', work.id, {}, randomUUID());
-}
-async function claimed(engine: Engine, title: string, actor = engineer) {
-  const work = await engine.execute(actor, 'claim', (await ready(engine, title)).id, {}, randomUUID());
-  return engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'lease-pool-host', path: `/tmp/lease-pool/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, randomUUID());
-}
+const ready = (engine: Engine, title: string, criteria: { id: string; text: string; proofs: string[] }[] = [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }]) => lifecycle(engine, operator, { type: 'chore',  title, criteria });
+const claimed = (engine: Engine, title: string, actor = engineer) => lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: actor, workspace: { host: 'lease-pool-host' } });
 async function listening(engine: Engine) {
   const { url, close: closeHttp } = await listen(server(engine, credentials));
   const post = async (actor: Principal, path: string, body: unknown) => {
@@ -82,7 +77,7 @@ test('unit:lease-pool-isolated — renewal, claim, complete, blocked and defer o
     const work = await claimed(engine, 'isolated-renewal');
     const open = await ready(engine, 'isolated-claim');
     // GY-1726: a post-deploy follow-up whose reading cannot exist yet, deferred by its worker under the same exhaustion.
-    const followUp = await engine.execute(engineer, 'claim', (await ready(engine, 'isolated-defer', [{ id: 'AC-1', text: 'The serving release reads clean', proofs: ['manual:lease-pool-on-serving-release', 'e2e:fixture'] }])).id, {}, randomUUID());
+    const followUp = await lifecycle(engine, operator, { type: 'chore',  title: 'isolated-defer', criteria: [{ id: 'AC-1', text: 'The serving release reads clean', proofs: ['manual:lease-pool-on-serving-release', 'e2e:fixture'] }] }, { claim: engineer });
     // Every pool but the lease pool — the general pool, and the report pool where the store has one —
     // is held to its last connection, as slow report and observation queries held it in production.
     const others = Object.entries(store).filter((entry): entry is [string, pg.Pool] => entry[1] instanceof pg.Pool && entry[1] !== store.leasePool);

@@ -15,6 +15,7 @@ import { landabilityRefusals } from '../src/model/landability.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -65,14 +66,7 @@ before(async () => {
 after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }); });
 
 /** A sensitive head the implementer submitted: claimed, workspace registered, head observed by the control plane. */
-async function submitted(): Promise<Work> {
-  let work = await engine.execute(admin, 'create', null, { type: 'bug', title: 'Attested by the master', criteria: [{ id: 'AC-1', text: 'The onboarding files land where the guide says', proofs: [PROOF, 'e2e:fixture'] }] }, id());
-  work = await engine.execute(admin, 'ready', work.id, {}, id());
-  const pulled = await engine.pullAssignment(worker, { work: work.id }, id());
-  assert.equal(pulled.assigned?.id, work.id, JSON.stringify(pulled.refused));
-  work = await engine.execute(worker, 'workspace', pulled.assigned!.id, { epoch: pulled.assigned!.epoch, host: 'test', path: '/tmp/master-attest-manual', branch: 'graphyard/gy-1-1' }, id());
-  return engine.execute(worker, 'submit', work.id, { epoch: work.epoch, head }, id());
-}
+const submitted = () => lifecycle(engine, admin, { type: 'bug', title: 'Attested by the master', criteria: [{ id: 'AC-1', text: 'The onboarding files land where the guide says', proofs: [PROOF, 'e2e:fixture'] }] }, { claim: worker, pull: true, workspace: { host: 'test', path: '/tmp/master-attest-manual', branch: 'graphyard/gy-1-1' }, submit: { head } });
 
 /** The acceptance family's refusal reasons, as the landability verdict words them. */
 const acceptance = (work: Work) => landabilityRefusals(evaluateLandability(work, [work], new Date()), 'acceptance');

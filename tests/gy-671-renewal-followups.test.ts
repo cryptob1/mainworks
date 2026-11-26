@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import pg from 'pg';
 import { databaseUrl } from './helpers/postgres.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { z } from 'zod';
 import { Store } from '../src/store.js';
 import { Engine, RenewalFault, renewalFaultEvent, renewalFaultOf } from '../src/engine.js';
@@ -35,14 +36,7 @@ function engineOn(store: Store, leaseSeconds = 120) {
   engine.principals = [operator, engineer];
   return engine;
 }
-async function ready(engine: Engine, title: string) {
-  const work = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
-  return engine.execute(operator, 'ready', work.id, {}, randomUUID());
-}
-async function claimed(engine: Engine, title: string) {
-  const work = await engine.execute(engineer, 'claim', (await ready(engine, title)).id, {}, randomUUID());
-  return engine.execute(engineer, 'workspace', work.id, { epoch: work.epoch, host: 'gy671-host', path: `/tmp/gy671/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, randomUUID());
-}
+const claimed = (engine: Engine, title: string) => lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: engineer, workspace: { host: 'gy671-host' } });
 /** Hold every connection the lease pool may open, so nothing else can get one from it. */
 async function exhaust(pool: pg.Pool) {
   const max = (pool as unknown as { options: { max: number } }).options.max;
