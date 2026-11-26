@@ -36,7 +36,8 @@ await Promise.all(Array.from({ length: Math.min(breadth, files.length) }, async 
     // The bound is named to the file it bounds, so a test whose execution cannot fit it (the
     // slow-tick receipt's twenty sequential runs) defers to an unbounded run instead of dying at
     // the deadline.
-    const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), '--import', import.meta.resolve('./closed-stdin.mjs'), '--test', ...reporter, ...flags, file], {
+    // GY-3933: closed-stdin swaps fd 0 before tsx starts, so no file tsx opens can take fd 0 in the gap (libuv aborts when it closes it).
+    const child = spawn(process.execPath, ['--import', import.meta.resolve('./closed-stdin.mjs'), '--import', import.meta.resolve('tsx'), '--test', ...reporter, ...flags, file], {
       detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(Number.isFinite(timeoutMs) ? { GRAPHYARD_FILE_TIMEOUT_MS: String(timeoutMs) } : {}) },
     });
     children.add(child);
