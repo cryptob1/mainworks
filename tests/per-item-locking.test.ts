@@ -224,7 +224,7 @@ test('unit:reconcile-uncontended-under-load 30 items reconciled beside lease ren
   // most of its 30 s asleep between them, and every loop then slept out its own cadence past its end.
   // On a starved runner whose ticks take 2-3 s (GY-2488) the window simply runs longer, with every
   // per-tick assertion still applied to each of its 15 ticks.
-  let open = true, closed!: () => void;
+  let open = true, attempts = 0, closed!: () => void;
   const closing = new Promise<void>(resolve => { closed = resolve; });
   const pause = (ms: number) => Promise.race([sleep(ms), closing]);
   const loop = async (everyMs: number, run: () => Promise<unknown>, what: string) => {
@@ -256,9 +256,8 @@ test('unit:reconcile-uncontended-under-load 30 items reconciled beside lease ren
         [observed[Math.floor(Math.random() * observed.length)].id, JSON.stringify({ owner: 'gone-worker', epoch: 1, expiresAt: new Date(Date.now() - 1000).toISOString() })]), 'lapse'),
       loop(500, async () => {
         const started = performance.now();
-        await engine.reconcile();
-        ticks.push(performance.now() - started);
-        if (ticks.length >= 15) { open = false; closed(); }
+        try { await engine.reconcile(); ticks.push(performance.now() - started); }
+        finally { if (++attempts >= 15) { open = false; closed(); } }
       }, 'tick'),
     ]);
   } finally { queryLatencyMs = 0; engine.reconcileFullEvaluationMs = fullEvery; }
