@@ -59,7 +59,7 @@ function work(overrides: Partial<Work> = {}): Work {
  * clears `launching` once the runtime has had headlessStartupMs, so a loaded host read too late.
  * On a loaded ledger, the first read after each runtime start takes longer than that startup.
  */
-type Ledger = { written: Map<string, ReviewRecord>; started: () => void };
+type Ledger = { written: Map<string, ReviewRecord>; started: () => void; loaded: boolean };
 function mirrored<T>(body: (ledger: Ledger) => Promise<T>, loaded = false) {
   const outer = loopStateContext.getStore()!, written = new Map<string, ReviewRecord>();
   let slow = false;
@@ -75,7 +75,7 @@ function mirrored<T>(body: (ledger: Ledger) => Promise<T>, loaded = false) {
         for (const record of records) written.set(String(record.id), structuredClone(record) as ReviewRecord);
       },
     };
-  }, () => body({ written, started }));
+  }, () => body({ written, started, loaded }));
 }
 
 /** A master with two reviewer profiles — the two runtimes the incident launched. */
@@ -100,11 +100,25 @@ async function reviewerMaster(ledger: Ledger) {
   };
   const headless: HeadlessExec = (_command, _args, options) => {
     ledger.started();
+    if (!ledger.loaded) startupAtOnce();
     log.tabs.push(options.run); log.started.push({ pane: options.run, recorded: [...ledger.written.values()] });
     return new Promise(() => {});
   };
   const registerLaunch = async () => ({ launch: 'fixture-launch' });
   return { root, credentials, run, headless, registerLaunch, log, cleanup: async () => { await rm(root, { recursive: true, force: true }); await rm(credentials, { recursive: true, force: true }); } };
+}
+
+/**
+ * GY-3875: the launcher arms its startup observation (headlessStartupMs) the moment the stubbed
+ * runtime starts; the stub's runtime never fails, so waiting it out only idles each race. That one
+ * timer fires at once; the pinned test, whose subject is a read slower than startup, keeps it.
+ */
+function startupAtOnce() {
+  const real = globalThis.setTimeout;
+  globalThis.setTimeout = ((handler: () => void, ms?: number, ...rest: unknown[]) => {
+    globalThis.setTimeout = real;
+    return real(handler, ms === headlessStartupMs ? 0 : ms, ...rest);
+  }) as typeof setTimeout;
 }
 
 type Launcher = 'cycle' | 'dispatcher';
