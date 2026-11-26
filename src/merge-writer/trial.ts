@@ -1655,10 +1655,13 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       ...(slowest ? { slowest } : {}),
       ...(Object.keys(checkResults).length ? { checks: checkResults } : {}),
     });
+    const covers = (check: RepositoryTrialCheck) => !!check.selection && boundFiles.some(file => new RegExp(check.selection!.pattern).test(file));
+    // GY-3921: with no selected check covering the bound test files, a test runner with no selection is what runs them.
+    const viaRunner = (boundFiles.length > 0 || input.boundOnly === 'tests') && !checks.some(covers);
     for (const check of checks) {
       if (check.paths && !touchesPaths(input.changedFiles, check.paths) && !requestedChecks.has(check.check)) continue;
-      // GY-3921: a bound-only run starts a declared check for a check: proof, or to run its bound test files: a check with no selection may be what runs them.
-      if (input.boundOnly && !requestedChecks.has(check.check) && !(check.selection ? boundFiles.some(file => new RegExp(check.selection!.pattern).test(file)) : boundFiles.length || input.boundOnly === 'tests')) continue;
+      // GY-3921: a bound-only run starts a check for a check: proof or to run its bound test files, never one nobody reads.
+      if (input.boundOnly && !requestedChecks.has(check.check) && !covers(check) && !(viaRunner && !check.selection && (check.check === 'test' || check.argv.includes('test')))) continue;
       if (check.selection) {
         const selected = await withServices(check, () => runSelected(check));
         if ('services' in selected) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }
