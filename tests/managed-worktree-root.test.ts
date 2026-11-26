@@ -601,6 +601,52 @@ test('unit:managed-worktree-root-pinned — a waiter queued behind a holder stil
   }
 });
 
+test('unit:managed-worktree-root-pinned — a second holder takes the free slot without waiting while the first holder still has its ticket in queue/ (GY-3868)', async () => {
+  const scratch = await temporaryDirectory('slots-holder-ticket');
+  const stop = new AbortController();
+  const lockers: ReturnType<typeof spawn>[] = [];
+  const lockFile = async (path: string) => {
+    const child = spawn('flock', ['--exclusive', path, 'sh', '-c', 'echo locked; read _'], { stdio: ['pipe', 'pipe', 'ignore'] });
+    lockers.push(child);
+    await new Promise<void>((ready, fail) => {
+      child.stdout!.once('data', () => ready());
+      child.once('error', fail);
+      child.once('exit', code => fail(new Error(`flock exited early (${code})`)));
+    });
+  };
+  try {
+    const directory = join(scratch, 'heavy-jobs'), queue = join(directory, 'queue'), slot0 = join(directory, 'slot-0');
+    const ticketName = '1-000000000000001-holding', ticketPath = join(queue, ticketName), ownerPath = join(slot0, 'owner.json');
+    await mkdir(queue, { recursive: true });
+    await mkdir(slot0, { recursive: true });
+    await writeFile(ticketPath, 'owner/project');
+    await writeFile(ownerPath, JSON.stringify({ locked: true, ticket: ticketName, pid: process.pid, label: 'npm test', project: 'owner/project', cwd: scratch, at: new Date().toISOString() }));
+    // Hold both slot-0 and its older queue ticket, as a holder does between tryTake's renameSync and finally { ticket.leave() }.
+    await lockFile(ownerPath);
+    await lockFile(ticketPath);
+
+    const lines: string[] = [];
+    const timer = setTimeout(() => stop.abort(new Error('second holder blocked behind first holder\'s ticket')), 2_000);
+    let taken: Awaited<ReturnType<typeof acquireVerificationSlot>> | undefined;
+    try {
+      taken = await acquireVerificationSlot({
+        directory, slots: 2, label: 'npm test', project: 'owner/project', pollMs: 10, signal: stop.signal,
+        onWait: line => { lines.push(line); stop.abort(new Error(`second holder emitted wait line while slot-1 was free: ${line}`)); },
+      });
+    } finally { clearTimeout(timer); }
+
+    assert.equal(lines.length, 0, 'the second holder takes the free slot without emitting a wait line');
+    assert.equal(taken.slot, 1, 'the second holder takes slot-1 alongside slot-0');
+    const secondOwner = heldSlots(directory).find(entry => entry.slot === taken.slot)?.owner;
+    assert.match(secondOwner?.ticket ?? '', /^1-\d{15}-/, 'a taken slot records its queue ticket so later waiters do not double-count it');
+    taken.release();
+  } finally {
+    stop.abort();
+    for (const child of lockers) { child.stdin?.end(); child.kill(); }
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 test('unit:host-verification-slots — a sandboxed session is granted the lock directory, and an account PATH keeps the wrappers first', async () => {
   const scratch = await temporaryDirectory('slots-grant');
   try {
