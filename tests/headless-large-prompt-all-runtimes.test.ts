@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { loadMasterConfig, setupMaster } from '../src/master.js';
@@ -68,18 +69,17 @@ before(async () => {
   await writeFile(join(bin, 'opencode'), stub(`!last || last.startsWith('-') || last === 'json' || last === 'run'`), { mode: 0o755 });
   await writeFile(join(bin, 'codex'), stub(`last === '-'`), { mode: 0o755 });
 
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main');
+  const { git } = await gitRepo({ root });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const lines = Array.from({ length: 2400 }, (_, i) => `export const graphyardSymbol_${i} = "graphyard-value-${i}-${'a'.repeat(40)}";`).join('\n') + '\n';
   await writeFile(join(root, 'README.md'), 'Named spec file.\n');
   await writeFile(join(root, 'sweep.ts'), lines);
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+  git('add', '.'); git('commit', '-qm', 'base');
   base = git('rev-parse', 'HEAD');
   git('update-ref', 'refs/remotes/origin/main', base);
   await writeFile(join(root, 'a-marker.ts'), 'export const marker = "large-diff-marker";\n');
   await writeFile(join(root, 'sweep.ts'), lines.replaceAll('graphyard', 'mainworks'));
-  git('add', 'a-marker.ts', 'sweep.ts'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'rename sweep');
+  git('add', 'a-marker.ts', 'sweep.ts'); git('commit', '-qm', 'rename sweep');
   head = git('rev-parse', 'HEAD');
   git('checkout', '-q', base);
 

@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { heavyRunLabel } from './helpers/run-tests.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
@@ -133,11 +134,11 @@ test('integration:temporary-trial-limits — trialCap=2 and launchHotCelsius=80 
 async function host() {
   const scratch = await temporaryDirectory('strict-cap'), data = join(scratch, 'data'), log = join(scratch, 'runs.log'), go = join(scratch, 'go');
   const root = join(scratch, 'app'), managed = join(scratch, 'managed');
-  mkdirSync(root); mkdirSync(managed); writeFileSync(log, '');
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { 'test:affected': 'node job.mjs', test: 'node job.mjs' } }));
-  writeFileSync(join(root, 'job.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.RUN_LOG, 'start ' + process.env.JOB_ID + '\\nend ' + process.env.JOB_ID + '\\n');\n`);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 'F', GIT_AUTHOR_EMAIL: 'f@example.com', GIT_COMMITTER_NAME: 'F', GIT_COMMITTER_EMAIL: 'f@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
-  git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-qm', 'fixture');
+  mkdirSync(managed); writeFileSync(log, '');
+  await gitRepo({ root, message: 'fixture', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { 'test:affected': 'node job.mjs', test: 'node job.mjs' } }),
+    'job.mjs': `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.RUN_LOG, 'start ' + process.env.JOB_ID + '\\nend ' + process.env.JOB_ID + '\\n');\n`,
+  } });
   // GY-3852: the strict cap's heat wait reads these sensors, not the host's: a hot trial host held every queued job for a minute.
   const sensors = join(scratch, 'hwmon'), celsius = (value: number) => writeFileSync(join(sensors, 'hwmon0', 'temp1_input'), `${value * 1000}\n`);
   mkdirSync(join(sensors, 'hwmon0'), { recursive: true });

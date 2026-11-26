@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,13 +10,12 @@ import { recordTestSelection, selectionCounts } from '../src/merge-writer/test-s
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3866: an item's trial selects only the tests importing a changed file directly (one hop), its
 // bound proofs and the static rules; the release check's sweep still runs the transitive importers.
 
 const staticRuleTests = ['tests/architecture.test.ts', 'tests/architecture-pinned.test.ts', 'tests/barrel-imports.test.ts', 'tests/import-cycles.test.ts', 'tests/no-old-name.test.ts', 'tests/knip-clean.test.ts'];
-const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv }).trim();
 async function write(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
 }

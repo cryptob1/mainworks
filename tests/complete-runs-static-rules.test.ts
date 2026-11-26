@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
@@ -14,7 +14,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import type { Principal } from '../src/model.js';
 import { server } from '../src/server.js';
 import { withDatabase } from './helpers/postgres.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3892: complete runs the fast static rule test files (GY-3826) on the head before submitting
 // and refuses with the failing file and its first failing line when one fails.
@@ -24,12 +24,6 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const launcher = fileURLToPath(new URL('../bin/mainworks.mjs', import.meta.url));
 const oldNameWord = `${'graph'}${'yard'}`;
 
-function git(cwd: string, ...args: string[]) {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-}
-
 async function writeFiles(root: string, files: Record<string, string>) {
   for (const [path, content] of Object.entries(files)) {
     await mkdir(dirname(join(root, path)), { recursive: true });
@@ -38,19 +32,14 @@ async function writeFiles(root: string, files: Record<string, string>) {
 }
 
 async function seedStaticRuleRepo(label: string) {
-  const root = await temporaryDirectory(label);
   const noOldNameTest = await readFile(join(repoRoot, 'tests/no-old-name.test.ts'), 'utf8');
-  git(root, 'init', '--quiet', '-b', 'main');
-  await writeFiles(root, {
+  const { root, head: baseSha } = await gitRepo({ label, files: {
     '.gitignore': `.${oldNameWord}/\n`,
     'package.json': '{"type":"module"}\n',
     'tests/old-names.txt': `\\.${oldNameWord}\\b\npath tests/no-old-name.test.ts\n`,
     'tests/no-old-name.test.ts': noOldNameTest,
     'tests/architecture.test.ts': "import { test } from 'node:test';\ntest('unit:architecture — ok', () => {});\n",
-  });
-  git(root, 'add', '-A');
-  git(root, 'commit', '--quiet', '-m', 'base');
-  const baseSha = git(root, 'rev-parse', 'HEAD');
+  } });
   git(root, 'update-ref', 'refs/remotes/origin/main', baseSha);
   return { root, baseSha };
 }

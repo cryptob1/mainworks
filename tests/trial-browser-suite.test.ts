@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,26 +7,26 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
 import { trialFailureReason } from '../src/merge-writer/executor.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-2092: GitHub CI no longer runs the Playwright suite, so the merge writer's trial runs it when a change touches the dashboard.
 
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 test('unit:trial-runs-browser-suite — a trial of a change touching web/ runs npm run test:browser and a failing browser test refuses the merge; a change touching only src/daemon/ never runs it', async () => {
   const root = await temporaryDirectory('trial-browser-repo', tmpdir());
-  gitIn(root, 'init', '-q', '-b', 'main');
+  git(root, 'init', '-q', '-b', 'main');
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
   write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', 'test:browser': 'playwright test' } }));
   const policy = JSON.parse(readFileSync(new URL('../graphyard.json', import.meta.url), 'utf8')).delivery;
   policy.mergeGate.preMerge = policy.mergeGate.preMerge.filter((check: { paths?: string[] }) => check.paths);
   write('graphyard.json', JSON.stringify({ delivery: policy }));
   write('web/app.tsx', 'one\n'); write('src/daemon/cycle.ts', 'one\n');
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
+  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
+  const base = git(root, 'rev-parse', 'HEAD');
   const trialOf = async (path: string, browserFails: boolean, chromiumFails = false) => {
-    gitIn(root, 'checkout', '-q', '--detach', base); write(path, 'two\n'); gitIn(root, 'commit', '-q', '-am', `edit ${path}`);
-    const head = gitIn(root, 'rev-parse', 'HEAD'); gitIn(root, 'checkout', '-q', 'main');
+    git(root, 'checkout', '-q', '--detach', base); write(path, 'two\n'); git(root, 'commit', '-q', '-am', `edit ${path}`);
+    const head = git(root, 'rev-parse', 'HEAD'); git(root, 'checkout', '-q', 'main');
     const merged = await trialMerge(async args => String(await defaultChildRun('git', ['-C', root, ...args], { env: { ...process.env, ...identity } })), { head, baseTip: base });
     assert.ok('mergeSha' in merged);
     // The recording runner: git runs for real, every npm script is recorded and answered.

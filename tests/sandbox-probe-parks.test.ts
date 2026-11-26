@@ -1,7 +1,6 @@
 import { runtimeSandboxes } from '../src/worker-sandbox.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dispatchWork, loadMasterConfig, setupMaster, type WorkerProfile } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 
 import { releaseWorkerLaunch, accountStartFailurePath } from '../src/master/dispatch.js';
@@ -18,19 +18,13 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const workerToken = 'worker-token-'.padEnd(40, 'x');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** A repository laid out like a Mainworks checkout: an origin, the main clone, and a managed linked worktree. */
 async function linkedWorktree(name = 'GY-1-1') {
   const root = await realpath(await temporaryDirectory('sandbox'));
-  const origin = join(root, 'origin.git'), main = join(root, 'repo');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, main], { stdio: 'ignore' });
-  git(main, 'config', 'user.email', 't@example.com'); git(main, 'config', 'user.name', 'T');
-  await writeFile(join(main, 'README.md'), '# Fixture\n'); git(main, 'add', '.'); git(main, 'commit', '-q', '-m', 'base'); git(main, 'push', '-q', 'origin', 'main');
+  const { root: main } = await gitRepo({ root: join(root, 'repo'), files: { 'README.md': '# Fixture\n' }, origin: true });
   const worktree = join(main, '.graphyard/worktrees', name);
   git(main, 'worktree', 'add', '-q', '-b', `graphyard/${name.toLowerCase()}`, worktree);
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   return { root, main, worktree, gitDir: join(main, '.git/worktrees', name), commonDir: join(main, '.git') };
 }
 async function dispatchFixture() {

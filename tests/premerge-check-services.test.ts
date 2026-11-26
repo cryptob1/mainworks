@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { gateCheckSchema } from '../src/model-boundary/delivery-policy.js';
 import { declaredPreMerge, repositoryTrialChecks, runTrial } from '../src/merge-writer/trial.js';
@@ -13,19 +14,14 @@ import { composeProjectPrefix, tcpAcceptProbe, type startCheckServices } from '.
 
 // GY-3209: a pre-merge check can declare Compose services the trial starts beside it.
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const nested = existsSync('/etc/graphyard-trial');
 const services = [{ file: 'compose.yml', service: 'db', port: 5432 }, { file: 'compose.yml', service: 'cache-store', port: 6379 }];
 const check = (extra: Record<string, unknown> = {}) => ({ check: 'db', command: 'node query.mjs', source: 'script', reason: 'fixture', services, ...extra });
 const changed = ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts'];
 
 async function repository(files: Record<string, string>) {
-  const root = await temporaryDirectory('check-services-repo'), base = await temporaryDirectory('check-services-base');
-  git(root, 'init', '-q', '-b', 'main');
-  for (const [path, content] of Object.entries(files)) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
-  return { root, base, mergeSha: git(root, 'rev-parse', 'HEAD') };
+  const { root, head: mergeSha } = await gitRepo({ label: 'check-services-repo', files });
+  return { root, base: await temporaryDirectory('check-services-base'), mergeSha };
 }
 const policy = (preMerge: unknown[]) => JSON.stringify({ delivery: { mergeGate: { perCandidate: [], preMerge } } });
 

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile, readFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import type { UpDependencies, UpEvent, UpRequest } from '../src/up.js';
 import { perInstallUnits, type InstallUnits } from '../src/install/units.js';
 import type { LoopCodeReading } from '../src/repository-setup.js';
@@ -386,7 +386,6 @@ test('unit:doctor-flags-loop-on-other-code — the reading judges the units agai
   const { readLoopCode, readSetupStatus } = await repositorySetup();
   const { readinessChecklist } = await readinessModule();
   const units: InstallUnits = perInstallUnits('acme/shop');
-  const git = (root: string, ...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
   // A simulated host: the managed checkout, its master configuration, a unit directory whose loop
   // unit still names the pilot checkout, and the pilot commit on the cursor.
@@ -396,12 +395,7 @@ test('unit:doctor-flags-loop-on-other-code — the reading judges the units agai
   try {
     const root = join(base, 'repo'), unitDirectory = join(base, 'units'), home = join(base, 'home'), cliCheckout = join(base, 'cli'), pilot = join(base, 'pilot');
     for (const directory of [join(root, '.graphyard'), unitDirectory, home, join(cliCheckout, 'bin'), join(pilot, 'bin'), join(base, 'config', 'acme-shop', 'coordinator')]) await mkdir(directory, { recursive: true });
-    git(root, 'init', '-q', '-b', 'main');
-    git(root, 'config', 'user.email', 'test@example.invalid');
-    git(root, 'config', 'user.name', 'Test');
-    await writeFile(join(root, 'file.txt'), 'x\n');
-    git(root, 'add', '.');
-    git(root, 'commit', '-q', '-m', 'one');
+    await gitRepo({ root, files: { 'file.txt': 'x\n' }, message: 'one' });
     await writeFile(join(root, '.graphyard', 'master.json'), JSON.stringify({ repository: 'acme/shop', credentialFile: join(home, 'master.token') }));
     const run = (_command: string, args: string[]) => args[2] === 'rev-parse' ? `${COMMIT}\n` : '';
     await writeFile(join(unitDirectory, units.master), `[Service]\nWorkingDirectory=${root}\nExecStart=/usr/bin/node ${join(pilot, 'bin', 'graphyard.mjs')} master run\n`);
@@ -594,16 +588,7 @@ test('unit:up-rejected-reading-never-green — a loop-code reading that was reje
 test('unit:up-validates-the-checkout-it-installs — the clean-checkout preflight judges this CLI\'s checkout, the one the loop is rewritten onto, never the obsolete checkout master.json still records', async () => {
   const { upDependencies } = await up();
   const base = await temporaryDirectory('mainworks-up-cli-checkout');
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const checkout = async (name: string) => {
-    const root = join(base, name);
-    await mkdir(join(root, 'bin'), { recursive: true });
-    await writeFile(join(root, 'bin', 'graphyard.mjs'), '// cli\n');
-    git(root, 'init', '-q');
-    git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
-    git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'cli');
-    return root;
-  };
+  const checkout = async (name: string) => (await gitRepo({ root: join(base, name), files: { 'bin/graphyard.mjs': '// cli\n' }, message: 'cli' })).root;
   const a = await checkout('mainworks-a'), b = await checkout('mainworks-b');
   const dirty = (root: string) => writeFile(join(root, 'bin', 'graphyard.mjs'), '// uncommitted\n');
   const repository = join(base, 'repository');

@@ -1,22 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { completeCommand } from '../src/cli/complete.js';
 import type { CliContext } from '../src/cli/context.js';
 import { featureCaseFailure, requiredProofFailure, trialFailureReason } from '../src/merge-writer/executor.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3638: complete refuses in seconds what the merge writer would refuse after review, the queue
 // and trial start-up — a missing proof id, a missing feature E2E case, a merge conflict against
 // the fetched base, or a failing fast gate — reusing the executor's own functions and sentences.
-
-function git(cwd: string, ...args: string[]) {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-}
 
 async function writeFiles(root: string, files: Record<string, string>) {
   for (const [path, content] of Object.entries(files)) {
@@ -27,12 +20,7 @@ async function writeFiles(root: string, files: Record<string, string>) {
 
 /** A fixture git repository with an `origin/main` base commit and a work branch commit on top. */
 async function fixtureRepo(label: string, baseFiles: Record<string, string>, headFiles: Record<string, string>, mainAdvance?: Record<string, string>) {
-  const root = await temporaryDirectory(label);
-  git(root, 'init', '--quiet', '-b', 'main');
-  await writeFiles(root, { '.gitignore': '.graphyard/\n', ...baseFiles });
-  git(root, 'add', '-A');
-  git(root, 'commit', '--quiet', '-m', 'base');
-  const baseSha = git(root, 'rev-parse', 'HEAD');
+  const { root, head: baseSha } = await gitRepo({ label, files: { '.gitignore': '.graphyard/\n', ...baseFiles } });
   git(root, 'update-ref', 'refs/remotes/origin/main', baseSha);
 
   git(root, 'checkout', '--quiet', '-b', 'graphyard/gy-1-1');

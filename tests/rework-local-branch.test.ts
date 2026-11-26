@@ -1,8 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2035 rework: the rework workspace starts from the submission head Mainworks registered in the
 // shared object store — the branch's own tip once a requirements revision cleared the candidate —
@@ -19,17 +18,7 @@ const branch = 'graphyard/gy-9-1';
 
 /** A checkout whose branch was pushed to origin at an older head, then moved on: the stalest origin a rework can meet. */
 async function repository() {
-  const base = await temporaryDirectory('rework-local-branch');
-  const origin = join(base, 'origin.git'), work = join(base, 'work');
-  const git = (cwd: string, ...args: string[]) => {
-    const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-    assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-    return result.stdout.trim();
-  };
-  assert.equal(spawnSync('git', ['init', '--bare', '--quiet', '-b', 'main', origin]).status, 0);
-  assert.equal(spawnSync('git', ['init', '--quiet', '-b', 'main', work]).status, 0);
-  git(work, 'remote', 'add', 'origin', origin);
-  git(work, 'commit', '-q', '--allow-empty', '-m', 'base');
+  const { root: work, origin } = await gitRepo({ label: 'rework-local-branch', files: {}, origin: true });
   git(work, 'checkout', '-q', '-b', branch);
   git(work, 'commit', '-q', '--allow-empty', '-m', 'older');
   git(work, 'push', '-q', 'origin', branch);

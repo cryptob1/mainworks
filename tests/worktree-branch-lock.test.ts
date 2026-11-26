@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -33,18 +34,11 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const workerToken = 'worker-token-'.padEnd(40, 'x');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const symbolicRef = (cwd: string) => spawnSync('git', ['-C', cwd, 'symbolic-ref', '-q', 'HEAD'], { stdio: ['ignore', 'ignore', 'pipe'] }).status;
 
 /** A host repository with one file, the way an assignment checkout carries one. */
 async function host() {
-  const root = await temporaryDirectory('branch-lock');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  for (const [key, value] of [['user.email', 'branch-lock@example.com'], ['user.name', 'Branch Lock Test'], ['commit.gpgsign', 'false']]) execFileSync('git', ['config', key, value], { cwd: root });
-  await writeFile(join(root, 'source.ts'), 'export const value = 1;\n');
-  execFileSync('git', ['add', '-A'], { cwd: root });
-  execFileSync('git', ['commit', '-qm', 'base'], { cwd: root });
-  return root;
+  return (await gitRepo({ label: 'branch-lock', files: { 'source.ts': 'export const value = 1;\n' } })).root;
 }
 /** An assignment worktree on its own branch, exactly as an earlier attempt's launcher creates one. */
 function attemptWorktree(root: string, key: string, epoch: number) {

@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { databaseUrl } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3214: a host that holds no Mainworks checkout goes from `npx @cryptob1/graphyard up` to a working
 // install. The npm registry and the image registry are local ones standing in for npm and GHCR,
@@ -142,8 +143,6 @@ if (args[0] === 'ci') {
     images: () => JSON.parse(readFileSync(join(directory, 'docker-images.json'), 'utf8')) as Record<string, string> };
 }
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 /** A child as the fresh account runs it: its output, and its exit code. */
 function run(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) {

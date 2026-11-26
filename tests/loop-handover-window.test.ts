@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,7 +8,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { loopRestartRequestPath } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3165: the loop adopts a newly served release only once it has run `run.handoverMinutes`
 // (default 15), so serves landing inside that window batch into one restart onto the newest.
@@ -19,15 +18,13 @@ const minute = 60_000;
 
 /** A loop checkout whose HEAD is what the deploy unit serves; `serve` commits `file` and records the new tip as served. */
 async function checkout() {
-  const root = await temporaryDirectory('loop-handover');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  const { root, git } = await gitRepo({ label: 'loop-handover' });
   await mkdir(join(root, '.graphyard'), { recursive: true });
   const serve = async (file: string) => {
     await mkdir(join(root, file, '..'), { recursive: true });
     await writeFile(join(root, file), `${file} ${Math.random()}\n`);
-    execFileSync('git', ['-C', root, 'add', '.']);
-    execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', file]);
-    const tip = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    git('add', '.'); git('commit', '-qm', file);
+    const tip = git('rev-parse', 'HEAD');
     await writeFile(join(root, '.graphyard', 'deploy.json'), JSON.stringify({ tip, failed: null, reason: null, at: new Date().toISOString() }));
     return tip;
   };

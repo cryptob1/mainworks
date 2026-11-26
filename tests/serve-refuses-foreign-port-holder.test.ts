@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { answering, readServeRecord, serveOnce, serveRecordPath } from '../src/s
 import { managedServePorts } from '../src/cli/upgrade.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2993: a commit counts as served only when the answer on the served port is the serve the
 // pass started. The port is chosen once and kept in served.json (GY-3201); when another process
@@ -16,7 +17,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // served, and its required cases never run against the foreign holder, whose answers would
 // otherwise stand in for the serve's own (the verified-true-against-the-wrong-process report).
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const freePort = () => new Promise<number>((accept, reject) => {
   const server = createServer(); server.once('error', reject);
   server.listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
@@ -49,15 +49,11 @@ const caseFile = `${JSON.stringify({ id: 'served-case-home', title: 'The served 
 test('integration:serve-refuses-foreign-port-holder — a serve that cannot bind a held port records the commit as failed, with a reason naming the port, and never as served or verified against the holder', { timeout: 240_000 }, async () => {
   const port = await freePort(), url = `http://127.0.0.1:${port}`;
   const base = await temporaryDirectory('serve-foreign-port');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), root = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  const files: Record<string, string> = {
+  const pusher = join(base, 'pusher'), root = join(base, 'checkout');
+  const origin = (await gitRepo({ root: pusher, label: 'serve-foreign-port', message: 'the app', origin: true, files: {
     'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs,
     'e2e/cases/served-case-home.json': caseFile, 'graphyard.json': mainworksJson,
-  };
-  for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'the app'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
+  } })).origin;
   git(base, 'clone', '-q', origin, root);
   const tip = git(root, 'rev-parse', 'refs/remotes/origin/main');
 

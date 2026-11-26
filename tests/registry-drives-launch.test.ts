@@ -1,7 +1,6 @@
 import { after } from 'node:test';
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +17,7 @@ import { clearRuns } from '../src/runner/registry.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 /**
  * GY-170 AC-2: each registry role carries its launch policy — flags such as a permission mode or
@@ -59,11 +59,8 @@ function memoryRegistry(host: string) {
 
 async function installation() {
   const root = join(scratch, `repository-${crypto.randomUUID().slice(0, 8)}`), credentials = join(root, '..', `credentials-${crypto.randomUUID().slice(0, 8)}`);
-  await mkdir(root); await mkdir(credentials, { mode: 0o700 });
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'registry launches\n');
-  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  await mkdir(credentials, { mode: 0o700 });
+  (await gitRepo({ root, files: { 'README.md': 'registry launches\n' }, message: 'initial' })).git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: join(root, '..', 'worktrees') } }, coordinatorStatus, { probe: durable });
   const approverFile = join(credentials, 'approver.token');
   await writeFile(approverFile, approverToken, { mode: 0o600 });

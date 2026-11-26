@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { coordinatorCheckoutRefusal, readCoordinatorCheckout } from '../src/master/profiles.js';
 import { readRelease } from '../src/protocol-version.js';
 import type { UpRequest } from '../src/up.js';
@@ -32,17 +33,7 @@ const rewrittenBlock = 'This repository uses Mainworks; topics: claim, sync, com
 test('unit:up-ignores-managed-block-dirty — a CLI checkout whose only change is inside AGENTS.md\'s managed block passes the dirty-checkout check; a change outside it still stops', async () => {
   const { upDependencies } = await up();
   const base = await temporaryDirectory('managed-block-not-dirty');
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const checkout = join(base, 'graphyard');
-  await mkdir(join(checkout, 'bin'), { recursive: true });
-  await mkdir(join(checkout, 'src'), { recursive: true });
-  await writeFile(join(checkout, 'bin', 'graphyard.mjs'), '// cli\n');
-  await writeFile(join(checkout, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  await writeFile(join(checkout, 'AGENTS.md'), agentsFile(committedBlock));
-  git(checkout, 'init', '-q');
-  git(checkout, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
-  git(checkout, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'base');
-  const commit = git(checkout, 'rev-parse', 'HEAD').trim();
+  const { root: checkout, head: commit } = await gitRepo({ root: join(base, 'graphyard'), files: { 'bin/graphyard.mjs': '// cli\n', 'src/loop.ts': 'export const loop = 1;\n', 'AGENTS.md': agentsFile(committedBlock) } });
   const repository = join(base, 'repository');
   await mkdir(join(repository, '.graphyard'), { recursive: true });
   const request: UpRequest = { repository: 'acme/shop', provider: 'compose', agent: false, master: 'claude' };

@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { gitRunnerFor, observeHead } from '../src/merge-writer/local-observation.js';
@@ -8,6 +7,7 @@ import { riskDelta } from '../src/model/risk-class.js';
 import { riskOf } from '../src/model-boundary/risk-class.js';
 import type { Work } from '../src/model/work.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2082: a control-plane head's risk class reads only its own merge delta. The observation of a
 // submitted head once diffed straight against the base tip, so a tip that moved past the head's
@@ -17,13 +17,10 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // base tip advances after the head was cut, and judges the class from what it observes.
 
 const root = () => temporaryDirectory('risk-delta-base-advance');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** A repository with a base branch, and a head branch cut at it that changes only its own files. */
 async function fixture(own: Record<string, string>) {
-  const repo = await root();
-  git(repo, 'init', '-q', '-b', 'main');
-  for (const [key, value] of [['user.email', 't@example.com'], ['user.name', 'T']]) git(repo, 'config', key, value);
+  const { root: repo } = await gitRepo({ root: await root() });
   const commit = async (branch: string, files: Record<string, string>, message: string) => {
     for (const [path, text] of Object.entries(files)) {
       await mkdir(dirname(join(repo, path)), { recursive: true });

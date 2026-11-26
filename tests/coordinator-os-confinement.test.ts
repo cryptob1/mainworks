@@ -13,6 +13,7 @@ import { headlessConfinementWrapper, keyringEndpointWarning, type KeyringEndpoin
 import { confiningSpawn } from '../src/runner/roles.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-888: every session the launcher starts — worker, reviewer, producer and approver, in a Herdr
 // pane or headless — is launched so that the coordinator checkout is unwritable at the OS level,
@@ -24,16 +25,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // that can carry no confinement is refused with the reason named, never started unconfined.
 
 /** A coordinator checkout with a linked assignment worktree under it, exactly as the launcher prepares them. */
-function coordinatorFixture(base: string) {
-  const root = join(base, 'coordinator');
-  const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore' });
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  run('init', '-b', 'main');
-  run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Mainworks');
-  run('add', '.');
-  run('commit', '-m', 'coordinator');
+async function coordinatorFixture(base: string) {
+  const { root, git: run } = await gitRepo({ root: join(base, 'coordinator'), files: { 'src/loop.ts': 'export const loop = 1;\n' } });
   const worktree = join(root, '.graphyard', 'worktrees', 'session');
   mkdirSync(dirname(worktree), { recursive: true });
   run('worktree', 'add', '-b', 'graphyard/gy-888-1', worktree, 'main');
@@ -42,16 +35,8 @@ function coordinatorFixture(base: string) {
 }
 
 /** A coordinator checkout that is itself a linked worktree of the repository beside it — with an assignment worktree under it. */
-function linkedWorktreeCoordinatorFixture(base: string) {
-  const main = join(base, 'main');
-  const seed = (...args: string[]) => execFileSync('git', ['-C', main, ...args], { stdio: 'ignore' });
-  mkdirSync(join(main, 'src'), { recursive: true });
-  writeFileSync(join(main, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  execFileSync('git', ['init', '-b', 'main', main], { stdio: 'ignore' });
-  seed('config', 'user.email', 'graphyard@localhost');
-  seed('config', 'user.name', 'Mainworks');
-  seed('add', '.');
-  seed('commit', '-m', 'main');
+async function linkedWorktreeCoordinatorFixture(base: string) {
+  const { root: main } = await gitRepo({ root: join(base, 'main'), files: { 'src/loop.ts': 'export const loop = 1;\n' } });
   const root = join(base, 'coordinator');
   execFileSync('git', ['-C', main, 'worktree', 'add', '-b', 'graphyard/host', root, 'main'], { stdio: 'ignore' });
   const worktree = join(root, '.graphyard', 'worktrees', 'session');
@@ -64,7 +49,7 @@ function linkedWorktreeCoordinatorFixture(base: string) {
 test('unit:coordinator-write-blocked-for-shell — every runtime kind launches confined, and a confined shell cannot write, commit in or switch the coordinator checkout by any means', async () => {
   const base = await temporaryDirectory('confinement');
   try {
-    const { root, worktree } = coordinatorFixture(base);
+    const { root, worktree } = await coordinatorFixture(base);
     // Every runtime kind builds a launch whose confinement is present, by the mechanism its runtime
     // supports. `bwrap` is named explicitly so these words do not depend on the host's PATH.
     const build = (kind: string, args: string[], sessionDirectory: string = worktree) =>
@@ -198,7 +183,7 @@ test('unit:linked-worktree-coordinator-confined — a coordinator that is itself
   // the coordinator writable (GY-957, acceptance finding).
   const base = await temporaryDirectory('confinement linked');
   try {
-    const { main, root, worktree } = linkedWorktreeCoordinatorFixture(base);
+    const { main, root, worktree } = await linkedWorktreeCoordinatorFixture(base);
     const gitDir = join(main, '.git');
     // GY-957, review finding: when the coordinator itself is a linked worktree, its `.git` is a
     // pointer file and the common Git directory and the checkout's own worktree admin lie outside
@@ -312,7 +297,7 @@ test('unit:linked-worktree-coordinator-reviewer-confined — a reviewer or produ
   // index — and a confined shell could switch the coordinator checkout.
   const base = await temporaryDirectory('confinement linked reviewer');
   try {
-    const { main, root } = linkedWorktreeCoordinatorFixture(base);
+    const { main, root } = await linkedWorktreeCoordinatorFixture(base);
     const gitDir = join(main, '.git'), coordinatorAdmin = join(gitDir, 'worktrees', 'coordinator');
     const allocated = join(base, 'managed', 'review', 'GY-957');
     const checkout = join(allocated, 'checkout');
@@ -418,7 +403,7 @@ test('unit:keyring-endpoint-unheld-reported — a launch that binds an endpoint 
 test('unit:unresolved-git-pointer-refused — a coordinator whose `.git` pointer names no Git directory refuses every launch instead of confining the pointer file', async () => {
   const base = await temporaryDirectory('confinement-pointer');
   try {
-    const { root, worktree } = linkedWorktreeCoordinatorFixture(base);
+    const { root, worktree } = await linkedWorktreeCoordinatorFixture(base);
     const input = { kind: 'claude', args: [], coordinatorRoot: root, sessionDirectory: worktree, platform: 'linux' as const, mountNamespaceWorks: true, bwrap: 'bwrap' };
     const codex = { ...input, kind: 'codex', args: ['--sandbox', 'workspace-write'] };
     for (const [pointer, named] of [['not a pointer\n', 'not a readable'], [`gitdir: ${join(base, 'missing admin')}\n`, 'is not a directory']] as const) {
@@ -434,7 +419,7 @@ test('unit:unresolved-git-pointer-refused — a coordinator whose `.git` pointer
     }
     // GY-1054: a linked-worktree admin with no readable `commondir` refuses rather than standing in for
     // the whole Git directory, which would leave the real common directory writable.
-    const { main, root: missingRoot } = linkedWorktreeCoordinatorFixture(join(base, 'no-commondir'));
+    const { main, root: missingRoot } = await linkedWorktreeCoordinatorFixture(join(base, 'no-commondir'));
     const admin = checkoutWorktreeAdminDirectory(missingRoot);
     assert.equal(admin, join(main, '.git', 'worktrees', 'coordinator'));
     rmSync(join(admin!, 'commondir'));
@@ -585,7 +570,7 @@ test('unit:keyring-probe-off-launch-path — a launch never waits on the keyring
 test('unit:allocated-checkout-re-exposed — a reviewer or producer launched from the coordinator root gets its allocated checkout writable, never the checkout itself', async () => {
   const base = await temporaryDirectory('confinement-session');
   try {
-    const { root } = coordinatorFixture(base);
+    const { root } = await coordinatorFixture(base);
     // The terminal reviewer and producer launch shape (reviewer.ts, producer.ts): the pane starts
     // from the coordinator root — where its request and the shared Git paths live — while the
     // launch allocates a checkout of its own beside it. The sandbox-claim check keeps the
@@ -710,7 +695,7 @@ test('unit:launcher-knows-its-checkout — the launcher derives its coordinator 
 test('integration:launch-carries-confinement — a session launch types the confinement into the pane and a headless run is wrapped at its spawn', async () => {
   const base = await temporaryDirectory('confinement-launch');
   try {
-    const { root, worktree } = coordinatorFixture(base);
+    const { root, worktree } = await coordinatorFixture(base);
     const bwrap = bwrapOnPath();
     const namespacesWork = process.platform === 'linux' && !!bwrap && await sessionMountNamespaceWorks(bwrap);
     // sessionConfinement, the exact call startAgentSession makes, builds the wrapper and keeps the

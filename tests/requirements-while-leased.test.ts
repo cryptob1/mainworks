@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
@@ -12,6 +11,7 @@ import type { Principal } from '../src/model.js';
 import { syncWork } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 // The fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -27,7 +27,6 @@ const repository = 'owner/project';
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
 const id = () => randomUUID();
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 let store: Store, engine: Engine, fixtureRoot: string, checkout: string;
 
 async function commit(cwd: string, path: string, text: string, message: string) {
@@ -38,12 +37,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('requirements-while-leased'));
-  const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await commit(checkout, 'README.md', '# Fixture\n', 'base');
-  git(checkout, 'push', '-q', 'origin', 'main');
+  ({ root: checkout } = await gitRepo({ root: join(fixtureRoot, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true }));
   store = await withDatabase('requirements-while-leased'); await store.init();
   engine = new Engine(store, 120, repository);
   engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';
@@ -63,8 +57,7 @@ async function leased(n: number) {
   work = await engine.execute(worker, 'claim', work.id, {}, id());
   const branch = `graphyard/gy-${n}-${work.lease!.epoch}`;
   const workspace = join(fixtureRoot, `${n}`);
-  execFileSync('git', ['-C', checkout, 'worktree', 'add', '-q', '-b', branch, workspace]);
-  git(workspace, 'config', 'user.email', 't@example.com'); git(workspace, 'config', 'user.name', 'T');
+  git(checkout, 'worktree', 'add', '-q', '-b', branch, workspace);
   await commit(workspace, 'src/change.ts', `export const change = ${n};\n`, 'change');
   const sha = git(workspace, 'rev-parse', 'HEAD');
   work = await engine.execute(worker, 'workspace', work.id, { epoch: work.lease!.epoch, host: 'test', path: workspace, branch }, id());
@@ -111,8 +104,7 @@ test('integration:requirements-while-leased — a sync that names a superseded r
   await store.pool.query(`UPDATE work_items SET document=jsonb_set(document, '{lease,expiresAt}', to_jsonb($2::text)) WHERE id=$1`, [work.id, new Date(Date.now() - 1000).toISOString()]);
   const branch = `graphyard/gy-2-${epoch + 1}`;
   const workspace = join(fixtureRoot, '2b');
-  execFileSync('git', ['-C', checkout, 'worktree', 'add', '-q', '-b', branch, workspace]);
-  git(workspace, 'config', 'user.email', 't@example.com'); git(workspace, 'config', 'user.name', 'T');
+  git(checkout, 'worktree', 'add', '-q', '-b', branch, workspace);
   const next = await commit(workspace, 'src/next.ts', 'export const next = true;\n', 'the reclaimed attempt');
   const reclaimed = await engine.execute(worker, 'claim', work.id, {}, id());
   assert.equal(reclaimed.unsyncedRevision ?? null, null, 'a fresh claim clears the unsynced revision');
@@ -133,11 +125,7 @@ test('unit:requirements-while-leased — sync acknowledges a queued revision wit
   const cwd = process.cwd();
   const calls: { path: string; body: unknown }[] = [];
   try {
-    const origin = join(root, 'origin.git'), clone = join(root, 'clone');
-    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-    execFileSync('git', ['clone', '-q', origin, clone], { stdio: 'ignore' });
-    git(clone, 'config', 'user.email', 't@example.com'); git(clone, 'config', 'user.name', 'T');
-    await commit(clone, 'README.md', '# Fixture\n', 'base'); git(clone, 'push', '-q', 'origin', 'main');
+    const { root: clone } = await gitRepo({ root: join(root, 'clone'), files: { 'README.md': '# Fixture\n' }, origin: true });
     git(clone, 'checkout', '-q', '-b', 'graphyard/gy-9-1');
     await commit(clone, 'src/x.ts', 'export const x = 1;\n', 'work');
     const work = { id: 'id-9', key: 'GY-9', policyRevision: 4, criteria: revised,

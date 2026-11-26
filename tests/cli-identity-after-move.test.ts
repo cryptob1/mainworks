@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { chmod, cp, mkdir, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3317: a CLI release is a Git worktree whose .git names the source checkout of the host that
 // made it. Copied to another host, Git cannot read it, and the CLI reported `unreleased unknown`, so
@@ -15,7 +16,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
 const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
 

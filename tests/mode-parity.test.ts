@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
@@ -18,6 +17,7 @@ import type { Observation, Work } from '../src/model/work.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { git } from './helpers/git-repo.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1528: mode parity. One fixture item runs through evaluate (the landability verdict, and the
@@ -92,18 +92,16 @@ test('unit:mode-parity-github-snapshot — under the github merger the fixture\'
 
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 let store: Store | undefined, fixtureRoot: string | undefined;
 after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }); });
 
 /** A coordinator-like checkout whose base holds src/app.ts and src/other.ts, and a worker head in its object store that changes both. */
 async function checkoutWithHead(root: string, branch: string) {
   const origin = join(root, 'origin.git'), checkout = join(root, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
+  git(root, 'init', '-q', '--bare', '-b', 'main', origin); git(root, 'clone', '-q', origin, checkout);
   const write = async (cwd: string, files: Record<string, string>, message: string) => {
     for (const [path, text] of Object.entries(files)) { await mkdir(join(cwd, path, '..'), { recursive: true }); await writeFile(join(cwd, path), text); git(cwd, 'add', '--', path); }
-    git(cwd, '-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '-m', message);
+    git(cwd, 'commit', '-q', '-m', message);
     return git(cwd, 'rev-parse', 'HEAD');
   };
   await write(checkout, { 'src/app.ts': 'export const app = 1;\n', 'src/other.ts': 'export const other = 1;\n' }, 'base');

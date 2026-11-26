@@ -1,24 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { composeAdapter, type AdapterContext } from '../src/install/adapters.js';
 import { fakeTransport } from '../src/install/transport.js';
 import { pulledTrialImageFile, trialContainerImage, trialImage } from '../src/merge-writer/trial-container.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3214: an install pulls the images Mainworks published for its source commit instead of
 // building them, and builds them here as before when that commit is not published.
 
 async function sourceCheckout() {
-  const root = await temporaryDirectory('install-pulls');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '-q', '-b', 'main');
-  await writeFile(join(root, 'Dockerfile'), 'FROM scratch\n');
-  await writeFile(join(root, '.gitignore'), '.graphyard/\n');
-  git('add', '.'); git('commit', '-q', '-m', 'release');
-  return { root, commit: git('rev-parse', 'HEAD') };
+  const { root, head } = await gitRepo({ label: 'install-pulls', files: { Dockerfile: 'FROM scratch\n', '.gitignore': '.graphyard/\n' }, message: 'release' });
+  return { root, commit: head };
 }
 const context = (sourceRoot: string, transport: ReturnType<typeof fakeTransport>) => ({ sourceRoot, image: 'mainworks-local:owner-project', transport }) as unknown as AdapterContext;
 

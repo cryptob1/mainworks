@@ -1,24 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 const cli = join(import.meta.dirname, '../bin/graphyard.mjs');
 
 test('e2e:init-scan-read-only — init --scan prints the proposal and leaves the checkout byte-identical; --scan --apply writes', async () => {
   const root = await temporaryDirectory('scan-read-only');
-  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], { cwd: root, encoding: 'utf8' });
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GRAPHYARD_') && !key.startsWith('HERDR_')));
   const run = (args: string[]) => promisify(execFile)(process.execPath, [cli, ...args], { cwd: root, env: { ...env, GRAPHYARD_URL: 'http://127.0.0.1:9' } }).then(result => JSON.parse(result.stdout));
   try {
-    git('init', '-q');
+    const { git } = await gitRepo({ root, files: { 'package.json': JSON.stringify({ name: 'fixture', scripts: { test: 'node --test' } }, null, 2), '.gitignore': 'node_modules\n' }, message: 'fixture' });
     git('remote', 'add', 'origin', 'git@github.com:owner/repo.git');
-    await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { test: 'node --test' } }, null, 2));
-    await writeFile(join(root, '.gitignore'), 'node_modules\n');
-    git('add', '.'); git('commit', '-qm', 'fixture');
     const gitignore = await readFile(join(root, '.gitignore'));
 
     const scanned = await run(['init', '--scan']);

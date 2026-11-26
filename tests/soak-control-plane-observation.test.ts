@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -13,6 +12,7 @@ import { processControlPlaneJob } from '../src/server/control-plane-observation.
 import { observationWorkers } from '../src/server/main.js';
 import type { Principal } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -30,7 +30,6 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
  */
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 let store: Store, engine: Engine, fixtureRoot: string, checkout: string;
 
 async function commit(cwd: string, path: string, text: string, message: string) {
@@ -40,12 +39,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 }
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('soak-control-plane-observation'));
-  const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await commit(checkout, 'README.md', '# Fixture\n', 'base');
-  git(checkout, 'push', '-q', 'origin', 'main');
+  checkout = (await gitRepo({ root: join(fixtureRoot, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true })).root;
 
   store = await withDatabase('soak-control-plane-observation'); await store.init();
   engine = new Engine(store, 120, 'owner/project');
@@ -61,7 +55,6 @@ async function claimed(n: number, file = `src/item-${n}.ts`) {
   assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused));
   const branch = `graphyard/gy-${n}-1`, worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree, 'refs/remotes/origin/main');
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   const head = await commit(worktree, file, `export const item = ${n};\n`, `item ${n}`);
   w = await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: worktree, branch }, randomUUID());
   return { w, head };

@@ -1,24 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { writePnpmWorkspace } from './helpers/pnpm-workspace-fixture.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3200: the merge trial installs a pnpm workspace with its frozen lockfile and builds only what
 // the change affects: the changed packages, their dependents and those packages' dependencies.
 // The case fetches pnpm through npm exec once (registry access); the trial's children share the
 // host's npm cache, so later runs reuse it.
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',
-  GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const sharedCache = process.env.npm_config_cache || join(homedir(), '.npm');
 // The trial's children run here directly, not in the trial container, with the host's npm cache.
 const run: ChildRun = (command, args, { wrapper: _wrapper, ...options } = {}) =>

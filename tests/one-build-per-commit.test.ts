@@ -9,6 +9,7 @@ import { runMergeTrial } from '../src/merge-writer/executor.js';
 import { gateTrialKey } from '../src/merge-writer/trial-load.js';
 import { runTrialAttempt } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3640: a commit is built once. A trial whose flaky test reruns on the same merge commit, two
 // base passes that need the base tip at the same moment, and the release check on the landed commit
@@ -24,15 +25,14 @@ const run: ChildRun = (command, args, options) => defaultChildRun(command, args,
 
 /** A repository whose build appends the commit it built to `builds`, and whose one test file flakes once on the change. */
 async function fixture() {
-  const root = await temporaryDirectory('one-build-repo', tmpdir()), state = await temporaryDirectory('one-build-state', tmpdir());
+  const state = await temporaryDirectory('one-build-state', tmpdir());
   const builds = join(state, 'builds.log');
-  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
-  // The build counts its runs: each appends the commit it built, and takes long enough for a second pass to arrive.
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: `git rev-parse HEAD >> ${builds} && sleep 1`, test: 'node test.js' } }));
-  write('graphyard.json', JSON.stringify({ delivery: policy }));
-  // The proof holds only on the head; the other case fails the first time it runs on the head, then passes.
-  write('test.js', `const { existsSync, writeFileSync } = require('node:fs');
+  const { root, head: tip } = await gitRepo({ label: 'one-build-repo', files: {
+    // The build counts its runs: each appends the commit it built, and takes long enough for a second pass to arrive.
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: `git rev-parse HEAD >> ${builds} && sleep 1`, test: 'node test.js' } }),
+    'graphyard.json': JSON.stringify({ delivery: policy }),
+    // The proof holds only on the head; the other case fails the first time it runs on the head, then passes.
+    'test.js': `const { existsSync, writeFileSync } = require('node:fs');
 const fixed = existsSync('src/fixed'), seen = ${JSON.stringify(join(state, 'ran-once'))};
 const flaked = fixed && !existsSync(seen);
 if (fixed) writeFileSync(seen, '');
@@ -41,10 +41,10 @@ console.log('    ' + (fixed ? 'ok' : 'not ok') + ' 1 - ${proof} the fix holds');
 console.log('    ' + (flaked ? 'not ok' : 'ok') + ' 2 - sometimes slow');
 console.log((fixed && !flaked ? 'ok' : 'not ok') + ' 1 - tests/flaky.test.ts');
 process.exit(fixed && !flaked ? 0 : 1);
-`);
-  write('tests/flaky.test.ts', '');
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const tip = gitIn(root, 'rev-parse', 'HEAD');
+`,
+    'tests/flaky.test.ts': '',
+  } });
+  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
   write('src/fixed', '');
   gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'the change');
   const merge = gitIn(root, 'rev-parse', 'HEAD');

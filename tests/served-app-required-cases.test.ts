@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -9,6 +8,7 @@ import { managedServePorts } from '../src/cli/upgrade.js';
 import { readServeRecord, serveOnce, serveRecordPath } from '../src/serve-app.js';
 import type { MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2983: a served app is live-verified. Once the deploy unit's serve pass serves a new main, the
 // commit's own required E2E cases run against the served URL and the pass records the verdict for
@@ -16,7 +16,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // failing case is the release health the master acts on: serving does not stop and nothing rolls
 // back.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const stopServing = (root: string) => {
   const pid = readServeRecord(serveRecordPath(root))?.pid;
   if (pid) try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone */ }
@@ -61,10 +60,8 @@ const caseFile = (id: string, path: string) => `${JSON.stringify({ id, title: `T
 /** A fixture managed repository: an origin, a pusher that commits to it, and the launcher checkout, with the serve declaration, the app and its two required cases on main. */
 async function managedRepository(label: string) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), root = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await push(pusher, { 'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs, 'e2e/cases/served-case-home.json': caseFile('served-case-home', '/'), 'e2e/cases/served-case-ready.json': caseFile('served-case-ready', '/ready'), 'graphyard.json': mainworksJson }, 'the app and its required cases');
+  const root = join(base, 'checkout');
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true, message: 'the app and its required cases', files: { 'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs, 'e2e/cases/served-case-home.json': caseFile('served-case-home', '/'), 'e2e/cases/served-case-ready.json': caseFile('served-case-ready', '/ready'), 'graphyard.json': mainworksJson } });
   git(base, 'clone', '-q', origin, root);
   return { root, pusher, push };
 }

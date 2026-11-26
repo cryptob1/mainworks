@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,16 +16,13 @@ import { Store } from '../src/store.js';
 import { startPostgres } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { harness, type Harness } from './install-harness.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3653: the deploy watch's restart of an existing install whose deploy key is already registered
 // never needs the GitHub CLI, so a missing or unauthenticated gh login never stops a verified commit
 // from deploying. A first install without gh still fails preflight with the gh login fix and changes nothing.
 
 const GH_FAILING = { match: 'gh ', result: { stdout: '', stderr: 'gh: not logged in', code: 1 } };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, {
-  cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
-}).trim();
 
 async function apply(fixture: Harness, args: string[]) {
   const { request } = installRequestFromArgs(args);

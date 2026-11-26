@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { applyDelivery, onboardingServe } from '../src/repository-setup.js';
@@ -8,15 +7,14 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
 import type { MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3387: master status judges the placeholder serve from graphyard.json at main's tip, not the
 // coordinator checkout's working tree, which can still sit at the onboarding commit.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 test('e2e:status-placeholder-serve-from-main — the Placeholder serve line follows main, not the working tree', async () => {
-  const root = await temporaryDirectory('status-placeholder-main');
-  git(root, 'init', '-q', '-b', 'main');
+  const { root } = await gitRepo({ label: 'status-placeholder-main' });
   const policy = { mode: 'local' as const, mergeGate: { preMerge: [], perCandidate: [] }, candidateSchedule: null, deploy: { adapter: 'command' as const, project: null, uat: null, production: null } };
   assert.equal((await applyDelivery(root, policy, 'node')).wroteServe, true);
   git(root, 'add', '.');

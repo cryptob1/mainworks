@@ -10,6 +10,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { ServeLanding } from '../src/merge-writer/serve-revert.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3667: a batch gate settles in under 45 minutes. Every failing check that needs the verified
 // commit's verdict runs there in one run, the culprit search halves the batch's prefixes, and a
@@ -109,7 +110,6 @@ test('integration:gate-known-flaky-no-rerun — a failing check with an open fla
 
 // The e2e case: real git, the loop's own gate ports, eight landings.
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
 test('e2e:gate-settles-fast — a gate with three failing checks, two with open flaky items and one broken by one of eight landings, reverts that landing and settles without timing out', { timeout: 120_000 }, async () => {
   const base = await temporaryDirectory('gate-settles-fast');

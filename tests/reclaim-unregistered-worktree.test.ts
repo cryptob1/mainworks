@@ -15,6 +15,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3227: an ended attempt's directory that Git no longer registers as a worktree is removed by the
 // loop's reclaim step; a live attempt's directory and a path outside the worktree root are left alone.
@@ -47,10 +48,7 @@ before(async () => {
 after(async () => { http?.close(); await store?.close(); });
 
 test('e2e:reclaim-unregistered-worktree — the loop removes an ended attempt\'s unregistered directory holding a 0555 tree, leaving a live attempt and an outside path alone', async t => {
-  git(['init', '-q', '-b', 'main']);
-  await writeFile(join(install, '.gitignore'), 'scratch/\n');
-  git(['add', '.gitignore']);
-  git(['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base']);
+  await gitRepo({ root: install, files: { '.gitignore': 'scratch/\n' } });
   const prepare = async (title: string, path: (key: string) => string) => {
     const filed = await ok(operator, 'work', { why: 'w', simplest: 's', title, type: 'chore',
       criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:reclaim-unregistered-worktree'] }] }) as Work;

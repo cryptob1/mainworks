@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { assertDispatchable } from '../src/master/dispatch.js';
@@ -27,11 +27,9 @@ const proof = 'integration:rework-after-resubmit';
 test(`${proof} — the rework of a resubmitted head reserves the candidate's branch, and a worker completes on it`, { timeout: 120_000 }, async t => {
   const base = await realpath(await temporaryDirectory('rework-after-resubmit'));
   t.after(() => rm(base, { recursive: true, force: true }));
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const origin = join(base, 'origin.git'), checkout = join(base, 'checkout'), branch = 'graphyard/gy-1-1';
   const attempt = join(checkout, '.graphyard', 'worktrees', 'GY-1-1'), rework = join(checkout, '.graphyard', 'worktrees', 'GY-1-3');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
+  git(base, 'init', '-q', '--bare', '-b', 'main', origin); git(base, 'clone', '-q', origin, checkout);
   git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
   await mkdir(join(checkout, 'src', 'store'), { recursive: true });
   await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', 'README.md'); git(checkout, 'commit', '-q', '-m', 'base');

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterConfigSchema, workerProfileSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
@@ -13,7 +13,6 @@ import { grantWorkerPaths, runtimeSandboxes, workerPaths, writablePaths } from '
 // GY-857: workers are confined to their assigned worktrees — worker sessions once wrote
 // half-finished files into the coordinator checkout by absolute path.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const addedDirectories = (args: string[], cwd: string) => args.flatMap((arg, index) => arg === '--add-dir' ? [join(cwd, args[index + 1])] : []);
 
 /** A coordinator checkout laid out like a Mainworks installation, with one managed assignment worktree. */
@@ -23,21 +22,8 @@ async function coordinatorFixture() {
   await mkdir(credentials, { recursive: true, mode: 0o700 });
   const credentialFile = join(credentials, 'coordinator.token');
   await writeFile(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
-  const main = join(root, 'repo');
-  execFileSync('git', ['init', '-q', '-b', 'main', main], { stdio: 'ignore' });
-  git(main, 'config', 'user.email', 't@example.com');
-  git(main, 'config', 'user.name', 'T');
-  await mkdir(join(main, 'src'), { recursive: true });
-  await mkdir(join(main, 'bin'), { recursive: true });
-  await mkdir(join(main, 'tests'), { recursive: true });
-  await mkdir(join(main, '.claude'), { recursive: true });
-  await writeFile(join(main, 'bin', 'graphyard.mjs'), '#!/usr/bin/env node\n');
-  await writeFile(join(main, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  await writeFile(join(main, 'tests', 'base.test.ts'), 'import { test } from "node:test";\n');
-  await writeFile(join(main, '.gitignore'), '.graphyard/\n.claude/settings.local.json\n');
-  await writeFile(join(main, '.claude', 'settings.json'), '{}\n');
-  git(main, 'add', '.');
-  git(main, 'commit', '-q', '-m', 'base');
+  const { root: main } = await gitRepo({ root: join(root, 'repo'), files: { 'bin/graphyard.mjs': '#!/usr/bin/env node\n', 'src/loop.ts': 'export const loop = 1;\n',
+    'tests/base.test.ts': 'import { test } from "node:test";\n', '.gitignore': '.graphyard/\n.claude/settings.local.json\n', '.claude/settings.json': '{}\n' } });
   const worktree = join(main, '.graphyard', 'worktrees', 'GY-1-1');
   git(main, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
   const config: MasterConfig = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile, cliPath: join(main, 'bin', 'graphyard.mjs'),

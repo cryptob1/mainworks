@@ -10,6 +10,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { declarationSlot, heldSlots, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3802: on 2026-11-24 the gate's revert of GY-3627 held a host heavy-job slot for over 25 minutes
 // and never created its trial; nothing deployed. A gate revert now starts its trial within its
@@ -17,7 +18,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const repository = 'owner/project', check = 'test:tests/a.test.ts', startMs = 1_000;
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {}, e2e: [] } as unknown as MergeTrialRun;
 const culprit = { id: 'w2', key: 'GY-2', title: 'change', description: 'change', type: 'feature', priority: 2, criteria: [{ id: 'AC-1', text: 'works', proofs: ['unit:works'] }], mergeLedger: null } as unknown as Work;
 
@@ -35,11 +35,8 @@ async function world(label: string, trial: (call: number, onStep?: (step: string
   await mkdir(slots, { recursive: true });
   await writeFile(join(slots, 'limit'), '1\n');
   process.env[slotsDirectoryVariable] = slots;
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'base'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: { 'graphyard.json': '{}' } });
   const verified = git(pusher, 'rev-parse', 'HEAD');
   git(pusher, 'checkout', '-q', '-b', 'gy-2');
   await writeFile(join(pusher, 'a.ts'), 'broken\n');

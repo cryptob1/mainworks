@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { selfVerification, verifyWorkingTree } from '../src/cli/verify.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-1174: three nonexercising-proof faults in 24 hours (GY-1132, GY-1131, GY-1142) shared one
 // cause — a proof bound to a criterion it cannot exercise was found only when the producer's
@@ -13,18 +13,12 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // and the candidate's verify now runs it against the base's sources with the change's tests and
 // reports it unexercised before submission. A proof that does exercise the change still passes.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 async function write(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
 }
 /** A repository whose origin/main holds `base`, with `change` committed on a work branch on top. */
 async function repository(label: string, base: Record<string, string>, change: Record<string, string>) {
-  const root = join(await temporaryDirectory(label), 'work');
-  await mkdir(root, { recursive: true });
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'config', 'user.email', 't@test'); git(root, 'config', 'user.name', 'T');
-  await write(root, base);
-  git(root, 'add', '.'); git(root, 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ root: join(await temporaryDirectory(label), 'work'), files: base });
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
   git(root, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
   await write(root, change);

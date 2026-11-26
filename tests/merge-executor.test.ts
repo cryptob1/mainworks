@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -28,6 +27,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { completionBody } from '../src/cli/complete.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 import { isolatedTestEnvironment } from '../src/cli/test-isolation.js';
 import { trialPhases, type TrialPhaseDurations } from '../src/merge-writer/trial.js';
 import { runCommandStep, runProcess } from '../src/e2e/steps.js';
@@ -503,7 +503,6 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
 let fixtureRoot: string, origin: string, checkout: string, worktreeBase: string, baseTip: string;
 const heads: Record<number, string> = {};
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 async function commit(cwd: string, path: string, text: string, message: string) {
   await mkdir(join(cwd, path, '..'), { recursive: true });
   await writeFile(join(cwd, path), text); git(cwd, 'add', '--', path); git(cwd, 'commit', '-q', '-m', message);
@@ -512,8 +511,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('merge-executor'));
   origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout'); worktreeBase = join(fixtureRoot, 'managed');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
+  git(fixtureRoot, 'init', '-q', '--bare', '-b', 'main', origin); git(fixtureRoot, 'clone', '-q', origin, checkout);
   git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
   await commit(checkout, 'README.md', '# Fixture\n', 'base');
   await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
@@ -524,7 +522,6 @@ before(async () => {
   for (const [n, file] of [[1, 'src/app.ts'], [2, 'src/other.ts'], [3, 'src/third.ts'], [4, 'src/fourth.ts'], [5, 'src/fifth.ts'], [6, 'src/sixth.ts'], [7, 'src/seventh.ts']] as const) {
     const worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
     git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${n}-1`, worktree, baseTip);
-    git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
     heads[n] = await commit(worktree, file, `export const value = ${n};\n`, `change ${n}`);
   }
   store = await withDatabase('merge-executor'); await store.init();
@@ -668,7 +665,6 @@ test('unit:superseded-intent-settles — an item resubmitted with a new head whi
   const branchHead = async (n: number, file: string) => {
     const worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
     git(checkout, 'worktree', 'add', '-q', '-b', `graphyard/gy-${n}-1`, worktree, baseTip);
-    git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
     return commit(worktree, file, `export const value${n} = ${n};\n`, `change ${n}`);
   };
   /** A submission on a fresh branch, mirroring submittedItem. */

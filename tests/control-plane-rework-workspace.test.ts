@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createWorktree } from '../src/cli/workspace-worktree.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2017: a control-plane rework workspace starts from the head Mainworks registered at the last
 // submission, read from the shared object store. It needs no pull-request observation and runs no
@@ -20,22 +21,11 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const base = 'main';
 const branch = 'graphyard/gy-1-1';
 
-const git = (cwd: string, ...args: string[]) => {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-};
-
 /** A coordinator checkout whose origin serves the base branch alone: worker refs are hidden from fetch, and their pushes are recorded and rejected. */
 async function repository() {
   const root = await temporaryDirectory('rework-workspace');
-  const origin = join(root, 'origin.git'), work = join(root, 'work'), pushes = join(root, 'worker-ref-pushes');
-  assert.equal(spawnSync('git', ['init', '--bare', '--quiet', '-b', base, origin]).status, 0);
-  assert.equal(spawnSync('git', ['init', '--quiet', work]).status, 0);
-  git(work, 'checkout', '-q', '-b', base);
-  git(work, 'commit', '-q', '--allow-empty', '-m', 'base');
-  git(work, 'remote', 'add', 'origin', origin);
-  git(work, 'push', '-q', '-u', 'origin', base);
+  const pushes = join(root, 'worker-ref-pushes');
+  const { root: work, origin } = await gitRepo({ root: join(root, 'work'), branch: base, files: {}, origin: true });
   const hook = join(origin, 'hooks', 'pre-receive');
   await writeFile(hook, `#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/heads/${base}) ;; *) printf '%s\\n' "$ref" >> ${JSON.stringify(pushes)}; exit 1 ;; esac\ndone\n`);
   await chmod(hook, 0o755);

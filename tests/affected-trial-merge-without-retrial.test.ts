@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -11,21 +10,18 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3120 AC-1: a head whose trial passed lands without another trial when main has moved. Against a
 // real bare origin, main gains a commit while the head's trial runs; the leased push is rejected, the
 // merge writer re-merges the same reviewed head onto the new tip (`Merge GY-N`, the head unchanged as
 // its second parent) and pushes it. A conflict on the new tip returns the head for rework.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 async function fixture(label: string) {
   const directory = await temporaryDirectory(label), origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout'), other = join(directory, 'other');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  for (const path of [checkout, other]) {
-    execFileSync('git', ['clone', '-q', origin, path], { stdio: 'ignore' });
-    git(path, 'config', 'user.name', 'Fixture'); git(path, 'config', 'user.email', 'fixture@example.com');
-  }
+  git(directory, 'init', '-q', '--bare', '-b', 'main', origin);
+  for (const path of [checkout, other]) git(directory, 'clone', '-q', origin, path);
   await writeFile(join(checkout, 'shared.txt'), 'base\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
   const baseTip = git(checkout, 'rev-parse', 'HEAD');

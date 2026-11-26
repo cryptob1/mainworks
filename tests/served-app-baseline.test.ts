@@ -1,19 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { managedServePorts } from '../src/cli/upgrade.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { readServeRecord, serveOnce, serveRecordPath } from '../src/serve-app.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2985: what was live keeps serving. Once a second commit is served, the previously served
 // build is built again in its own baseline checkout and serves on a free port of its own (GY-3201), and the live-verification pass runs the served commit's required cases with BASELINE_URL
 // set to it — so a compare case judges the new build against what users had. On the first serve
 // no baseline exists: the cases run once, as today.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 /** Commits `files` to the pusher and pushes them to main; answers the new tip. */
 const push = async (pusher: string, files: Record<string, string>, what: string) => {
   for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
@@ -54,9 +53,7 @@ const caseFile = JSON.stringify({ id: 'baseline-checked', title: 'The baseline a
 /** A fixture managed repository: an origin, a pusher that commits to it, and the launcher checkout, with the serve declaration, the app and its required case on main. */
 async function managedRepository(label: string) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), root = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const pusher = join(base, 'pusher'), root = join(base, 'checkout'), origin = (await gitRepo({ root: pusher, label, origin: true })).origin;
   await push(pusher, { 'package.json': packageJson, 'package-lock.json': packageLock, 'build.js': buildJs, 'serve.js': serveJs, 'e2e/cases/baseline-checked.json': caseFile, 'graphyard.json': mainworksJson }, 'the app and its required case');
   git(base, 'clone', '-q', origin, root);
   return { root, pusher, push };

@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { adoptTrialRun, launchTrialRun, stopTrialRun, trialRunsDirectory, type TrialRunSpec } from '../src/merge-writer/trial-run.js';
 import { runFiles } from '../src/runner/pi.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3159: the detached trial run itself. A real `node` child of the running code runs the merge
 // trial exactly as the loop's own trial port would, records each step as it reaches it, and writes
@@ -15,16 +15,11 @@ import { runFiles } from '../src/runner/pi.js';
 // restart read the same files. The fixture repository declares no checks, so the trial needs no
 // container: its verdict is its own pass, reached in its own process, beside the loop's life.
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 /** A repository with no package.json, no graphyard.json and no checks: its trial passes in its own process without a container. */
 async function repository(label: string) {
-  const root = await temporaryDirectory(label), base = await temporaryDirectory(`${label}-base`);
-  git(root, 'init', '-q', '-b', 'main');
-  await writeFile(join(root, 'file'), 'content\n');
-  git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
-  return { root, base, mergeSha: git(root, 'rev-parse', 'HEAD') };
+  const { root, head } = await gitRepo({ label, files: { file: 'content\n' } });
+  return { root, base: await temporaryDirectory(`${label}-base`), mergeSha: head };
 }
 
 const specOf = (repository: { root: string; base: string; mergeSha: string }): TrialRunSpec =>

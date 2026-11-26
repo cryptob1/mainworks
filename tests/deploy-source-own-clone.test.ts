@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { lstatSync, readlinkSync } from 'node:fs';
 import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,18 +8,15 @@ import { deployCheckoutOf } from '../src/install/loop-unit.js';
 import { deploySourceCheck } from '../src/setup-from-zero.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3350: hwd-backend's deploy checkout was a worktree of core's checkout, so cleaning core broke
 // hwd-backend's deploy with "not a git repository". Each install's deploy source is its own clone.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 /** Another install's checkout with an origin and two commits. */
 async function otherCheckout(root: string) {
-  const other = join(root, 'core');
-  await mkdir(other, { recursive: true });
-  git(other, 'init', '-q', '-b', 'main');
-  git(other, 'commit', '-q', '--allow-empty', '-m', 'first');
+  const { root: other } = await gitRepo({ root: join(root, 'core'), files: {}, message: 'first' });
   git(other, 'remote', 'add', 'origin', 'https://example.invalid/graphyard.git');
   git(other, 'config', 'url./srv/graphyard.git.insteadOf', 'https://example.invalid/graphyard.git');
   return other;

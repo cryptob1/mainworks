@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { Engine } from '../src/engine.js';
@@ -58,17 +59,13 @@ before(async () => {
   browserBin = await temporaryDirectory('product-review-environment-browser');
   toolPath = join(browserBin, 'agent-browser');
   await writeFile(toolPath, '#!/bin/sh\necho browser\n', { mode: 0o755 });
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '-q', '--initial-branch=main');
+  const { git, head } = await gitRepo({ root, files: { 'README.md': 'Named spec file.\n', 'feature-a.ts': 'export const flag = "no-app-marker";\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'Named spec file.\n');
-  await writeFile(join(root, 'feature-a.ts'), 'export const flag = "no-app-marker";\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
-  base = git('rev-parse', 'HEAD');
+  base = head;
   git('update-ref', 'refs/remotes/origin/main', base);
   // Head A: nothing served and nothing declared — no walkthrough is owed.
   await writeFile(join(root, 'feature-a-head.ts'), 'export const a = 1;\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'head A');
+  git('add', '.'); git('commit', '-qm', 'head A');
   headA = git('rev-parse', 'HEAD');
   // Head B: the install's own e2e.serve command, serving this exact head on a fixed port.
   await writeFile(join(root, 'serve-it.mjs'), `import { createServer } from 'node:http';
@@ -79,7 +76,7 @@ createServer((request, response) => {
 `);
   await writeFile(join(root, 'graphyard.json'), JSON.stringify({ e2e: { serve: { command: 'node serve-it.mjs', url: `http://127.0.0.1:${servePort}/healthz`, readySeconds: 30 } } }, null, 2));
   await writeFile(join(root, 'feature-b.ts'), 'export const b = 2;\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'head B');
+  git('add', '.'); git('commit', '-qm', 'head B');
   headB = git('rev-parse', 'HEAD');
   git('checkout', '-q', base);
   // A fresh checkout (the private trial's) has no .graphyard directory yet.

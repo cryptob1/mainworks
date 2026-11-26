@@ -1,12 +1,12 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { observeAccount } from '../src/fleet.js';
@@ -96,10 +96,7 @@ before(async () => {
     await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
     const root = await temporaryDirectory(index === 0 ? 'one' : 'two', scratch);
-    const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
-    git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', `https://github.com/${repository}.git`);
-    await writeFile(join(root, 'README.md'), 'Fixture.\n');
-    git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+    (await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } })).git('remote', 'add', 'origin', `https://github.com/${repository}.git`);
     await setupMaster(root, { url, token: token(index + 1), cliPath: launcher, hostId, credentialDirectory: await temporaryDirectory(`credentials-${index}`, scratch), run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
     const registry = new AgentRegistry(store);
     await registry.mutate(coordinator, 'apply', {

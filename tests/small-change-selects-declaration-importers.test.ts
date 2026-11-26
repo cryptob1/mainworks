@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { changedDeclarations, changedExports, dependencyMap, listTestFiles, selectAffected } from '../scripts/ci-tests.mjs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3750: test compute is the line's cost and trials are most of it. An item's trial of a change
 // confined to function bodies or non-exported src code runs only the tests importing the exported
@@ -12,7 +12,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // runs the tests importing the changed file directly, and the install the full suite. The reason line
 // states both counts; the bound proof files are added after.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 async function write(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
 }
@@ -43,8 +42,7 @@ const project = {
 test('unit:small-change-selects-declaration-importers — a body-only edit in a widely imported module selects only the importers of that declaration; an exported type edit selects its direct importers; a test helper, a fixture and package.json select as today; both counts are stated', async () => {
   const root = await temporaryDirectory('declaration-importers');
   try {
-    await write(root, project);
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+    await gitRepo({ root, files: project });
     const tests = listTestFiles(root), map = dependencyMap(root, tests);
     const trial = (files: Record<string, string>) => {
       const changed = Object.keys(files);

@@ -16,6 +16,7 @@ import { trialStartOrder, trialStartOwner } from '../src/merge-writer/trial-load
 import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3444: two batch gates in a row ran into their 45-minute bound on a loaded host, so nothing
 // deployed — the fixes that relieve the load included. The gate now has first claim on trial slots,
@@ -28,7 +29,6 @@ const minute = 60_000;
 const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
 async function workerDuringGate(hold: 'heat' | 'pressure' | 'capacity' | null = null) {
   const world = await fixture(`worker-during-gate-${hold ?? 'free'}`);
@@ -119,9 +119,8 @@ test('e2e:worker-dispatch-during-batch-gate — a ready repair reaches a worker 
 /** An origin whose main holds a verified base and one merge past it, the coordinator checkout, and a way to land another merge. */
 async function fixture(label: string) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
+  const repo = await gitRepo({ root: pusher, label, files: { 'README.md': 'base\n', 'graphyard.json': '{}' }, origin: true }), origin = repo.origin, verified = repo.head;
   let n = 0;
   const land = async () => {
     n += 1;
@@ -135,12 +134,6 @@ async function fixture(label: string) {
     git(pusher, 'push', '-q', 'origin', 'HEAD:main');
     return git(pusher, 'rev-parse', 'HEAD');
   };
-  await writeFile(join(pusher, 'README.md'), 'base\n');
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.');
-  git(pusher, 'commit', '-q', '-m', 'base');
-  git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
   const tip = await land();
   git(base, 'clone', '-q', origin, coordinator);
   await mkdir(join(coordinator, '.graphyard'), { recursive: true });

@@ -14,6 +14,7 @@ import type { Work } from '../src/model.js';
 import { sessionSlotsGrant } from '../src/master/harness.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 
 // GY-134: a Codex worker could not write its worktree's own Git admin directory, so the mandatory
@@ -23,20 +24,14 @@ const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const workerToken = 'worker-token-'.padEnd(40, 'x');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const codexInstalled = spawnSync('codex', ['--version'], { stdio: 'ignore' }).status === 0;
 
 /** A repository laid out like a Mainworks checkout: an origin, the main clone, and a managed linked worktree. */
 async function linkedWorktree(name = 'GY-1-1') {
   const root = await realpath(await temporaryDirectory('sandbox'));
-  const origin = join(root, 'origin.git'), main = join(root, 'repo');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, main], { stdio: 'ignore' });
-  git(main, 'config', 'user.email', 't@example.com'); git(main, 'config', 'user.name', 'T');
-  await writeFile(join(main, 'README.md'), '# Fixture\n'); git(main, 'add', '.'); git(main, 'commit', '-q', '-m', 'base'); git(main, 'push', '-q', 'origin', 'main');
+  const { root: main } = await gitRepo({ root: join(root, 'repo'), files: { 'README.md': '# Fixture\n' }, origin: true });
   const worktree = join(main, '.graphyard/worktrees', name);
   git(main, 'worktree', 'add', '-q', '-b', `graphyard/${name.toLowerCase()}`, worktree);
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   return { root, main, worktree, gitDir: join(main, '.git/worktrees', name), commonDir: join(main, '.git') };
 }
 const addedDirectories = (args: string[], cwd: string) => args.flatMap((arg, index) => arg === '--add-dir' ? [resolve(cwd, args[index + 1])] : []);

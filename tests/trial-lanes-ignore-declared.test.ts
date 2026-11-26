@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { othersDeclaredFiles, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { runTrial, trialAffordableFiles, trialShardBreadth } from '../src/merge-writer/trial.js';
 import { launchTrialRun, trialRunsDirectory, type TrialRunSpec } from '../src/merge-writer/trial-run.js';
@@ -15,8 +16,6 @@ import { launchTrialRun, trialRunsDirectory, type TrialRunSpec } from '../src/me
 // files on the verification slots, and taking those declarations off the trial's budget again cut a
 // trial on a host with 36 GiB free to one lane.
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const testFiles = [...'abcdefghi'].map(letter => `tests/${letter}.test.ts`);
 const installedModules = resolve(dirname(createRequire(import.meta.url).resolve('tsx/package.json')), '..');
 
@@ -34,11 +33,9 @@ async function repository() {
       + "for (const file of files) console.log('ok - ' + file); const records = process.argv.indexOf('--durations'); writeFileSync(process.argv[records + 1], files.map(file => JSON.stringify({ file, durationMs: 1, passed: true })).join('\\n') + '\\n');\n",
     ...Object.fromEntries(testFiles.map(file => [file, 'x\n'])),
   };
-  git(root, 'init', '-q', '-b', 'main');
-  for (const [path, content] of Object.entries(files)) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
+  const { head: mergeSha } = await gitRepo({ root, files });
   symlinkSync(installedModules, join(root, 'node_modules'));
-  return { root, base, mergeSha: git(root, 'rev-parse', 'HEAD') };
+  return { root, base, mergeSha };
 }
 
 const gib = 2 ** 30;

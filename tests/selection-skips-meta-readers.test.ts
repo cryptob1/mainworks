@@ -6,6 +6,7 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { changedDeclarations, dependencyMap, listTestFiles, repositoryRoot, selectAffected } from '../scripts/ci-tests.mjs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3541: a change adding one test file and one e2e case selected every test that lists tests/ or
 // e2e/cases/ — about 57 meta tests — in each item's trial. A listing reads the directory, not each
@@ -27,8 +28,7 @@ async function write(root: string, files: Record<string, string>) {
 }
 
 test('unit:selection-skips-meta-readers — a new test file, a new e2e case and a source edit select no test that only lists tests/ or e2e/cases/; the batch gate still runs them', async () => {
-  const root = await temporaryDirectory('selection-meta');
-  await write(root, {
+  const { root } = await gitRepo({ label: 'selection-meta', files: {
     'package.json': '{}',
     'src/a.ts': 'export function a() { return 1; }\n',
     'e2e/cases/old.json': '{}\n',
@@ -36,8 +36,7 @@ test('unit:selection-skips-meta-readers — a new test file, a new e2e case and 
     'tests/test-list.test.ts': "import { readdirSync } from 'node:fs';\nreaddirSync('tests');\n",
     'tests/case-list.test.ts': "import { readdirSync } from 'node:fs';\nreaddirSync('e2e/cases');\n",
     'tests/case-reader.test.ts': "import { readFileSync, readdirSync } from 'node:fs';\nreaddirSync('e2e/cases');\nreadFileSync('e2e/cases/new.json');\n",
-  });
-  git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+  } });
   await write(root, { 'src/a.ts': 'export function a() { return 2; }\n', 'tests/new.test.ts': "import { a } from '../src/a.js';\na();\n", 'e2e/cases/new.json': '{}\n' });
   git(root, 'add', '.');
   const tests = listTestFiles(root), map = dependencyMap(root, tests);
@@ -75,9 +74,7 @@ test('selection-skips-meta-readers — on this repository, the trial selection f
 });
 
 test('unit:selection-skips-meta-readers-pinned — the copy of the checkout reads a source another user owns, as on a compute machine, where git\'s transport refuses it', async () => {
-  const source = await temporaryDirectory('selection-meta-owner'), root = await temporaryDirectory('selection-meta-owner-copy');
-  await write(source, { 'a.txt': 'a\n' });
-  git(source, 'init', '-q', '-b', 'main'); git(source, 'add', '.'); git(source, 'commit', '-qm', 'base');
+  const { root: source } = await gitRepo({ label: 'selection-meta-owner', files: { 'a.txt': 'a\n' } }), root = await temporaryDirectory('selection-meta-owner-copy');
   // The compute machine: another user owns the checkout, only work trees are trusted, and the transport refuses the source.
   const machine = { GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: source, GIT_CONFIG_KEY_1: 'safe.directory', GIT_CONFIG_VALUE_1: root, GIT_ALLOW_PROTOCOL: 'https' };
   const before = { ...process.env };

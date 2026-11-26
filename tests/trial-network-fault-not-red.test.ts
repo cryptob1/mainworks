@@ -17,6 +17,7 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { masterConfigSchema } from '../src/master.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -40,11 +41,8 @@ const write = async (root: string, files: Record<string, string>) => {
 };
 
 async function repository(root: string) {
-  git(root, 'init', '-q', '-b', 'main');
-  await write(root, { 'package.json': JSON.stringify({ name: 'site', private: true, scripts: { build: 'node build.mjs', test: 'node -e 0' } }), 'build.mjs': 'console.log("built");\n',
-    'e2e/cases/fixture.json': JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'builds', run: 'node --eval 0' }] }) });
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root, files: { 'package.json': JSON.stringify({ name: 'site', private: true, scripts: { build: 'node build.mjs', test: 'node -e 0' } }), 'build.mjs': 'console.log("built");\n',
+    'e2e/cases/fixture.json': JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'builds', run: 'node --eval 0' }] }) } });
   git(root, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
   await write(root, { 'build.mjs': `await fetch('https://${host}/css2?family=Inter');\nconsole.log("built");\n` });
   git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'fonts');

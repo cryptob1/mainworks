@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { credentialMaskFor } from '../src/master/confinement.js';
 import { launcherCoordinatorRoot, startAgentSession } from '../src/master/launch.js';
@@ -14,10 +15,7 @@ test('integration:hard-math-smoke — non-CLI native launch denies oracle and au
   const base = await temporaryDirectory('hard-math-native-confinement');
   const root = join(base, 'repository'), worktree = join(base, 'assigned');
   const install = join(base, 'install'), oracle = join(base, 'oracle'), source = join(base, 'source-install');
-  await mkdir(root);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main');
-  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'seed', '--allow-empty');
+  const { git } = await gitRepo({ root, files: {}, message: 'seed' });
   git('worktree', 'add', '-qb', 'assigned', worktree);
   const coordinator = join(install, 'coordinator.token'), producer = join(install, 'producer.token');
   const worker = join(install, 'worker.token'), reviewer = join(install, 'reviewer', 'verdict.token');
@@ -91,11 +89,7 @@ test('integration:hard-math-smoke — embedded daemon worker and review dispatch
   const base = await temporaryDirectory('hard-math-embedded', process.cwd());
   const root = join(base, 'repository'), assigned = join(base, 'assigned');
   const install = join(base, 'install'), oracle = join(base, 'oracle'), source = join(base, 'source-install');
-  await mkdir(root);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main');
-  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'seed', '--allow-empty');
-  const head = git('rev-parse', 'HEAD');
+  const { git, head } = await gitRepo({ root, files: {}, message: 'seed' });
   git('worktree', 'add', '-qb', 'assigned', assigned);
   // A recognized origin, served by this local repository: no network Git access.
   git('remote', 'add', 'origin', 'git@github.com:fixture/confinement.git');

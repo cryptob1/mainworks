@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { completionRerun, rerunFailingCases } from '../src/cli/complete.js';
 
 // GY-2968: on 2026-10-27 a finished item was refused because complete's automatic rerun hit one
@@ -20,11 +20,6 @@ import { completionRerun, rerunFailingCases } from '../src/cli/complete.js';
 const flakyCase = { case: 'unit:outside-proof — case A', file: 'tests/flaky.test.ts', line: 59, durationMs: 30000 };
 const baseCase = { case: 'unit:outside-proof — case B', file: 'tests/broken-elsewhere.test.ts', line: 7, durationMs: 4500 };
 
-const git = (root: string, ...args: string[]) => {
-  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
-  if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
-  return result.stdout.trim();
-};
 
 /** The runner a fixture repo commits: it fails the cases its run-numbered `rerun-fail.json` plan lists, plus every case the committed `base-fail.json` lists, in node's own failure shape. */
 const runner = `
@@ -64,13 +59,9 @@ async function worktree(rerunPlan: unknown[], baseFail: unknown[] = []) {
   // The refusal's named files exist here, as a worktree a trial failed on holds them (GY-2979).
   for (const file of ['tests/docs-current-model.test.ts', 'tests/flaky.test.ts', 'tests/broken-elsewhere.test.ts', 'tests/own.test.ts']) await writeFile(join(root, file), '');
   if (baseFail.length) await writeFile(join(root, 'base-fail.json'), JSON.stringify(baseFail));
-  git(root, 'init', '-b', 'main');
-  git(root, 'config', 'user.email', 'test@example.com');
-  git(root, 'config', 'user.name', 'test');
-  git(root, 'add', '-A');
-  git(root, 'commit', '--quiet', '-m', 'base');
+  const { head } = await gitRepo({ root, files: {} });
   if (rerunPlan.length) await writeFile(join(root, 'rerun-fail.json'), JSON.stringify(rerunPlan));
-  return { root, base: git(root, 'rev-parse', 'HEAD') };
+  return { root, base: head };
 }
 
 const refused = (reason: string, baseTip = 'c'.repeat(40)) => ({ state: 'refused', head: 'b'.repeat(40), baseTip, refusal: { kind: 'merge', reason } });

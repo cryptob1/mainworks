@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { assertCredentialsMasked, CredentialMaskError, credentialMaskFor, masterCredentialMask, readOnlyMountWrapper, type MaskProbe } from '../src/master/confinement.js';
@@ -12,18 +11,16 @@ import { WorkerSandboxError } from '../src/worker-sandbox.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3228: before a session starts, the launch asks the sandbox it built whether it can still
 // read a masked credential location that exists. One that can refuses the launch naming the
 // path: a host fault recorded as one blocker on the item, never a failed account.
 
 /** A coordinator checkout with one assignment worktree, and a fixture HOME beside it. */
-function fixture(base: string) {
+async function fixture(base: string) {
   const root = join(base, 'coordinator'), home = join(base, 'home');
-  mkdirSync(root, { recursive: true });
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '-q', '-b', 'main');
-  git('commit', '-q', '--allow-empty', '-m', 'base');
+  const { git } = await gitRepo({ root, files: {} });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const worktree = join(root, '.graphyard', 'worktrees', 'GY-1-1');
   mkdirSync(dirname(worktree), { recursive: true });
@@ -43,7 +40,7 @@ test('unit:tests/credential-mask-probe.test.ts — a sandbox that can still read
   const base = await temporaryDirectory('credential mask probe');
   const savedHome = process.env.HOME;
   try {
-    const f = fixture(base);
+    const f = await fixture(base);
     process.env.HOME = f.home;
     f.secret(join(f.home, '.ssh', 'id_ed25519'));
     const netrc = f.secret(join(f.home, '.netrc'));
@@ -92,7 +89,7 @@ test('unit:tests/credential-mask-probe.test.ts — a worker dispatch whose sandb
   const base = await temporaryDirectory('credential mask dispatch');
   const savedPath = process.env.PATH;
   try {
-    const f = fixture(base);
+    const f = await fixture(base);
     // The sandbox is the injected probe's: a stand-in bubblewrap answers the launch's namespace check on any host.
     mkdirSync(join(base, 'bin'));
     writeFileSync(join(base, 'bin', 'bwrap'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });

@@ -6,18 +6,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 async function managedRepo(files: Record<string, string>) {
   const root = await temporaryDirectory('trial-runtime-repo', tmpdir());
-  for (const [path, content] of Object.entries(files)) writeFileSync(join(root, path), content);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], {
-    encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-      GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.invalid' },
-  }).trim();
-  git('init', '-q', '-b', 'main');
-  git('add', '-A');
-  git('commit', '-q', '-m', 'fixture');
-  return { root, base: git('rev-parse', 'HEAD') };
+  return { root, base: (await gitRepo({ root, files, message: 'fixture' })).head };
 }
 
 test('unit:trial-runtime-with-isolated-home — build and repository tests use the running Node installation before host shims that require trusted home configuration', async () => {

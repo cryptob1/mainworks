@@ -10,6 +10,7 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3750: an item's trial of a body-only change runs only the tests importing what it reaches, so
 // a test reaching it through another module can escape the trial. The batch gate's selection is
@@ -17,20 +18,17 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // and reverts its merge.
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const item = (key: string, proofs: string[]): Work => ({ id: `work-${key}`, key, title: `${key} change`, description: `${key} change`, type: 'feature', priority: 2, criteria: [{ id: 'AC-1', text: `${key} works`, proofs }], mergeLedger: null }) as unknown as Work;
 
 test('e2e:narrow-trial-escape-is-caught — a body-only change whose trial selection misses a failing test lands; the release check runs the sweep, finds it, names the culprit and reverts it', async () => {
   const base = await temporaryDirectory('narrow-escape');
   try {
-    const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-    git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-    git(base, 'clone', '-q', origin, pusher);
+    const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
     const write = async (files: Record<string, string>) => {
       for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
       git(pusher, 'add', '.');
     };
-    await write({
+    const { origin, head: verified } = await gitRepo({ root: pusher, origin: true, files: {
       'package.json': '{ "type": "module" }\n',
       'graphyard.json': JSON.stringify({ gate: { core: ['smoke'] } }),
       'e2e/cases/smoke.json': '{}', 'e2e/cases/case-1.json': '{}', 'e2e/cases/case-2.json': '{}',
@@ -38,10 +36,7 @@ test('e2e:narrow-trial-escape-is-caught — a body-only change whose trial selec
       'src/outer.ts': "import { inner } from './core.ts';\nexport function outer() { return inner(10); }\n",
       'tests/inner.test.ts': "import assert from 'node:assert/strict';\nimport { inner } from '../src/core.ts';\nassert.equal(inner(1), 2);\n",
       'tests/outer.test.ts': "import assert from 'node:assert/strict';\nimport { outer } from '../src/outer.ts';\nassert.equal(outer(), 11);\n",
-    });
-    git(pusher, 'commit', '-q', '-m', 'base');
-    git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-    const verified = git(pusher, 'rev-parse', 'HEAD');
+    } });
 
     // GY-1 edits only inner's body: inner(1) still passes, outer() no longer does.
     git(pusher, 'checkout', '-q', '-b', 'item-1');

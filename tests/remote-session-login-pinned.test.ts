@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runRemoteSession } from '../src/remote-session.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3790: tests/remote-session-login.test.ts flaked in GY-3785's merge trial because
 // runRemoteSession's mirror() ran `git read-tree -u --reset <work>` followed by `git reset -q`.
@@ -13,15 +14,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // content while still staged in `.git/index` (`A  work.txt`), so an observer polling the worktree
 // (such as `mirrored()` in tests/remote-session-login.test.ts) saw `A  work.txt` instead of
 // `?? work.txt`.
-
-const gitIdentity = {
-  GIT_AUTHOR_NAME: 'Worker',
-  GIT_AUTHOR_EMAIL: 'worker@example.com',
-  GIT_COMMITTER_NAME: 'Worker',
-  GIT_COMMITTER_EMAIL: 'worker@example.com',
-};
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...gitIdentity } }).trim();
 
 test('unit:remote-session-login-pinned — mirrored uncommitted work never appears staged in .git/index', async () => {
   const dir = await temporaryDirectory('remote-session-login-pinned');
@@ -31,21 +23,13 @@ test('unit:remote-session-login-pinned — mirrored uncommitted work never appea
   const account = join(dir, 'account');
   const bin = join(dir, 'bin');
   const cli = join(dir, 'cli', 'graphyard.mjs');
-  await mkdir(origin, { recursive: true });
   await mkdir(account, { recursive: true });
   await mkdir(bin, { recursive: true });
   await mkdir(dirname(cli), { recursive: true });
   await writeFile(join(account, 'auth.json'), JSON.stringify({ token: 'pinned-token' }), { mode: 0o600 });
   await writeFile(cli, 'console.log("ok");\n');
 
-  git(origin, 'init', '-q', '-b', 'main');
-  git(origin, 'config', 'user.name', 'Worker');
-  git(origin, 'config', 'user.email', 'worker@example.com');
-  await writeFile(join(origin, 'tracked.txt'), 'original\n');
-  await writeFile(join(origin, 'removed.txt'), 'gone-soon\n');
-  git(origin, 'add', '-A');
-  git(origin, 'commit', '-qm', 'base');
-  const base = git(origin, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root: origin, files: { 'tracked.txt': 'original\n', 'removed.txt': 'gone-soon\n' } });
 
   git(origin, 'worktree', 'add', '-q', '-b', 'graphyard/gy-pinned-1', worktree, base);
   git(dir, 'clone', '-q', origin, remote);

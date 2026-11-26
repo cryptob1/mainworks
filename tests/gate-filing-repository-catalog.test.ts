@@ -9,6 +9,7 @@ import { controlPlaneUpgradeItem } from '../src/daemon/control-plane.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { commands } from '../src/engine/commands/schemas.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3568: a gate filing in a managed repository binds that repository's own E2E case, never
 // Mainworks's create-work-item, so the known red it names can be accepted where it was filed.
@@ -47,21 +48,13 @@ test('unit:gate-filing-repository-catalog — a filing outside Mainworks binds t
 
 const repository = managed;
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
 test('e2e:gate-filing-repository-catalog — a known red the gate files in a managed repository passes create\'s E2E rule with a case that repository can hold', async () => {
   // A managed repository whose catalog holds one case, with one merge past the verified base.
   const base = await temporaryDirectory('gate-filing-catalog');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'README.md'), 'base\n');
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  await mkdir(join(pusher, 'e2e/cases'), { recursive: true });
-  await writeFile(join(pusher, 'e2e/cases/fixture-red.json'), JSON.stringify({ id: 'fixture-red', title: 'A fixture case', target: 'any', required: false, steps: [] }));
-  git(pusher, 'add', '.');
-  git(pusher, 'commit', '-q', '-m', 'base');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin, head: verified } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: { 'README.md': 'base\n', 'graphyard.json': '{}',
+    'e2e/cases/fixture-red.json': JSON.stringify({ id: 'fixture-red', title: 'A fixture case', target: 'any', required: false, steps: [] }) } });
   git(pusher, 'checkout', '-q', '-b', 'item-1');
   await mkdir(join(pusher, 'src'), { recursive: true });
   await writeFile(join(pusher, 'src/f1.ts'), 'ok\n');

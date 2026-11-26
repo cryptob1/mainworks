@@ -10,13 +10,13 @@ import { watchPorts } from '../src/cli/upgrade.js';
 import { pinKnownGood } from '../src/master/known-good.js';
 import { acquireVerificationSlot, declarationSlot, gateSlot, heldSlots, requestHeavyDrain, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3450 (AC-4): on 2026-11-17 the deploy build of 3b9606c4, verified 19:52Z, waited 30 minutes
 // behind merge trials GY-3448, GY-3447 and others. The deploy build and restart of a gate-verified
 // commit take the deploy path's reserved slot and never wait behind item work or a drain.
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const modules = resolve(createRequire(import.meta.url).resolve('tsx'), '../../..');
 const saved = { slots: process.env[slotsDirectoryVariable], home: process.env.GRAPHYARD_CONFIG_HOME, database: process.env.DATABASE_URL };
 after(() => {

@@ -26,6 +26,7 @@ import { emptyDaemonState, readDaemonState } from '../src/daemon/state.js';
 import { noteConfigReload, runDaemon } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 // Time-bomb allowance (GY-1694): the 2026-09-19 at dates the fixture item (createdAt/stageEnteredAt, already past) and the 2026-10-09 lock start is only rendered; the launcher runs on the real clock with relative registerLaunch expiries.
@@ -70,9 +71,8 @@ const requested = (overrides: Partial<Work> = {}) => {
 };
 
 async function repository() {
-  const root = await temporaryDirectory('resilience');
-  execFileSync('git', ['init', '-q', root]);
-  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
+  const { root, git } = await gitRepo({ label: 'resilience' });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   return root;
 }
 /** A master installed in a throwaway repository, its credentials outside it. */

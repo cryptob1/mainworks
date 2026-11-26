@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { mergeWriterIdle, mergeWriterStep, mergeWriterReads, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { trialRunsDirectory, type TrialRunHandle } from '../src/merge-writer/trial-run.js';
@@ -22,17 +22,10 @@ import type { Work } from '../src/model.js';
 // head lands on the trial's own verdict with no second run, no unpushed refusal, and none of the
 // `Settled an open intent … refused` lines a discarded trial used to leave.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
 
 test('e2e:pipeline-trial-survives-restart — a merge trial in progress when the loop restarts is adopted by the next loop and lands the head on its own verdict: one detached run, no unpushed refusal, no settled open intent', { timeout: 180_000 }, async () => {
-  const directory = await temporaryDirectory('pipeline-trial-restart'), origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
-  await writeFile(join(checkout, 'shared.txt'), 'base\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
-  const baseTip = git(checkout, 'rev-parse', 'HEAD');
+  const directory = await temporaryDirectory('pipeline-trial-restart');
+  const repo = await gitRepo({ root: join(directory, 'checkout'), files: { 'shared.txt': 'base\n' }, origin: true }), checkout = repo.root, origin = repo.origin, baseTip = repo.head;
   git(checkout, 'checkout', '-qb', 'graphyard/gy-1-1');
   await writeFile(join(checkout, 'item.txt'), 'the item\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'GY-1 change');

@@ -8,21 +8,11 @@ import { writeInstallRecord } from '../src/install/secrets.js';
 import { installCommands } from '../src/cli/install.js';
 import { publishOnboarding, runUp, upRequestFromArgs, type UpDependencies } from '../src/up.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 test('unit:tests/up-base-branch.test.ts — up passes --base-branch to install; reruns retain it and onboarding uses its tip', async () => {
-  const root = await temporaryDirectory('up-base-branch');
+  const { root, git } = await gitRepo({ label: 'up-base-branch', files: { 'README.md': 'main\n' }, message: 'main', origin: true });
   const configHome = await temporaryDirectory('up-base-branch-config');
-  const origin = await temporaryDirectory('up-base-branch-origin');
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '--bare', '-q', '-b', 'main', origin);
-  git('init', '-q', '-b', 'main');
-  git('config', 'user.name', 'Test');
-  git('config', 'user.email', 'test@example.com');
-  git('remote', 'add', 'origin', origin);
-  await writeFile(join(root, 'README.md'), 'main\n');
-  git('add', '.');
-  git('commit', '-qm', 'main');
-  git('push', '-q', 'origin', 'main');
   git('checkout', '-qb', 'release/test');
   await writeFile(join(root, 'release.txt'), 'release only\n');
   git('add', '.');

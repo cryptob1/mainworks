@@ -22,6 +22,7 @@ import { launchProducer, producerPrompt, readProducerLedger, reconcileProducers,
 import { readReviewLedger, reconcileReviews, reviewIdleGraceMs, reviewPrompt, saveReviewerProfile } from '../src/reviewer.js';
 import { allocateSessionCheckout, dataDirectory, defaultWorktreeRoot, inspectWorktreeRoot, probeFilesystem, removeSessionCheckout, removeUnownedCheckouts, sessionCheckout, verifyWorktreeRoot, worktreeRoot, worktreeRootBudgetBytes, worktreeRootMinFreeBytes, type FilesystemProbe } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { workFixture } from './helpers/work-fixture.js';
@@ -59,11 +60,9 @@ const promptOf = (calls: string[][]) => launchOf(calls).args.at(-1)!;
 async function installation(run: Partial<MasterRun> = {}) {
   const scratch = await realpath(await temporaryDirectory('managed-root'));
   const root = join(scratch, 'repository'), credentialDirectory = join(scratch, 'credentials'), managed = join(scratch, 'data', 'worktrees');
-  await mkdir(root); await mkdir(credentialDirectory, { mode: 0o700 });
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'managed worktree root\n');
-  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  await mkdir(credentialDirectory, { mode: 0o700 });
+  const { git } = await gitRepo({ root, files: { 'README.md': 'managed worktree root\n' }, message: 'initial' });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace', run: { worktreeRoot: managed, ...run } }, coordinatorStatus, { probe: durable });
   await saveReviewerProfile(root, { name: 'reviewer-a', agentName: 'review-a', kind: 'codex' });
   const credential = join(credentialDirectory, 'producer.token'); await writeFile(credential, 'producer-token-'.padEnd(40, 'x'), { mode: 0o600 });

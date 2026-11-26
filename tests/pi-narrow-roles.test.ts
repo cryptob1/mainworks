@@ -1,7 +1,6 @@
 import { masterRunSchema } from '../src/master/profiles.js';
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,6 +13,7 @@ import { clearRuns } from '../src/runner/registry.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
 
@@ -66,11 +66,9 @@ out({ type: 'agent_settled' });
 async function installation(runtimes?: { producer?: 'herdr' | 'pi' }) {
   const scratch = await realpath(await temporaryDirectory('pi-roles'));
   const root = join(scratch, 'repository'), credentials = join(scratch, 'credentials'), managed = join(scratch, 'data', 'worktrees');
-  await mkdir(root); await mkdir(credentials, { mode: 0o700 });
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'narrow roles\n');
-  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  await mkdir(credentials, { mode: 0o700 });
+  const { git } = await gitRepo({ root, files: { 'README.md': 'narrow roles\n' }, message: 'initial' });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: managed } }, coordinatorStatus, { probe: durable });
   const producerFile = join(credentials, 'producer.token');
   await writeFile(producerFile, producerToken, { mode: 0o600 });

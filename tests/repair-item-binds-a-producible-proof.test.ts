@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bootstrapGate, runGate } from '../src/batch-gate.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -14,20 +14,19 @@ import { requiredProofFailure, runMergeTrial } from '../src/merge-writer/executo
 import type { Work } from '../src/model.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
 const allProofs = (item: { criteria: readonly { proofs: readonly string[] }[] }) => item.criteria.flatMap(criterion => criterion.proofs);
 
 test('unit:repair-item-binds-a-producible-proof — a project with only declared checks and E2E cases (as hwd-backend) gets no unit: proof for a flaky E2E case or failing preMerge check', async () => {
   // Fixture repository shaped like hwd-backend: Go repo, declared preMerge check `verify` (`make verify`), E2E cases, no Node/Python test runner.
   const base = await temporaryDirectory('repair-go-repo');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'go.mod'), 'module example.com/hwd-backend\n');
-  await writeFile(join(pusher, 'graphyard.json'), JSON.stringify({
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: {
+    'go.mod': 'module example.com/hwd-backend\n',
+    'graphyard.json': JSON.stringify({
     e2e: { serve: { command: 'true', url: 'http://127.0.0.1:8080/healthz', readySeconds: 10 } },
     gate: { core: ['graphyard-feature-map'] },
     delivery: {
@@ -39,12 +38,10 @@ test('unit:repair-item-binds-a-producible-proof — a project with only declared
       candidateSchedule: null,
       deploy: { adapter: 'command', uat: null, production: null },
     },
-  }));
-  await mkdir(join(pusher, 'e2e/cases'), { recursive: true });
-  await writeFile(join(pusher, 'e2e/cases/x05h.json'), JSON.stringify({ id: 'x05h', title: 'x05h', target: 'any', required: false, steps: [] }));
-  await writeFile(join(pusher, 'e2e/cases/graphyard-feature-map.json'), JSON.stringify({ id: 'graphyard-feature-map', title: 'Feature map', target: 'any', required: false, steps: [] }));
-  git(pusher, 'add', '.');
-  git(pusher, 'commit', '-q', '-m', 'base');
+  }),
+    'e2e/cases/x05h.json': JSON.stringify({ id: 'x05h', title: 'x05h', target: 'any', required: false, steps: [] }),
+    'e2e/cases/graphyard-feature-map.json': JSON.stringify({ id: 'graphyard-feature-map', title: 'Feature map', target: 'any', required: false, steps: [] }),
+  } });
   const verified = git(pusher, 'rev-parse', 'HEAD');
   git(pusher, 'checkout', '-q', '-b', 'item-1');
   await writeFile(join(pusher, 'main.go'), 'package main\n');
@@ -148,10 +145,8 @@ test('unit:repair-item-binds-a-producible-proof — existing open repair items a
 });
 
 test('unit:repair-item-binds-a-producible-proof — check:NAME proof is produced by the merge trial and accepted by landability', async () => {
-  const repo = await temporaryDirectory('repair-check-trial');
   const trials = await temporaryDirectory('repair-check-trials');
-  git(repo, 'init', '-q', '-b', 'main');
-  await writeFile(join(repo, 'graphyard.json'), JSON.stringify({
+  const { root: repo, head: base } = await gitRepo({ label: 'repair-check-trial', files: { 'graphyard.json': JSON.stringify({
     delivery: {
       mode: 'local',
       mergeGate: {
@@ -161,10 +156,7 @@ test('unit:repair-item-binds-a-producible-proof — check:NAME proof is produced
       candidateSchedule: null,
       deploy: { adapter: 'command', uat: null, production: null },
     },
-  }));
-  git(repo, 'add', '.');
-  git(repo, 'commit', '-q', '-m', 'base');
-  const base = git(repo, 'rev-parse', 'HEAD');
+  }) } });
   await writeFile(join(repo, 'change.txt'), 'fixed\n');
   git(repo, 'add', '.');
   git(repo, 'commit', '-q', '-m', 'head');

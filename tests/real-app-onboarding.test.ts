@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { onboardingServe } from '../src/model/onboarding-work.js';
 import { checkServedApp, featureMapCaseId } from '../src/app-feature-check.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
@@ -14,10 +14,8 @@ import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { gateChecks } from '../src/batch-gate.js';
 import { freePort } from '../src/cli/test-isolation.js';
 
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@test', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@test' } }).trim();
 test('integration:real-app-onboarding — main declares a real app and feature map; batch and deploy reach its features', async () => {
-  const root = await temporaryDirectory('real-app-onboarding');
-  git(root, 'init', '-q', '-b', 'main');
+  const { root } = await gitRepo({ label: 'real-app-onboarding' });
   const master = { url: 'http://127.0.0.1:5', repository: 'owner/Lumina', credentialFile: join(root, 'coordinator.token'), hostId: 'test', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
   const status = () => masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async (cmd, args) => cmd === 'git' ? git(root, ...args.slice(2)) : '');
   const save = async (config: object) => { await writeFile(join(root, 'graphyard.json'), JSON.stringify(config)); git(root, 'add', 'graphyard.json'); git(root, 'commit', '-qm', 'declaration'); };

@@ -4,6 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
@@ -17,20 +18,18 @@ import { directoryBytes } from '../src/daemon/leftovers.js';
 const release = () => import('../src/install/cli-release.js') as Promise<{ sweepCliReleases: (directory: string, run: (command: string, args: string[]) => string) => Promise<{ removed: string[]; bytes: number; left: string[] }> }>;
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { diskFloorGb: 30 } });
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const run = (command: string, args: string[]) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
 test('e2e:cli-release-cleanup — of six release copies the served, the previous and the one a live session runs stay; the other three go with their worktree entries, another install\'s copy of the same checkout keeps working, and the leftovers report counts the copies and bytes', async () => {
   const { sweepCliReleases } = await release();
   const root = realpathSync(await temporaryDirectory('cli-release-cleanup'));
   const source = join(root, 'checkout');
-  mkdirSync(source);
-  git(source, 'init', '--quiet', '-b', 'main');
+  await gitRepo({ root: source });
   const commits: string[] = [];
   for (let index = 1; index <= 6; index += 1) {
     writeFileSync(join(source, 'version.txt'), `${index}\n`);
     git(source, 'add', 'version.txt');
-    git(source, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '--quiet', '-m', `release ${index}`);
+    git(source, 'commit', '--quiet', '-m', `release ${index}`);
     commits.push(git(source, 'rev-parse', 'HEAD'));
   }
   const store = (install: string) => join(root, install, 'deploy', 'build', '.graphyard', 'cli-releases');

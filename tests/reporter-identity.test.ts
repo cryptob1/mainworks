@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { hostGitTrust } from './helpers/git-trust.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -47,10 +48,8 @@ test('e2e:reporter-identity — a reporter files an item and messages the Master
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   const scratch = await temporaryDirectory('reporter-identity', join(process.cwd(), '.graphyard'));
   const root = await temporaryDirectory('coordinator', scratch);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'Fixture.\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+  const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url, token: token(coordinator), cliPath: cli, credentialDirectory: await temporaryDirectory('credentials', scratch), run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
   const masterStatus = async () => (await masterStatusReport(root, await loadMasterConfig(root), path => api(path, undefined, coordinator), async () => { throw new Error('no git in the fixture'); })).attention;
 

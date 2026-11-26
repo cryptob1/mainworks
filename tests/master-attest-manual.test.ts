@@ -14,6 +14,7 @@ import { evaluateLandability } from '../src/model-boundary/landability.js';
 import { landabilityRefusals } from '../src/model/landability.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -31,7 +32,6 @@ const worker: Principal = { id: 'implementer', role: 'worker', sessionKind: 'ai'
 const operatorAgent = { id: 'graphyard-master-attest-operator', role: 'operator-agent', sessionKind: 'ai', capabilities: [],
   scope: { repositories: [repository], workItems: ['*'] } } as unknown as Principal;
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const id = () => randomUUID();
 
 let store: Store, engine: Engine, fixtureRoot: string, checkout: string, head: string, baseTip: string;
@@ -47,7 +47,6 @@ before(async () => {
   const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
   await commit(checkout, 'README.md', '# Fixture\n', 'base');
   // src/store/ is sensitive under the repository's own policy, so this change's acceptance gate
   // demands exactly the manual: attestation the master records.
@@ -56,7 +55,6 @@ before(async () => {
   baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   head = await commit(worktree, 'src/store/attested.ts', 'export const attested = 2;\n', 'the change');
 
   store = await withDatabase('master-attest-manual'); await store.init();

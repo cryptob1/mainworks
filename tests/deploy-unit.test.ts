@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { writeFile } from 'node:fs/promises';
@@ -14,10 +13,10 @@ import { restartCause } from '../src/daemon/run.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2877: the continuous deploy runs in its own unit, graphyard-deploy.service, beside the loop's.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const freePort = () => new Promise<number>((accept, reject) => {
   const server = createServer(); server.once('error', reject);
   server.listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
@@ -27,9 +26,7 @@ const foreground = (): LocalSupervisor => ({ systemd: null, reason: 'no systemd 
 /** An origin, a second clone that pushes to it, and the CLI checkout the deploy unit watches, at commit A. */
 async function repositories() {
   const base = await temporaryDirectory('deploy-watch');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const pusher = join(base, 'pusher'), checkout = join(base, 'checkout'), origin = (await gitRepo({ root: pusher, label: 'deploy-watch', origin: true })).origin;
   const commit = async (name: string) => { await writeFile(join(pusher, 'release.txt'), name); git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', name); git(pusher, 'push', '-q', 'origin', 'HEAD:main'); return git(pusher, 'rev-parse', 'HEAD'); };
   const a = await commit('A');
   git(base, 'clone', '-q', origin, checkout);

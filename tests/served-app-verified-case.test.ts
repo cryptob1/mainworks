@@ -1,11 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -23,16 +23,12 @@ import { readFileSync } from 'node:fs';
 // this test's own temporary checkout, so the records the case's command steps write are the ones
 // this control plane reads.
 
-const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 test('unit:served-app-verified-case — the release line names the served commit verified, and the failing case once that case is broken', { timeout: 300_000 }, async () => {
   const operator: Principal = { id: 'e2e-operator', role: 'admin' }, token = `trial-${randomUUID()}`;
   // The checkout whose serving this control plane reports, and whose .graphyard the case's command
   // steps write the records into: the runner's root is the same checkout, exactly as in a trial.
-  const root = await temporaryDirectory('served-app-verified-root');
-  git(['init', '-q', '-b', 'main'], root);
-  await writeFile(join(root, 'served.txt'), 'the fixture app the record claims is served\n');
-  git(['add', '.'], root); git(['commit', '-q', '-m', 'the fixture app'], root);
+  const { root } = await gitRepo({ label: 'served-app-verified-root', files: { 'served.txt': 'the fixture app the record claims is served\n' }, message: 'the fixture app' });
   // The case's command steps write the records with this script, which with no e2e serve writes into its own checkout.
   await mkdir(join(root, 'scripts')); await copyFile(join(process.cwd(), 'scripts', 'e2e-serve-record.mjs'), join(root, 'scripts', 'e2e-serve-record.mjs'));
   const written = join(root, '.graphyard', 'served.json');

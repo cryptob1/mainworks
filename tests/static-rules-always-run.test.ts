@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { changedDeclarations, changedExports, dependencyMap, listTestFiles, repositoryRoot, selectAffected } from '../scripts/ci-tests.mjs';
 import { allowlist, audit } from './architecture.test.js';
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3826: fast static rule tests always run in item merge trials and the release check,
 // whatever narrow selection the change otherwise picks.
@@ -20,20 +20,6 @@ const staticRuleTests = [
   'tests/knip-clean.test.ts',
 ];
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Test',
-  GIT_AUTHOR_EMAIL: 'test@example.com',
-  GIT_COMMITTER_NAME: 'Test',
-  GIT_COMMITTER_EMAIL: 'test@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-C', cwd, '-c', 'commit.gpgsign=false', ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...identity },
-  }).trim();
 
 async function writeFiles(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) {

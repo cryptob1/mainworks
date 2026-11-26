@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../src/store.js';
@@ -12,21 +11,16 @@ import { runTrial, slowestFile, type TrialStepReport } from '../src/merge-writer
 import { trialTimings } from '../src/model/task-evidence.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3599: the Task page's evidence, from a real control plane on isolated Postgres with a git fixture:
 // the trial's step timings and slowest file from the merge ledger, the changed files and one file's
 // diff from the checkout, and the model the Builder's session reported beside its account's.
-const identity = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.com' };
 const minute = 60_000, slow = 'tests/remote-shards.test.ts';
 
 test('e2e:task-shows-evidence — the control plane serves a task\'s trial timings, changed files, file diff and reported model', async () => {
-  const repo = await temporaryDirectory('task-evidence-repo');
-  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-  git('init', '-q', '-b', 'main');
+  const { root: repo, head: baseTip, git } = await gitRepo({ label: 'task-evidence-repo', files: { 'shards.ts': 'export const usable = 1;\nexport const kept = 2;\n' } });
   mkdirSync(join(repo, 'tests'));
-  writeFileSync(join(repo, 'shards.ts'), 'export const usable = 1;\nexport const kept = 2;\n');
-  git('add', '-A'); git('commit', '-q', '-m', 'base');
-  const baseTip = git('rev-parse', 'HEAD');
   git('checkout', '-q', '-b', 'graphyard/gy-1-1');
   writeFileSync(join(repo, 'shards.ts'), 'export const usable = 3;\nexport const kept = 2;\n');
   writeFileSync(join(repo, slow), 'test one\ntest two\n');
@@ -131,15 +125,11 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
 
 test('e2e:task-shows-evidence — each test shard\'s end reports the trial\'s counts so far and its slowest file so far', async () => {
   const repo = await temporaryDirectory('task-evidence-trial'), scratch = await temporaryDirectory('task-evidence-scratch');
-  const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-  gitIn(repo, 'init', '-q', '-b', 'main');
-  mkdirSync(join(repo, 'scripts')); mkdirSync(join(repo, 'tests'));
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'node -e ""' } }));
-  writeFileSync(join(repo, 'scripts/ci-tests.mjs'), '// fixture selection\n');
-  writeFileSync(join(repo, 'graphyard.json'), JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'node tests/helpers/run-tests.ts', source: 'script', reason: 'fixture',
-    selection: { command: 'node scripts/ci-tests.mjs affected', pattern: '^tests/[\\w./-]+\\.test\\.ts$' } }], perCandidate: [] } } }));
-  gitIn(repo, 'add', '-A'); gitIn(repo, 'commit', '-q', '-m', 'fixture');
-  const mergeSha = gitIn(repo, 'rev-parse', 'HEAD');
+  mkdirSync(join(repo, 'tests'));
+  const { head: mergeSha } = await gitRepo({ root: repo, message: 'fixture', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'node -e ""' } }), 'scripts/ci-tests.mjs': '// fixture selection\n',
+    'graphyard.json': JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'node tests/helpers/run-tests.ts', source: 'script', reason: 'fixture',
+      selection: { command: 'node scripts/ci-tests.mjs affected', pattern: '^tests/[\\w./-]+\\.test\\.ts$' } }], perCandidate: [] } } }) } });
   // The selector names two files, each its own shard. Each shard's runner writes its records: one file fails, the other is slow.
   const quick = 'tests/b.test.ts';
   const run = (async (command: string, args: string[], options: never) => {

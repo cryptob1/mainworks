@@ -11,6 +11,7 @@ import { keptBaseBuild, keptBaseBuildMarker, keptBaseBuildSha, keptBuildLimit, r
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3589: a merge trial's base-tip pass reuses the base tip's kept built tree, so two trials
 // against one base commit build that commit once — the second base pass records a reused build
@@ -28,13 +29,12 @@ const policy = { mode: 'local', mergeGate: { preMerge: [{ check: 'test', command
 
 /** A repository whose proof fails on the base tip (the fix is absent there) and passes on every head (each adds it). */
 async function repository() {
-  const root = await temporaryDirectory('base-build-repo', tmpdir());
+  const { root } = await gitRepo({ label: 'base-build-repo', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }),
+    'graphyard.json': JSON.stringify({ delivery: policy }),
+    'test.js': `const { existsSync } = require('node:fs');\nconst ok = existsSync('src/fixed');\nconsole.log((ok ? 'ok' : 'not ok') + ' 1 - ${proof} the fix holds');\nprocess.exit(ok ? 0 : 1);\n`,
+  } });
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
-  write('graphyard.json', JSON.stringify({ delivery: policy }));
-  write('test.js', `const { existsSync } = require('node:fs');\nconst ok = existsSync('src/fixed');\nconsole.log((ok ? 'ok' : 'not ok') + ' 1 - ${proof} the fix holds');\nprocess.exit(ok ? 0 : 1);\n`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
   let base = gitIn(root, 'rev-parse', 'HEAD');
   gitIn(root, 'checkout', '-q', '--detach');
   return {
@@ -200,17 +200,15 @@ test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, a c
   assert.ok(existsSync(keptBaseBuildMarker(concKept)), 'the building pass marked the kept tree built');
 
   // 3. pnpm workspace: populating the kept base tree builds the full workspace, not only packages affected by changedFiles.
-  const pnpmRepo = await temporaryDirectory('base-build-pnpm', tmpdir());
-  const writePnpm = (path: string, content: string) => { mkdirSync(dirname(join(pnpmRepo, path)), { recursive: true }); writeFileSync(join(pnpmRepo, path), content); };
-  gitIn(pnpmRepo, 'init', '-q', '-b', 'main');
-  writePnpm('package.json', JSON.stringify({ name: 'ws', private: true, packageManager: 'pnpm@10.0.0', scripts: { test: 'node test.js' } }));
-  writePnpm('pnpm-lock.yaml', 'lockfileVersion: 9.0\n');
-  writePnpm('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
-  writePnpm('packages/a/package.json', JSON.stringify({ name: 'pkg-a', scripts: { build: 'true' } }));
-  writePnpm('packages/b/package.json', JSON.stringify({ name: 'pkg-b', scripts: { build: 'true' } }));
-  writePnpm('graphyard.json', JSON.stringify({ delivery: policy }));
-  writePnpm('test.js', `console.log('ok 1 - pass');\n`);
-  gitIn(pnpmRepo, 'add', '-A'); gitIn(pnpmRepo, 'commit', '-q', '-m', 'base');
+  const { root: pnpmRepo } = await gitRepo({ label: 'base-build-pnpm', files: {
+    'package.json': JSON.stringify({ name: 'ws', private: true, packageManager: 'pnpm@10.0.0', scripts: { test: 'node test.js' } }),
+    'pnpm-lock.yaml': 'lockfileVersion: 9.0\n',
+    'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    'packages/a/package.json': JSON.stringify({ name: 'pkg-a', scripts: { build: 'true' } }),
+    'packages/b/package.json': JSON.stringify({ name: 'pkg-b', scripts: { build: 'true' } }),
+    'graphyard.json': JSON.stringify({ delivery: policy }),
+    'test.js': `console.log('ok 1 - pass');\n`,
+  } });
   const pnpmBase = gitIn(pnpmRepo, 'rev-parse', 'HEAD');
   gitIn(pnpmRepo, 'checkout', '-q', '--detach');
   const pnpmBuildCalls: string[][] = [];
@@ -238,15 +236,14 @@ test(`${proof} — bare unbuilt kept directory is reclaimed when main moves, a c
 });
 
 test(`${proof} — a kept tree that took the warm dependency image keeps its node_modules after that image is evicted`, { timeout: 300_000 }, async () => {
-  const root = await temporaryDirectory('base-build-warm', tmpdir());
+  const { root } = await gitRepo({ label: 'base-build-warm', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }),
+    'package-lock.json': JSON.stringify({ name: 'fixture', lockfileVersion: 3 }),
+    '.gitignore': 'node_modules\n',
+    'graphyard.json': JSON.stringify({ delivery: policy }),
+    'test.js': `const ok = require('node:fs').existsSync('node_modules/dep.js');\nconsole.log((ok ? 'ok' : 'not ok') + ' 1 - dependencies installed');\nprocess.exit(ok ? 0 : 1);\n`,
+  } });
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
-  write('package-lock.json', JSON.stringify({ name: 'fixture', lockfileVersion: 3 }));
-  write('.gitignore', 'node_modules\n');
-  write('graphyard.json', JSON.stringify({ delivery: policy }));
-  write('test.js', `const ok = require('node:fs').existsSync('node_modules/dep.js');\nconsole.log((ok ? 'ok' : 'not ok') + ' 1 - dependencies installed');\nprocess.exit(ok ? 0 : 1);\n`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
   const tip = () => gitIn(root, 'rev-parse', 'HEAD');
   const installRun: ChildRun = async (command, args, options) => {
     if (command === 'npm' && args[0] === 'ci') { mkdirSync(join(options!.cwd!, 'node_modules'), { recursive: true }); writeFileSync(join(options!.cwd!, 'node_modules', 'dep.js'), ''); return ''; }
@@ -271,19 +268,18 @@ test(`${proof} — a kept tree that took the warm dependency image keeps its nod
 });
 
 test(`${proof} — a base pass with e2eFrom overlay holds exclusive access to the kept tree so a concurrent base pass never sees candidate files`, { timeout: 300_000 }, async () => {
-  const root = await temporaryDirectory('base-build-e2e-from', tmpdir());
-  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
-  write('graphyard.json', JSON.stringify({ delivery: policy, e2e: { serve: { command: 'true', url: 'http://127.0.0.1:1', readySeconds: 1 } } }));
-  write('e2e/cases/demo.json', JSON.stringify({ id: 'demo', title: 'base', steps: [] }));
-  write('test.js', `const { existsSync, readFileSync } = require('node:fs');
+  const { root } = await gitRepo({ label: 'base-build-e2e-from', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }),
+    'graphyard.json': JSON.stringify({ delivery: policy, e2e: { serve: { command: 'true', url: 'http://127.0.0.1:1', readySeconds: 1 } } }),
+    'e2e/cases/demo.json': JSON.stringify({ id: 'demo', title: 'base', steps: [] }),
+    'test.js': `const { existsSync, readFileSync } = require('node:fs');
 const title = JSON.parse(readFileSync('e2e/cases/demo.json', 'utf8')).title;
 const ok = title === 'base' && !existsSync('tests/candidate-only.test.ts');
 console.log((ok ? 'ok' : 'not ok') + ' 1 - base tree is clean (title=' + title + ')');
 process.exit(ok ? 0 : 1);
-`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
+`,
+  } });
+  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
   const base = gitIn(root, 'rev-parse', 'HEAD');
   write('e2e/cases/demo.json', JSON.stringify({ id: 'demo', title: 'candidate', steps: [] }));
   write('tests/candidate-only.test.ts', '// candidate only\n');

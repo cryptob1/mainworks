@@ -8,16 +8,15 @@ import { runTrial, trialHomeVariables, trialHiddenPaths, trialAttempts, TrialRun
 import { mergeOne, trialFailureReason, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
-const identity = { GIT_AUTHOR_NAME: 'Trial', GIT_AUTHOR_EMAIL: 'trial@example.com', GIT_COMMITTER_NAME: 'Trial', GIT_COMMITTER_EMAIL: 'trial@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 async function fixture(build = "console.log('build passed')", lockfile = false) {
   const root = await temporaryDirectory('toolchain-repo');
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { build: 'node build.cjs', test: 'node -e "console.log(123)"' } }));
   writeFileSync(join(root, 'build.cjs'), build);
   if (lockfile) writeFileSync(join(root, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3, packages: {} }));
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { env: { ...process.env, ...identity }, encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-qm', 'fixture');
-  return { root, base: await temporaryDirectory('toolchain-trials'), mergeSha: git('rev-parse', 'HEAD'), changedFiles: ['build.cjs'], timeoutMs: 30_000, temporaryRoots: [], checkoutRoots: [], environment: { PATH: process.env.PATH!, HOME: process.env.HOME! } };
+  const { head } = await gitRepo({ root, files: {}, message: 'fixture' });
+  return { root, base: await temporaryDirectory('toolchain-trials'), mergeSha: head, changedFiles: ['build.cjs'], timeoutMs: 30_000, temporaryRoots: [], checkoutRoots: [], environment: { PATH: process.env.PATH!, HOME: process.env.HOME! } };
 }
 
 test('unit:trial-finds-host-toolchain — mise directories follow host HOME/XDG defaults and explicit MISE values win', () => {

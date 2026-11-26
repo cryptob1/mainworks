@@ -1,10 +1,10 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { forgetFlow } from '../src/server/flow.js';
@@ -24,7 +24,6 @@ const repository = 'owner/game';
 let store: Store, http: ReturnType<typeof server>, url: string, repoRoot: string;
 const previousRoot = process.env.GRAPHYARD_REPOSITORY_ROOT;
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const commitFile = async (cwd: string, name: string, content: string) => {
   await writeFile(join(cwd, name), content);
   git(cwd, 'add', name);
@@ -33,10 +32,7 @@ const commitFile = async (cwd: string, name: string, content: string) => {
 };
 
 before(async () => {
-  repoRoot = await temporaryDirectory('live-station-window-repo');
-  git(repoRoot, 'init', '-q', '-b', 'main');
-  git(repoRoot, 'config', 'user.email', 'test@example.com');
-  git(repoRoot, 'config', 'user.name', 'Test');
+  ({ root: repoRoot } = await gitRepo({ label: 'live-station-window-repo' }));
   await commitFile(repoRoot, 'base.txt', 'base\n');
   process.env.GRAPHYARD_REPOSITORY_ROOT = repoRoot;
   store = await withDatabase('live-station-window'); await store.init();

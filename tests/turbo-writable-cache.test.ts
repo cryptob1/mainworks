@@ -13,6 +13,7 @@ import { awaitsMerge, readOnlyTrialBlocker } from '../src/model/merge-queue.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -104,10 +105,7 @@ const write = async (root: string, files: Record<string, string>) => {
 };
 /** A repository at `root` whose base holds the workspace and whose head applies `change`; answers both commits. */
 async function repository(root: string, change: Record<string, string>) {
-  git(root, 'init', '-q', '-b', 'main');
-  await write(root, turboWorkspace);
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root, files: turboWorkspace });
   git(root, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
   await write(root, change);
   git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'change');

@@ -1,7 +1,6 @@
 import { freePort } from '../src/cli/test-isolation.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +8,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -24,7 +24,6 @@ import type { Principal, Work } from '../src/model.js';
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
 const coordinator: Principal = { id: 'coordinator', role: 'coordinator' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 // The bound command case runs this same real regression inside the native private-root trial.
 test('unit:tests/merge-requires-executed-proofs.test.ts integration:merge-requires-executed-proofs — the writer refuses absent, zero-count and failing proofs before pushing; explicit TAP lands through the ordinary control plane', { timeout: 600_000 }, async () => {
@@ -41,11 +40,8 @@ test('unit:tests/merge-requires-executed-proofs.test.ts integration:merge-requir
     setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
     let branchNumber = 0;
     for (const mode of ['spec', 'missing', 'failed', 'tap'] as const) {
-      const directory = join(root, mode), origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout');
-      await mkdir(directory);
-      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-      execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-      git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
+      const directory = join(root, mode);
+      const repo = await gitRepo({ root: join(directory, 'checkout'), label: `executed-proofs-${mode}`, origin: true }), checkout = repo.root, origin = repo.origin;
       const write = async (path: string, value: string) => { await mkdir(join(checkout, path, '..'), { recursive: true }); await writeFile(join(checkout, path), value); };
       const reporter = mode === 'spec' ? 'spec' : 'tap';
       // Even a command that exits successfully cannot turn a failing TAP case into accepted proof.

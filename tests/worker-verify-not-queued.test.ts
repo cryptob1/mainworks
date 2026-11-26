@@ -1,10 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { heavyRunLabel } from './helpers/run-tests.js';
 import { heldSlots, heldVariable, hostHeavyJobsDirectory, projectVariable, slotsDirectoryVariable, verificationEnvironment } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -26,12 +27,10 @@ const waiting = /waits for a host heavy-job slot|waiting for a host heavy-job sl
 async function fullHost() {
   const scratch = await temporaryDirectory('worker-verify'), data = join(scratch, 'data'), log = join(scratch, 'runs.log'), go = join(scratch, 'go');
   const root = join(scratch, 'app'), managed = join(scratch, 'managed');
-  mkdirSync(root); mkdirSync(managed); writeFileSync(log, '');
+  mkdirSync(managed); writeFileSync(log, '');
   // The worker's commands: each script records that it ran and finishes at once.
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'node job.mjs', 'test:affected': 'node job.mjs', test: 'node job.mjs' } }));
-  writeFileSync(join(root, 'job.mjs'), `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.RUN_LOG, 'start ' + process.env.JOB_ID + '\\nend ' + process.env.JOB_ID + '\\n');\n`);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 'F', GIT_AUTHOR_EMAIL: 'f@example.com', GIT_COMMITTER_NAME: 'F', GIT_COMMITTER_EMAIL: 'f@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
-  git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-qm', 'fixture');
+  await gitRepo({ root, message: 'fixture', files: { 'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'node job.mjs', 'test:affected': 'node job.mjs', test: 'node job.mjs' } }),
+    'job.mjs': `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.RUN_LOG, 'start ' + process.env.JOB_ID + '\\nend ' + process.env.JOB_ID + '\\n');\n` } });
   const base = { PATH: process.env.PATH, HOME: process.env.HOME, GRAPHYARD_DATA_HOME: data, RUN_GO: go, RUN_LOG: log };
   const started: ChildProcess[] = [];
   after(() => { for (const child of started) child.kill('SIGKILL'); });

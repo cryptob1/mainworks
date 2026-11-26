@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { runMergeTrial, trialFailureReason } from '../src/merge-writer/executor.js';
@@ -64,14 +65,8 @@ before(async () => {
   // The fixture repository, whose head an e2e.serve declaration serves for the trial.
   fixtureRoot = await temporaryDirectory('create-added-case-fixture', tmpdir());
   root = join(fixtureRoot, 'repo');
-  mkdirSync(root, { recursive: true });
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { test: 'node --eval 0' } }));
-  write('graphyard.json', JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: serveUrl, readySeconds: 10 } } }));
-  write('serve.js', serveScript);
-  gitIn(root, 'add', '-A');
-  gitIn(root, 'commit', '-q', '-m', 'base');
-  baseTip = gitIn(root, 'rev-parse', 'HEAD');
+  baseTip = (await gitRepo({ root, files: { 'package.json': JSON.stringify({ name: 'fixture', scripts: { test: 'node --eval 0' } }),
+    'graphyard.json': JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: serveUrl, readySeconds: 10 } } }), 'serve.js': serveScript } })).head;
   write('src/change.ts', 'export const change = 1;\n');
   gitIn(root, 'add', '-A');
   gitIn(root, 'commit', '-q', '-m', 'change');

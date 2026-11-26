@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { mergeBatches, mergeHeads, mergeRecordKinds, type MergeRecordEvent, type MergeTrialInput } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
@@ -19,16 +19,9 @@ delete process.env[slotsDirectoryVariable];
 // GY-3625: compatible queued heads are validated in one merge trial on their combined tip, against a real
 // bare origin; a failing batch is split in half down to the head whose own trial fails.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-
 async function fixture(label: string, count: number, failing: (tree: string[]) => boolean) {
-  const directory = await temporaryDirectory(label), origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
-  await writeFile(join(checkout, 'shared.txt'), 'base\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
-  const baseTip = git(checkout, 'rev-parse', 'HEAD'), work: Work[] = [];
+  const directory = await temporaryDirectory(label);
+  const { root: checkout, origin, head: baseTip } = await gitRepo({ root: join(directory, 'checkout'), files: { 'shared.txt': 'base\n' }, origin: true }), work: Work[] = [];
   for (let n = 1; n <= count; n++) {
     git(checkout, 'checkout', '-q', '-b', `graphyard/gy-${n}-1`, baseTip);
     const file = `item-${n}.txt`;
