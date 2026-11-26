@@ -21,6 +21,7 @@ import { masterConfigSchema, selectAccount, sessionAgentName } from '../src/mast
 import { launchGraceMs } from '../src/model/registry.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { itemObservation } from './helpers/observation-fixture.js';
@@ -57,17 +58,9 @@ useTestStore('session-liveness', { principals: [operator, worker, coordinator, p
 
 const reload = async (item: Work | string) => (await store.list()).find(entry => entry.id === (typeof item === 'string' ? item : item.id))!;
 let sequence = 0;
-async function created(overrides: Record<string, unknown> = {}) {
-  return engine.execute(operator, 'create', null, { type: 'chore',  title: `Session liveness ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }], ...overrides }, randomUUID());
-}
 /** An item whose only proof is a manual one no producer may run, so its candidate raises a review request and no producer request. */
 const reviewOnly = { criteria: [{ id: 'AC-1', text: 'Read it', proofs: ['manual:by-hand', 'e2e:fixture'] }] };
-async function submitted(overrides: Record<string, unknown> = {}) {
-  let item = await engine.execute(operator, 'ready', (await created(overrides)).id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/liveness/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  return engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
-}
+const submitted = (overrides: Record<string, unknown> = {}) => lifecycle(engine, operator, { type: 'chore',  title: `Session liveness ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }], ...overrides }, { claim: worker, submit: {} });
 
 const fleetConfig = masterConfigSchema.parse({
   version: 1, url: 'https://graphyard.example', credentialFile: '/outside/master.token', cliPath: '/outside/graphyard.mjs',

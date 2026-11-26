@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -30,13 +31,7 @@ useTestStore('lease-lapse', { principals: [human, master, worker, replacement] }
 
 // A claim through the expiring engine has already lapsed by the time a workspace could be
 // registered, so that attempt is left without one, as a supervisor that never started leaves it.
-async function claimed(title: string, by: Engine = engine, actor: Principal = worker) {
-  let work = await engine.execute(human, 'create', null, input(title), id());
-  work = await engine.execute(human, 'ready', work.id, {}, id());
-  work = await by.execute(actor, 'claim', work.id, {}, id());
-  if (by !== engine) return work;
-  return engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'lapse-host', path: `/tmp/lapse/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, id());
-}
+const claimed = (title: string, by: Engine = engine, actor: Principal = worker) => lifecycle(by, human, input(title), { claim: actor, workspace: by === engine ? { host: 'lapse-host' } : undefined });
 // Rewrite the stored document with the lease still on the record past its expiry.
 async function overwrite(work: Work, mutate: (document: Work) => void) {
   const document = await reload(work); mutate(document);

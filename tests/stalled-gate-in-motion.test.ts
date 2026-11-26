@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { useTestStore } from './helpers/test-store.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -85,11 +85,7 @@ useTestStore('stalled-gate-in-motion', { principals: [operator, worker] }, ctx =
 test('integration:base-hold-observed — the observation write records when the current head was first read withheld behind the base, keeps it across a base move, and clears it when GitHub reports the head mergeable', async () => {
   await holds();
   const head = 'a'.repeat(40), base = 'b'.repeat(40), moved = 'c'.repeat(40);
-  let item = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Base hold', criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:base-hold-fixture', 'e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/base-hold/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  item = await engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: 77 }, randomUUID());
+  let item = await lifecycle(engine, operator, { type: 'chore',  title: 'Base hold', criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:base-hold-fixture', 'e2e:fixture'] }] }, { claim: worker, submit: { pr: 77 } });
   const reload = async () => (await store.list()).find(entry => entry.id === item.id)!;
   const observe = async (at: string, reading: Partial<Record<keyof Observation, unknown>>) => {
     const current = await reload();

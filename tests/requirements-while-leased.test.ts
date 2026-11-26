@@ -12,6 +12,7 @@ import { syncWork } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 // The fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -52,9 +53,7 @@ const revised = [
 
 /** An item claimed by the worker with its workspace registered and a head committed on the branch. */
 async function leased(n: number) {
-  let work = await engine.execute(operator, 'create', null, { type: 'chore', title: `Requirements while leased ${n}`, criteria: initial }, id());
-  work = await engine.execute(operator, 'ready', work.id, {}, id());
-  work = await engine.execute(worker, 'claim', work.id, {}, id());
+  let work = await lifecycle(engine, operator, { type: 'chore', title: `Requirements while leased ${n}`, criteria: initial }, { claim: worker });
   const branch = `graphyard/gy-${n}-${work.lease!.epoch}`;
   const workspace = join(fixtureRoot, `${n}`);
   git(checkout, 'worktree', 'add', '-q', '-b', branch, workspace);

@@ -8,8 +8,9 @@ import { Engine } from '../src/engine.js';
 import { Validation } from '../src/validation.js';
 import { Delivery } from '../src/delivery.js';
 import { deliveryOutcome, deliveryLabel, shortShas } from '../src/model/format.js';
-import type { Principal, Work,  } from '../src/model.js';
+import type { Principal, Work } from '../src/model.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -51,10 +52,7 @@ const smoked = (w: Work): Work => ({ ...w, policy: { ...w.policy, deploySmoke: t
 
 /** Delivered work the way production reaches it: an authorized, verified, independently observed merge. */
 async function delivered(mergeSha: string) {
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Delivered change ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, id());
-  w = await engine.execute(operator, 'ready', w.id, {}, id()); w = await engine.execute(worker, 'claim', w.id, {}, id());
-  w = await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: `/tmp/observe-sha-${serial}`, branch: `graphyard/observe-sha-${serial}` }, id());
-  w = await engine.execute(worker, 'submit', w.id, { epoch: 1, pr: serial }, id());
+  let w = await lifecycle(engine, operator, { type: 'chore',  title: `Delivered change ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: `/tmp/observe-sha-${serial}`, branch: `graphyard/observe-sha-${serial}` }, submit: { pr: serial } });
   w = await engine.observe(w.id, w.revision, itemObservation(w, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [] }));
   w = await engine.execute(ci, 'evidence', w.id, { proof: 'integration:claim-safety', sha: head, baseSha: base, policyRevision: 1, result: 'pass', executed: 5, skipped: 0, exercise: { behaviour: 'the change under test', result: 'fail', executed: 1 } }, id());
   w = await engine.observe(w.id, (await reload(w)).revision, itemObservation(w, head, base, { reviews: [{ reviewer: 'reviewer', sha: head, state: 'APPROVED' }], files: [] }));

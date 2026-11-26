@@ -19,6 +19,7 @@ import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -69,13 +70,7 @@ before(async () => {
 after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }); });
 
 /** An item claimed by the worker with its workspace registered on `branch`, ready to submit. */
-async function assigned(n: number, branch = `graphyard/gy-${n}-1`) {
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Head submission ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-  const pulled = await engine.pullAssignment(worker, { work: w.id }, randomUUID());
-  assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused)); w = pulled.assigned!;
-  return engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: `/tmp/head-${n}`, branch }, randomUUID());
-}
+const assigned = (n: number, branch = `graphyard/gy-${n}-1`) => lifecycle(engine, operator, { type: 'chore',  title: `Head submission ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:claim-safety', 'e2e:fixture'] }] }, { claim: worker, pull: true, workspace: { host: 'test', path: `/tmp/head-${n}`, branch } });
 const numbers = async () => (await store.pool.query('SELECT number::int AS number, work_id, head FROM change_numbers ORDER BY number')).rows as { number: number; work_id: string; head: string }[];
 
 test('unit:submit-head — submit takes exactly one of pr or head; the merger is the control plane whatever old `github` history the ledger holds, nothing can set it, and a head is submitted, ending the lease', async () => {

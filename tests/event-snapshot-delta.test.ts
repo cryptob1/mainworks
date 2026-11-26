@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store, applyWorkDelta, documentBefore, type WorkDelta } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
@@ -30,13 +31,7 @@ const rows = async (id: string) => (await store.pool.query('SELECT seq, kind, pa
 const observation = (work: Work, extra: Partial<Observation> = {}) => itemObservation(work, sha(work.key), base,
   { clockOffset: { min: 0, max: 5 }, checks: [{ name: 'test', result: 'success', appId: 15368 }], files: ['src/a.ts'], baseTree: '7e'.repeat(20), ...extra });
 
-async function submitted() {
-  const n = ++serial;
-  let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Delta ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:x', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID()); w = await engine.execute(worker, 'claim', w.id, {}, randomUUID());
-  w = await engine.execute(worker, 'workspace', w.id, { epoch: 1, host: 'test', path: `/tmp/delta-${n}`, branch: `graphyard/delta-${n}` }, randomUUID());
-  return w;
-}
+const submitted = () => lifecycle(engine, operator, { type: 'chore',  title: `Delta ${++serial}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:x', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test' } });
 
 test('unit:routine-observation-delta — a re-observation that changes only its clock appends a small delta on the last full snapshot, and the delta reconstructs the record exactly', async () => {
   let w = await submitted();

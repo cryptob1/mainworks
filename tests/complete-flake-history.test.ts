@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal } from '../src/model.js';
@@ -23,12 +24,7 @@ useTestStore('complete-flake-history', {}, ctx => { ({ store, engine } = ctx); }
 const flaked = [{ case: 'unit:outside-proof — case A', file: 'tests/flaky.test.ts', line: 59, durationMs: 30000 }];
 const baseFailures = [{ case: 'unit:outside-proof — case B', file: 'tests/broken-elsewhere.test.ts', line: 7, durationMs: null }];
 
-async function assigned(title: string, n: number) {
-  let w = await engine.execute(operator, 'create', null, { title, type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:outside-proof', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-  w = await engine.execute(worker, 'claim', w.id, {}, randomUUID());
-  return await engine.execute(worker, 'workspace', w.id, { epoch: w.epoch, host: 'test', path: `/tmp/complete-flake-history-${n}`, branch: `graphyard/complete-flake-history-${n}` }, randomUUID());
-}
+const assigned = (title: string, n: number) => lifecycle(engine, operator, { title, type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:outside-proof', 'e2e:fixture'] }] }, { claim: worker, workspace: { host: 'test', path: `/tmp/complete-flake-history-${n}`, branch: `graphyard/complete-flake-history-${n}` } });
 
 test('unit:complete-flake-history — a submission carrying the rerun\'s flake and base-failure notes records both on the item\'s history', async () => {
   const w = await assigned('Flake history', 1);

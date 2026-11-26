@@ -14,6 +14,7 @@ import type { Observation, Principal, Work } from '../src/model.js';
 import { nextAction } from '../src/model-boundary/next-action.js';
 import { verifyWorkingTree } from '../src/cli/verify.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -40,13 +41,7 @@ useTestStore('verify-before-review', {}, ctx => {
 
 const events = async (item: Work, kind: string) => (await store.events(item.id)).filter(event => event.kind === kind).reverse();
 const reviewRequests = async (item: Work) => (await events(item, 'dispatch.requested')).filter(event => event.payload.details.kind === 'review');
-async function submitted(title: string, criteria: Work['criteria']) {
-  let item = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(implementer, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(implementer, 'workspace', item.id, { epoch: 1, host: 'machine-a', path: `/tmp/verify/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-1` }, randomUUID());
-  return engine.execute(implementer, 'submit', item.id, { epoch: 1, pr: ++pr }, randomUUID());
-}
+const submitted = (title: string, criteria: Work['criteria']) => lifecycle(engine, operator, { type: 'chore',  title, criteria }, { claim: implementer, submit: { pr: ++pr } });
 // GY-883: a public API path keeps the item in the high lane, which still demands the proofs review must wait for.
 const observed = (item: Work, sha: string, extra: Partial<Observation> = {}) => observationFixture({ sha, baseSha: B, pr: item.submission!.pr, branch: item.workspaces[0].branch },
   { files: ['src/server/routes/a.ts'], scopeFiles: [{ path: 'src/server/routes/a.ts', status: 'added', sha: 'f'.repeat(40), baseSha: null, additions: 1, deletions: 0, binary: false }], ...extra });

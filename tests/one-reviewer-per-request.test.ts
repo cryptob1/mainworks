@@ -30,6 +30,7 @@ import { hostMemoryVariable } from '../src/master/host-memory.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { observationFixture } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -336,11 +337,7 @@ async function sessionProviderContract() {
   } finally { await close(); engine.principals = [operator, implementer, producer]; } }
 
 test('integration:conflicting-verdicts-surfaced — APPROVED then CHANGES_REQUESTED on one head for one request is a conflict: both recorded, attention raised, neither acted on, and a fresh review resolves it', async () => {
-  let item = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Two verdicts on one head', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(implementer, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(implementer, 'workspace', item.id, { epoch: 1, host: 'machine-a', path: `/tmp/gy124/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-1` }, randomUUID());
-  item = await engine.execute(implementer, 'submit', item.id, { epoch: 1, pr: 119 }, randomUUID());
+  let item = await lifecycle(engine, operator, { type: 'chore',  title: 'Two verdicts on one head', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, { claim: implementer, submit: { pr: 119 } });
   const observed = (reviews: Observation['reviews']): Observation => observationFixture({ sha: H, baseSha: B, pr: 119, branch: item.workspaces[0].branch }, { reviews });
   item = await proven(await engine.observe(item.id, item.revision, observed([])));
   const request = item.autoDispatch!.review!;
@@ -387,11 +384,7 @@ test('integration:conflicting-verdicts-surfaced — APPROVED then CHANGES_REQUES
 
   // A person is not the reviewer identity: approving and then requesting changes on one head is
   // their latest word, and that change request still blocks — no conflict, nothing withheld.
-  let human = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'A person changes their mind', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, randomUUID());
-  human = await engine.execute(operator, 'ready', human.id, {}, randomUUID());
-  human = await engine.execute(implementer, 'claim', human.id, {}, randomUUID());
-  human = await engine.execute(implementer, 'workspace', human.id, { epoch: 1, host: 'machine-a', path: `/tmp/gy124/${human.id}`, branch: `graphyard/${human.key.toLowerCase()}-1` }, randomUUID());
-  human = await engine.execute(implementer, 'submit', human.id, { epoch: 1, pr: 120 }, randomUUID());
+  let human = await lifecycle(engine, operator, { type: 'chore',  title: 'A person changes their mind', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, { claim: implementer, submit: { pr: 120 } });
   const byHuman = (reviews: Observation['reviews']): Observation => observationFixture({ sha: H, baseSha: B, pr: 120, branch: human.workspaces[0].branch }, { reviews });
   human = await proven(await engine.observe(human.id, human.revision, byHuman([])));
   assert.equal(human.autoDispatch!.review!.state, 'requested');

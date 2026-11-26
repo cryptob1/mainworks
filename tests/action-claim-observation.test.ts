@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store, save } from '../src/store.js';
 import { Engine, sameBesideBookkeeping } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
@@ -43,15 +44,11 @@ const reload = async (id: string) => (await store.list()).find(entry => entry.id
 const resyncRow = (item: Work) => item.actionQueue!.actions.find(row => row.kind === 'resync')!;
 
 let sequence = 0;
-async function submitted() {
-  let item = await engine.execute(operator, 'create', null, { type: 'chore',  title: `Resync ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }] }, randomUUID());
-  item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
-  item = await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'machine-a', path: `/tmp/resync/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-${item.epoch}` }, randomUUID());
-  item = await engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: Number(item.key.slice(3)) }, randomUUID());
+const submitted = async () => {
+  const item = await lifecycle(engine, operator, { type: 'chore',  title: `Resync ${++sequence}`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: [PROOF, 'e2e:fixture'] }] }, { claim: worker, submit: {} });
   assert.equal(item.nextAction?.kind, 'resync', 'a submitted candidate nobody has observed owes a resync');
   return item;
-}
+};
 const claimResync = async (id: string) => (await claimFixture(store, executor, { host: 'host-1', kinds: ['resync'], work: id })).action!;
 const settle = (row: ActionRow, result: 'done' | 'failed', reason: string) => settleFixture(store, executor, row.id, { result, reason });
 test('unit:action-claim-keeps-observation — an action claimed, renewed and settled between an observation\'s read and its save does not discard the observation', async () => {

@@ -19,6 +19,7 @@ import { mergeIntent } from './helpers/merge-ledger.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { itemObservation } from './helpers/observation-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -69,11 +70,7 @@ const proof = (overrides: Record<string, unknown> = {}) => ({ proof: 'unit:works
 // Drive an item to an observed candidate. Submission ends the lease, so later tests
 // in the same slice are not blocked by a stale active engineer.
 async function candidate(actor: Principal, title: string, slice?: SliceId) {
-  let work = await engine.execute(admin, 'create', null, input(title, slice), id());
-  work = await engine.execute(admin, 'ready', work.id, {}, id());
-  work = await engine.execute(actor, 'claim', work.id, {}, id());
-  work = await engine.execute(actor, 'workspace', work.id, { epoch: work.epoch, host: 'delegation-host', path: `/tmp/delegation/${work.id}`, branch: `graphyard/${work.key.toLowerCase()}-${work.epoch}` }, id());
-  work = await engine.execute(actor, 'submit', work.id, { epoch: work.epoch, pr: ++pr }, id());
+  let work = await lifecycle(engine, admin, input(title, slice), { claim: actor, workspace: { host: 'delegation-host' }, submit: { pr: ++pr } });
   assert.equal(work.lease, null, 'complete ends the implementation lease');
   return engine.observe(work.id, work.revision, itemObservation(work, head, base, approvedAt(head)));
 }
@@ -127,8 +124,7 @@ test('integration:slice-lead-principals — distinct AI lead credentials and unc
   // GY-2876: claims are not capped per slice: six ready items in one slice go to six distinct workers.
   const items: Work[] = [], six = Array.from({ length: 6 }, (_, index): Principal => ({ id: `engineer-${index + 1}`, role: 'worker', sessionKind: 'ai' }));
   for (const engineer of six) {
-    const item = await engine.execute(admin, 'create', null, input(`concurrency-${engineer.id}`, 'product'), id());
-    items.push(await engine.execute(admin, 'ready', item.id, {}, id()));
+    items.push(await lifecycle(engine, admin, input(`concurrency-${engineer.id}`, 'product')));
   }
   for (const [index, engineer] of six.entries()) await engine.execute(engineer, 'claim', items[index].id, {}, id());
   const product = delegationSnapshot(roster, await store.list(), Date.now()).slices.find(s => s.id === 'product')!;
@@ -138,8 +134,7 @@ test('integration:slice-lead-principals — distinct AI lead credentials and unc
   // slice is two worker rows but a single occupied seat under the lead.
   const seats: Work[] = [];
   for (const name of ['seat-one', 'seat-two', 'seat-three', 'seat-four']) {
-    const created = await engine.execute(admin, 'create', null, input(name, 'docs-experience'), id());
-    seats.push(await engine.execute(admin, 'ready', created.id, {}, id()));
+    seats.push(await lifecycle(engine, admin, input(name, 'docs-experience')));
   }
   await engine.execute(workerA, 'claim', seats[0].id, {}, id());
   await engine.execute(workerA, 'claim', seats[1].id, {}, id());
@@ -342,9 +337,7 @@ test('integration:lead-enforcement — violating lead actions are refused server
 });
 
 test('integration:ownership-and-delivery-invariants — Mainworks owns leases, worktrees, and the only merge path', async () => {
-  let item = await engine.execute(admin, 'create', null, input('ownership', 'infrastructure'), id());
-  item = await engine.execute(admin, 'ready', item.id, {}, id());
-  item = await engine.execute(workerA, 'claim', item.id, {}, id());
+  let item = await lifecycle(engine, admin, input('ownership', 'infrastructure'), { claim: workerA });
   // Exactly one owner, and only the current epoch acts.
   await assert.rejects(engine.execute(workerB, 'claim', item.id, {}, id()), /already has an active owner/);
   await assert.rejects(engine.execute(workerA, 'heartbeat', item.id, { epoch: item.epoch + 1 }, id()), /superseded/);
@@ -352,9 +345,7 @@ test('integration:ownership-and-delivery-invariants — Mainworks owns leases, w
   item = await engine.execute(workerA, 'workspace', item.id, workspace, id());
   // Exactly one registered worktree per assignment, exclusive across the fleet.
   await assert.rejects(engine.execute(workerA, 'workspace', item.id, { ...workspace, path: '/tmp/delegation/second', branch: 'graphyard/ownership-second' }, id()), /already has a workspace/);
-  let other = await engine.execute(admin, 'create', null, input('ownership-peer', 'infrastructure'), id());
-  other = await engine.execute(admin, 'ready', other.id, {}, id());
-  other = await engine.execute(workerB, 'claim', other.id, {}, id());
+  let other = await lifecycle(engine, admin, input('ownership-peer', 'infrastructure'), { claim: workerB });
   await assert.rejects(engine.execute(workerB, 'workspace', other.id, { ...workspace, epoch: other.epoch }, id()), /reserved or overlaps/);
   item = await engine.execute(workerA, 'submit', item.id, { epoch: item.epoch, pr: ++pr }, id());
   item = await engine.observe(item.id, item.revision, itemObservation(item, head, base, approvedAt(head)));
@@ -374,8 +365,7 @@ test('integration:ownership-and-delivery-invariants — Mainworks owns leases, w
   const token = credentials.find(c => c.id === workerA.id)!.token;
   const held: Work[] = [];
   for (const name of ['seat-first', 'seat-second']) {
-    const created = await engine.execute(admin, 'create', null, input(name, 'infrastructure'), id());
-    held.push(await engine.execute(admin, 'ready', created.id, {}, id()));
+    held.push(await lifecycle(engine, admin, input(name, 'infrastructure')));
   }
   held[0] = await engine.execute(workerA, 'claim', held[0].id, {}, id());
   // The second claim by the same engineer is accepted by the server, not merely by a client.
@@ -591,12 +581,8 @@ test('integration:intake-authority-routing — routine intake is autonomous, hum
   try {
     const adminToken = credentials.find(c => c.id === admin.id)!.token;
     const agentToken = `scoped-operator-${'z'.repeat(32)}`;
-    let inScope = await scopedEngine.execute(admin, 'create', null, input('scoped-visible', 'product'), id());
-    inScope = await scopedEngine.execute(admin, 'ready', inScope.id, {}, id());
-    inScope = await scopedEngine.execute(workerA, 'claim', inScope.id, {}, id());
-    let outOfScope = await scopedEngine.execute(admin, 'create', null, input('scoped-hidden', 'infrastructure'), id());
-    outOfScope = await scopedEngine.execute(admin, 'ready', outOfScope.id, {}, id());
-    outOfScope = await scopedEngine.execute(workerB, 'claim', outOfScope.id, {}, id());
+    let inScope = await lifecycle(scopedEngine, admin, input('scoped-visible', 'product'), { claim: workerA });
+    let outOfScope = await lifecycle(scopedEngine, admin, input('scoped-hidden', 'infrastructure'), { claim: workerB });
     const setup = { id: `intake-agent-${randomUUID()}`, displayName: 'Intake agent', capabilities: [],
       scope: { repositories: ['owner/delegation'], workItems: [inScope.id] }, token: agentToken, reason: 'Human enabled scoped intake' };
     const registered = await fetch(`${scopedUrl}/api/operator-agents`, { method: 'POST',
@@ -758,9 +744,7 @@ test('integration:bootstrap-compatibility — the single-agent bootstrap flow is
   // Unsliced work is never constrained by per-lead engineer capacity.
   const peers: Work[] = [];
   for (const [index, actor] of [workerB, workerC, admin].entries()) {
-    let peer = await bootstrap.execute(admin, 'create', null, input(`bootstrap-peer-${index}`), id());
-    peer = await bootstrap.execute(admin, 'ready', peer.id, {}, id());
-    peers.push(await bootstrap.execute(actor, 'claim', peer.id, {}, id()));
+    peers.push(await lifecycle(bootstrap, admin, input(`bootstrap-peer-${index}`), { claim: actor }));
   }
   assert.equal(peers.length, 3);
   assert.ok(peers.every(peer => peer.lease));

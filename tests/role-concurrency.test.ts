@@ -24,6 +24,7 @@ import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { observationFixture } from './helpers/observation-fixture.js';
@@ -215,11 +216,7 @@ useTestStore('role-concurrency', {}, ctx => {
 test('integration:concurrent-producers — the control plane refuses evidence for an item from the principal that held an assignment on it, and trusts the same principal on an item it never touched', async () => {
   const H = sha40('c1');
   const submitted = async (title: string, claimant: Principal, pr: number) => {
-    let item = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:concurrency', 'e2e:fixture'] }] }, randomUUID());
-    item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
-    item = await engine.execute(claimant, 'claim', item.id, {}, randomUUID());
-    item = await engine.execute(claimant, 'workspace', item.id, { epoch: 1, host: 'machine-a', path: `/tmp/concurrency/${item.id}`, branch: `graphyard/${item.key.toLowerCase()}-1` }, randomUUID());
-    item = await engine.execute(claimant, 'submit', item.id, { epoch: 1, pr }, randomUUID());
+    const item = await lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Unit', proofs: ['unit:concurrency', 'e2e:fixture'] }] }, { claim: claimant, submit: { pr } });
     return engine.observe(item.id, item.revision, observationFixture({ sha: H, baseSha: B, pr, branch: item.workspaces[0].branch, author: claimant.id }, publicRoute));
   };
   const worker: Principal = { id: 'builder', role: 'worker' };

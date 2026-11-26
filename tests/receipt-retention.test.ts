@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
+import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { readFile } from 'node:fs/promises';
@@ -28,12 +29,7 @@ useTestStore('receipt-retention', {}, ctx => { ({ store, engine } = ctx); });
 const receipt = async (actor: string, key: string) => (await store.pool.query('SELECT result, created_at, pg_column_size(result) AS bytes FROM receipts WHERE actor=$1 AND key=$2', [actor, key])).rows[0] as { result: any; created_at: Date | null; bytes: number } | undefined;
 const age = (actor: string, key: string, ms: number) => store.pool.query("UPDATE receipts SET created_at = now() - ($3::text||' milliseconds')::interval WHERE actor=$1 AND key=$2", [actor, key, String(ms)]);
 
-async function claimed() {
-  const n = ++serial;
-  let w = await engine.execute(operator, 'create', null, { type: 'chore', title: `Receipts ${n}`, description: 'x'.repeat(4000), criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:x', 'e2e:fixture'] }] }, randomUUID());
-  w = await engine.execute(operator, 'ready', w.id, {}, randomUUID());
-  return engine.execute(worker, 'claim', w.id, {}, randomUUID());
-}
+const claimed = () => lifecycle(engine, operator, { type: 'chore', title: `Receipts ${++serial}`, description: 'x'.repeat(4000), criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:x', 'e2e:fixture'] }] }, { claim: worker });
 
 test('unit:receipt-replay-within-window — a replayed command inside the window answers the result it accepted, and a reused key with different input still refuses', async () => {
   const w = await claimed();
