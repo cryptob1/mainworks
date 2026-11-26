@@ -150,6 +150,18 @@ elif command == 'run':
     data = sys.stdin.buffer.read()
     name = args[args.index('--name') + 1]
     warm_dir = None
+    base = args[args.index('--entrypoint') + 2] if '--entrypoint' in args else None
+    if '/warm/harness' in ' '.join(args):
+        # GY-3907: a catalog image: the base image's warm folder with the runner's files under harness/.
+        warm_dir = os.path.join(STATE, 'containers', name, 'warm')
+        if s['warm'].get(base) and os.path.isdir(s['warm'][base]):
+            shutil.copytree(s['warm'][base], warm_dir, symlinks=True)
+        os.makedirs(os.path.join(warm_dir, 'harness'), exist_ok=True)
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as tar:
+            tar.extractall(os.path.join(warm_dir, 'harness'))
+        s['containers'][name] = {'warm': warm_dir, 'deps': s['deps'].get(base) or os.environ.get('GRAPHYARD_STANDIN_NODE_MODULES')}
+        save()
+        sys.exit(0)
     if data:
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as tar:
