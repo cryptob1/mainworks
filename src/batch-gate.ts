@@ -349,8 +349,9 @@ export function measuredCatalogMs(record: Pick<GateRecord, 'catalogMs' | 'gateRu
   return recent.length ? Math.max(...recent) : record.catalogMs;
 }
 
-/** Whether the gate runs the whole catalog: only when its measured time fits half the gate's limit. */
-export function catalogFits(record: Pick<GateRecord, 'catalogMs' | 'gateRuns'>, now: number) {
+/** Whether the gate runs the whole catalog: only when its measured time fits half the gate's limit and the batch has not already timed out. */
+export function catalogFits(record: Pick<GateRecord, 'catalogMs' | 'gateRuns'> & Partial<Pick<GateRecord, 'attempt' | 'lastOutcome'>>, now: number) {
+  if ((record.attempt?.timeouts ?? 0) > 0 || record.lastOutcome?.outcome === 'timeout') return false;
   const measured = measuredCatalogMs(record, now);
   return measured !== null && measured <= catalogBudgetMs;
 }
