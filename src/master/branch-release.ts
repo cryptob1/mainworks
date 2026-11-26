@@ -190,8 +190,7 @@ export async function releaseHeldBranch(root: string, branch: string, targetPath
 
 /**
  * Release this attempt's claim as a workspace failure (GY-860 AC-2): the control plane keeps the
- * git message on the item and, while the attempt is still the untouched claim, undoes it, so the
- * epoch returns and no attempt is consumed. A release the server refuses — a lease that lapsed or
+ * git message on the item and ends the attempt; its epoch is never reused (GY-3905). A release the server refuses — a lease that lapsed or
  * was superseded while git ran included — returned nothing, so it is never reported as one
  * (GY-1059): the error keeps the original git failure, which names the workspace rather than the
  * profile, and says the epoch is spent.
@@ -256,7 +255,7 @@ export async function reserveReleasingHold(root: string, branch: string, path: s
   }
 }
 
-/** GY-860: a worktree the host's git could not build releases the claim with git's message, so the epoch returns; the error says so. */
+/** GY-860: a worktree the host's git could not build releases the claim with git's message; the error says so. */
 export async function workspaceFailure(mutate: (name: string, data: unknown) => Promise<unknown>, epoch: number, error: unknown): Promise<never> {
   const detail = failureText(error);
   await releaseUnderFailure(mutate, epoch, detail);

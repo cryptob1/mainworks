@@ -122,6 +122,35 @@ test('unit:lease-pool-isolated — renewal, claim, complete, blocked and defer o
   } finally { await http.close(); await store.close(); }
 });
 
+test('integration:minted-worker-heartbeat-uses-the-lease-pool — with the general pool exhausted, a loop-minted worker renews its lease within one second', async () => {
+  const store = new Store(connection, { max: 2 });
+  const engine = engineOn(store);
+  const loop = { id: 'lease-pool-loop', role: 'coordinator' as const, sessionKind: 'ai' as const, token: `loop-token-${'l'.repeat(32)}` };
+  const http: Server = server(engine, [...credentials, loop]);
+  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const post = async (token: string, path: string, body: unknown) => {
+    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const minted = await post(loop.token, 'worker-identities', { id: 'minted-lease-worker' });
+    assert.equal(minted.status, 200, JSON.stringify(minted.body));
+    const token = minted.body.token as string;
+    const open = await ready(engine, 'minted-renewal');
+    const claim = await post(token, `work/${open.id}/claim`, {});
+    assert.equal(claim.status, 200, JSON.stringify(claim.body));
+    const held = await exhaust(store.pool);
+    try {
+      const renewal = await timed(() => post(token, `work/${open.id}/heartbeat`, { epoch: claim.body.epoch }));
+      assert.equal(renewal.value.status, 200, JSON.stringify(renewal.value.body));
+      assert.ok(renewal.ms < 1000, `the minted worker's heartbeat, authentication included, completed in ${Math.round(renewal.ms)} ms`);
+      assert.equal(renewal.value.body.lease.owner, 'minted-lease-worker');
+      assert.ok(Date.parse(renewal.value.body.lease.expiresAt) > Date.parse(claim.body.lease.expiresAt), 'the lease was renewed');
+    } finally { for (const client of held) client.release(); }
+  } finally { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); }
+});
+
 test('unit:server-fault-keeps-lease — a renewal that failed server-side keeps its lease for one more period; a lease nobody renews still expires', async () => {
   const leaseSeconds = 3;
   const store = new Store(connection);

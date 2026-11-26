@@ -188,11 +188,12 @@ export async function renewalGrace(engine: Engine, db: PoolClient, work: Work, n
 /**
  * GY-3785: accept a builder's renewal for a lease that lapsed while the control plane was not
  * serving, provided the item's epoch is unchanged and no other session claimed it. Works whether
- * the expired lease is still on the document or reconciliation already cleared it as a plain lapse;
- * never resurrects a lease that was submitted, released, blocked, reworked, or claimed by another epoch.
+ * the expired lease is still on the document or reconciliation already cleared it as a plain lapse.
+ * A rework attempt is restored too (GY-3905): the submission it reworks belongs to an earlier epoch.
+ * Never resurrects a lease submitted under this epoch, released, blocked, held, not ready, or claimed by another epoch.
  */
 export async function restoreDowntimeLease(engine: Engine, db: PoolClient, work: Work, actor: Principal, epoch: number, now: Date): Promise<boolean> {
-  if (work.stage === 'done' || work.submission || work.blocker || work.reworkRequested || work.epoch !== epoch) return false;
+  if (work.stage === 'done' || work.submission?.epoch === epoch || work.blocker || work.hold || !work.ready || work.epoch !== epoch) return false;
   if (work.lease && Date.parse(work.lease.expiresAt) > now.getTime()) return false;
   let expires: number;
   if (work.lease) {
