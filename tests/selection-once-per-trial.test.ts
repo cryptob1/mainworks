@@ -84,8 +84,8 @@ test(`${proof} — a trial whose flaky test reruns and whose proof runs on the b
   if (!existsSync('/etc/graphyard-trial')) assert.equal(JSON.parse(selector[0]!.wrapper.at(-1)!).load, undefined, 'the selector starts without waiting for a container slot');
 
   // The status line: the share of every test file beside the share of the reachable ones.
-  assert.deepEqual(testSelectionSummary(readTestSelections(root)), { trials: 1, medianShareSelected: '75%', medianShareOfAllSelected: '50%' });
-  assert.deepEqual(testSelectionSummary([{ at: 'x', selected: 1, reachable: 2 }]), { trials: 1, medianShareSelected: '50%', medianShareOfAllSelected: null }, 'a trial recorded before this counted only the reachable files');
+  assert.deepEqual(testSelectionSummary(readTestSelections(root)), { trials: 1, medianShareSelected: '75%', medianShareOfAllSelected: '50%', medianShareOfAll: { before: '50%', after: null } });
+  assert.deepEqual(testSelectionSummary([{ at: 'x', selected: 1, reachable: 2 }]), { trials: 1, medianShareSelected: '50%', medianShareOfAllSelected: null, medianShareOfAll: { before: null, after: null } }, 'a trial recorded before this counted only the reachable files');
 });
 
 test(`${proof} — a retried trial reuses the first attempt's selection`, { timeout: 300_000 }, async () => {
