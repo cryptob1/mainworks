@@ -9,10 +9,12 @@ export const teamAccessCommands = defineCommands([{
   help: [
     '  team-access status [--json]   Whether the owner turned this install\'s public link (Tailscale',
     '                                Funnel) on, who did and when; the loop runs Funnel only while on',
+    '  team-access public-link off   Turn the public link off; only the owner turns it on, in Settings',
   ],
   async run(context) {
-    if (context.id !== 'status') throw new Error('Usage: mainworks team-access status [--json]');
-    const setting = await context.api('team-access/public-link');
+    const off = context.id === 'public-link' && context.args[0] === 'off';
+    if (context.id !== 'status' && !off) throw new Error('Usage: mainworks team-access status [--json] | public-link off');
+    const setting = await context.api('team-access/public-link', off ? { on: false } : undefined);
     console.log(context.args.includes('--json') ? JSON.stringify(setting, null, 2) : renderPublicLink(setting));
   },
 }]);
