@@ -276,9 +276,21 @@ async function pruneWarmImageFamily(tag: string, local: (command: string, args: 
 const buildingWarmImages = new Map<string, Promise<{ tag: string; built: boolean }>>();
 const buildingWarmImagesV1 = new Map<string, Promise<string>>();
 
+/**
+ * GY-3932: `npm ci --ignore-scripts` (GY-3914) skips embedded-postgres's postinstall, which links its
+ * versioned native libraries (libicui18n.so.60 to libicui18n.so.60.2); without them Postgres cannot start
+ * in a shard on a test machine. This fixed step, run in the install's directory, makes those links.
+ */
+export const linkNativeLibraries = `node -e 'const fs = require("fs"), path = require("path"), root = "node_modules/@embedded-postgres";
+for (const name of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+  const dir = path.join(root, name), list = path.join(dir, "native", "pg-symlinks.json");
+  for (const link of fs.existsSync(list) ? JSON.parse(fs.readFileSync(list, "utf8")) : []) try { fs.symlinkSync(path.basename(link.source), path.join(dir, link.target)); } catch {}
+}'`;
+/** A warm image's lockfile hash; the salt retires images built before linkNativeLibraries, whose Postgres cannot start. */
+export const warmLockHash = (lock: string) => createHash('sha256').update(lock).update('\nnative-links').digest('hex');
 const lockfileHash = async (local: (command: string, args: string[]) => Promise<string>, root: string, commit: string) => {
   const lock = await local('git', ['-C', root, 'show', `${commit}:package-lock.json`]).catch(() => null);
-  return { lock, hash: lock === null ? 'none' : createHash('sha256').update(lock).digest('hex') };
+  return { lock, hash: lock === null ? 'none' : warmLockHash(lock) };
 };
 
 /**
@@ -296,7 +308,7 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
   if (active) return active;
   const build = (async (): Promise<string> => {
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
-    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null';
+    const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ' + linkNativeLibraries;
     try {
       await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
       await local('docker', ['commit', name, tag]);
@@ -330,7 +342,7 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       'export HOME=/tmp',
       'mkdir -p /deps /warm/build /warm/dist /warm/compile-cache',
       'cd /warm/build && tar -xf -',
-      'if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi',
+      `if [ -f package-lock.json ]; then cp package.json package-lock.json /deps/ && (cd /deps && npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ${linkNativeLibraries}) && ln -s /deps/node_modules /warm/build/node_modules && ln -s /deps/node_modules /warm/node_modules; fi`,
       `if [ -f bin/built-entry.mjs ] && [ -d node_modules ]; then node bin/built-entry.mjs && mv dist/cli.mjs /warm/dist/cli.mjs && mv dist/server.mjs /warm/dist/server.mjs && ln -s /warm/dist/cli.mjs dist/cli.mjs && ln -s /warm/dist/server.mjs dist/server.mjs && printf '%s\\n' ${shellQuote(input.commit)} > /warm/commit && chmod -R a+rX /warm && chmod 777 /warm/compile-cache && NODE_COMPILE_CACHE=/warm/compile-cache node bin/graphyard.mjs --help >/dev/null; fi`,
       'rm -rf /warm/build',
     ].join(' && ');
