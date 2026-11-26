@@ -14,10 +14,12 @@
 //                                  started as one project, argv run by the trial launcher on its first service's network
 //                                  with the services' variables, the project and its volumes removed whatever argv answered
 //   clean RUN                      remove a run directory
-//   update-shim DIGEST             GY-3780: this release's shim on stdin, kept only when its SHA-256 is DIGEST, as gy-compute's own
-//                                  copy, which the installed shim runs from then on
+//   update-shim DIGEST             GY-3780: an SSH signature then this release's shim on stdin, kept as gy-compute's own copy, which the
+//                                  installed shim runs from then on, only when its SHA-256 is DIGEST and (GY-3879) a coordinator key in the
+//                                  root-owned /etc/ssh/graphyard_helper_signers signed it
 //   share / unshare                GY-3834: one ssh-ed25519 public key line on stdin, bound to this same helper (restrict: no shell,
-//                                  pty or forwarding) with its own state directory under ~/.graphyard/installs, or that key's line removed
+//                                  pty or forwarding) with its own state directory under ~/.graphyard/installs, or that key's shared line removed
+// GY-3879: a shared key (the helper started with --home) is refused update-shim, share and unshare, and never re-tags an image another install loaded.
 //   run-session RUN                GY-3405: one agent session in IMAGE with RUN's checkout mounted at the session's own
 //                                  working directory; the first stdin line is JSON {argv, env, cwd, homes}, nothing else,
 //                                  each home an in-memory tmpfs; the rest of stdin (the login) goes straight into the container;
@@ -52,7 +54,7 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:1', 'share:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:2', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them (and every older form the coordinator still speaks) takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim|share):/.test(verb));
@@ -92,7 +94,7 @@ refuse() { echo "graphyard-host-shim refuses: $SSH_ORIGINAL_COMMAND" >&2; exit 1
 [ $# -eq 0 ] || { [ $# -eq 2 ] && [ "$1" = --home ]; } || refuse
 # GY-3780: run this user's own updated copy when there is one, one per installed helper and coordinator address: another install's update is not this one's.
 if [ -z "$MAINWORKS_SHIM" ]; then
-  export MAINWORKS_SHIM="\${2:-$HOME}/.graphyard/shims/\${0##*/}-\${SSH_CLIENT%% *}"
+  export MAINWORKS_SHIM="\${2:-$HOME}/.graphyard/shims/\${0##*/}-\${SSH_CLIENT%% *}" MAINWORKS_SIGNERS=/etc/ssh/graphyard_helper_signers
   [ ! -f "$MAINWORKS_SHIM" ] || exec sh "$MAINWORKS_SHIM" "$@"
 fi
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
@@ -114,7 +116,8 @@ asked = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 def refuse():
     sys.stderr.write('graphyard-host-shim refuses: ' + asked + '\\n')
     sys.exit(1)
-home = sys.argv[2] if len(sys.argv) == 3 else os.path.expanduser('~')
+shared = len(sys.argv) == 3
+home = sys.argv[2] if shared else os.path.expanduser('~')
 words = asked.split(' ')
 verb, args = words[0], words[1:]
 NAME = r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}'
@@ -130,7 +133,7 @@ SHAPES = {'receive-pack': [NAME, SHA], 'receive-image': [IMAGE], 'prepare-run': 
 def matches_shape(shape, values):
     return len(values) == len(shape) and all(re.fullmatch(pattern, value) for pattern, value in zip(shape, values))
 check_image_receive = verb == 'receive-image' and (matches_shape([RUN, CHECK_FILE, CHECK_IMAGE, IMAGE_ID], args) or matches_shape([RUN, CHECK_FILE, CHECK_IMAGE, IMAGE_ID, r'check'], args))
-if not check_image_receive and (verb not in SHAPES or not matches_shape(SHAPES[verb], args)):
+if shared and verb in ('update-shim', 'share', 'unshare') or not check_image_receive and (verb not in SHAPES or not matches_shape(SHAPES[verb], args)):
     refuse()
 mirrors, runs, check_images = os.path.join(home, '.graphyard', 'mirrors'), os.path.join(home, '.graphyard', 'runs'), os.path.join(home, '.graphyard', 'check-images')
 def quiet(*command, **options):
@@ -222,6 +225,8 @@ elif verb == 'receive-image' and check_image_receive:
     if args[2] not in declared_images:
         refuse()
     expected_id = args[3]
+    if shared and image_id(args[2]) not in ('', expected_id):
+        refuse()
     if len(args) == 5:
         if has_image(expected_id):
             if image_id(args[2]) != expected_id:
@@ -238,9 +243,18 @@ elif verb == 'receive-image' and check_image_receive:
         subprocess.check_call(['docker', 'tag', expected_id, args[2]], stdout=subprocess.DEVNULL)
     record_check_image(expected_id, args[2])
 elif verb == 'receive-image':
+    before = image_id(args[0])
     subprocess.check_call(['docker', 'load', '-q'], stdout=subprocess.DEVNULL)
     if not has_image(args[0]):
         sys.exit('graphyard-host-shim: the image stream does not hold ' + args[0])
+    if shared and before and image_id(args[0]) != before:
+        quiet('docker', 'tag', before, args[0])
+        refuse()
+    owned = os.path.join(home, '.graphyard', 'images')
+    os.makedirs(owned, exist_ok=True)
+    open(os.path.join(owned, args[0].replace(':', '_')), 'w').close()
+    # A shared key removes only warm images it loaded; the host's own key never removes one a shared install loaded.
+    others = set() if shared else {name for root, _, names in os.walk(os.path.join(home, '.graphyard', 'installs')) if root.endswith(os.sep + 'images') for name in names}
     # The two newest warm images of this trial image and lockfile are kept (a trial on the older base may
     # still be starting); the others go unless a running shard still uses one. Docker lists newest first.
     family, kept = (args[0].rsplit('-', 1)[0] + '-' if args[0].split(':', 1)[1].count('-') == 2 else args[0]), [args[0]]
@@ -249,7 +263,7 @@ elif verb == 'receive-image':
             continue
         if len(kept) < 2 and image.startswith(family):
             kept.append(image)
-        else:
+        elif (os.path.exists(os.path.join(owned, image.replace(':', '_'))) if shared else image.replace(':', '_') not in others):
             quiet('docker', 'image', 'rm', image)
 elif verb == 'prepare-run':
     if not has_commit(args[1]):
@@ -284,9 +298,19 @@ elif verb == 'prepare-run':
                 os.chmod(path, os.stat(path).st_mode | 0o060)
     print('run ' + os.path.basename(run))
 elif verb == 'update-shim':
-    content, own = sys.stdin.buffer.read(1 << 20), os.environ['MAINWORKS_SHIM']
+    signature, signed, content = sys.stdin.buffer.read(1 << 20).partition(b'-----END SSH SIGNATURE-----\\n')
+    if not signed:
+        signature, content = b'', signature
+    own = os.environ['MAINWORKS_SHIM']
     if hashlib.sha256(content).hexdigest() != args[0]:
         sys.exit('graphyard-host-shim refuses the update: its content does not match ' + args[0])
+    with tempfile.NamedTemporaryFile() as file:
+        file.write(signature + b'-----END SSH SIGNATURE-----\\n')
+        file.flush()
+        verified = subprocess.run(['ssh-keygen', '-Y', 'verify', '-f', os.environ['MAINWORKS_SIGNERS'], '-I', 'mainworks-helper', '-n', 'mainworks-helper', '-s', file.name],
+                                  input=content, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if verified.returncode != 0 or b'Good "mainworks-helper" signature' not in verified.stdout:
+        sys.exit('graphyard-host-shim refuses the update: no key this host was prepared with signed it')
     os.makedirs(os.path.dirname(own), exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=os.path.dirname(own), delete=False) as file:
         file.write(content)
@@ -297,7 +321,12 @@ elif verb in ('share', 'unshare'):
         sys.exit('graphyard-host-shim refuses: not one ssh-ed25519 public key line')
     key, ssh = found.group(1), os.path.join(os.path.expanduser('~'), '.ssh')
     keys = os.path.join(ssh, 'authorized_keys')
-    lines = [line for line in (open(keys).read().splitlines() if os.path.exists(keys) else []) if line and (' ' + key + ' ') not in (line + ' ')]
+    lines = open(keys).read().splitlines() if os.path.exists(keys) else []
+    holds = lambda line: (' ' + key + ' ') in (line + ' ')
+    if verb == 'share' and any(holds(line) and ' --home ' not in line for line in lines):
+        sys.exit("graphyard-host-shim refuses: that key is this host's own")
+    # Only a shared line goes: the host's own lines stay whatever key is named.
+    lines = [line for line in lines if line and not (holds(line) and ' --home ' in line)]
     if verb == 'share':
         helper = re.match(r'graphyard-host-shim(?:-[0-9a-f]{64})?', os.path.basename(os.environ['MAINWORKS_SHIM'])).group(0)
         state = os.path.join(os.path.expanduser('~'), '.graphyard', 'installs', hashlib.sha256(key.encode()).hexdigest()[:12])
@@ -348,6 +377,9 @@ elif verb == 'run-session':
         create += ['--env', key + '=' + value]
     # The session stops at its deadline on its own, even when no shim or guardian is left to remove it.
     create += ['--entrypoint', '/usr/bin/timeout', open(os.path.join(run, 'image')).read().strip(), '--kill-after=10', '${sessionHours}h'] + argv
+    # A container of this name already live (a retried session) is left alone: no guardian is started for a container this call did not create.
+    if not quiet(*create):
+        sys.exit('graphyard-host-shim: the session container could not be created')
     # A guardian outside this process tree removes the container once the shim is gone, however it ended (a dropped SSH session, a kill).
     reader, writer = os.pipe()
     if os.fork() == 0:
@@ -363,8 +395,6 @@ elif verb == 'run-session':
         os._exit(0)
     os.close(reader)
     os.wait()
-    if not quiet(*create):
-        sys.exit('graphyard-host-shim: the session container could not be created')
     try:
         code = subprocess.call(['docker', 'start', '-a', '-i', name])
     finally:

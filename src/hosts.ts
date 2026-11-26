@@ -12,8 +12,8 @@
 // GY-3834: `host add OWNER@HOST` in a terminal runs that script over its own SSH session with sudo, then
 // records gy-compute@HOST; `host share` lets an enrolled coordinator bind another install's key to the
 // same helper (the shim's share verb), so a second install needs no root there.
-import { existsSync } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -49,12 +49,48 @@ export async function readHosts(file = hostsFile()): Promise<HostRecord[]> {
 }
 const writeHosts = async (file: string, hosts: HostRecord[]) => { if (!existsSync(dirname(file))) await mkdir(dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(hosts, null, 2) + '\n'); };
 
+/** GY-3879: the key this machine signs helper updates with, beside hosts.json; never the SSH login key, so the login alone runs only the helper. */
+export const helperSigningKeyFile = (home = configHome()) => join(home, 'machine', 'helper-signing-key');
+/** The signing key's public half (TYPE BODY), created on first use. */
+export function helperSigner(home = configHome()) {
+  const file = helperSigningKeyFile(home);
+  if (!existsSync(file)) { mkdirSync(dirname(file), { recursive: true }); execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'mainworks-helper', '-f', file], { stdio: 'ignore' }); }
+  return readFileSync(`${file}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
+}
+/** An SSH signature of `text` the host's helper verifies against the signers prepare recorded there. */
+const signHelper = (text: string, home = configHome()) => execFileSync('ssh-keygen', ['-Y', 'sign', '-q', '-f', helperSigningKeyFile(home), '-n', 'mainworks-helper'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+
+/** GY-3419, GY-3879: run as gy-compute with its home and the host's Docker version: fetch the static rootless extras and slirp4netns into that home unless a copy is there, and print the setup tool's path. */
+const fetchRootlessExtras = String.raw`set -eu
+home=$1 version=$2 dir="$1/.graphyard/rootless/docker-rootless-extras"
+if [ -x "$dir/dockerd-rootless-setuptool.sh" ] && [ -x "$dir/slirp4netns" ]; then echo "$dir/dockerd-rootless-setuptool.sh"; exit 0; fi
+command -v curl >/dev/null || { echo "Install curl, then run this again." >&2; exit 1; }
+[ -n "$version" ] || { echo "docker --version answered no version: install Docker, then run this again." >&2; exit 1; }
+arch=$(uname -m)
+case "$arch" in x86_64|aarch64) ;; *) echo "No static Docker rootless extras for $arch: install dockerd-rootless-setuptool.sh and slirp4netns, then run this again." >&2; exit 1 ;; esac
+slirp=v1.3.7
+mkdir -p "$dir"
+echo "Fetching Docker rootless extras $version and slirp4netns $slirp into gy-compute's home..." >&2
+rm -f "$home/.graphyard/rootless/extras-$version.tgz" "$dir/slirp4netns-$arch" "$dir/SHA256SUMS"
+curl -fsSL --retry 3 -o "$home/.graphyard/rootless/extras-$version.tgz" "https://download.docker.com/linux/static/stable/$arch/docker-rootless-extras-$version.tgz"
+tar -xzf "$home/.graphyard/rootless/extras-$version.tgz" -C "$home/.graphyard/rootless"
+curl -fsSL --retry 3 -o "$dir/slirp4netns-$arch" "https://github.com/rootless-containers/slirp4netns/releases/download/$slirp/slirp4netns-$arch"
+curl -fsSL --retry 3 -o "$dir/SHA256SUMS" "https://github.com/rootless-containers/slirp4netns/releases/download/$slirp/SHA256SUMS"
+grep "slirp4netns-$arch\$" "$dir/SHA256SUMS" | (cd "$dir" && sha256sum -c - >&2) || { echo "The fetched slirp4netns did not verify." >&2; exit 1; }
+chmod 755 "$dir/slirp4netns-$arch"; ln -sfn "slirp4netns-$arch" "$dir/slirp4netns"
+for tool in dockerd-rootless-setuptool.sh dockerd-rootless.sh rootlesskit; do
+  [ -x "$dir/$tool" ] || { echo "The fetched Docker rootless extras lack $tool." >&2; exit 1; }
+done
+"$dir/rootlesskit" --version >/dev/null && "$dir/slirp4netns" --version >/dev/null || { echo "The fetched rootless tools do not run on $arch." >&2; exit 1; }
+echo "$dir/dockerd-rootless-setuptool.sh"
+`;
+
 /**
  * The one-time script `host prepare` prints, for the host's owner to run with sudo. GY-3688: one host
  * serves several installs, so the helper is named by its digest, this machine's key is appended beside
  * the others bound to that helper, and helpers no key names are removed.
  */
-export function hostPrepareScript(publicKey: string, shim = { script: hostShimScript, digest: hostShimDigest }) {
+export function hostPrepareScript(publicKey: string, shim = { script: hostShimScript, digest: hostShimDigest }, signer = helperSigner()) {
   const helper = `graphyard-host-shim-${shim.digest}`;
   const [type, body] = publicKey.trim().split(/\s+/);
   return `#!/bin/sh
@@ -76,63 +112,45 @@ fi
 cat > /usr/local/bin/${helper} <<'GRAPHYARD_SHIM'
 ${shim.script}GRAPHYARD_SHIM
 chmod 755 /usr/local/bin/${helper}
+# Helper updates this machine signs are the only ones the helper takes (GY-3879).
+signers=/etc/ssh/graphyard_helper_signers
+signer=${shellQuote(`mainworks-helper namespaces="mainworks-helper" ${signer}`)}
+touch "$signers"; grep -qxF "$signer" "$signers" || echo "$signer" >> "$signers"; chmod 644 "$signers"
 home=$(getent passwd "$user" | cut -d: -f6)
-install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
+# Everything under $user's home is read and written as $user, never as root (GY-3879): a link planted there reaches only what $user may.
+as_home() { sudo -u "$user" "$@"; }
 # This machine's key, bound to its own helper, beside other installs' keys: only its own older line is replaced.
 keys="$home/.ssh/authorized_keys"
 line=${shellQuote(`restrict,command="${helper}" ${publicKey.trim()}`)}
-touch "$keys"
-if ! grep -qxF "$line" "$keys"; then
-  { grep -vF ${shellQuote(` ${type} ${body}`)} "$keys" || true; echo "$line"; } > "$keys.new"
-  mv "$keys.new" "$keys"
-fi
-chown "$user:$user" "$keys"; chmod 600 "$keys"
+as_home sh -c 'umask 077; mkdir -p "$1/.ssh"; chmod 700 "$1/.ssh"; keys="$1/.ssh/authorized_keys"; touch "$keys"
+grep -qxF "$2" "$keys" || { rm -f "$keys.new"; { grep -vF "$3" "$keys" || true; echo "$2"; } > "$keys.new"; mv "$keys.new" "$keys"; }
+chmod 600 "$keys"' sh "$home" "$line" ${shellQuote(` ${type} ${body}`)}
 # Helpers no key names are left from older releases: remove them. A shared key names its helper followed by --home (GY-3834).
+named=$(as_home cat "$keys")
 for helper in /usr/local/bin/graphyard-host-shim*; do
   [ -e "$helper" ] || continue
-  grep -qF -e "command=\\"\${helper##*/}\\"" -e "command=\\"\${helper##*/} " "$keys" || rm -f "$helper"
+  printf '%s\n' "$named" | grep -qF -e "command=\\"\${helper##*/}\\"" -e "command=\\"\${helper##*/} " || rm -f "$helper"
 done
 # The helper just installed runs, not an update it took earlier.
-rm -f "$home/.graphyard/shims/${helper}-"*
+as_home sh -c 'mkdir -p "$1/.graphyard"; rm -f "$1/.graphyard/shims/$2-"*' sh "$home" ${helper}
 uid=$(id -u "$user")
 # Rootless Docker for $user (GY-3419): the host's own extras when both tools are installed, else the
 # static rootless extras for the host's reported Docker version plus a static slirp4netns fetched
-# into $user's home — nothing is fetched when a copy is already there. The setup tool writes the
+# into $user's home, as $user — nothing is fetched when a copy is already there. The setup tool writes the
 # daemon's unit with its own directory first on PATH, so the fetched rootlesskit and slirp4netns are
 # the ones the daemon runs.
-dir="$home/.graphyard/rootless/docker-rootless-extras"
 if command -v dockerd-rootless-setuptool.sh >/dev/null && command -v slirp4netns >/dev/null; then
   setuptool=$(command -v dockerd-rootless-setuptool.sh)
-elif [ -x "$dir/dockerd-rootless-setuptool.sh" ] && [ -x "$dir/slirp4netns" ]; then
-  setuptool="$dir/dockerd-rootless-setuptool.sh"
 else
-  command -v curl >/dev/null || { echo "Install curl, then run this again." >&2; exit 1; }
   version=\$(docker --version 2>/dev/null | sed -n 's/^Docker version \\([0-9][0-9.]*\\).*/\\1/p')
-  [ -n "$version" ] || { echo "docker --version answered no version: install Docker, then run this again." >&2; exit 1; }
-  arch=\$(uname -m)
-  case "$arch" in x86_64|aarch64) ;; *) echo "No static Docker rootless extras for $arch: install dockerd-rootless-setuptool.sh and slirp4netns, then run this again." >&2; exit 1 ;; esac
-  slirp=v1.3.7
-  mkdir -p "$dir"
-  echo "Fetching Docker rootless extras $version and slirp4netns $slirp into gy-compute's home..."
-  curl -fsSL --retry 3 -o "$home/.graphyard/rootless/extras-$version.tgz" "https://download.docker.com/linux/static/stable/$arch/docker-rootless-extras-$version.tgz"
-  tar -xzf "$home/.graphyard/rootless/extras-$version.tgz" -C "$home/.graphyard/rootless"
-  curl -fsSL --retry 3 -o "$dir/slirp4netns-$arch" "https://github.com/rootless-containers/slirp4netns/releases/download/$slirp/slirp4netns-$arch"
-  curl -fsSL --retry 3 -o "$dir/SHA256SUMS" "https://github.com/rootless-containers/slirp4netns/releases/download/$slirp/SHA256SUMS"
-  grep "slirp4netns-$arch\\$" "$dir/SHA256SUMS" | (cd "$dir" && sha256sum -c -) || { echo "The fetched slirp4netns did not verify." >&2; exit 1; }
-  chmod 755 "$dir/slirp4netns-$arch"; ln -sfn "slirp4netns-$arch" "$dir/slirp4netns"
-  for tool in dockerd-rootless-setuptool.sh dockerd-rootless.sh rootlesskit; do
-    [ -x "$dir/$tool" ] || { echo "The fetched Docker rootless extras lack $tool." >&2; exit 1; }
-  done
-  "$dir/rootlesskit" --version >/dev/null && "$dir/slirp4netns" --version >/dev/null || { echo "The fetched rootless tools do not run on $arch." >&2; exit 1; }
-  setuptool="$dir/dockerd-rootless-setuptool.sh"
+  setuptool=$(as_home sh -c ${shellQuote(fetchRootlessExtras)} sh "$home" "$version")
 fi
-install -d "$home/.graphyard"
-chown -R "$user:$user" "$home/.graphyard"
 # The setup tool runs the docker beside it (GY-3697): where docker lives elsewhere, link it there.
 tooldir=$(dirname "$setuptool")
-if [ ! -x "$tooldir/docker" ]; then
+in_tooldir() { case "$tooldir" in "$home"/*) as_home "$@" ;; *) "$@" ;; esac; }
+if ! in_tooldir test -x "$tooldir/docker"; then
   docker=$(command -v docker) || { echo "Install Docker, then run this again." >&2; exit 1; }
-  ln -sfn "$docker" "$tooldir/docker"
+  in_tooldir ln -sfn "$docker" "$tooldir/docker"
 fi
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
 as_user() { sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" PATH="$tooldir:$PATH" "$@"; }
@@ -283,10 +301,12 @@ export async function probeHost(target: string | null, run: ChildRun = defaultCh
   return { ok: true as const, ...reading };
 }
 
-/** GY-3780: send this release's shim to a host on another one, over the same restricted key: null once the host took it, else why not. */
+/** GY-3780: send this release's shim, signed by this machine's helper key (GY-3879), to a host on another one, over the same restricted key: null once the host took it, else why not. */
 async function updateHostShim(target: string, run: ChildRun, knownHosts: string): Promise<string | null> {
   const words = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', ...hostKeySshOptions(knownHosts), ...sshTarget(target), `update-shim ${createHash('sha256').update(hostShimScript).digest('hex')}`];
-  try { await run('sh', ['-c', `printf %s ${shellQuote(hostShimScript)} | ${words.map(shellQuote).join(' ')}`], { timeoutMs: 15_000 }); return null; }
+  let signed: string;
+  try { helperSigner(); signed = signHelper(hostShimScript) + hostShimScript; } catch (error: any) { return `this machine could not sign the helper: ${String(error?.message ?? error).split('\n')[0]}`; }
+  try { await run('sh', ['-c', `printf %s ${shellQuote(signed)} | ${words.map(shellQuote).join(' ')}`], { timeoutMs: 15_000 }); return null; }
   catch (error: any) { return lastLine(String(error?.stderr ?? '')) || (error?.timedOut ? 'no answer within 15 seconds' : `exit ${error?.status ?? 'signal'}`); }
 }
 
@@ -344,7 +364,7 @@ export async function addHost(target: string, options: { file?: string; knownHos
   const probes = await Promise.all(candidates.map(candidate => probeHost(candidate, run, knownHosts, loginTarget)));
   const current = candidates.find((_, index) => { const probe = probes[index]!; return probe.ok && probe.shim === hostShimDigest; });
   if (current) return { ...(await recordHost(current, file, run, knownHosts, false, loginTarget)), target: current, prepared: true };
-  const updatable = candidates.find((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1'); });
+  const updatable = candidates.find((_, index) => { const probe = probes[index]!; return 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:2'); });
   if (updatable) {
     const updateError = await updateHostShim(updatable, run, knownHosts);
     if (!updateError) {
@@ -437,7 +457,7 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const host = target ?? options.local ?? hostname();
     let login = record?.login;
     let probe = await probeHost(target, options.run, knownHosts, login), updateError: string | null = null;
-    if (options.update && target && 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:1')) {
+    if (options.update && target && 'shim' in probe && probe.shim !== hostShimDigest && probe.verbs?.includes('update-shim:2')) {
       updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts);
       if (!updateError) {
         probe = await probeHost(target, options.run, knownHosts, login);
