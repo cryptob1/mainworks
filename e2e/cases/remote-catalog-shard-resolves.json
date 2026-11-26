@@ -8,7 +8,7 @@
   "steps": [
     {
       "kind": "command",
-      "name": "run a dependency-importing case in a catalog shard on a test machine",
+      "name": "run a dependency-importing case on a ready test machine and exclude a hot machine",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/remote-catalog-shard-resolves.test.ts",
       "timeoutSeconds": 600
     }

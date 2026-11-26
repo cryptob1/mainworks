@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { catalogHosts, remoteShardSession } from '../src/merge-writer/remote-shards.js';
+import { catalogHosts, readShardHosts, remoteShardSession } from '../src/merge-writer/remote-shards.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
@@ -22,6 +22,11 @@ let hosts: ShardHostsFixture, saved: Record<string, string | undefined>;
 
 before(async () => {
   hosts = await shardHosts('remote-catalog-shard-resolves', ['box'], { [image]: `sha256:${'3907'.repeat(16)}` });
+  // The fixture machine is ready even when the physical test machine is hot.
+  const sensor = join(hosts.root, 'hwmon', 'hwmon0');
+  await mkdir(sensor, { recursive: true });
+  await writeFile(join(sensor, 'name'), 'coretemp\n');
+  await writeFile(join(sensor, 'temp1_input'), '40000\n');
   const config = await temporaryDirectory('remote-catalog-shard-config'), packages = await temporaryDirectory('remote-catalog-shard-packages');
   await mkdir(join(config, 'machine'), { recursive: true });
   await writeFile(join(config, 'machine', 'hosts.json'), JSON.stringify([{ target, addedAt: '2026-11-26T00:00:00.000Z' }]));
@@ -35,6 +40,8 @@ before(async () => {
 after(() => { for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value; });
 
 test('integration:remote-catalog-shard-resolves — a catalog shard on a test machine runs a case importing a project dependency and passes; a shard that cannot resolve a module names it in the filed failure', { timeout: 300_000 }, async () => {
+  const readings = await readShardHosts([target], defaultChildRun, 2);
+  assert.equal(readings[1]?.celsius, 40, `the fixture reads its own sensor: ${JSON.stringify(readings[1])}`);
   const { root, sha } = await shardRepository('remote-catalog-shard-project', [], {
     'package.json': JSON.stringify({ name: 'fixture', type: 'module' }),
     'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'site' }], cases: { 'uses-dependency': 'site' } } }),
@@ -44,6 +51,12 @@ test('integration:remote-catalog-shard-resolves — a catalog shard on a test ma
   });
   assert.equal(git(root, 'rev-parse', 'HEAD'), sha);
 
+  const sensor = join(hosts.root, 'hwmon', 'hwmon0', 'temp1_input');
+  await writeFile(sensor, '99000\n');
+  const hot = await catalogHosts({ root, commit: sha, run: defaultChildRun, deadline: Date.now() + 240_000 });
+  try { assert.deepEqual(hot.hosts, [], 'a hot fixture host takes no shards'); }
+  finally { await hot.close(); }
+  await writeFile(sensor, '40000\n');
   const remote = await catalogHosts({ root, commit: sha, run: defaultChildRun, deadline: Date.now() + 240_000 });
   try {
     assert.deepEqual(remote.hosts.map(host => host.name), [target], 'the test machine takes catalog shards');

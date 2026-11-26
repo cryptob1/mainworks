@@ -267,7 +267,10 @@ elif command == 'start':
 /** GY-3879: a shim as these hosts install it: the signers prepare records root-owned live in the fixture root, holding this machine's signing key. */
 export const fixtureShim = (script: string, root: string) => {
   writeFileSync(join(root, 'mainworks-helper-signers'), `mainworks-helper namespaces="mainworks-helper" ${helperSigner()}\n`);
-  return script.replaceAll('/etc/ssh/graphyard_helper_signers', join(root, 'mainworks-helper-signers'));
+  // Fixture hosts own their sensors too: physical CI heat must not remove a ready fixture host
+  // from placement or hold its launcher. Tests can seed hwmon/ to exercise either state.
+  return script.replaceAll('/etc/ssh/graphyard_helper_signers', join(root, 'mainworks-helper-signers'))
+    .replaceAll('/sys/class/hwmon', join(root, 'hwmon'));
 };
 
 export interface ShardHostsFixture { root: string; bin: string; shim: string; localState: string; home(name: string): string; state(name: string): string; down(name: string, down: boolean): Promise<void> }
