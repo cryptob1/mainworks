@@ -1810,7 +1810,9 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
             // GY-3528: a shard placed on a host takes a slot on that host's share, never this machine's; a spent share tries another host until one frees.
             const held = slotsDirectory ? await slots.takeHostSlot(slotsDirectory, remote, `${slots.testMergeLabel(input.key ?? input.mergeSha.slice(0, 12))} shard ${index + 1}`, setting(slots.projectVariable)) : null;
             if (slotsDirectory && !held) throw new HostBusyError(remote);
-            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], breadth).finally(() => held?.release());
+            // GY-3910: the shard may use the host's cores, as a shard on this machine does; held to its breadth (one CPU), a file running four browsers took 60 s.
+            const cpus = Math.max(breadth, Math.floor(readings[hosts.indexOf(remote) + 1]?.cores ?? 0));
+            const ended = await session!.run(remote, index, group, (list, records) => [check.argv[0]!, ...argv(list, records)], cpus).finally(() => held?.release());
             entries.push(`$ [${remote}] ${check.argv.join(' ')} (shard ${index + 1})\n${ended.out}`);
             tests = { ok: ended.ok, out: ended.out, status: ended.status, signal: null, cause: undefined };
             recordText = ended.records;

@@ -98,6 +98,9 @@ test(`${proof} — shards split across both hosts; the verdict and the oracle-ch
   const remote = two.lines.filter(line => line.remote);
   assert.ok(remote.length > 0 && remote.length < files.length, `shards split across both hosts: ${JSON.stringify(two.lines)}`);
   assert.ok(timings.some(step => step.endsWith(` on ${target}`)), timings.join(', '));
+  // GY-3910: a shard on a host may use that host's cores, as one on this machine does; held to its lane's one CPU, a file running four browsers took 60 s there.
+  const shards = await dockerCreates(join(hosts.root, 'hosts', 'loopback', 'docker'));
+  assert.ok(shards.length > 0 && shards.every(create => create.includes('--cpus=2')), shards.map(create => create.find(word => word.startsWith('--cpus='))).join(' '));
   assert.deepEqual(two.byFile, one.byFile, 'the hard-math answers are identical to the one-host run');
   assert.ok(two.lines.every(line => line.passed), 'and the oracle verified each on the host that computed it');
   assert.match(two.result.logTail ?? '', /on the second host/, 'the second host\'s output returns into the trial log');
