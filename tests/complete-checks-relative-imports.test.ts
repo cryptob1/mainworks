@@ -1,0 +1,188 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { completeCommand } from '../src/cli/complete.js';
+import type { CliContext } from '../src/cli/context.js';
+import { Engine } from '../src/engine.js';
+import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
+import type { Principal } from '../src/model.js';
+import { server } from '../src/server.js';
+import { withDatabase } from './helpers/postgres.js';
+import { git, gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
+
+const exec = promisify(execFile);
+const launcher = fileURLToPath(new URL('../bin/mainworks.mjs', import.meta.url));
+const oldNameWord = `${'graph'}${'yard'}`;
+
+async function writeFiles(root: string, files: Record<string, string>) {
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(dirname(join(root, path)), { recursive: true });
+    await writeFile(join(root, path), content);
+  }
+}
+
+async function seedImportRepo(label: string) {
+  const { root, head: baseSha } = await gitRepo({ label, files: {
+    '.gitignore': `.${oldNameWord}/\n`,
+    'package.json': '{"type":"module"}\n',
+  } });
+  git(root, 'update-ref', 'refs/remotes/origin/main', baseSha);
+  return { root, baseSha };
+}
+
+function stubContext(root: string, head: string) {
+  const calls: { path: string; body: unknown }[] = [];
+  const context = {
+    args: ['1', '--head', head],
+    repositoryRoot: () => root,
+    print: () => {},
+    api: async (path: string, body: unknown) => {
+      if (path !== 'owner') calls.push({ path, body });
+      return { submitted: true };
+    },
+  } as unknown as CliContext;
+  return { context, calls };
+}
+
+test('integration:complete-checks-relative-imports — complete refuses a head adding a missing relative import with the failing file and first failing line under 10s, and submits a clean head', async () => {
+  const { root } = await seedImportRepo('complete-checks-relative-imports');
+  git(root, 'checkout', '--quiet', '-b', 'mainworks/gy-1-1');
+
+  // Seed a head that adds a missing relative import.
+  const badLine = "import { helper } from './helpers/missing.js';";
+  await writeFiles(root, {
+    'tests/added.test.ts': `// changed test\n${badLine}\n`,
+    'tests/proof.test.ts': "import { test } from 'node:test';\ntest('integration:complete-checks-relative-imports — works', () => {});\n",
+  });
+  git(root, 'add', '-A');
+  git(root, 'commit', '--quiet', '-m', 'add missing relative import');
+  const badHead = git(root, 'rev-parse', 'HEAD');
+  // A local untracked helper must not satisfy an import in the submitted head.
+  await writeFiles(root, { 'tests/helpers/missing.ts': 'export const helper = 1;\n' });
+
+  const work = {
+    id: 'id-1',
+    key: 'GY-1',
+    type: 'chore',
+    criteria: [{ id: 'AC-1', text: 'Resolves relative imports', proofs: ['integration:complete-checks-relative-imports'] }],
+  };
+
+  {
+    const { context, calls } = stubContext(root, badHead);
+    const started = performance.now();
+    await assert.rejects(
+      completeCommand.run(context, work as never),
+      (error: Error) => {
+        assert.ok(error.message.includes('./helpers/missing.js'), `refusal must name failing relative import file: ${error.message}`);
+        assert.ok(error.message.includes('tests/added.test.ts:2:'), `refusal must include first failing line: ${error.message}`);
+        return true;
+      },
+    );
+    const elapsedMs = performance.now() - started;
+    assert.ok(elapsedMs < 10_000, `relative import refusal took ${Math.round(elapsedMs)}ms, expected < 10000ms`);
+    assert.equal(calls.length, 0, 'no submission recorded when relative imports fail');
+  }
+
+  // Clean head adds the missing helper and submits.
+  await writeFiles(root, {
+    'tests/helpers/missing.ts': 'export const helper = 1;\n',
+  });
+  git(root, 'add', 'tests/helpers/missing.ts');
+  git(root, 'commit', '--quiet', '-m', 'commit missing helper');
+  const cleanHead = git(root, 'rev-parse', 'HEAD');
+
+  {
+    const { context, calls } = stubContext(root, cleanHead);
+    const started = performance.now();
+    await completeCommand.run(context, work as never);
+    const elapsedMs = performance.now() - started;
+    assert.ok(elapsedMs < 10_000, `clean relative import run took ${Math.round(elapsedMs)}ms, expected < 10000ms`);
+    assert.deepEqual(calls, [{ path: 'work/id-1/submit', body: { epoch: 1, head: cleanHead } }]);
+  }
+});
+
+test('e2e:complete-checks-relative-imports — on a running test install a worker completing a head with a missing relative import is refused at complete, before any trial', async () => {
+  const { root } = await seedImportRepo('complete-checks-relative-imports-e2e');
+  const store = await withDatabase('complete-checks-relative-imports-e2e');
+  await store.init();
+  const operator: Principal = { id: 'operator', role: 'admin' };
+  const worker: Principal = { id: 'worker-1', role: 'worker' };
+  const adminToken = `e2e-admin-${'a'.repeat(32)}`;
+  const workerToken = `e2e-worker-${'w'.repeat(32)}`;
+  const engine = new Engine(store, 120, 'owner/mainworks-e2e');
+  engine.gitRunner = gitRunnerFor(root);
+  engine.baseBranch = 'main';
+  const { url, close } = await listen(server(engine, [
+    { ...operator, token: adminToken },
+    { ...worker, token: workerToken },
+  ]));
+
+  try {
+    let item = await engine.execute(operator, 'create', null, {
+      type: 'chore',
+      title: 'Relative import check at complete',
+      criteria: [{ id: 'AC-1', text: 'Passes', proofs: ['unit:imports-e2e', 'e2e:fixture'] }],
+    }, randomUUID());
+    item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
+    item = await engine.execute(worker, 'claim', item.id, {}, randomUUID());
+
+    const branch = `${oldNameWord}/${item.key.toLowerCase()}-1`;
+    git(root, 'checkout', '--quiet', '-b', branch);
+    await writeFiles(root, {
+      'src/added.ts': "// source file\nexport { helper } from './helpers/missing.js';\n",
+      'tests/proof.test.ts': "import { test } from 'node:test';\ntest('unit:imports-e2e — works', () => {});\n",
+    });
+    git(root, 'add', '-A');
+    git(root, 'commit', '--quiet', '-m', 'introduce missing import');
+    const badHead = git(root, 'rev-parse', 'HEAD');
+    await engine.execute(worker, 'workspace', item.id, { epoch: item.epoch, host: 'test-host', path: root, branch }, randomUUID());
+
+    const runComplete = async (head: string) => {
+      const env: NodeJS.ProcessEnv = { ...process.env, MAINWORKS_URL: url, MAINWORKS_TOKEN: workerToken };
+      delete env.MAINWORKS_TOKEN_FILE;
+      delete env.MAINWORKS_REQUEST_ID;
+      delete env[`${oldNameWord.toUpperCase()}_URL`];
+      delete env[`${oldNameWord.toUpperCase()}_TOKEN`];
+      delete env[`${oldNameWord.toUpperCase()}_TOKEN_FILE`];
+      delete env[`${oldNameWord.toUpperCase()}_REQUEST_ID`];
+      try {
+        const out = await exec(process.execPath, [launcher, 'complete', item.key, String(item.epoch), '--head', head], { cwd: root, env, timeout: 10_000 });
+        return { ok: true as const, stdout: out.stdout, stderr: out.stderr };
+      } catch (error: any) {
+        return { ok: false as const, stdout: String(error.stdout ?? ''), stderr: String(error.stderr ?? '') };
+      }
+    };
+
+    const refused = await runComplete(badHead);
+    assert.equal(refused.ok, false, 'complete must refuse a head with a missing relative import');
+    const combined = `${refused.stdout}\n${refused.stderr}`;
+    assert.ok(combined.includes('./helpers/missing.js'), `refusal names failing file: ${combined}`);
+    assert.ok(combined.includes('src/added.ts:2:'), `refusal names first failing line: ${combined}`);
+
+    const afterRefusal = (await store.workDocument(item.id))!;
+    assert.equal(afterRefusal.stage, 'build', 'item remains in build after refusal');
+    assert.equal(afterRefusal.submission, null, 'no submission recorded');
+    const { rows: trialRows } = await store.pool.query(
+      "SELECT COUNT(*)::int AS count FROM events WHERE work_id = $1 AND kind = 'merge.trial'",
+      [item.id],
+    );
+    assert.equal(trialRows[0]!.count, 0, 'refused before any merge trial');
+
+    // Fix the missing relative import and confirm complete now submits.
+    await writeFiles(root, { 'src/helpers/missing.ts': 'export const helper = 1;\n' });
+    git(root, 'add', 'src/helpers/missing.ts');
+    git(root, 'commit', '--quiet', '-m', 'commit missing helper');
+    const cleanHead = git(root, 'rev-parse', 'HEAD');
+
+    const accepted = await runComplete(cleanHead);
+    assert.equal(accepted.ok, true, `complete should accept clean head: ${accepted.ok ? '' : accepted.stderr}`);
+    const afterAccept = (await store.workDocument(item.id))!;
+    assert.notEqual(afterAccept.stage, 'build', 'clean head leaves build stage');
+    assert.equal(afterAccept.submission?.epoch, item.epoch, 'clean head submission recorded for epoch');
+  } finally { await close(); await store.close(); } });
