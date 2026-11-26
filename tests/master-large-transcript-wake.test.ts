@@ -1,5 +1,4 @@
 import { test } from 'node:test';
-import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -16,6 +15,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import type { Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // This exercises an already-live process. No new master is launched by the loop,
 // and the production launch/confinement path remains covered by its existing suite.
@@ -96,11 +96,10 @@ for (const initialized of [false, true]) test(`integration:master-large-transcri
   const requestFile = join(root, '.graphyard/launch/master.request');
   await writeFile(requestFile, 'Original operator goal');
   await writeFile(config.credentialFile, 'fixture-only-token'.repeat(3), { mode: 0o600 });
-  const registry = createServer((_request, response) => response.end(JSON.stringify({ accounts: [{ name: 'old-account', runtime: 'claude', credential: { home } }],
+  const { url, close } = await listen((_request, response) => response.end(JSON.stringify({ accounts: [{ name: 'old-account', runtime: 'claude', credential: { home } }],
     runtimes: [{ name: 'claude', launch: { kind: 'claude', homeVariable: 'CLAUDE_CONFIG_DIR' } }] })));
-  await new Promise<void>(resolve => registry.listen(0, '127.0.0.1', resolve));
-  t.after(() => new Promise<void>(resolve => registry.close(() => resolve())));
-  config.url = `http://127.0.0.1:${(registry.address() as { port: number }).port}`;
+  t.after(close);
+  config.url = url;
   const initialize = masterSessionEffects(root, () => config).initialize!;
   const old = structuredClone(state.master), originBytes = await readFile(origins);
   const recordBytes = old.continuity ? await readFile(old.continuity.current.record) : null;

@@ -19,16 +19,14 @@ import { emptyRegistry, proposedRuntimes, type AgentRegistry } from '../src/mode
 import { registryHeadlessLaunch, smokeRegistryAccount } from '../src/runner/roles.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { shellQuote } from '../src/shell-quote.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3832: a Pi account's key command names <home>/opencode/auth.json, and the OpenCode runtime may
 // keep the login elsewhere: under the XDG_DATA_HOME its launch sets, in auth.json or in OpenCode 2.x's opencode.db.
 
 const stores: Store[] = [];
-const servers: ReturnType<typeof server>[] = [];
-after(async () => {
-  for (const http of servers) http.close();
-  for (const store of stores) await store.close();
-});
+const servers: (() => Promise<void>)[] = [];
+after(async () => { for (const stop of servers) await stop(); for (const store of stores) await store.close(); });
 
 function writeStubPi(binDir: string, name: string, expectedKey: string) {
   const file = join(binDir, `${name}.cjs`);
@@ -123,10 +121,8 @@ test('e2e:pi-key-follows-opencode-data-dir — on a running test install a Pi ac
   const store = await withDatabase('e2e-pi-key-follows-opencode-data-dir');
   stores.push(store);
   await store.init();
-  const http = server(new Engine(store, 7200, 'owner/e2e-pi-key'), credentials);
-  servers.push(http);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-pi-key'), credentials));
+  servers.push(close);
 
   const apiCall = async (bearer: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, body === undefined

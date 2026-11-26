@@ -1,9 +1,9 @@
 import { test } from 'node:test';
+import { freePort } from './helpers/http-server.js';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { trialContainerBoundary, trialContainerLaunch } from '../src/merge-writer/trial-container.js';
@@ -173,7 +173,7 @@ test(`${proof} — the cap is one per trial lane, and every start reads the inst
 
 test(`${proof} — a serve command's time to answer starts when its container does`, async () => {
   const base = await temporaryDirectory('load-serve', process.cwd());
-  const port = await new Promise<number>(resolve => { const probe = createServer().listen(0, '127.0.0.1', () => { const { port } = probe.address() as { port: number }; probe.close(() => resolve(port)); }); });
+  const port = await freePort();
   const launcher = join(base, 'launcher');
   await writeFile(launcher, '#!/bin/sh\necho "mainworks trial container: waiting: a CPU sensor reads 95C or more" >&2\nsleep 1.3\necho "mainworks trial container: starting" >&2\nexec "$@"\n');
   await chmod(launcher, 0o755);

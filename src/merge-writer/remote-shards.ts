@@ -12,7 +12,8 @@ import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
 import { probeShimVerbs, supportsCheckImages, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
-import { trialImage } from './trial-container.js';
+import { harnessModules, trialImage } from './trial-container.js';
+import { fileURLToPath } from 'node:url';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 import { stateDirectory } from '../install/layout.js';
 
@@ -421,7 +422,7 @@ export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard',
  * lacks, or the warm image, sent once per tag — then clones the commit into a run directory. Shards run
  * there through the shim's `run-shard`; `close` cleans every run directory.
  */
-export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[] }) {
+export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[]; /** GY-3907: the image every host runs, in place of the trial's warm image. */ warm?: () => Promise<string> }) {
   const repo = mirrorName(input.root);
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
@@ -443,7 +444,7 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
   const warmImage = (version: 'v1' | 'v2') => {
     let pending = warmByVersion.get(version);
     if (!pending) {
-      pending = (version === 'v2'
+      pending = (input.warm ? input.warm() : version === 'v2'
         ? selectWarmImage({ root: input.root, sha: input.sha, baseTip: input.baseTip, image: input.image, run: input.run, deadline: input.deadline })
         : ensureWarmImageV1({ root: input.root, sha: input.sha, image: input.image, run: input.run, deadline: input.deadline })
       ).then(async tag => {
@@ -496,7 +497,8 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
       // (less the launcher's own waiting lines, which on a hot host would fill it).
       const fault = trialContainerFault(end.out);
       // A session over a shared connection that lost its host prints nothing of its own, so name that loss.
-      const said = end.out.replace(/^(?:graphyard|mainworks) trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
+      // GY-3907: a module it could not resolve is named from Node's first error line, which the tail's stack pushes out.
+      const said = /Cannot find (?:package|module) '[^'\n]+'[^\n]*/.exec(end.out)?.[0] ?? end.out.replace(/^(?:graphyard|mainworks) trial container: (waiting|starting).*\n/gm, '').slice(-500).trim();
       if (!end.ok && (end.status === 255 || end.status === null || fault || !records.trim())) throw new HostDroppedError(target, fault ?? (said || `the SSH connection to ${target} closed mid-shard (exit ${end.status ?? 'signal'})`));
       return { ...end, records };
     },
@@ -635,21 +637,50 @@ export const outdatedShimAttention = (probes: readonly Pick<HostProbe, 'host' | 
 export const connectionResetAttention = (runs: readonly RemoteShardRun[]) => (runs.at(-1)?.hosts ?? []).filter(host => host.away && /connection reset|kex_exchange_identification/i.test(host.reason ?? '')).map(host =>
   ({ subject: `host ${host.name}`, text: `${host.name} takes no trial shards: it reset the SSH connection`, next: `Check that sshd is running on ${host.name}; the next trial tries it again` }));
 
+/** GY-3907: where a catalog image holds Mainworks' own E2E runner, its sources and modules, as a local catalog run mounts them at /mainworks-harness. */
+const catalogHarness = '${GRAPHYARD_WARM_DIR:-/warm}/harness';
+
+/**
+ * GY-3907: the image a remote catalog shard runs: the commit's warm image (the project's locked packages
+ * in /deps) with this release's E2E runner, sources and modules added, built once per commit and release.
+ */
+async function catalogImage(input: { root: string; commit: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
+  const remaining = () => Math.max(1_000, input.deadline - Date.now());
+  const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
+  const warm = (await ensureWarmImage(input)).tag, source = fileURLToPath(new URL('../..', import.meta.url));
+  const release = await local('git', ['-C', source, 'rev-parse', 'HEAD']).catch(() => randomUUID());
+  // Keyed by trial image and release, so the commit is the tag's last part and each release keeps its two newest.
+  const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}`).digest('hex');
+  const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.commit);
+  if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
+  const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
+  try {
+    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} --user 0:0 --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
+    await local('docker', ['commit', name, tag]);
+  } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
+  await pruneWarmImageFamily(tag, local);
+  return tag;
+}
+
 /**
  * GY-3874: the ready test machines the daily e2e catalog's shards go to, read once, with a way to run
- * one shard of cases on one of them: the commit sent as a trial shard's is, scripts/e2e-shard.mjs run
- * there over the case files, and each case's result brought back as the trial's own e2e entries.
+ * one shard of cases on one of them: the commit sent as a trial shard's is, this release's
+ * scripts/e2e-shard.mjs run there from the catalog image over the case files (GY-3907), and each
+ * case's result brought back as the trial's own e2e entries.
  */
 export async function catalogHosts(input: { root: string; commit: string; run: ChildRun; deadline: number }) {
   const targets = await shardHosts();
   const transport = shardSshSession(input.run);
   const readings = targets.length ? (await readShardHosts(targets, input.run, availableParallelism(), transport)).slice(1) : [];
-  const session = remoteShardSession({ root: input.root, sha: input.commit, image: trialImage(), run: input.run, deadline: input.deadline, transport, hosts: readings });
+  const image = trialImage();
+  const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, transport, hosts: readings,
+    warm: () => catalogImage({ root: input.root, commit: input.commit, image, run: input.run, deadline: input.deadline }) });
   return {
-    hosts: readings.filter(underHeatLimit),
+    // GY-3907: the catalog image is a warm image of the current helper's form, so only hosts that take one run shards.
+    hosts: readings.filter(reading => underHeatLimit(reading) && supportsWarmImageV2(reading.verbs)),
     run: async (host: string, index: number, cases: readonly string[]): Promise<import('./e2e-trial.js').TrialE2eCase[]> => {
       const files = cases.map(proof => `e2e/cases/${proof.slice(4)}.json`), reading = readings.find(entry => entry.name === host);
-      const ended = await session.run(host, index, files, (list, records) => ['node', '--import', 'tsx', 'scripts/e2e-shard.mjs', list, records, String(Math.max(1_000, input.deadline - Date.now()))], Math.max(1, Math.floor(reading?.cores ?? 1)));
+      const ended = await session.run(host, index, files, (list, records) => ['sh', '-c', `exec node --import "${catalogHarness}/node_modules/tsx/dist/loader.mjs" "${catalogHarness}/scripts/e2e-shard.mjs" "$@"`, 'sh', list, records, String(Math.max(1_000, input.deadline - Date.now()))], Math.max(1, Math.floor(reading?.cores ?? 1)));
       return ended.records.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as import('./e2e-trial.js').TrialE2eCase);
     },
     close: () => session.close(),

@@ -1,0 +1,16 @@
+{
+  "id": "planner-sees-rejected",
+  "title": "On a running test install, the planner prompt contains a recently closed draft and its reason",
+  "description": "Starts a real temporary Postgres control plane, creates a planner-origin draft, closes it with a reason, and runs a planner cycle on the empty board; asserts the planner prompt contains the recently closed draft's key, title, and close reason under their own heading.",
+  "tags": ["master", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "running test install planner prompt contains recently closed draft and reason",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-sees-rejected-e2e.test.ts",
+      "timeoutSeconds": 180
+    }
+  ]
+}

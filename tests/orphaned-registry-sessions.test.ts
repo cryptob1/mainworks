@@ -1,7 +1,6 @@
 import { launchLegacyReview as launchReview, pendingHeadless } from './helpers/pending-review.js';
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,6 +21,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { fleet, requested } from './helpers/review-fleet.js';
 import { remoteableTestFile } from '../src/merge-writer/remote-shards.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2945: a loop restart leaves the agent-registry sessions of its reviewer and producer launches
 // without an owner — the successor loop never marks them ended, because nothing it tracks names
@@ -249,7 +249,7 @@ for (const postMerge of [false, true]) test(`integration:post-merge-review-slot-
   const config = await loadMasterConfig(host.root);
   const registry = memoryRegistry(config.hostId, await claudeLogin('daemon-reviewer'), 1);
   const calls: string[] = [];
-  const http = createServer(async (request, response) => {
+  const { url, close } = await listen(async (request, response) => {
     try {
       calls.push(`${request.method} ${request.url}`);
       assert.equal(request.headers.authorization, `Bearer ${await readFile(config.credentialFile, 'utf8').then(token => token.trim())}`);
@@ -265,10 +265,9 @@ for (const postMerge of [false, true]) test(`integration:post-merge-review-slot-
       response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(result));
     } catch (error) { response.writeHead(500); response.end(JSON.stringify({ error: String(error) })); }
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
   try {
     config.herdrWorkspace = 'w4G';
-    config.url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    config.url = url;
     const file = join(host.root, '.graphyard/master.json');
     await writeFile(file, JSON.stringify(config), { mode: 0o600 });
     const done = requested(1), waiting = requested(2);
@@ -365,7 +364,7 @@ for (const postMerge of [false, true]) test(`integration:post-merge-review-slot-
     assert.deepEqual({ done, waiting }, preserved, 'COMMENT stays non-approving; no gates, requests or requirements change');
     assert.equal(done.gates.find(gate => gate.name === 'review')!.passed, false);
     assert.equal(exactApproval(done), null, 'COMMENTED cannot supply independent approval');
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await host.cleanup(); }
+  } finally { await close(); await host.cleanup(); }
 });
 
 test('unit:orphaned-registry-sessions — GY-3012 submitted epoch 4 frees its worker slot when the finished pane is gone', async () => {

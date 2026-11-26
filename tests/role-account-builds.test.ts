@@ -21,6 +21,7 @@ import { liveRuns } from '../src/runner/registry.js';
 import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3730: the registry's worker role decides who builds. master.json holds no worker profile at
 // all; a stub-runtime account placed first in the worker role takes the first ready item through
@@ -30,7 +31,7 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}`;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const accounts = ['stub-a', 'other-b'];
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
 let root: string, scratch: string, bin: string, url: string;
 const homes = new Map<string, string>();
 
@@ -41,9 +42,7 @@ before(async () => {
   root = await temporaryDirectory('coordinator', scratch);
   bin = await temporaryDirectory('bin', scratch);
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  http = server(engine, [{ ...coordinator, token: token(coordinator) }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: token(coordinator) }])));
   const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
@@ -72,10 +71,7 @@ await fetch(process.env.GRAPHYARD_URL + '/api/work/' + key + '/submit', { method
   await registry.mutate(coordinator, 'apply', { runtimes, accounts: fleet, models: [{ name: 'fixture', id: 'fixture-model' }], roles: [{ name: 'worker', accounts, concurrency: 1 }], reason: 'a stub account first in the worker role' }, randomUUID());
   await registry.observe(coordinator, { host: hostId, observations: accounts.map(account => ({ account, quota: { loggedIn: true, state: 'available' }, smoke: { result: 'pass', reason: null } })) }, randomUUID());
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

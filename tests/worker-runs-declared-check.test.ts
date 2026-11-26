@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { symlinkSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
@@ -11,6 +11,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { runWorkerCheck } from '../src/merge-writer/worker-check.js';
 import { workerVerificationPump } from '../src/daemon/worker-verification.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3283: a confined worker runs its item's declared preMerge check, with the check's Compose
 // services, on its own head through `mainworks check NAME`; the host loop runs it as the trial does.
@@ -24,10 +25,8 @@ test('e2e:worker-runs-declared-check — a leased worker gets its declared check
   const [{ withDatabase }, { Engine }, { server }, { readOnlyMountWrapper }] = await Promise.all([
     import('./helpers/postgres.js'), import('../src/engine.js'), import('../src/server.js'), import('../src/master/confinement.js'),
   ]);
-  const listener = createServer(socket => socket.once('data', query => socket.end(/no_such_table/.test(String(query)) ? 'ERROR: relation "no_such_table" does not exist\n' : '[{"answer":1}]\n')));
-  await new Promise<void>(done => listener.listen(0, '127.0.0.1', done));
-  t.after(() => { listener.close(); });
-  const port = (listener.address() as { port: number }).port, execPath = process.execPath, hostPath = process.env.PATH!;
+  const { port } = await listen(createServer(socket => socket.once('data', query => socket.end(/no_such_table/.test(String(query)) ? 'ERROR: relation "no_such_table" does not exist\n' : '[{"answer":1}]\n'))), t);
+  const execPath = process.execPath, hostPath = process.env.PATH!;
   t.after(() => { process.execPath = execPath; });
 
   const root = await temporaryDirectory('worker-check', process.cwd());
@@ -78,10 +77,9 @@ socket.write(${JSON.stringify(sql)});
   git(repository, 'add', '-A'); git(repository, 'commit', '-qm', 'a check with a postgres service');
   work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: repository, branch }, randomUUID());
 
-  const http = server(engine, credentials);
-  await new Promise<void>(done => http.listen(0, '127.0.0.1', done));
-  t.after(() => new Promise<void>(done => http.close(() => done())));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url: serverUrl, close } = await listen(server(engine, credentials));
+  t.after(close);
+  const url = serverUrl;
   const mutate = async (path: string, data: unknown) => {
     const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: 'Bearer host-test-token', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     const result = await response.json();

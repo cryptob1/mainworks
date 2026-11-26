@@ -20,6 +20,7 @@ import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/revi
 import { liveRun } from '../src/runner/registry.js';
 import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3581: a head whose dashboard is built by the repository's build step (dist/ is untracked) runs
 // that build in its review checkout before the serve command, so GET / answers 200, never 500.
@@ -29,7 +30,7 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 let servePort: number;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, base: string, built: string, broken: string;
 
 before(async () => {
@@ -37,9 +38,7 @@ before(async () => {
   store = await withDatabase('product-review-builds-before-serve'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('product-review-build-root'); credentials = await temporaryDirectory('product-review-build-credentials');
   const browserBin = await temporaryDirectory('product-review-build-browser');
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
@@ -88,7 +87,7 @@ writeFileSync('dist/index.html', '<h1>dashboard-marker: built by the head</h1>')
   process.env.PATH = `${browserBin}:${process.env.PATH ?? ''}`;
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (root) await rm(root, { recursive: true, force: true });
   if (credentials) await rm(credentials, { recursive: true, force: true });

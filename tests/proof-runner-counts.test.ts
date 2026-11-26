@@ -22,6 +22,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { countJunitCases, countProofCases, junitCases } from '../src/proof-runner.js';
 import { runProof } from '../src/cli/verify.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 const own = 'unit:tests/proof-runner-counts.test.ts';
 const operator: Principal = { id: 'operator', role: 'admin' };
@@ -75,14 +76,12 @@ async function trial(fixture: Fixture, directory: string, proofs: string[], run:
 
 test(`${own} — a vitest repository's passing proof records executed >= 1 and the head merges; a failing one is refused with its count; a proof no test names is refused with that reason`, { timeout: 600_000 }, async () => {
   const root = await temporaryDirectory('proof-runner-counts'), servePort = await freePort();
-  let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+  let store: Store | undefined, close: (() => Promise<void>) | undefined;
   try {
     store = await withDatabase('proof-runner-counts'); await store.init();
     const engine = new Engine(store, 120, 'owner/proofs');
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
     setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
     let branchNumber = 0;
     for (const mode of ['passing', 'failing', 'unnamed'] as const) {
@@ -124,12 +123,7 @@ test(`${own} — a vitest repository's passing proof records executed >= 1 and t
       if (mode === 'failing') { assert.deepEqual(counts, { executed: 1, failed: 1 }); assert.match(recorded.mergeLedger!.refusal!.reason, /unit:declared.*the trial ran 1 and 1 failed/); }
       if (mode === 'unnamed') { assert.deepEqual(counts, { executed: 0, failed: 0, reason: 'no test file names it' }); assert.match(recorded.mergeLedger!.refusal!.reason, /unit:absent.*no test file names it/); }
     }
-  } finally {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  } finally { await close?.(); if (store) await store.close(); await rm(root, { recursive: true, force: true }); } });
 
 test(`${own} — a failing check and a crashing runner each keep what the runner said: its count, or that it ended abnormally`, { timeout: 120_000 }, async () => {
   const root = await temporaryDirectory('proof-runner-abnormal');

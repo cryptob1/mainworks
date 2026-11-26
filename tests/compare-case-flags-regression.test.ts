@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer as createHttpServer } from 'node:http';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { caseDirectory, loadCases, parseCase } from '../src/e2e/case.js';
 import { runCases } from '../src/e2e/runner.js';
 import { compareJudgePrompt, parseCompareVerdict, type CompareInput } from '../src/e2e/steps.js';
+import { listen } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2985: live verification compares against what was live. An agent case marked `compare` runs
@@ -18,14 +18,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const page = (withControl: boolean) => `<!doctype html><html><body><h1>Editor</h1>${withControl ? '<button>Save</button>' : ''}</body></html>\n`;
 
 /** A static fixture build: every request is answered the same page. */
-const fixture = (body: string) => new Promise<{ url: string; close: () => Promise<void> }>((accept, reject) => {
-  const server = createHttpServer((_request, response) => response.writeHead(200, { 'Content-Type': 'text/html' }).end(body));
-  server.on('error', reject);
-  server.listen(0, '127.0.0.1', () => {
-    const { port } = server.address() as { port: number };
-    accept({ url: `http://127.0.0.1:${port}`, close: () => new Promise(done => server.close(() => done())) });
-  });
-});
+const fixture = (body: string) => listen((_request, response) => response.writeHead(200, { 'Content-Type': 'text/html' }).end(body));
 
 const compareCase = (id: string, compare: boolean) => ({ id, title: `Case ${id}`, target: 'any', steps: [{ kind: 'agent', goal: 'Open the editor page', success: ['The page shows the heading Editor'], path: '/editor', ...(compare ? { compare: true } : {}) }] });
 

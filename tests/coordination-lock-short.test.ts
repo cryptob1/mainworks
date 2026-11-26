@@ -10,6 +10,7 @@ import { advisoryLocks } from '../src/store/locks.js';
 import { queryCaller } from '../src/store/slow-queries.js';
 import { lockHoldAttention } from '../src/cli/master-status.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3799: every coordination-lock hold is timed and master status names the longest of the last
 // 10 minutes; the routes that held it for seconds (a preview's record on merge-record, an agent
@@ -20,17 +21,15 @@ const coordinator: Principal = { id: 'master', role: 'coordinator' };
 const principals = [operator, coordinator];
 const token = (p: Principal) => `${p.id}-${'t'.repeat(40)}`;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, database: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, database: string;
 before(async () => {
   database = await databaseUrl('coordination-lock-short');
   store = new Store(database); await store.init();
   engine = new Engine(store, 120, 'owner/project');
   engine.principals = principals;
-  http = server(engine, principals.map(p => ({ ...p, token: token(p) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(p => ({ ...p, token: token(p) })))));
 });
-after(async () => { http?.close(); if (store) await store.close(); });
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const call = async (as: Principal, method: string, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, signal: AbortSignal.timeout(20_000),

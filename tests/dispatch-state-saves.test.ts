@@ -17,6 +17,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -32,18 +33,17 @@ const coordinator: Principal = { id: 'fixture-loop', role: 'coordinator' };
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const token = 'fixture-coordinator-token'.padEnd(40, 'x');
 
-let store: Store, engine: Engine, config: MasterConfig, close: () => Promise<void>;
+let store: Store, engine: Engine, config: MasterConfig, close: (() => Promise<void>) | undefined;
 before(async () => {
   store = await withDatabase('dispatch_state_saves'); await store.init();
   engine = new Engine(store, 120, 'owner/project');
   engine.principals = [operator, worker, coordinator];
-  const http = server(engine, [{ id: coordinator.id, role: 'coordinator', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  close = async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); };
+  const { url, close: closeServer } = await listen(server(engine, [{ id: coordinator.id, role: 'coordinator', token }]));
+  close = closeServer;
   const credentialFile = join(await temporaryDirectory('dispatch-state-saves'), 'coordinator.token');
   await writeFile(credentialFile, token, { mode: 0o600 });
   config = masterConfigSchema.parse({
-    version: 1, url: `http://127.0.0.1:${(http.address() as { port: number }).port}`, credentialFile, cliPath: '/outside/graphyard.mjs',
+    version: 1, url: url, credentialFile, cliPath: '/outside/graphyard.mjs',
     repository: 'owner/project', baseBranch: 'main', githubAppId: 15368, hostId: 'host-1', masterAgentName: 'm', herdrWorkspace: 'wF',
     workers: [{ name: 'claude-worker', principal: worker.id, agentName: 'work-claude', mode: 'launch', kind: 'claude', credentialFile: '/outside/worker.token', approvals: 'auto' }],
     reviewer: { appId: 4242, installationId: 99, slug: 'graphyard-reviewer', credentialFile: '/outside/reviewer.json', boundAt: '2026-09-01T00:00:00.000Z' },

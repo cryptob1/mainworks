@@ -15,6 +15,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { workTables } from '../src/store/tables/work.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3765: on the live install the flow's ledger read took about 9 s every minute: each of the
 // window's whole-document rows was read whole for its stage. The read now takes the stage, kind and
@@ -37,16 +38,14 @@ const columns = `work_id, kind, created_at, seq,
 const previousLedgerSql = `SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND payload ? 'work'
   UNION ALL SELECT ${columns} FROM events WHERE work_id IS NOT NULL AND created_at > $1 AND kind = ANY($2::text[]) AND NOT (payload ? 'work')
   ORDER BY seq`;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 // The fixture's own statements run on a plain client, outside the timed pools, so the server's slowest-query report holds only what the server ran.
 let fixture: pg.Client;
 
 before(async () => {
   store = await withDatabase('flow-ledger-fast'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   const { id } = await created.json() as { id: string };
@@ -77,10 +76,7 @@ before(async () => {
   await planAsRows(fixture, 'events', 2_000_000);
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await fixture?.end(); await store?.close();
-});
+after(async () => { await close?.(); await fixture?.end(); await store?.close(); });
 
 const plain = (rows: any[]) => rows.map(row => ({ ...row, created_at: row.created_at.toISOString() }));
 

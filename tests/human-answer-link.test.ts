@@ -7,6 +7,7 @@ import { masterInstructions } from '../src/master.js';
 import type { Principal, Work } from '../src/model.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
+import { listen } from './helpers/http-server.js';
 
 // Without the owner’s quoted words, the refusal keeps the dashboard link as a direct-answer fallback.
 test('integration:human-answer-link — a master answer on a human-only request is refused naming the item dashboard link from the install URL; the master prompt explains how to relay the owner', async () => {
@@ -18,9 +19,7 @@ test('integration:human-answer-link — a master answer on a human-only request 
   const token = (actor: Principal) => `${actor.id}-${'x'.repeat(32)}`;
   const engine = new Engine(database.store, 120, 'owner/project');
   engine.gitRunner = null;
-  const http = server(engine, [operator, master, agentAdmin, worker].map(actor => ({ ...actor, token: token(actor) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [operator, master, agentAdmin, worker].map(actor => ({ ...actor, token: token(actor) }))));
   const post = (path: string, body: unknown, bearer: string) => localRequest(url, `/api/${path}`, { method: 'POST', body, headers: { 'Idempotency-Key': randomUUID(), Authorization: `Bearer ${bearer}` } });
   try {
     let work: Work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Needs an account', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
@@ -38,5 +37,5 @@ test('integration:human-answer-link — a master answer on a human-only request 
     }
     assert.match(masterInstructions, /--owner-said/);
     assert.match(masterInstructions, /reverse/);
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await database.close(); }
+  } finally { await close(); await database.close(); }
 });

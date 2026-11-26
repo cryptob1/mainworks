@@ -23,12 +23,13 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { dispatchEffects } from '../src/dispatch/effects.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const reviewer = 'independent-reviewer';
 const now = () => new Date().toISOString();
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
 let root: string, scratch: string, bin: string, base: string, head: string, url: string, hostId: string;
 const homes = new Map<string, string>();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -36,9 +37,7 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 before(async () => {
   store = await withDatabase('headless-reviewers'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   // Visible under confinement (which mounts its own temporary filesystem).
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   scratch = await temporaryDirectory('headless-reviewers', join(process.cwd(), '.graphyard'));
@@ -55,10 +54,7 @@ before(async () => {
   registry = new AgentRegistry(store);
   await saveReviewerProfile(root, { name: 'reviewer', agentName: reviewer, kind: 'claude', agentArgs: [] });
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };

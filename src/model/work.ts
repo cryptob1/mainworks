@@ -60,7 +60,8 @@ export interface Principal {
   scope?: { repositories: string[]; workItems: string[] };
   [operatorCredentialHash]?: string;
 }
-export interface AssignmentIdentity { owner: string; epoch: number; displayName?: string; runtime?: string; claimedAt?: string }
+/** `checkInOwner` (GY-3912): the owner in force when the attempt was claimed; `complete` still accepts commits authored with it. */
+export interface AssignmentIdentity { owner: string; epoch: number; displayName?: string; runtime?: string; claimedAt?: string; checkInOwner?: { name: string; email: string } | null }
 export interface Lease { owner: string; epoch: number; expiresAt: string }
 export interface Workspace { host: string; path: string; branch: string; epoch: number; owner: string }
 // createdAt is the provider's pull-request creation time; older observations predate it.

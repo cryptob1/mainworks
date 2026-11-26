@@ -12,7 +12,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createServer } from 'node:net';
+import { freePort } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
 import { hostShimScript } from '../../src/host-shim.js';
 import { helperSigner } from '../../src/hosts.js';
@@ -150,6 +150,18 @@ elif command == 'run':
     data = sys.stdin.buffer.read()
     name = args[args.index('--name') + 1]
     warm_dir = None
+    base = args[args.index('--entrypoint') + 2] if '--entrypoint' in args else None
+    if '/warm/harness' in ' '.join(args):
+        # GY-3907: a catalog image: the base image's warm folder with the runner's files under harness/.
+        warm_dir = os.path.join(STATE, 'containers', name, 'warm')
+        if s['warm'].get(base) and os.path.isdir(s['warm'][base]):
+            shutil.copytree(s['warm'][base], warm_dir, symlinks=True)
+        os.makedirs(os.path.join(warm_dir, 'harness'), exist_ok=True)
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as tar:
+            tar.extractall(os.path.join(warm_dir, 'harness'))
+        s['containers'][name] = {'warm': warm_dir, 'deps': s['deps'].get(base) or os.environ.get('GRAPHYARD_STANDIN_NODE_MODULES')}
+        save()
+        sys.exit(0)
     if data:
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as tar:
@@ -255,7 +267,10 @@ elif command == 'start':
 /** GY-3879: a shim as these hosts install it: the signers prepare records root-owned live in the fixture root, holding this machine's signing key. */
 export const fixtureShim = (script: string, root: string) => {
   writeFileSync(join(root, 'mainworks-helper-signers'), `mainworks-helper namespaces="mainworks-helper" ${helperSigner()}\n`);
-  return script.replaceAll('/etc/ssh/graphyard_helper_signers', join(root, 'mainworks-helper-signers'));
+  // Fixture hosts own their sensors too: physical CI heat must not remove a ready fixture host
+  // from placement or hold its launcher. Tests can seed hwmon/ to exercise either state.
+  return script.replaceAll('/etc/ssh/graphyard_helper_signers', join(root, 'mainworks-helper-signers'))
+    .replaceAll('/sys/class/hwmon', join(root, 'hwmon'));
 };
 
 export interface ShardHostsFixture { root: string; bin: string; shim: string; localState: string; home(name: string): string; state(name: string): string; down(name: string, down: boolean): Promise<void> }
@@ -348,8 +363,6 @@ export function killTrees(matches: (pid: number, cwd: string) => boolean) {
   for (let grew = true; grew;) { grew = false; for (const { pid, ppid } of table) if (tree.has(ppid) && !tree.has(pid)) { tree.add(pid); grew = true; } }
   for (const pid of tree) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
 }
-
-const freePort = () => new Promise<number>((resolve, reject) => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(port)); }).on('error', reject); });
 
 /**
  * A real OpenSSH server on 127.0.0.1 for this user, whose only key may run the shim with `home` as the

@@ -12,6 +12,7 @@ import { server } from '../src/server.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import type { Principal, Work } from '../src/model.js';
 import { TestsView } from '../web/pages/tests.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3278: the Tests page of a fixture install reads plainly. Each row names its item, title and
 // criterion; a backlog item's unwritten case is neutral and folded; only a merged item whose case
@@ -20,7 +21,7 @@ import { TestsView } from '../web/pages/tests.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
 before(async () => {
   store = await withDatabase('tests-page-readable'); await store.init();
@@ -30,14 +31,9 @@ before(async () => {
   const files = { 'e2e/cases/passed-case.json': JSON.stringify({ id: 'passed-case', title: 'Checkout passes', target: 'uat', steps: [{ kind: 'http', method: 'GET', path: '/healthz', status: 200 }] }) };
   (await gitRepo({ root: checkout, files, message: 'main' })).git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   engine.gitRunner = gitRunnerFor(checkout);
-  http = server(engine, [{ ...operator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...operator, token }])));
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 /** An item whose one criterion names `proof`, its document then set as the fixture needs (stage, evidence). */
 async function item(title: string, text: string, proof: string, patch: Record<string, unknown>) {

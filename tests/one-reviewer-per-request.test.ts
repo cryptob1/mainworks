@@ -29,6 +29,7 @@ import { hostMemoryVariable } from '../src/master/host-memory.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2026-09-22 review submittedAt instants only order verdicts; items, requests and observations are stamped with new Date().
@@ -322,9 +323,8 @@ async function sessionProviderContract() {
   item = await engine.observe(item.id, item.revision, { ...observation(candidate), candidate, source: 'control-plane', files: ['src/store/pools.ts'] });
   assert.equal(item.gates.find(gate => gate.name === 'review')!.passed, false);
   const coordinator = { id: 'session-launcher', role: 'coordinator' as const, token: 'launcher-credential-'.padEnd(40, 'x') };
-  const http = server(engine, [coordinator]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}/api/work/${item.id}`;
+  const { url: baseUrl, close } = await listen(server(engine, [coordinator]));
+  const url = `${baseUrl}/api/work/${item.id}`;
   const post = async (path: string, token: string, body: unknown) => {
     const response = await fetch(`${url}/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
     assert.equal(response.status, 200, JSON.stringify(await response.json()));
@@ -336,11 +336,7 @@ async function sessionProviderContract() {
     const recorded = await store.workItem(item.id);
     assert.equal(recorded!.gates.find(gate => gate.name === 'review')!.passed, true);
     assert.equal(recorded!.observation!.reviews[0].source, 'control-plane');
-  } finally {
-    await new Promise<void>(resolve => http.close(() => resolve()));
-    engine.principals = [operator, implementer, producer];
-  }
-}
+  } finally { await close(); engine.principals = [operator, implementer, producer]; } }
 
 test('integration:conflicting-verdicts-surfaced — APPROVED then CHANGES_REQUESTED on one head for one request is a conflict: both recorded, attention raised, neither acted on, and a fresh review resolves it', async () => {
   let item = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Two verdicts on one head', criteria: [{ id: 'AC-1', text: 'Review', proofs: ['unit:x', 'e2e:fixture'] }] }, randomUUID());

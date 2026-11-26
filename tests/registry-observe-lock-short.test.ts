@@ -10,6 +10,7 @@ import { advisoryLocks } from '../src/store/locks.js';
 import { lockHoldAttention } from '../src/cli/master-status.js';
 import { proposedRuntimes, type AgentRegistry as Registry } from '../src/model/registry.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3807: recording agent-registry observations writes in one batched statement and never holds
 // the coordination lock, so coordinated writes never wait behind it and master status names no
@@ -23,7 +24,7 @@ const HOST = 'host-a';
 const ACCOUNT_COUNT = 20;
 const SESSION_COUNT = 50;
 
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, database: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, database: string;
 
 const call = async (as: Principal, method: string, path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, {
@@ -60,9 +61,7 @@ before(async () => {
   store = new Store(database); await store.init();
   engine = new Engine(store, 120, 'owner/project');
   engine.principals = principals;
-  http = server(engine, principals.map(p => ({ ...p, token: token(p) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(p => ({ ...p, token: token(p) })))));
 
   // Seed 20 accounts and 50 live sessions on the test install.
   const claude = proposedRuntimes.find(runtime => runtime.name === 'claude')!;
@@ -99,7 +98,7 @@ before(async () => {
   assert.equal(doc.sessions.length, SESSION_COUNT);
 });
 
-after(async () => { http?.close(); if (store) await store.close(); });
+after(async () => { await close?.(); if (store) await store.close(); });
 
 test('integration:registry-observe-lock-short — an observe request carrying every account answers in under 1 s without holding the coordination lock on a seeded install with 20 accounts and 50 sessions', async () => {
   const holder = new pg.Client({ connectionString: database });

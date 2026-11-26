@@ -19,6 +19,7 @@ import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/revi
 import { liveRun } from '../src/runner/registry.js';
 import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3575: a product review serves the exact candidate with its declared e2e.serve command from a
 // checkout outside the repository. That checkout must resolve the repository's declared
@@ -29,7 +30,7 @@ const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 let servePort: number;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, base: string, head: string;
 
 before(async () => {
@@ -37,9 +38,7 @@ before(async () => {
   store = await withDatabase('product-review-candidate-serve-dependencies'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   root = await temporaryDirectory('product-review-serve-deps-root'); credentials = await temporaryDirectory('product-review-serve-deps-credentials');
   const browserBin = await temporaryDirectory('product-review-serve-deps-browser');
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
@@ -80,7 +79,7 @@ createServer((request, response) => {
   process.env.PATH = `${browserBin}:${process.env.PATH ?? ''}`;
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (root) await rm(root, { recursive: true, force: true });
   if (credentials) await rm(credentials, { recursive: true, force: true });

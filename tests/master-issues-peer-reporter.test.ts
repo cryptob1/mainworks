@@ -19,6 +19,7 @@ import { expandTypedCommand } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { Principal } from '../src/model.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3385: `principal add` needs a host write the confined Master session is refused (EROFS on the
 // install's apply lock), so no install could peer. `master peer issue --root DIR` mints the peer's
@@ -67,11 +68,9 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
     const store: Store = await withDatabase(`master_issues_peer_${name.replace(/\W/g, '_')}`);
     await store.init();
     const engine = new Engine(store, 120, `owner/${name}`);
-    const http = server(engine, [{ ...coordinator, token: token(coordinator) }]);
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: closeServer } = await listen(server(engine, [{ ...coordinator, token: token(coordinator) }]));
     let running = true;
-    closers.push(async () => { if (!running) return; running = false; http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); });
+    closers.push(async () => { if (!running) return; running = false; await closeServer(); await store.close(); });
     const api = async (path: string, body?: unknown, key?: string) => {
       const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key ?? crypto.randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       const result = await response.json() as any;

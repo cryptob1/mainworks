@@ -18,6 +18,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { withDatabase } from './helpers/postgres.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3225: a checkout that carries its own Claude configuration (.mcp.json, .claude/settings.json),
 // untrusted in a registered Claude account's config, refuses every launch of that account — the
@@ -173,7 +174,7 @@ test('unit:tests/untrusted-checkout-once.test.ts — the loop holds the named ro
 });
 
 // The standing line rides the loop's coordination-read header into /api/status, where the Setup page reads it.
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const coordinator: Principal = { id: 'master-loop', role: 'coordinator', sessionKind: 'ai' };
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
@@ -182,11 +183,9 @@ before(async () => {
   store = await withDatabase('untrusted-checkout-once');
   await store.init();
   engine = new Engine(store, 7200, 'owner/untrusted-checkout');
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
 });
-after(() => { http?.close(); return store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('unit:tests/untrusted-checkout-once.test.ts — the loop\'s read header carries the standing line into the status the Setup page shows', async () => {
   const detail = checkoutTrustLine(await checkoutTrustRefusals(checkout, fleet([{ name: 'master', accounts: ['claude-a', 'claude-b'], policy: { args: [] } }]), host));

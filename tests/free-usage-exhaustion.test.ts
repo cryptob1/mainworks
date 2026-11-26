@@ -21,6 +21,7 @@ import { liveRun } from '../src/runner/registry.js';
 import type { Principal, Work } from '../src/model.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3302: hwd-backend retried accounts across six items after `429 FreeUsageLimitError`. A
 // free-usage notice is the account's exhaustion like any limit notice: held at once, before any
@@ -32,7 +33,7 @@ const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const freeNotice = 'Error: 429 FreeUsageLimitError: Free usage limit reached. Subscribe to OpenCode Go to keep using this model.';
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
 let root: string, scratch: string, bin: string, url: string, hostId: string;
 const homes = new Map<string, string>();
 
@@ -43,9 +44,7 @@ before(async () => {
   root = await temporaryDirectory('coordinator', scratch);
   bin = await temporaryDirectory('bin', scratch);
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  http = server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })))));
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'Fixture.\n');
@@ -60,10 +59,7 @@ before(async () => {
   await saveWorkerProfile(root, { name: 'launch', principal: worker.id, agentName: 'eng-a', mode: 'launch', kind: 'claude', credentialFile }, async () => ({ actor: worker }));
   registry = new AgentRegistry(store);
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

@@ -10,7 +10,7 @@ import { trialRunFiles, trialRunsDirectory, lastHostFallbacks } from '../src/mer
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import WorkersPage from '../web/pages/workers.js';
 import { rm, writeFile } from 'node:fs/promises';
-import { connect, createServer } from 'node:net';
+import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { readShardHosts } from '../src/merge-writer/remote-shards.js';
@@ -18,6 +18,7 @@ import { runTrial } from '../src/merge-writer/trial.js';
 import type { startCheckServices } from '../src/compose-preview.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { dockerCalls, dockerCreates, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { freePort } from './helpers/http-server.js';
 
 // GY-3645: a repository whose merge gate is one script beside a Compose service could not use an added
 // machine at all. A check with services and no selection now runs whole on a ready compute host: the
@@ -29,7 +30,6 @@ const proof = 'integration:declared-check-runs-on-a-host';
 const image = 'mainworks-trial:declared-check', target = 'gy-compute@box';
 let hosts: ShardHostsFixture, repository: { root: string; sha: string }, port: number, ran: string, fails: string;
 const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-const freePort = () => new Promise<number>(resolve => { const server = createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => resolve(port)); }); });
 const accepts = () => new Promise<boolean>(resolve => { const socket = connect({ host: '127.0.0.1', port }); socket.once('connect', () => { socket.destroy(); resolve(true); }).once('error', () => resolve(false)); });
 
 before(async () => {

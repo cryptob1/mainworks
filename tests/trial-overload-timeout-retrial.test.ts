@@ -22,6 +22,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 const proof = 'e2e:trial-overload-timeout-retrial';
 const write = async (root: string, files: Record<string, string>) => {
@@ -88,9 +89,7 @@ for (const mode of ['serve', 'test', 'file', 'web-server', 'deadline'] as const)
     const engine = new Engine(store, 120, 'owner/proofs');
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    const http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close } = await listen(server(engine, [{ ...coordinator, token }]));
     try {
       let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'overload', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
       work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
@@ -147,7 +146,7 @@ for (const mode of ['serve', 'test', 'file', 'web-server', 'deadline'] as const)
         assert.ok(reworks.length > 0, 'an idle-host timeout requests rework');
         assert.match(current.mergeLedger?.refusal?.reason ?? '', /^trial failed/);
       }
-    } finally { await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); }
+    } finally { await close(); await store.close(); }
   });
 }
 
