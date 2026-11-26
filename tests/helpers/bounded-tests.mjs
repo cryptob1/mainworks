@@ -36,7 +36,12 @@ await Promise.all(Array.from({ length: Math.min(breadth, files.length) }, async 
     // The bound is named to the file it bounds, so a test whose execution cannot fit it (the
     // slow-tick receipt's twenty sequential runs) defers to an unbounded run instead of dying at
     // the deadline.
-    const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), '--import', import.meta.resolve('./closed-stdin.mjs'), '--test', ...reporter, ...flags, file], {
+    // GY-3922, GY-3931: each file already owns its own OS process with stdin bound to /dev/null
+    // (`stdio: ['ignore', ...]`), so `--test-isolation=none` keeps stdin at EOF without spawning a
+    // second Node process whose stdin socket would have to be closed in userland (closing fd 0 in
+    // userland races with concurrent libuv fd allocations and aborts on `uv__close: fd > STDERR_FILENO`).
+    const isolation = flags.some(flag => flag.startsWith('--test-isolation')) ? [] : ['--test-isolation=none'];
+    const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), '--test', ...isolation, ...reporter, ...flags, file], {
       detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...(Number.isFinite(timeoutMs) ? { GRAPHYARD_FILE_TIMEOUT_MS: String(timeoutMs) } : {}) },
     });
     children.add(child);
