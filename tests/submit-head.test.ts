@@ -17,6 +17,7 @@ import { completeCommand, completionBody } from '../src/cli/complete.js';
 import { syncWork } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -33,7 +34,6 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 const repository = 'owner/project';
 const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 'human' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 let store: Store, engine: Engine;
 /** A checkout laid out like the coordinator's: an origin, the clone whose refs/remotes/origin/main is the base tip, and a worker's commit in the shared object store. */
 let checkout: string, baseTip: string, head: string, staleHead: string, fixtureRoot: string;
@@ -48,7 +48,6 @@ before(async () => {
   const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
   const first = await commit(checkout, 'README.md', '# Fixture\n', 'base');
   await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
   git(checkout, 'push', '-q', 'origin', 'main');
@@ -56,12 +55,10 @@ before(async () => {
   // The worker's branch is a linked worktree of the checkout: its commits land in the shared object store, nothing is pushed.
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   head = await commit(worktree, 'src/app.ts', 'export const app = 2;\n', 'change');
   // A head branched before the base tip moved: it does not contain the tip.
   const stale = join(checkout, '.graphyard', 'worktrees', 'GY-2-1');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-2-1', stale, first);
-  git(stale, 'config', 'user.email', 't@example.com'); git(stale, 'config', 'user.name', 'T');
   staleHead = await commit(stale, 'src/other.ts', 'export const other = 1;\n', 'stale');
 
   store = await withDatabase('submit-head'); await store.init();
@@ -278,7 +275,6 @@ test('unit:sync-control-plane-no-fetch — sync reads mergeWriter from /api/stat
     const origin = join(root, 'origin.git'), clone = join(root, 'clone'), other = join(root, 'other');
     execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
     execFileSync('git', ['clone', '-q', origin, clone], { stdio: 'ignore' });
-    git(clone, 'config', 'user.email', 't@example.com'); git(clone, 'config', 'user.name', 'T');
     await commit(clone, 'README.md', '# Fixture\n', 'base'); git(clone, 'push', '-q', 'origin', 'main');
     const sharedTip = git(clone, 'rev-parse', 'refs/remotes/origin/main');
     git(clone, 'checkout', '-q', '-b', 'graphyard/gy-9-1');
@@ -286,7 +282,6 @@ test('unit:sync-control-plane-no-fetch — sync reads mergeWriter from /api/stat
     await commit(clone, 'README.md', '# Fixture\n\nOut of scope.\n', 'stray');
     // Origin moves on; the clone's refs/remotes/origin/main (the shared ref) still names the old tip.
     execFileSync('git', ['clone', '-q', origin, other], { stdio: 'ignore' });
-    git(other, 'config', 'user.email', 't@example.com'); git(other, 'config', 'user.name', 'T');
     const moved = await commit(other, 'docs/new.md', 'new\n', 'advance'); git(other, 'push', '-q', 'origin', 'main');
     const work = { id: 'id-9', key: 'GY-9', workspaces: [{ epoch: 1, branch: 'graphyard/gy-9-1', host: 'h', path: clone, owner: 'implementer' }], lease: null };
     const run = async (status: Record<string, unknown>, args: string[] = []) => {

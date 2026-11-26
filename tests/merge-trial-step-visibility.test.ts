@@ -26,6 +26,7 @@ import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { processPidNamespace, tempOwnerMarker } from '../src/tmp-reclaim.js';
 
 // GY-2963: a merge in flight names where its trial is and how long the step has run — on master
@@ -186,14 +187,12 @@ const gitIn = (cwd: string, ...args: string[]) =>
 /** A fixture repository with a build and one preMerge test check, a base tip and a head to merge. */
 async function fixtureRepo() {
   const root = await temporaryDirectory('trial-step-repo', tmpdir());
-  gitIn(root, 'init', '-q', '-b', 'main');
-  const write = (path: string, content: string) => writeFileSync(join(root, path), content);
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'node -e ""' } }));
-  write('graphyard.json', JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm run test', source: 'script', reason: 'fixture' }], perCandidate: [] } } }));
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const baseTip = gitIn(root, 'rev-parse', 'HEAD');
+  const { head: baseTip } = await gitRepo({ root, files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'node -e ""' } }),
+    'graphyard.json': JSON.stringify({ delivery: { mergeGate: { preMerge: [{ check: 'test', command: 'npm run test', source: 'script', reason: 'fixture' }], perCandidate: [] } } }),
+  } });
   gitIn(root, 'checkout', '-q', '--detach', baseTip);
-  write('src.ts', 'export {};\n');
+  writeFileSync(join(root, 'src.ts'), 'export {};\n');
   gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'change');
   const committed = gitIn(root, 'rev-parse', 'HEAD');
   gitIn(root, 'checkout', '-q', 'main');

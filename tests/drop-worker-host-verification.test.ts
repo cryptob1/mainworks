@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { freePort } from '../src/cli/test-isolation.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -27,19 +27,16 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-worker-host-verification']) {
   test(`${proof} — complete submits with every slot held; master status records no worker verification and the merge trial refuses the failing head`, { timeout: 120_000 }, async t => {
     const root = await temporaryDirectory('drop-worker-host-verification');
-    const checkout = join(root, 'checkout'), origin = join(root, 'origin.git'), slots = join(root, 'slots');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-    execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-    await writeFile(join(checkout, '.gitignore'), '.graphyard/\n');
-    await writeFile(join(checkout, 'package.json'), JSON.stringify({ scripts: { build: 'node --eval 0', test: 'node --test --test-reporter=tap proof.cjs' } }));
-    await writeFile(join(checkout, 'proof.cjs'), "const { test } = require('node:test'); test('unit:fixture', () => {});\n");
+    const slots = join(root, 'slots');
     const port = await freePort();
-    await writeFile(join(checkout, 'serve.cjs'), `require('node:http').createServer((q, r) => r.end('ok')).listen(${port}, '127.0.0.1');`);
-    await writeFile(join(checkout, 'graphyard.json'), JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.cjs', url: `http://127.0.0.1:${port}`, readySeconds: 1 } } }));
-    await mkdir(join(checkout, 'e2e', 'cases'), { recursive: true });
-    await writeFile(join(checkout, 'e2e/cases/fixture.json'), JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'fixture', run: 'true' }] }));
-    git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'HEAD:main');
+    const { root: checkout, origin } = await gitRepo({ root: join(root, 'checkout'), origin: true, files: {
+      '.gitignore': '.graphyard/\n',
+      'package.json': JSON.stringify({ scripts: { build: 'node --eval 0', test: 'node --test --test-reporter=tap proof.cjs' } }),
+      'proof.cjs': "const { test } = require('node:test'); test('unit:fixture', () => {});\n",
+      'serve.cjs': `require('node:http').createServer((q, r) => r.end('ok')).listen(${port}, '127.0.0.1');`,
+      'graphyard.json': JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.cjs', url: `http://127.0.0.1:${port}`, readySeconds: 1 } } }),
+      'e2e/cases/fixture.json': JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'fixture', run: 'true' }] }),
+    } });
     const base = git(origin, 'rev-parse', 'main');
     const branch = 'graphyard/gy-1-1', worktree = join(root, 'worktree');
     git(checkout, 'worktree', 'add', '-qb', branch, worktree);

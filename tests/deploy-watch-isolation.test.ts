@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer as createHttpServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,11 +7,11 @@ import { gitWatchPorts } from '../src/cli/upgrade.js';
 import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-2942: each install's deploy watcher uses its own checkout and checks health against the
 // deployed commit's release, so two installs on one host no longer roll each other back.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 /** An origin, a second clone that pushes to it, and the CLI checkout the deploy unit watches, at commit A. */
 async function repositories() {

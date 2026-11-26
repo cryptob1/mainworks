@@ -15,6 +15,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, workerPrompt, type MasterConfig } from '../src/master.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -75,12 +76,7 @@ test('integration:expired-worker-real-snapshot-handoff — a supervisor-ended un
   // change and, on top of it, one modified and one untracked file the attempt never committed.
   const branch = `graphyard/${filed.key.toLowerCase()}-1`;
   const worktree = join(install, '.graphyard', 'worktrees', `${filed.key.toLowerCase()}-1`);
-  git(['init', '-q', '-b', 'main']);
-  git(['config', 'user.email', 'fixture@graphyard.invalid']);
-  git(['config', 'user.name', 'Mainworks Fixture']);
-  await writeFile(join(install, 'README.md'), 'shared base\n');
-  git(['add', '.']);
-  git(['commit', '-q', '-m', 'base']);
+  await gitRepo({ root: install, files: { 'README.md': 'shared base\n' } });
   await mkdir(dirname(worktree), { recursive: true });
   git(['worktree', 'add', '-b', branch, worktree]);
   await writeFile(join(worktree, 'diagnostics.ts'), 'export const finding = "soak thresholds tracked for two hours";\n');

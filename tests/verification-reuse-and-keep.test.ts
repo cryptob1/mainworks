@@ -1,11 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -29,12 +29,7 @@ async function until(condition: () => Promise<boolean>, message: string) {
 
 async function fixture(t: TestContext) {
   const root = await temporaryDirectory('verification-reuse', process.cwd());
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
-  await writeFile(join(root, '.gitignore'), '.graphyard/\nnode_modules/\n');
-  await writeFile(join(root, 'package.json'), '{"type":"module"}');
-  await writeFile(join(root, 'app.js'), 'export const answer = 0;\n');
-  git('add', '.'); git('commit', '-qm', 'base');
+  const { git } = await gitRepo({ root, files: { '.gitignore': '.graphyard/\nnode_modules/\n', 'package.json': '{"type":"module"}', 'app.js': 'export const answer = 0;\n' } });
   git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   git('checkout', '-qb', 'graphyard/reuse');
   await writeFile(join(root, 'app.js'), 'export const answer = 42;\n');

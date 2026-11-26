@@ -13,7 +13,7 @@ import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
 import { nextAction } from '../src/model-boundary/next-action.js';
 import { verifyWorkingTree } from '../src/cli/verify.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -89,9 +89,7 @@ test('integration:proofs-precede-review — a head is reviewed without waiting o
 // ---- The worker's own check: the real launcher against a stub control plane ----------------------
 
 async function fixtureRepository(files: Record<string, string>) {
-  const root = await temporaryDirectory('verify-repo');
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main'); git('config', 'user.email', 'worker@example.test'); git('config', 'user.name', 'Worker'); git('config', 'commit.gpgsign', 'false');
+  const { root, git } = await gitRepo({ label: 'verify-repo' });
   const commit = async (next: Record<string, string>, message: string) => {
     for (const [path, text] of Object.entries(next)) { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), text); }
     git('add', '-A'); git('commit', '-q', '-m', message); return git('rev-parse', 'HEAD');

@@ -8,6 +8,7 @@ import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { loopCodeRoot } from '../src/daemon/checkout-state.js';
 import { daemonEffects } from '../src/daemon/effects-production.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 /**
  * GY-1899: a managed repository's loop used to read its loaded code through the managed
@@ -20,7 +21,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // derives the observation's stamp from it, and nothing reads the wall clock.
 const now = 1_790_000_000_000;
 const at = new Date(now).toISOString();
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.com', ...args], { encoding: 'utf8' }).trim();
 /** The real child runner the production wiring gets: every git command runs for real, in a fixture. */
 const run = (command: string, args: string[]) => execFileSync(command, args, { encoding: 'utf8' });
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -35,16 +35,7 @@ const config = (cliPath: string): MasterConfig => masterConfigSchema.parse({ ver
  * `origin` at its own commit, sharing this history (AC-1's fork-or-second-checkout shape).
  */
 async function cliCheckout(): Promise<{ checkout: string; loaded: string; tip: string; origin: string }> {
-  const seed = await temporaryDirectory('loop-code-root-seed'), origin = await temporaryDirectory('loop-code-root-origin');
-  await mkdir(join(seed, 'src'), { recursive: true });
-  git(seed, 'init', '-q', '-b', 'main');
-  await writeFile(join(seed, 'src', 'loop.ts'), 'export const version = 0;\n');
-  git(seed, 'add', 'src/loop.ts');
-  git(seed, 'commit', '-q', '-m', 'base');
-  const loaded = git(seed, 'rev-parse', 'HEAD');
-  git(origin, 'init', '-q', '--bare');
-  git(seed, 'remote', 'add', 'origin', origin);
-  git(seed, 'push', '-q', 'origin', 'main');
+  const { root: seed, origin, head: loaded } = await gitRepo({ label: 'loop-code-root-seed', files: { 'src/loop.ts': 'export const version = 0;\n' }, origin: true });
   await writeFile(join(seed, 'src', 'loop.ts'), 'export const version = 1;\n');
   git(seed, 'commit', '-q', '-am', 'merged release');
   const tip = git(seed, 'rev-parse', 'HEAD');

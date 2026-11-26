@@ -11,28 +11,23 @@ import { deployRecordPath } from '../src/deploy-watch.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3443: a verified batch gate records manual:batch-gate-repaired on every open item owing it,
 // citing the verified tip, so no master attestation is waited on; a reverted or held gate records nothing.
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const repository = 'owner/project';
 
 /** An origin whose main holds a verified base and two merges: GY-1's breaks its case, GY-2's is fine. */
 async function fixture() {
   const base = await temporaryDirectory('batch-gate-repaired');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin, head: verified } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: { 'graphyard.json': '{}', 'e2e/cases/case-1.json': '{}', 'e2e/cases/case-2.json': '{}' } });
   const write = async (files: Record<string, string>) => {
     for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
     git(pusher, 'add', '.');
   };
-  await write({ 'graphyard.json': '{}', 'e2e/cases/case-1.json': '{}', 'e2e/cases/case-2.json': '{}' });
-  git(pusher, 'commit', '-q', '-m', 'base');
-  git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
   for (const n of [1, 2]) {
     git(pusher, 'checkout', '-q', '-b', `item-${n}`);
     await write({ [`src/f${n}.ts`]: n === 1 ? 'broken\n' : 'ok\n' });

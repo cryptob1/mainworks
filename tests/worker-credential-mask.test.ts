@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { credentialMaskFor, credentialMaskWords, coordinatorConfinement, readOnl
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { headlessConfinementWrapper, prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-1856: a confined session must not read the operator's credential locations. The read-only
 // mount that keeps the coordinator checkout unwritable hid none of them — the Huck migration PM
@@ -26,26 +27,15 @@ const collectorSecret = 'collector-secret-'.padEnd(48, 'x');
 const ownToken = 'worker-own-token-'.padEnd(40, 'x');
 
 /** A coordinator checkout with a linked assignment worktree, an operator config home holding the install's credentials, and the recorded credential paths — under `beside`, outside the checkout's parent, whose sibling entries GY-3384 masks without a mask of its own. */
-function fixture(base: string, beside: string) {
-  const root = join(base, 'coordinator');
-  const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  run('init', '-b', 'main');
-  run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Mainworks');
-  run('add', '.');
-  run('commit', '-m', 'coordinator');
+async function fixture(base: string, beside: string) {
+  const { root, git: run } = await gitRepo({ root: join(base, 'coordinator'), files: { 'src/loop.ts': 'export const loop = 1;\n' } });
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-1856-1');
   mkdirSync(dirname(worktree), { recursive: true });
   run('worktree', 'add', '-b', 'graphyard/gy-1856-1', worktree, 'main');
-  execFileSync('git', ['-C', worktree, 'config', 'user.email', 'w@t']);
-  execFileSync('git', ['-C', worktree, 'config', 'user.name', 'Worker']);
   // The fixture repository's own test command, committed, so a confined `npm test` runs it.
   writeFileSync(join(worktree, 'package.json'), JSON.stringify({ name: 'fixture', private: true, scripts: { test: 'node test.js' } }, null, 2));
   writeFileSync(join(worktree, 'test.js'), 'console.log(\'the fixture test passes\');\n');
-  execFileSync('git', ['-C', worktree, 'add', '.']);
-  execFileSync('git', ['-C', worktree, 'commit', '-qm', 'the branch own change']);
+  git(worktree, 'add', '.'); git(worktree, 'commit', '-qm', 'the branch own change');
   // The base tip the supported sync merges, as the merge writer advances it: nothing is fetched.
   mkdirSync(join(root, 'docs'), { recursive: true });
   writeFileSync(join(root, 'docs', 'advance.md'), 'advanced on main\n');
@@ -135,7 +125,7 @@ test('unit:credential-mask-words — a location that exists is masked at the dir
 test('unit:worker-wrapper-masks-credentials — the read-only mount hides the credential locations and re-exposes the session\'s own last', async () => {
   const base = await temporaryDirectory('credential mask wrapper'), beside = await temporaryDirectory('credential mask wrapper beside');
   try {
-    const f = fixture(base, beside);
+    const f = await fixture(base, beside);
     const wrapper = readOnlyMountWrapper({ coordinatorRoot: f.root, sessionDirectory: f.worktree, bwrap: 'bwrap' });
     assert.ok(!wrapper.includes(f.configHome) && !wrapper.includes(join(f.beside, 'deploy')), 'without a mask no credential location is hidden');
     const masked = readOnlyMountWrapper({ coordinatorRoot: f.root, sessionDirectory: f.worktree, bwrap: 'bwrap', credentialMask: f.mask });
@@ -168,7 +158,7 @@ test('unit:worker-wrapper-masks-credentials — the read-only mount hides the cr
 test('integration:worker-credential-paths-denied — under the actual worker confinement the coordinator credential, another install\'s directory, a recorded deployment credential and a configured mask path are each unreadable, and no secret value is reachable', async () => {
   const base = await temporaryDirectory('credential mask denied'), beside = await temporaryDirectory('credential mask denied beside');
   try {
-    const f = fixture(base, beside);
+    const f = await fixture(base, beside);
     const confinement = await coordinatorConfinement({ kind: 'pi', args: [], coordinatorRoot: f.root, sessionDirectory: f.worktree, platform: 'linux', mountNamespaceWorks: true, bwrap: 'bwrap', credentialMask: f.mask });
     assert.ok(confinement, 'the worker launch carries a confinement');
     assert.equal(confinement.mechanism, 'read-only-mount');
@@ -198,7 +188,7 @@ test('integration:worker-credential-paths-denied — under the actual worker con
 test('integration:worker-own-credentials-work — under the same confinement the worker\'s own runtime login and token are readable, and git status, git commit, mainworks sync and the repository\'s test command succeed in its worktree', async () => {
   const base = await temporaryDirectory('credential mask own work'), beside = await temporaryDirectory('credential mask own work beside');
   try {
-    const f = fixture(base, beside);
+    const f = await fixture(base, beside);
     const confinement = await coordinatorConfinement({ kind: 'pi', args: [], coordinatorRoot: f.root, sessionDirectory: f.worktree, platform: 'linux', mountNamespaceWorks: true, bwrap: 'bwrap', credentialMask: f.mask });
     assert.ok(confinement, 'the worker launch carries a confinement');
     if (process.platform !== 'linux') return;

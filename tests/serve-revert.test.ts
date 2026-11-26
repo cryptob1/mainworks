@@ -21,6 +21,7 @@ import { archiveDaemonCursor, writeDaemonState, readDaemonState } from '../src/d
 import type { MergeLedgerEvent } from '../src/model/merge-ledger.js';
 import { mergeRecordKinds } from '../src/merge-writer/executor.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2990: one failing item comes back out. With two merges since the last verified commit and a
 // required case failing on the served commit, the merge writer pushes a revert of exactly the
@@ -32,7 +33,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't@t', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 import { foldServeReverts } from '../src/merge-writer/serve-revert-ledger.js';
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const gitEnv = (cwd: string, args: string[], extra: Record<string, string>) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, ...extra } }).trim();
 
@@ -50,15 +50,12 @@ async function fixture(label: string) {
   const base = await temporaryDirectory(label);
   const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
   git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  git(pusher, 'config', 'user.email', 't@t');
-  git(pusher, 'config', 'user.name', 't');
+  await gitRepo({ root: pusher, files: { 'keep.txt': 'keep\n' } });
+  git(pusher, 'remote', 'add', 'origin', origin);
   const write = async (files: Record<string, string>) => {
     for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
     git(pusher, 'add', '.');
   };
-  await write({ 'keep.txt': 'keep\n' });
-  git(pusher, 'commit', '-q', '-m', 'base');
   git(pusher, 'push', '-q', 'origin', 'HEAD:main');
   const verified = git(pusher, 'rev-parse', 'HEAD');
   git(pusher, 'checkout', '-q', '-b', 'item-a');

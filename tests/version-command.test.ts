@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -10,18 +10,13 @@ import { checkoutRelease, cliRelease, releaseInfo, stampedRelease, type Release 
 import { renderVersion, versionReport } from '../src/cli/version.js';
 import { healthRoutes } from '../src/server/routes/health.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-1959: `mainworks version` names the CLI's release (the dated tag on its commit, else
 // `unreleased <sha>`) and the connected server's, which /healthz reports the same way.
 const launcher = resolve('bin/graphyard.mjs');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, encoding: 'utf8' }).trim();
 
-async function repository() {
-  const cwd = await temporaryDirectory('version-command');
-  git(cwd, 'init', '--quiet');
-  await writeFile(join(cwd, 'a'), '1'); git(cwd, 'add', 'a'); git(cwd, 'commit', '--quiet', '-m', 'one');
-  return cwd;
-}
+const repository = async () => (await gitRepo({ label: 'version-command', files: { a: '1' }, message: 'one' })).root;
 
 test('unit:version-command — a checkout is the latest dated tag on its HEAD, else unreleased with its short sha', async () => {
   const cwd = await repository();

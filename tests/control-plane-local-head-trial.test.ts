@@ -18,6 +18,7 @@ import { Store } from '../src/store.js';
 import { completionBody } from '../src/cli/complete.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -41,7 +42,6 @@ const config = masterConfigSchema.parse({
   repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [],
   run: { mergeWriter: { deployKeyFile: '/keys/deploy' } },
 });
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const githubDouble = new Proxy({}, { get: (_, name) => { throw new Error(`called GitHub (${String(name)})`); } });
 
 let store: Store, engine: Engine;
@@ -59,7 +59,6 @@ before(async () => {
   branch = 'graphyard/gy-2010-1';
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
   await commit(checkout, 'README.md', '# Fixture\n', 'base');
   await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
   await commit(checkout, 'tests/app.test.ts', "import { test } from 'node:test';\ntest('unit:app-works — the app answers', () => {});\n", 'test');
@@ -68,7 +67,6 @@ before(async () => {
   // Worker head in the shared object store only: linked worktree, never pushed to origin.
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-2010-1');
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree, baseTip);
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   head = await commit(worktree, 'src/app.ts', 'export const app = 2;\n', 'change');
   assert.equal(git(origin, 'for-each-ref', '--format=%(refname)', 'refs/heads').trim(), 'refs/heads/main', 'origin holds only the base branch');
 

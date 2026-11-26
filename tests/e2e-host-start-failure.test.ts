@@ -1,6 +1,5 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -13,17 +12,13 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { parseCase } from '../src/e2e/case.js';
 import { runCases, type E2eLauncher } from '../src/e2e/runner.js';
 import { confinedSession, type ProcessRunner } from '../src/e2e/steps.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3180: a browser or runner that cannot start judged nothing, so the merge trial ends with no
 // verdict through the runner-failure path and the head stays queued; a step that ran and failed
 // is still the head's. The trial's private home holds no installed browser here, which is the
 // real launch failure that refused heads.
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',
-  GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
 const repository = join(import.meta.dirname, '..');
 const servePort = 20000 + (process.pid % 20_000);
 const browserCase = { id: 'home-opens', title: 'The home page opens', target: 'any', required: false,
@@ -33,14 +28,13 @@ const failingCase = { id: 'home-says', title: 'The home page says the thing', ta
 const serveScript = `require('node:http').createServer((request, response) => { response.writeHead(200, {'Content-Type':'application/json'}); response.end(JSON.stringify({ message: 'served' })); }).listen(${servePort}, '127.0.0.1');\n`;
 
 let fixtureRoot: string, root: string, baseTip: string, mergeSha: string;
-const gitIn = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
+const gitIn = (...args: string[]) => git(root, ...args);
 const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
 
 before(async () => {
   fixtureRoot = await temporaryDirectory('e2e-host-start-failure', tmpdir());
   root = join(fixtureRoot, 'repo');
-  mkdirSync(root, { recursive: true });
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  await gitRepo({ root });
   write('package.json', JSON.stringify({ name: 'fixture', scripts: { test: 'node --eval 0' } }));
   write('graphyard.json', JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${servePort}`, readySeconds: 10 } } }));
   write('serve.js', serveScript);

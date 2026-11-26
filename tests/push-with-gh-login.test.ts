@@ -5,6 +5,7 @@ import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 import { serveGitHttp } from './helpers/git-http-remote.js';
 import { harness } from './install-harness.js';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall, resumeCommand, type ProfileRequest } from '../src/install/index.js';
@@ -24,7 +25,6 @@ import { recordedUp, runUp, upRequestFromArgs, type UpDependencies } from '../sr
 // git alone, inside the push child, at the moment of the push.
 
 const TOKEN = 'gh_fixture_token_never_on_disk_or_in_env';
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** The stub gh the push child finds on PATH: `gh auth token` prints the fixture token, but only
  * where the session bus reaches it — the fixture's stand-in for a login kept in the system keyring
@@ -43,7 +43,6 @@ async function mergeWriterCheckout(directory: string) {
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   git(origin, 'config', 'http.receivepack', 'true');
   execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
   await writeFile(join(checkout, 'a.txt'), 'base\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
   const baseTip = git(checkout, 'rev-parse', 'HEAD');

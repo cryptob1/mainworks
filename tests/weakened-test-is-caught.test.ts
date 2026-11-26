@@ -1,10 +1,10 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
 import { gitRunnerFor, observeHead } from '../src/merge-writer/local-observation.js';
 import { riskOf } from '../src/model-boundary/risk-class.js';
@@ -31,20 +31,9 @@ async function writeFiles(root: string, files: Record<string, string>) {
   }
 }
 
-function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-
 async function initRepo(label: string, files: Record<string, string>): Promise<{ root: string; baseSha: string }> {
-  const root = await temporaryDirectory(label);
+  const { root, head: baseSha } = await gitRepo({ label, files });
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  git(root, 'init', '-b', 'main');
-  git(root, 'config', 'user.name', 'Test');
-  git(root, 'config', 'user.email', 'test@example.com');
-  await writeFiles(root, files);
-  git(root, 'add', '.');
-  git(root, 'commit', '-m', 'base');
-  const baseSha = git(root, 'rev-parse', 'HEAD');
   return { root, baseSha };
 }
 

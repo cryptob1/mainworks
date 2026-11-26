@@ -22,6 +22,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -121,12 +122,6 @@ test('e2e:trial-container-apparmor — doctor prints a FAIL line naming AppArmor
   assert.deepEqual(await doctorLines(plain.root), [], 'no AppArmor, no line');
 });
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',
-  GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const write = async (root: string, files: Record<string, string>) => {
   for (const [path, content] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), content); }
 };
@@ -138,11 +133,8 @@ const config = (repository: string) => masterConfigSchema.parse({ version: 1, ur
 
 test('e2e:trial-container-apparmor — a trial whose nested sandbox AppArmor denies is a trial-host fault: no verdict on the head, no base failure, reported upstream once', { timeout: 300_000 }, async () => {
   const root = await temporaryDirectory('trial-apparmor-fault', tmpdir());
-  git(root, 'init', '-q', '-b', 'main');
-  await write(root, { 'package.json': JSON.stringify({ name: 'site', private: true, scripts: { build: 'node build.mjs', test: 'node -e 0' } }), 'build.mjs': 'console.log("built");\n',
-    'e2e/cases/fixture.json': JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'builds', run: 'node --eval 0' }] }) });
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root, files: { 'package.json': JSON.stringify({ name: 'site', private: true, scripts: { build: 'node build.mjs', test: 'node -e 0' } }), 'build.mjs': 'console.log("built");\n',
+    'e2e/cases/fixture.json': JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'builds', run: 'node --eval 0' }] }) } });
   git(root, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
   // The head's build starts a nested sandbox, which the trial host's AppArmor denies.
   await write(root, { 'build.mjs': `console.error(${JSON.stringify(slave)});\nprocess.exit(1);\n` });

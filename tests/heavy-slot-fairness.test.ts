@@ -1,10 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 import { acquireVerificationSlot, gateSlot, heldSlots, hostHeavyJobsDirectory, slotsDirectoryVariable, type HeldSlot } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master.js';
@@ -57,8 +58,6 @@ test('integration:heavy-slot-fairness — at limit 3 project A fills every slot 
 });
 
 const launcher = join(import.meta.dirname, 'helpers', 'heavy-job-launcher.ts');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8',
-  env: { ...process.env, GIT_AUTHOR_NAME: 'F', GIT_AUTHOR_EMAIL: 'f@example.com', GIT_COMMITTER_NAME: 'F', GIT_COMMITTER_EMAIL: 'f@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
 
 test('e2e:heavy-slot-fairness — two installs\' loops on one host submit merge trials at limit 2; both installs\' trials start before either runs a second at once, and master status lists holders from both', { timeout: 180_000 }, async () => {
   const scratch = await temporaryDirectory('heavy-slot-fairness-e2e'), data = join(scratch, 'data'), log = join(scratch, 'runs.log'), go = join(scratch, 'go');

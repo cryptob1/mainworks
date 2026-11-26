@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge, type TrialRun } from '../src/merge-writer/trial.js';
 import { dependencyImagesDirectory } from '../src/merge-writer/trial-caches.js';
@@ -24,7 +25,7 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, 
  * tests/a imports src/a; tests/b imports src/b, which imports src/shared; tests/c fails.
  */
 async function repository() {
-  const root = await temporaryDirectory('trial-caches-repo'), base = await temporaryDirectory('trial-caches-base'), ran = join(base, 'ran.log');
+  const base = await temporaryDirectory('trial-caches-base'), ran = join(base, 'ran.log');
   const files: Record<string, string> = {
     '.gitignore': 'node_modules\n',
     'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'node -e ""' } }),
@@ -46,10 +47,8 @@ process.exit(results.every(result => result.passed) ? 0 : 1);
     'tests/b.test.ts': "import { b } from '../src/b.js';\n",
     'tests/c.test.ts': '// FAIL\n',
   };
-  git(root, 'init', '-q', '-b', 'main');
-  write(root, files);
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
-  return { root, base, ran, tip: git(root, 'rev-parse', 'HEAD') };
+  const { root, head } = await gitRepo({ label: 'trial-caches-repo', files });
+  return { root, base, ran, tip: head };
 }
 const write = (root: string, files: Record<string, string>) => {
   for (const [path, content] of Object.entries(files)) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }

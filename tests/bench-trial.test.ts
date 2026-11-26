@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import {
   appendBenchResult,
@@ -25,26 +26,7 @@ import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { guideText } from '../src/guide.js';
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Fixture',
-  GIT_AUTHOR_EMAIL: 'fixture@example.com',
-  GIT_COMMITTER_NAME: 'Fixture',
-  GIT_COMMITTER_EMAIL: 'fixture@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-
-const writeFiles = (root: string, files: Record<string, string>) => {
-  for (const [path, content] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), content);
-  }
-};
-
 async function fixtureRepo() {
-  const root = await temporaryDirectory('bench-trial-repo');
   const base = await temporaryDirectory('bench-trial-base');
   const files: Record<string, string> = {
     '.gitignore': 'node_modules\n',
@@ -87,11 +69,8 @@ writeFileSync(process.argv[process.argv.indexOf('--durations') + 1], results.map
     'tests/epsilon.test.ts': '// epsilon\n',
     'tests/zeta.test.ts': '// zeta\n',
   };
-  git(root, 'init', '-q', '-b', 'main');
-  writeFiles(root, files);
-  git(root, 'add', '-A');
-  git(root, 'commit', '-qm', 'initial fixture');
-  return { root, base, tip: git(root, 'rev-parse', 'HEAD') };
+  const { root, head: tip } = await gitRepo({ label: 'bench-trial-repo', files, message: 'initial fixture' });
+  return { root, base, tip };
 }
 
 function directRunner(): ChildRun {

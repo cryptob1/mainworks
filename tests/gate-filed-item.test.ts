@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,6 +11,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { proofPassesOnBasePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3160: an item the batch gate files binds a pinning test named from its check, so its bug trial reproduces the defect on base.
 
@@ -25,7 +25,6 @@ test('unit:gate-filed-item-pins-cause — a flake, known red or diagnostic filin
 });
 
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const servePort = 20000 + ((process.pid + 11) % 20_000);
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
@@ -37,21 +36,21 @@ const proof = pinningProof(filing.key);
 async function repository() {
   const root = await temporaryDirectory('gate-filed-repo', tmpdir());
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
+  git(root, 'init', '-q', '-b', 'main');
   write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
   write('graphyard.json', JSON.stringify({ delivery: policy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${servePort}`, readySeconds: 10 } } }));
   write('serve.js', `require('node:http').createServer((q, r) => { r.writeHead(200, {'Content-Type':'application/json'}); r.end(JSON.stringify({ created: true })); }).listen(${servePort}, '127.0.0.1');\n`);
   write('e2e/cases/create-work-item.json', JSON.stringify({ id: 'create-work-item', title: 'Create a work item', target: 'any', required: false,
     steps: [{ kind: 'http', method: 'GET', path: '/', status: 200, expect: [{ path: 'created', equals: true }] }] }));
   write('test.js', `const fs = require('node:fs');\nif (fs.existsSync('tests/board.test.ts')) console.log((fs.existsSync('src/fixed') ? 'ok' : 'not ok') + ' 1 - ${proof} the board renders');\nelse console.log('ok 1 - other');\n`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', '--detach');
+  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
+  const base = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', '--detach');
   write('src/fixed', '');
   write('tests/board.test.ts', `// ${proof}\n`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'head');
-  const head = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', 'main');
+  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'head');
+  const head = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', 'main');
   return { root, base, head };
 }
 

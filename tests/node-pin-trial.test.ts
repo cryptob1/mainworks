@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { pnpmWorkspaceFiles, writePnpmWorkspace } from './helpers/pnpm-workspace-fixture.js';
 
 // GY-3207: the merge trial installs and builds a checkout under the Node major it declares. The
@@ -15,12 +15,6 @@ import { pnpmWorkspaceFiles, writePnpmWorkspace } from './helpers/pnpm-workspace
 // the host's npm cache, so later runs reuse both.
 
 const pin = process.versions.node.startsWith('22.') ? 24 : 22;
-const identity = {
-  GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',
-  GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const sharedCache = process.env.npm_config_cache || join(homedir(), '.npm');
 // The trial's children run here directly, not in the trial container, with the host's npm cache.
 const run: ChildRun = (command, args, { wrapper: _wrapper, ...options } = {}) =>
@@ -33,10 +27,7 @@ const pinned = {
 
 test(`integration:node-pin-trial — a pnpm workspace with engine-strict=true and engines.node ${pin} installs and builds in the merge trial under node ${pin}, not the running node ${process.version}`, async () => {
   const root = await temporaryDirectory('node-pin-trial', tmpdir());
-  git(root, 'init', '-q', '-b', 'main');
-  writePnpmWorkspace(root, pinned);
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root, files: { ...pnpmWorkspaceFiles, ...pinned } });
   writePnpmWorkspace(root, { ...pinned, 'packages/shared/build.mjs': pnpmWorkspaceFiles['packages/shared/build.mjs']! + records });
   git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'change');
   const head = git(root, 'rev-parse', 'HEAD');

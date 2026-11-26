@@ -14,21 +14,16 @@ import type { ServeLanding } from '../src/merge-writer/serve-revert.js';
 import type { Work } from '../src/model.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 const start = Date.parse('2030-06-01T00:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {}, e2e: [] } as unknown as MergeTrialRun;
 
 async function gateWorld(label: string, pushVerified: (commit: string, origin: string, coordinator: string) => Promise<void>) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'base'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
+  const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
+  const { origin: bare, head: verified } = await gitRepo({ root: pusher, label, files: { 'graphyard.json': '{}' }, origin: true }), origin = bare!;
   const commit = async (file: string, content: string, message: string) => {
     await writeFile(join(pusher, file), content);
     git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', message); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
@@ -41,7 +36,7 @@ async function gateWorld(label: string, pushVerified: (commit: string, origin: s
   const reads: MergeWriterReads = {
     baseBranch: 'main', now: () => start, cores: 2, parallel: 1,
     fetch: async () => { git(coordinator, 'fetch', '-q', 'origin', 'main'); return git(coordinator, 'rev-parse', 'origin/main'); },
-    git: async (args, extra) => execFileSync('git', ['-C', coordinator, ...args], { encoding: 'utf8', env: { ...env, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', coordinator, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', ...extra } }),
     merge: async () => { throw new Error('unused'); },
     trial: async () => passing,
     push: async () => 'pushed',

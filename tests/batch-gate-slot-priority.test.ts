@@ -13,6 +13,7 @@ import { TrialHeatError } from '../src/merge-writer/trial-load.js';
 import { serializeTrialError } from '../src/merge-writer/trial-run.js';
 import { acquireVerificationSlot, projectVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3803: the batch gate takes the next freed heavy-job slot ahead of merge trials, and a batch
 // gate whose run fails as slowed by heat reruns only its failed files on the next cycle.
@@ -22,7 +23,6 @@ const start = Date.parse('2030-07-01T00:00:00Z');
 const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(condition: () => boolean, what: string, timeoutMs = 15_000) {
   for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }

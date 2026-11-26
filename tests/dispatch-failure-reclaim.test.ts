@@ -15,6 +15,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { branchHolders, reclaimBranchHolders } from '../src/worktree-holders.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-1078: GY-859 waited 5.4 hours through about forty failed dispatches because a session worktree
 // left in an interactive rebase still held its branch, git lists such a worktree as detached so
@@ -22,16 +23,12 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // fresh epoch every cycle.
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const run = promisify(execFile);
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x'), workerToken = 'worker-token-'.padEnd(40, 'x');
 
 /** A repository with a GitHub origin, one commit on main and two on the item's branch. */
 async function repository(branch: string) {
-  const root = await temporaryDirectory('gy-1078-repo');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  const { root } = await gitRepo({ label: 'gy-1078-repo', files: { 'a.txt': 'one\n' }, message: 'one' });
   git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  git(root, 'config', 'user.email', 'test@example.com'); git(root, 'config', 'user.name', 'Test');
-  await writeFile(join(root, 'a.txt'), 'one\n'); git(root, 'add', 'a.txt'); git(root, 'commit', '-q', '-m', 'one');
   git(root, 'branch', branch);
   return root;
 }

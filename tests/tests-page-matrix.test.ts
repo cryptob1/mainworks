@@ -1,6 +1,5 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,6 +14,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import type { Principal, Work } from '../src/model.js';
 import { MatrixView, TestsView, type MatrixFilter } from '../web/pages/tests.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3278 AC-3: the Tests page's default view is the environment matrix — every E2E case, grouped
 // by its first tag, with its latest result in each place it runs (Trial, Main, Served, Nightly),
@@ -33,8 +33,7 @@ before(async () => {
   checkout = await temporaryDirectory('tests-page-matrix-main');
   await mkdir(join(checkout, 'e2e/cases'), { recursive: true });
   for (const id of ['case-a', 'case-b']) await writeFile(join(checkout, `e2e/cases/${id}.json`), '{}');
-  const git = (...args: string[]) => execFileSync('git', ['-C', checkout, '-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { stdio: 'pipe' });
-  git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-q', '-m', 'main'); git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  (await gitRepo({ root: checkout, files: {}, message: 'main' })).git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   engine.gitRunner = gitRunnerFor(checkout);
   process.env.GRAPHYARD_REPOSITORY_ROOT = checkout;
   http = server(engine, [{ ...operator, token }]);

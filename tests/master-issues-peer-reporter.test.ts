@@ -1,8 +1,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { masterCredentialMask, peerTokenDirectory, preparePeerExchange, sessionMountNamespaceWorks } from '../src/master/confinement.js';
@@ -19,6 +18,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { expandTypedCommand } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { Principal } from '../src/model.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3385: `principal add` needs a host write the confined Master session is refused (EROFS on the
 // install's apply lock), so no install could peer. `master peer issue --root DIR` mints the peer's
@@ -79,11 +79,7 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
       return result;
     };
     const root = await temporaryDirectory(`peer-issue-${name}`, scratch);
-    const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], { encoding: 'utf8' }).trim();
-    git('init', '-q', '--initial-branch=main');
-    git('remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
-    await writeFile(join(root, 'README.md'), 'Fixture.\n');
-    git('add', '.'); git('commit', '-qm', 'base');
+    (await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } })).git('remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
     await setupMaster(root, { url, token: token(coordinator), cliPath: cli, hostId: 'fixture-host', herdrWorkspace: `w-${name}`,
       credentialDirectory: join(process.env.GRAPHYARD_CONFIG_HOME!, name), run: { worktreeRoot: await temporaryDirectory(`peer-issue-${name}-worktrees`, scratch) } });
     /** The real `mainworks master peer|send` subcommand, as this install's Master runs it in its own session. */

@@ -1,10 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 import { sessionSlotsGrant } from '../src/master/harness.js';
 import { gateSlot, heavyCommand, heavyJobLimit, heldSlots, hostHeavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable, verificationBin, verificationEnvironment, waitStep, withHeavyJob } from '../src/master/verification-slots.js';
 
@@ -17,8 +18,6 @@ const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 const until = async (condition: () => boolean, what: string, timeoutMs = 60_000) => {
   for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(25); }
 };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8',
-  env: { ...process.env, GIT_AUTHOR_NAME: 'F', GIT_AUTHOR_EMAIL: 'f@example.com', GIT_COMMITTER_NAME: 'F', GIT_COMMITTER_EMAIL: 'f@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
 
 /** One host: a data directory two fixture installs share, each install its own repository, managed root and project. */
 async function host() {

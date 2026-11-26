@@ -1,7 +1,6 @@
 import { freePort } from '../src/cli/test-isolation.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +8,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -25,7 +25,6 @@ import type { Principal, Work } from '../src/model.js';
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
 const coordinator: Principal = { id: 'coordinator', role: 'coordinator' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 test('integration:merge-current-candidate — typed rework and replacement ownership stop pending trials; unchanged candidates land', { timeout: 600_000 }, async () => {
   const root = await temporaryDirectory('current-candidate');
@@ -41,11 +40,8 @@ test('integration:merge-current-candidate — typed rework and replacement owner
     setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
     let branchNumber = 0;
     for (const mode of ['pending', 'unchanged', 'review-held'] as const) {
-      const directory = join(root, mode), origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout');
-      await mkdir(directory);
-      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-      execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-      git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
+      const directory = join(root, mode);
+      const { root: checkout, origin = '' } = await gitRepo({ root: join(directory, 'checkout'), origin: true });
       const write = async (path: string, value: string) => { await mkdir(join(checkout, path, '..'), { recursive: true }); await writeFile(join(checkout, path), value); };
       await write('package.json', JSON.stringify({ scripts: { build: 'node --eval 0', test: 'node --test --test-reporter=tap proof.cjs' } }));
       await write('proof.cjs', `const { test } = require('node:test');
@@ -57,7 +53,7 @@ test('unit:declared', () => assert.ok(!(fs.existsSync('change-0.txt') && fs.exis
       await write('serve.cjs', `require('node:http').createServer((q,s)=>s.end('ok')).listen(${servePort}, '127.0.0.1');\n`);
       await write('graphyard.json', JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.cjs', url: `http://127.0.0.1:${servePort}`, readySeconds: 1 } } }));
       await write('e2e/cases/fixture.json', JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'served head command', run: 'node --eval 0' }] }));
-      git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
+      git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', '-u', 'origin', 'main');
       const baseTip = git(origin, 'rev-parse', 'main');
       engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';
       const works: Work[] = [];

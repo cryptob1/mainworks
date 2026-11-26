@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { boundedChildRun, command, git } from '../benchmarks/hard-math/process.js';
 import { ChildProcessError } from '../src/child-runner.js';
 import { mergeWriterReads, mergeWriterStep, mergeWriterIdle } from '../src/daemon/cycle-merge-writer.js';
@@ -42,18 +42,13 @@ test('hard math bounded adapter retains native nonzero, signal and timeout error
 });
 
 test('hard math real Git conflict through the daemon bounded adapter records native refusal and requests rework',async()=>{
-  const root=await temporaryDirectory('hard-math-process-conflict'),remote=await temporaryDirectory('hard-math-process-remote');
-  await command('git',['init','-q','--bare',remote]);
-  await git(root,'init','-q','-b','main');
-  await git(root,'config','user.name','Controlled fixture');await git(root,'config','user.email','fixture@example.invalid');
-  await writeFile(join(root,'shared.txt'),'initial\n');await git(root,'add','.');await git(root,'commit','-qm','initial');
-  const base=await git(root,'rev-parse','HEAD');
+  const {root,origin,head:base}=await gitRepo({label:'hard-math-process-conflict',files:{'shared.txt':'initial\n'},message:'initial',origin:true}),remote=origin;
   await git(root,'checkout','-qb','component');
   await writeFile(join(root,'shared.txt'),'component edit\n');await git(root,'commit','-qam','component');
   const head=await git(root,'rev-parse','HEAD');
   await git(root,'checkout','-q','main');
   await writeFile(join(root,'shared.txt'),'concurrent main edit\n');await git(root,'commit','-qam','main');
-  await git(root,'remote','add','origin',remote);await git(root,'push','-q','origin','main');
+  await git(root,'push','-q','origin','main');
   const tip=await git(root,'rev-parse','HEAD'),at=new Date().toISOString();
   const config=masterConfigSchema.parse({version:1,url:'http://unused',credentialFile:'/fixture/coordinator.token',cliPath:'/bin/graphyard',repository:'scratch/hard-math',baseBranch:'main',githubAppId:0,hostId:'fixture',masterAgentName:'fixture-master',workers:[]});
   const item={id:'component',key:'GY-1',title:'Component',type:'chore',description:'',priority:1,dependencies:[],criteria:[{id:'AC-1',text:'Works',proofs:['unit:component']}],policy:{checks:['test'],review:true},policyRevision:1,stage:'build',ready:true,epoch:1,lease:null,workspaces:[],submission:{epoch:1,pr:1},candidate:{sha:head,baseSha:base,pr:1,branch:'component',author:'worker'},reworkRequested:false,scenarioRequirements:[],evidence:[],violations:[],createdAt:at,updatedAt:at,stageEnteredAt:at,

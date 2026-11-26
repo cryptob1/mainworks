@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { acquireVerificationSlot, gateSlot, heavyJobBudget, heavyJobLimit, heldSlots, hostSlot, hostsWithSlots, readMachines, slotsDirectoryVariable, takeHostSlot, workerVerificationLabel, writeMachines, type HeldSlot, type Machine } from '../src/master/verification-slots.js';
 import { HostBusyError, runShardsOnHosts, type PlacedHost } from '../src/merge-writer/remote-shards.js';
 import { budgetLine, machineLine } from '../src/model/machine-load.js';
@@ -149,8 +150,7 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
   process.env[slotsDirectoryVariable] = directory;
   try {
     mkdirSync(root);
-    const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-    git('init', '-q', '-b', 'main');
+    const { git } = await gitRepo({ root });
     git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'one');
     const head = git('rev-parse', 'HEAD');
     git('branch', 'graphyard/gy-1');

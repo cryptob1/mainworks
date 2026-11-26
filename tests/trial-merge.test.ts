@@ -12,6 +12,7 @@ import { credentialTrialVariable, groupTestFiles, mergeSubject, runnerDiagnostic
 import { listTestFiles } from '../scripts/ci-tests.mjs';
 import { checkoutKinds, sessionCheckoutName } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { processPidNamespace, processStartTicks, tempOwnerMarker, writeTempOwner } from '../src/tmp-reclaim.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { evaluate } from '../src/model-boundary/gates.js';
@@ -40,11 +41,8 @@ const installedModules = resolve(dirname(createRequire(import.meta.url).resolve(
 
 async function repository(files: Record<string, string>) {
   const root = await temporaryDirectory('trial-merge-repo', tmpdir());
-  gitIn(root, 'init', '-q', '-b', 'main');
+  const { head: base } = await gitRepo({ root, files });
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  for (const [path, content] of Object.entries(files)) write(path, content);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
   /** A branch off base with the given files, left as a commit (no branch ref survives, so refs/heads holds main only). */
   const commitOnBase = (files: Record<string, string>, message: string) => {
     gitIn(root, 'checkout', '-q', '--detach', base);
@@ -756,9 +754,7 @@ nodeTest('unit:trial-checkout-reclaim-durable — a crashed checkout that left t
 test('unit:trial-checkout-reclaim-soak — a simulated day of real trials: crashed trials\' checkouts in the shared on-disk trials folder are taken back by the next trial, a live owner\'s never, a dying owner\'s only after it dies, the folder stays bounded, and nothing lands in a temporary root', { timeout: 300_000 }, async () => {
   // A repository the merge does not make a Node package builds and selects nothing: each trial is its real checkout, made and removed.
   const repo = await temporaryDirectory('soak-trial-repo', tmpdir());
-  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-  git('init', '-q', '-b', 'main'); writeFileSync(join(repo, 'a.txt'), 'one\n'); git('add', '-A'); git('commit', '-q', '-m', 'base');
-  const mergeSha = git('rev-parse', 'HEAD');
+  const { head: mergeSha } = await gitRepo({ root: repo, files: { 'a.txt': 'one\n' } });
   const sessions = await temporaryDirectory('soak-trial-sessions', tmpdir()), clean = await temporaryDirectory('soak-trial-tmp', tmpdir());
   // Shared temporary roots can hold a stray .git; the real trial checkout root lives in the home.
   const home = await temporaryDirectory('soak-trial-home', homedir());

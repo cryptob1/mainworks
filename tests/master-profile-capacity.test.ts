@@ -1,12 +1,12 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -41,10 +41,8 @@ before(async () => {
   http = server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })));
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'Fixture.\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+  const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const credentials = await temporaryDirectory('credentials', scratch);
   await setupMaster(root, { url, token: token(coordinator), cliPath: launcher, credentialDirectory: credentials, run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
   // As on the host: hand-configured existing-mode profiles beside the one launch profile the loop copies.

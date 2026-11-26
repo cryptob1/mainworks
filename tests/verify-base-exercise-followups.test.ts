@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { baseTree, selfVerification, testSide, verifyWorkingTree } from '../src/cli/verify.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-1240: the follow-ups from GY-1174's review. The base exercise of `mainworks verify` keeps its
 // scratch tree inside the worktree, records every base run it does not make as indeterminate with
@@ -13,17 +13,11 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // HEAD, treats nested tests and fixtures as test-side, and lets a worker declare a proof that
 // guards preserved behaviour, which the producer's exercise rule (GY-135) accepts.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 async function write(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
 }
 async function repository(label: string, base: Record<string, string>, change: Record<string, string>) {
-  const root = join(await temporaryDirectory(label), 'work');
-  await mkdir(root, { recursive: true });
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'config', 'user.email', 't@test'); git(root, 'config', 'user.name', 'T');
-  await write(root, base);
-  git(root, 'add', '.'); git(root, 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ root: join(await temporaryDirectory(label), 'work'), files: base });
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
   git(root, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
   await write(root, change);

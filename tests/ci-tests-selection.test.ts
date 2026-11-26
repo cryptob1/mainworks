@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { changedDeclarations, dependencyMap, listTestFiles, selectAffected } from '../scripts/ci-tests.mjs';
 import { replay } from '../scripts/selection-replay.mjs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3192: the trial's selection picked a median 91% of the test files for a small change, and 35% of
 // merges ran everything: any path a test or helper named in text was followed transitively, and a
@@ -14,7 +14,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // file outside the map selects the tests importing or naming it; with a base, a change selects the
 // tests needing the declarations it touches.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 async function write(root: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
 }
@@ -59,8 +58,7 @@ test('unit:tests/ci-tests-selection.test.ts — a static import, a literal dynam
 test('unit:tests/ci-tests-selection.test.ts — against a base, a change selects only the tests needing the declarations it touches', async () => {
   const root = await temporaryDirectory('selection-base');
   try {
-    await write(root, project);
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+    await gitRepo({ root, files: project });
     const tests = listTestFiles(root), map = dependencyMap(root, tests);
     const pick = async (files: Record<string, string>) => {
       await write(root, files);
@@ -86,7 +84,7 @@ test('unit:tests/ci-tests-selection.test.ts — the replay reports files and tes
     // The old selector: every change runs every test.
     await write(root, { ...project, 'scripts/ci-tests.mjs': "export const dependencyMap = () => new Map();\nexport const selectAffected = (changed, map, tests) => ({ mode: 'full', reason: 'old', files: tests });\n",
       'tests/helpers/timing-baseline.json': JSON.stringify({ files: { 'tests/static.test.ts': 60_000, 'tests/dynamic.test.ts': 120_000, 'tests/data.test.ts': 60_000, 'tests/names.test.ts': 60_000, 'tests/method.test.ts': 60_000 } }) });
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+    await gitRepo({ root, files: {} });
     const old = git(root, 'rev-parse', 'HEAD').trim();
     git(root, 'rm', '-q', 'tests/helpers/timing-baseline.json'); git(root, 'commit', '-qm', 'drop the baseline');
     const merge = async (key: string, files: Record<string, string>) => {

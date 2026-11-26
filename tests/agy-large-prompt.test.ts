@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { loadMasterConfig, setupMaster } from '../src/master.js';
@@ -80,14 +81,10 @@ if (process.env.AGY_REVIEW_HEAD && process.env.AGY_REVIEW_BASE) {
 `, { mode: 0o755 });
 
   // A git repository with a very large diff (> 150 KiB across a rename sweep).
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main');
-  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const lines = Array.from({ length: 2400 }, (_, i) => `export const graphyardSymbol_${i} = "graphyard-value-${i}-${'a'.repeat(40)}";`).join('\n') + '\n';
-  await writeFile(join(root, 'README.md'), 'Named spec file.\n');
-  await writeFile(join(root, 'sweep.ts'), lines);
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
-  base = git('rev-parse', 'HEAD');
+  const repo = await gitRepo({ root, files: { 'README.md': 'Named spec file.\n', 'sweep.ts': lines } }), git = repo.git;
+  base = repo.head;
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   git('update-ref', 'refs/remotes/origin/main', base);
   await writeFile(join(root, 'a-marker.ts'), 'export const marker = "agy-large-diff-marker";\n');
   const renamed = lines.replaceAll('graphyard', 'mainworks');

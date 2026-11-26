@@ -2,24 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { leftToCiRun, selfVerification, verifyWorkingTree } from '../src/cli/verify.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { submissionPolicyRule } from '../src/master/harness.js';
 import { environmentKinds } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 /** A throwaway git checkout with one commit, so verify has a HEAD to bind its record to. */
 async function gitCheckout(root: string) {
-  const workdir = join(root, 'work');
-  await mkdir(workdir, { recursive: true });
-  execFileSync('git', ['init', '-q', workdir]);
-  execFileSync('git', ['-C', workdir, 'config', 'user.email', 't@test'], { stdio: 'ignore' });
-  execFileSync('git', ['-C', workdir, 'config', 'user.name', 'T'], { stdio: 'ignore' });
-  await writeFile(join(workdir, 'README.md'), '# Test\n');
-  execFileSync('git', ['-C', workdir, 'add', '.']);
-  execFileSync('git', ['-C', workdir, 'commit', '-q', '-m', 'init']);
-  return workdir;
+  return (await gitRepo({ root: join(root, 'work'), files: { 'README.md': '# Test\n' }, message: 'init' })).root;
 }
 
 test('unit:verify-sandbox-left-to-ci — a criterion\'s own failing test blocks, a sandbox-only crash around passing cases is left to CI', async () => {
@@ -51,8 +43,7 @@ import assert from 'node:assert/strict';
 test('unit:crashed-own-failure fails on its own case', () => { assert.equal(1, 2); });
 after(() => { throw new Error('nested-sandbox probe crashes the run around the proof'); });
 `);
-  execFileSync('git', ['-C', workdir, 'add', '.']);
-  execFileSync('git', ['-C', workdir, 'commit', '-q', '-m', 'proofs']);
+  git(workdir, 'add', '.'); git(workdir, 'commit', '-q', '-m', 'proofs');
 
   const record = await verifyWorkingTree({
     key: 'GY-TEST',

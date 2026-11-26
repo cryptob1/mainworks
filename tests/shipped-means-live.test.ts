@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,17 +8,14 @@ import { parseRepositoryConfig } from '../src/model-boundary/documentation.js';
 import { liveRelease } from '../src/deploy-watch.js';
 import { shippedCounts } from '../src/model/board.js';
 import type { Work } from '../src/model/work.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3452: shipped means live. Of the week's merges, only those the live commit contains are
 // shipped; the rest are waiting to go live. An install that deploys elsewhere (lumina-investor on
 // Railway) declares app.healthUrl in graphyard.json; Mainworks reads the live commit from it.
 
 test('integration:shipped-means-live — shipped counts only merges the live commit contains; app.healthUrl names that commit, and merges it contains become shipped', async () => {
-  const root = await temporaryDirectory('shipped-live');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main');
-  git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'test');
+  const { root, git } = await gitRepo({ label: 'shipped-live' });
   const commit = (message: string) => { git('commit', '-q', '--allow-empty', '-m', message); return git('rev-parse', 'HEAD'); };
   commit('base');
   const merges = ['GY-1', 'GY-2', 'GY-3'].map(key => ({ key, sha: commit(key) }));

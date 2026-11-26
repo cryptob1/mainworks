@@ -7,13 +7,13 @@ import { runServeRevert, type ServeRevertPorts } from '../src/merge-writer/serve
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3881 AC-2: reverting the newest landing takes back out only that landing. A plain revert
 // nothing owns, or a direct landing, that sits before the merge on main stays on main: the merge's
 // "before" is its own first parent, never the previous owned landing.
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const passTrial = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {} } as unknown as MergeTrialRun;
 
 const item = (key: string, mergeSha: string) => ({

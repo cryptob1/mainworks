@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sessionBoot } from '../src/remote-session.js';
 import { findNetworkSpawns } from './architecture.test.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3734: src/remote-session.ts unpacked local git bundles with `git('fetch', ...)` in both its
 // container boot script and its host-side mirror, opening the git-network-door in
@@ -14,7 +15,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // git fetch.
 
 const repo = fileURLToPath(new URL('..', import.meta.url));
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
 
 test('unit:architecture-pinned — src/remote-session.ts unpacks local bundles without git fetch, and round-trips work and answer bundles', async () => {
   const source = await readFile(join(repo, 'src/remote-session.ts'), 'utf8');
@@ -28,14 +28,7 @@ test('unit:architecture-pinned — src/remote-session.ts unpacks local bundles w
   const host = join(dir, 'host');
   const worktree = join(dir, 'worktree');
   const home = join(dir, 'home');
-  await mkdir(origin, { recursive: true });
-  git(origin, 'init', '-q', '-b', 'main');
-  git(origin, 'config', 'user.name', 'Test');
-  git(origin, 'config', 'user.email', 'test@example.com');
-  await writeFile(join(origin, 'base.txt'), 'base\n');
-  git(origin, 'add', 'base.txt');
-  git(origin, 'commit', '-qm', 'base');
-  const base = git(origin, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root: origin, files: { 'base.txt': 'base\n' } });
 
   git(dir, 'clone', '-q', origin, host);
   git(host, 'config', 'user.name', 'Test');

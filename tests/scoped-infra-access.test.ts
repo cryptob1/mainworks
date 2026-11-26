@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -15,6 +15,7 @@ import { infraRefusal } from '../src/infra-access.js';
 import { SetupView, type InfraActionRow } from '../web/pages/setup.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3515: an owner-approved infra task gives the confined master a credential limited to one
 // repository and one hosting project. With it the master creates and pushes the repository and
@@ -58,12 +59,7 @@ async function infraInstall(label: string) {
   const http = server(engine, [{ id: 'owner', role: 'admin', sessionKind: 'human', token: owner }, { id: 'master', role: 'admin', sessionKind: 'ai', token: master }], { env });
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-  await mkdir(checkout);
-  const git = (...args: string[]) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8' });
-  git('init', '-q', '-b', 'main');
-  await writeFile(join(checkout, '.gitignore'), '.graphyard/\n');
-  await writeFile(join(checkout, 'README.md'), '# new app\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'first');
+  const { git } = await gitRepo({ root: checkout, files: { '.gitignore': '.graphyard/\n', 'README.md': '# new app\n' }, message: 'first' });
   // Everything the CLI prints and the server logs, to show the credential is in none of it.
   const output: string[] = [];
   const cli = async (token: string, ...args: string[]) => {

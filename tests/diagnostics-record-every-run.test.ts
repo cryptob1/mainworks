@@ -4,7 +4,6 @@
 // names diagnostics older than 30 hours.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { bootstrapGate, diagnosticsAttention, gateRecordPath, gateSummary, readGateRecord, runDiagnostics, writeGateRecord } from '../src/batch-gate.js';
@@ -17,21 +16,16 @@ import { TrialRunnerError } from '../src/merge-writer/trial.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { onboardingCase, type OnboardingRun } from '../src/onboarding-time.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 const own = 'integration:diagnostics-record-every-run';
 const repository = 'owner/project';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
 /** A checkout whose main holds the onboarding case; the gate record says main is verified and the diagnostics are due. */
 async function fixture(label: string) {
-  const base = await temporaryDirectory(label), origin = join(base, 'origin.git'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, checkout);
-  await mkdir(join(checkout, 'e2e', 'cases'), { recursive: true });
-  for (const id of ['smoke', onboardingCase]) await writeFile(join(checkout, 'e2e', 'cases', `${id}.json`), '{}');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-q', '-m', 'base'); git(checkout, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(checkout, 'rev-parse', 'HEAD');
+  const base = await temporaryDirectory(label), checkout = join(base, 'checkout');
+  const { head: verified } = await gitRepo({ root: checkout, label, files: { 'e2e/cases/smoke.json': '{}', [`e2e/cases/${onboardingCase}.json`]: '{}' }, origin: true });
   await writeGateRecord(gateRecordPath(checkout), { ...bootstrapGate(repository, verified), diagnosticsAt: '2026-11-18T04:14:18.630Z' });
   return { checkout, verified };
 }

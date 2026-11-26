@@ -10,22 +10,17 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { removeAttemptWorktree, worktreesDirectory } from '../src/master/worktrees.js';
 import type { Work } from '../src/model.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3191, GY-3691: a done item's ended-attempt worktree is removed within the cycle, even when the
 // attempt left modified and untracked files; an open item's is kept.
 
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
 const hour = 60 * 60 * 1000;
 
 test('unit:tests/finished-worktree-removal.test.ts — a done item\'s dirty worktree goes within the cycle, however recently its attempt ended; an open item\'s stays', async () => {
-  const root = await temporaryDirectory('finished-worktree');
-  git(root, 'init', '-q', '-b', 'main');
-  writeFileSync(join(root, 'file.txt'), 'base\n');
-  git(root, 'add', 'file.txt');
-  git(root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ label: 'finished-worktree', files: { 'file.txt': 'base\n' } });
   mkdirSync(worktreesDirectory(root), { recursive: true });
   const now = Date.parse('2030-04-02T12:00:00Z');
   const item = (key: string, stage: string, endedHoursAgo: number) => {
@@ -58,11 +53,7 @@ test('unit:tests/finished-worktree-removal.test.ts — a done item\'s dirty work
 // goes within the cycle, a tree newer than the snapshot stays (the snapshot may predate the item that
 // just claimed it), and so does every tree of an item the snapshot holds — that item's own pass decides those.
 test('unit:tests/finished-worktree-removal.test.ts — a settled delivery\'s leftover worktree is reclaimed from the disk within the cycle', async () => {
-  const root = await temporaryDirectory('settled-worktree');
-  git(root, 'init', '-q', '-b', 'main');
-  writeFileSync(join(root, 'file.txt'), 'base\n');
-  git(root, 'add', 'file.txt');
-  git(root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ label: 'settled-worktree', files: { 'file.txt': 'base\n' } });
   mkdirSync(worktreesDirectory(root), { recursive: true });
   const now = Date.now();
   const tree = (name: string, changedHoursAgo: number) => {
@@ -101,11 +92,7 @@ test('unit:tests/finished-worktree-removal.test.ts — a settled delivery\'s lef
 // GY-3691 review: an ended attempt whose dirty tree Git refused to remove three times while its item
 // stayed on that epoch is still removed, forced, once a later attempt holds the item.
 test('unit:tests/finished-worktree-removal.test.ts — an earlier attempt\'s dirty tree refused three times while current goes once a later attempt holds the item', async () => {
-  const root = await temporaryDirectory('earlier-attempt');
-  git(root, 'init', '-q', '-b', 'main');
-  writeFileSync(join(root, 'file.txt'), 'base\n');
-  git(root, 'add', 'file.txt');
-  git(root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ label: 'earlier-attempt', files: { 'file.txt': 'base\n' } });
   mkdirSync(worktreesDirectory(root), { recursive: true });
   const path = join(worktreesDirectory(root), 'GY-5-1');
   git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-5-1', path);

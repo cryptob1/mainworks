@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
@@ -11,6 +10,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 const herdrStub = (reportedAgent: string, status: string, argv: string[], screen = `${reportedAgent} ready\n`) => (_command: string, args: string[]) => {
   const json = (result: unknown) => JSON.stringify({ result });
@@ -48,7 +48,6 @@ test('integration:runtime-kind-basename — observeStart matches runtime kind by
 test('e2e:runtime-kind-basename — on a running test install a session launched by absolute path reads as started when Herdr reports its basename', async () => {
   const root = await temporaryDirectory('runtime-kind-basename-repo');
   const installDir = await temporaryDirectory('runtime-kind-basename-install');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], { encoding: 'utf8' }).trim();
   const coordinator: Principal = { id: 'master', role: 'coordinator' };
   const token = `coordinator-${'t'.repeat(32)}`;
   let store: Store | null = null;
@@ -62,10 +61,7 @@ test('e2e:runtime-kind-basename — on a running test install a session launched
     await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
 
-    writeFileSync(join(root, '.gitignore'), '.mainworks/\n');
-    git('init', '-q', '-b', 'main');
-    git('add', '.');
-    git('commit', '-qm', 'base');
+    const { git } = await gitRepo({ root, files: { '.gitignore': '.mainworks/\n' } });
     git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
 
     await setupMaster(root, {

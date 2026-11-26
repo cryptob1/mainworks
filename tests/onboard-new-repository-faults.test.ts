@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Principal, Work } from '../src/model.js';
@@ -23,6 +23,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3336: three faults that left the lumina-investor install failing every cycle. (1) A remote
 // that refuses the fetch of the base branch — a SAML organization that has not authorised the
@@ -36,7 +37,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const repository = 'inspecthoa/lumina-investor';
 
 /** The remote's refusal, as git's fetch prints it on stderr for an unauthorised SAML key. */
@@ -46,16 +46,10 @@ const samlRefusal = () => Object.assign(
 
 /** A bare origin holding one main commit — a repository Mainworks has never gated, with no e2e/cases — and its coordinator checkout. */
 async function freshRepository(label: string, files: Record<string, string> = { 'graphyard.json': '{}\n', 'package.json': '{"name":"lumina-investor"}\n' }) {
-  const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
-  git(pusher, 'add', '.');
-  git(pusher, 'commit', '-q', '-m', 'base');
-  git(pusher, 'push', '-q', 'origin', 'HEAD:main');
+  const base = await temporaryDirectory(label), coordinator = join(base, 'coordinator');
+  const { origin, head: tip } = await gitRepo({ root: join(base, 'pusher'), label, files, origin: true });
   git(base, 'clone', '-q', origin, coordinator);
-  return { base, coordinator, tip: git(pusher, 'rev-parse', 'HEAD'), cleanup: async () => { await rm(base, { recursive: true, force: true }); } };
+  return { base, coordinator, tip, cleanup: async () => { await rm(base, { recursive: true, force: true }); } };
 }
 
 /** The merge writer's reads over the coordinator checkout, with a passing trial and a fetch that can be refused. */

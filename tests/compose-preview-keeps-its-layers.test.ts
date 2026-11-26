@@ -9,6 +9,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { openPreview } from '../src/merge-writer/preview.js';
 import { keptBaseBuild, keptBaseBuildMarker } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3679: a preview reuses what was already built. A static preview serves the trial's kept built
 // tree of its commit, with no second checkout or build. A Compose preview's build carries no label
@@ -51,15 +52,8 @@ test(`${proof} — a static preview of a commit the trial built serves that buil
   const root = await realpath(await temporaryDirectory('preview-kept-tree')); made.push(root);
   const repo = join(root, 'repo'), base = join(root, 'worktrees');
   await mkdir(base);
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
-  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
-  git(repo, 'config', 'user.email', 't@example.com'); git(repo, 'config', 'user.name', 'T');
-  await mkdir(join(repo, 'site')); await mkdir(join(repo, 'e2e', 'cases'), { recursive: true });
-  await writeFile(join(repo, 'site', 'index.html'), '<h1>Play</h1>');
-  await writeFile(join(repo, 'e2e', 'cases', 'home.json'), JSON.stringify({ id: 'home', title: 'The home page answers', tags: ['api'], target: 'any', required: true,
-    steps: [{ kind: 'http', name: 'read /', method: 'GET', path: '/', status: 200, expect: [] }] }));
-  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'site');
-  const sha = git(repo, 'rev-parse', 'HEAD');
+  const { head: sha } = await gitRepo({ root: repo, message: 'site', files: { 'site/index.html': '<h1>Play</h1>', 'e2e/cases/home.json': JSON.stringify({ id: 'home', title: 'The home page answers', tags: ['api'], target: 'any', required: true,
+    steps: [{ kind: 'http', name: 'read /', method: 'GET', path: '/', status: 200, expect: [] }] }) } });
   // The trial's base pass left this commit's built tree: checked out, its output built, marked built.
   const tree = keptBaseBuild(base, sha);
   git(repo, 'worktree', 'add', '-q', '--detach', tree, sha);

@@ -6,6 +6,7 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -110,10 +111,7 @@ test(`${proof} — each environment cause is cleared by the loop within two cycl
 
 test(`${proof} — a served CLI release whose commit stamp names another commit is restamped to the commit checked out in it, and the loop logs it once`, async () => {
   const directory = await temporaryDirectory('env-blockers-install');
-  const source = await temporaryDirectory('env-blockers-source');
-  execFileSync('git', ['init', '-q', source]);
-  execFileSync('git', ['-C', source, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'release']);
-  const commit = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const { root: source, head: commit } = await gitRepo({ label: 'env-blockers-source', files: {}, message: 'release' });
   const release = cliReleasePath(directory, commit);
   await mkdir(join(release, '..'), { recursive: true });
   execFileSync('git', ['-C', source, 'worktree', 'add', '-q', '--detach', release, commit]);

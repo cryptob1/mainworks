@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
@@ -15,6 +14,7 @@ import { landabilityRefusals } from '../src/model/landability.js';
 import { proofPreview } from '../src/model/coordination.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -29,7 +29,6 @@ const worker: Principal = { id: 'implementer', role: 'worker', sessionKind: 'ai'
 const master = { id: 'graphyard-master-docs-operator', role: 'operator-agent', sessionKind: 'ai', capabilities: [],
   scope: { repositories: [repository], workItems: ['*'] } } as unknown as Principal;
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const id = () => randomUUID();
 let store: Store, engine: Engine, fixtureRoot: string, checkout: string;
 
@@ -44,12 +43,7 @@ async function commit(cwd: string, files: Record<string, string>, message: strin
 
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('docs-attestation-follows-content'));
-  const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await commit(checkout, { 'src/feature.ts': 'export const feature = 1;\n', 'docs/guide.md': '# Guide\n' }, 'base');
-  git(checkout, 'push', '-q', 'origin', 'main');
+  ({ root: checkout } = await gitRepo({ root: join(fixtureRoot, 'checkout'), files: { 'src/feature.ts': 'export const feature = 1;\n', 'docs/guide.md': '# Guide\n' }, origin: true }));
   store = await withDatabase('docs-attestation-follows-content'); await store.init();
   engine = new Engine(store, 120, repository);
   engine.operatorAuthorizer = async (_db, _now, actor) => actor;
@@ -61,7 +55,6 @@ after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fi
 async function branch(name: string, guide: string) {
   const worktree = join(fixtureRoot, name.replaceAll('/', '-'));
   git(checkout, 'worktree', 'add', '-q', '-b', name, worktree, 'refs/remotes/origin/main');
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   const head = await commit(worktree, { 'src/feature.ts': `export const feature = ${id().length};\n`, 'docs/guide.md': guide }, 'the change');
   return { worktree, head };
 }

@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 /**
  * GY-1233: optimistic merge (GY-500) and its main guard are removed. GitHub delivery merges every
@@ -14,16 +14,12 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
  */
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 test('unit:optimistic-merge-removed — a master.json carrying mergeQueue.optimistic still loads', async () => {
   const root = await temporaryDirectory('optimistic-removed');
   const credentials = await temporaryDirectory('optimistic-removed-credentials');
   try {
-    git(root, 'init', '-q');
-    git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git');
-    await writeFile(join(root, 'README.md'), 'first\n');
-    git(root, 'add', 'README.md'); git(root, 'commit', '-q', '-m', 'first');
+    (await gitRepo({ root, files: { 'README.md': 'first\n' }, message: 'first' })).git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
     const credentialFile = join(credentials, 'coordinator.token');
     await writeFile(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
     // As onboarding and operators wrote it while optimistic merge ran (GY-500, GY-503).

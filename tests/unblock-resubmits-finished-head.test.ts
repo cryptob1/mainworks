@@ -1,11 +1,11 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
@@ -36,7 +36,6 @@ const operator: Principal = { id: 'human-operator', role: 'admin' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
 const coordinator: Principal = { id: 'loop-coordinator', role: 'coordinator' };
 const hostFault = "Trial-host fault: the trial's install step could not fetch from registry.example, rerun included; this is the trial host's network, not the head's";
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 let store: Store, engine: Engine, fixtureRoot: string, checkout: string, baseTip: string;
 /** The finished head of each scenario's attempt, on its own branch in the shared object store. */
@@ -51,12 +50,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 let config: ReturnType<typeof masterConfigSchema.parse>;
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('unblock-resubmits'));
-  const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await commit(checkout, 'README.md', '# Fixture\n', 'base');
-  git(checkout, 'push', '-q', 'origin', 'main');
+  ({ root: checkout } = await gitRepo({ root: join(fixtureRoot, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true }));
   baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
 
   store = await withDatabase('unblock-resubmits-finished-head'); await store.init();
@@ -81,7 +75,6 @@ async function assigned(n: number): Promise<Work> {
   w = pulled.assigned!;
   const branch = `graphyard/gy-${n}-1`, worktree = join(checkout, '.graphyard', 'worktrees', `GY-${n}-1`);
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree);
-  git(worktree, 'config', 'user.email', 't@example.com'); git(worktree, 'config', 'user.name', 'T');
   // A change in the store is a sensitive delta under the test process's policy, so the resubmitted
   // head owes its review before the merge: the item's next stage after the loop's submission is
   // review, as for any sensitive head.

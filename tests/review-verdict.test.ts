@@ -21,6 +21,7 @@ import { assertReviewCandidate, readReviewLedger, reviewRecordSchema, reviewProm
 import { loadMasterConfig, setupMaster } from '../src/master.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 
@@ -236,11 +237,7 @@ test('unit:review-prompt-control-plane — the control-plane prompt names head a
 
 /** A repository whose base branch moved past the head's merge base: B1 ← H (branch), B2 adds src/other.ts on the base. */
 async function movedBaseRepository(label: string) {
-  const root = await temporaryDirectory(label);
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-  git('init', '-q');
-  git('config', 'user.email', 'graphyard@example.com');
-  git('config', 'user.name', 'Mainworks test');
+  const { root, git } = await gitRepo({ label });
   const commit = (message: string, files: Record<string, string>) => {
     for (const [path, body] of Object.entries(files)) {
       mkdirSync(join(root, path, '..'), { recursive: true });

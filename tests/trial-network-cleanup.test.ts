@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge, TrialCancelledError, TrialNetworkPoolError, trialNetworkPoolFault } from '../src/merge-writer/trial.js';
@@ -19,6 +19,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -81,20 +82,12 @@ process.exit(0);
   return { path: `${directory}:${process.env.PATH}`, docker, read, write: (next: StubState) => writeFileSync(state, JSON.stringify(next)) };
 }
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const files = {
   'graphyard.json': JSON.stringify({ delivery: { mergeGate: { perCandidate: [], preMerge: [{ check: 'db', command: 'node query.mjs', source: 'script', reason: 'fixture', services: [{ file: 'compose.yml', service: 'db', port: 5432 }] }] } } }),
   'compose.yml': 'services:\n  db:\n    image: postgres:17\n',
   'e2e/cases/fixture.json': JSON.stringify({ id: 'fixture', title: 'Fixture', target: 'any', required: false, steps: [{ kind: 'command', name: 'runs', run: 'node --eval 0' }] }),
 };
-async function repository() {
-  const root = await temporaryDirectory('trial-network-repo', tmpdir());
-  git(root, 'init', '-q', '-b', 'main');
-  for (const [path, content] of Object.entries(files)) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
-  return root;
-}
+const repository = async () => (await gitRepo({ label: 'trial-network-repo', files })).root;
 
 /** The check's children are faked (git runs for real); the services' Compose stack runs against the stubbed Docker CLI. */
 const checkRun = (outcome: 'pass' | 'fail' | 'cancel', controller?: AbortController): ChildRun => async (command, args, options = {}) => {

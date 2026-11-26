@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { runChild, type ChildRun } from '../src/child-runner.js';
 import { releaseHeldBranch } from '../src/master/branch-release.js';
 
@@ -12,15 +11,9 @@ import { releaseHeldBranch } from '../src/master/branch-release.js';
 // may delete only what the preserved record holds in full: an untracked file the record merely
 // names (binary, a symlink, past the record's limit) is moved aside first, where the record says.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 async function host() {
-  const root = await temporaryDirectory('preserved-aside');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  for (const [key, value] of [['user.email', 'hold@example.com'], ['user.name', 'Hold Test'], ['commit.gpgsign', 'false']]) git(root, 'config', key, value);
-  await writeFile(join(root, 'source.ts'), 'export const value = 1;\n');
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
-  return root;
+  return (await gitRepo({ label: 'preserved-aside', files: { 'source.ts': 'export const value = 1;\n' } })).root;
 }
 function attemptWorktree(root: string, key: string, epoch: number) {
   const path = join(root, '.graphyard', 'worktrees', `${key}-${epoch}`), branch = `graphyard/${key.toLowerCase()}-${epoch}`;

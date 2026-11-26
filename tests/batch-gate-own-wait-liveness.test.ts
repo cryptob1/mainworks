@@ -18,6 +18,7 @@ import { acquireVerificationSlot, declarationSlot, heldSlots, slotsDirectoryVari
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3474: a batch gate on a hot shared host stayed "running" for hours, its whole lifetime counted
 // as waiting: the loop's CPU hold on other launches and any install's waiting gate start both
@@ -31,7 +32,6 @@ const minute = 60_000;
 const iso = (at: number) => new Date(at).toISOString();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(condition: () => boolean, what: string, timeoutMs = 15_000) {
   for (const deadline = Date.now() + timeoutMs; !condition();) { assert.ok(Date.now() < deadline, `timed out waiting until ${what}`); await sleep(20); }
@@ -57,12 +57,8 @@ async function world(label: string) {
   process.env[slotsDirectoryVariable] = slots;
   // Another install's gate start waits on this machine throughout: its launcher is alive, its marker names its own install.
   await writeFile(join(trialSlots, `wait-0-${process.ppid}`), trialStartOwner('/another/install', sha('theirs')));
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'base'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin, head: verified } = await gitRepo({ root: join(base, 'pusher'), files: { 'graphyard.json': '{}' }, origin: true });
   await writeFile(join(pusher, 'f1.ts'), 'ok\n');
   git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'change 1'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
   const tip = git(pusher, 'rev-parse', 'HEAD');

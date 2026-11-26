@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -15,6 +14,7 @@ import { masterConfigSchema, workerPrompt, type MasterConfig } from '../src/mast
 import { redispatchPreservesAttempt } from '../src/model/capacity.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -52,7 +52,6 @@ const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, bo
   return result.body;
 };
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
-const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 useTestStore('expired-worker-partial-work-handoff', { leaseSeconds: 5, repository: 'owner/expired-work', credentials: credentials }, async ctx => {
   ({ store, url } = ctx);
@@ -73,17 +72,12 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
   // change and, on top of it, one modified and one untracked file the attempt never committed.
   const branch = `graphyard/${filed.key.toLowerCase()}-1`;
   const worktree = join(install, '.graphyard', 'worktrees', `${filed.key.toLowerCase()}-1`);
-  git(['init', '-q', '-b', 'main']);
-  git(['config', 'user.email', 'fixture@graphyard.invalid']);
-  git(['config', 'user.name', 'Mainworks Fixture']);
-  await writeFile(join(install, 'README.md'), 'shared base\n');
-  git(['add', '.']);
-  git(['commit', '-q', '-m', 'base']);
+  await gitRepo({ root: install, files: { 'README.md': 'shared base\n' } });
   await mkdir(dirname(worktree), { recursive: true });
-  git(['worktree', 'add', '-b', branch, worktree]);
+  git(install, 'worktree', 'add', '-b', branch, worktree);
   await writeFile(join(worktree, 'diagnostics.ts'), 'export const finding = "soak thresholds tracked for two hours";\n');
-  git(['add', 'diagnostics.ts'], worktree);
-  git(['commit', '-q', '-m', 'diagnostics so far'], worktree);
+  git(worktree, 'add', 'diagnostics.ts');
+  git(worktree, 'commit', '-q', '-m', 'diagnostics so far');
   await writeFile(join(worktree, 'diagnostics.ts'), 'export const finding = "soak thresholds tracked for two hours, and one more finding";\n');
   await writeFile(join(worktree, 'population.ts'), 'export const stage = 3;\n');
 
@@ -140,7 +134,7 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
   // The attempt's work is on the record: one WIP commit on its own branch holds both the uncommitted
   // rest and the history the attempt had already committed.
   const exhaustion = resumed.capacity?.exhaustions?.[0];
-  const wip = git(['rev-parse', 'HEAD'], worktree);
+  const wip = git(worktree, 'rev-parse', 'HEAD');
   assert.equal(exhaustion?.role, 'worker');
   assert.equal(exhaustion?.epoch, 1);
   assert.equal(exhaustion?.cause, 'interrupted');
@@ -149,8 +143,8 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
   assert.equal(exhaustion?.partialWork.commit, wip);
   assert.equal(exhaustion?.partialWork.branch, branch);
   assert.equal(exhaustion?.partialWork.path, worktree);
-  assert.equal(git(['log', '--format=%s', branch]).split('\n').slice(0, 2).join('\n'), `WIP: ${filed.key} attempt 1 expired\ndiagnostics so far`);
-  assert.match(git(['show', '--name-only', '--format=', wip]), /population\.ts/, 'the untracked file the attempt never committed is in the preserved commit');
+  assert.equal(git(install, 'log', '--format=%s', branch).split('\n').slice(0, 2).join('\n'), `WIP: ${filed.key} attempt 1 expired\ndiagnostics so far`);
+  assert.match(git(install, 'show', '--name-only', '--format=', wip), /population\.ts/, 'the untracked file the attempt never committed is in the preserved commit');
 
   // The old lease authority ended with the attempt, released once, ready to be redispatched; the
   // open epoch-2 row beside it is the redispatch's own claim, landed in the same cycle.
@@ -181,7 +175,7 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
   assert.equal(state.actions[`worktree:${filed.id}:1:forced`]?.state, 'done');
   assert.ok(!existsSync(worktree), 'the ended attempt\'s worktree is cleaned only after its work was preserved');
   assert.equal(Date.parse(state.actions[`reclaim:lease:${filed.id}:1`].at) <= Date.parse(state.actions[`worktree:${filed.id}:1:forced`].at), true, 'the preservation is recorded before the cleanup');
-  assert.equal(git(['rev-parse', '--verify', branch]), wip, 'the preserved commit survives the worktree cleanup');
+  assert.equal(git(install, 'rev-parse', '--verify', branch), wip, 'the preserved commit survives the worktree cleanup');
   assert.deepEqual(cleaned.workspaces?.map(space => [space.epoch, space.branch, space.host]), [[1, branch, HOST]], 'the historical workspace reservation stays on the record');
   assert.equal(cleaned.sessions?.find(handle => handle.id === 'worker-a:1')?.state, 'finished');
   assert.equal(cleaned.lease?.owner, workerB.id, 'the new attempt holds the lease the lapsed one left');

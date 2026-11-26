@@ -1,6 +1,5 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { delimiter, join } from 'node:path';
@@ -14,6 +13,7 @@ import { accountKeyEnvironment } from '../src/runner/roles.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { clearRuns } from '../src/runner/registry.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
+import { gitRepo } from './helpers/git-repo.js';
 // Time-bomb allowance (GY-1694): the 2026-09-25/26 instants are past and are the explicit `at` handed, with offsets, to recordRunOutcome, chooseSession and needsSmoke; Date.now() stamps and judges only real-clock records.
 
 /**
@@ -67,11 +67,9 @@ function memoryRegistry(host: string) {
 
 async function installation() {
   const root = join(scratch, `repository-${crypto.randomUUID().slice(0, 8)}`), credentials = join(root, '..', `credentials-${crypto.randomUUID().slice(0, 8)}`);
-  await mkdir(root); await mkdir(credentials, { mode: 0o700 });
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'pi account key\n');
-  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  await mkdir(credentials, { mode: 0o700 });
+  const { git } = await gitRepo({ root, files: { 'README.md': 'pi account key\n' }, message: 'initial' });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: join(root, '..', 'worktrees') } }, coordinatorStatus, { probe: durable });
   return { root, credentials, config: await loadMasterConfig(root) };
 }

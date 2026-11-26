@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, rmSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialHostFaultHost } from '../src/merge-writer/trial.js';
 import { repositoryTrialImage, repositoryTrialImageTag, trialDockerfile, trialRepositoryImageFault, TrialRepositoryImageError } from '../src/merge-writer/repository-trial-image.js';
@@ -18,8 +19,6 @@ import { trialImageFaultItem } from '../src/daemon/control-plane.js';
 // its own copy first: a broken copy is that head's red verdict, and a head that fixes a broken base
 // copy runs in its own image, so the fix lands through an ordinary merge.
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const nested = existsSync('/etc/graphyard-trial');
 const check = { check: 'gofake', command: 'gofake verify', source: 'script', reason: 'fixture' };
 const policy = () => JSON.stringify({ delivery: { mergeGate: { perCandidate: [], preMerge: [check] } } });

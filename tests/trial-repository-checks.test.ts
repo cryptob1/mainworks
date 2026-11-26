@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -19,6 +18,7 @@ import {
   trialTestGateStatus,
 } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 
 // Repository declarations choose the trial strategy, regardless of similarly named files.
 // GY-2960: a failing check names its files and first case; a failure the base tip shares is held, not reworked.
@@ -28,23 +28,16 @@ const identity = {
   GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
   GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
 };
-const gitIn = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 const gateCheck = (check: string, command: string) =>
   ({ check, command, source: 'script' as const, reason: 'fixture' });
 
 async function managedRepo(files: Record<string, string>) {
-  const root = await temporaryDirectory('trial-repo-checks', tmpdir());
-  gitIn(root, 'init', '-q', '-b', 'main');
+  const { root, head: base } = await gitRepo({ label: 'trial-repo-checks', files });
   const write = (path: string, content: string) => {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
   };
-  for (const [path, content] of Object.entries(files)) write(path, content);
-  gitIn(root, 'add', '-A');
-  gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
   return { root, base, write };
 }
 

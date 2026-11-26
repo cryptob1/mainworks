@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reviewStandard } from '../src/reviewer.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-1987: the worker never saw the standard the independent reviewer judges it by, so a blocking
 // finding cost a whole build, test and review round. `mainworks review self GY-N` prints that
@@ -26,20 +26,8 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 const criteria = [{ id: 'AC-1', text: 'The feature ships behind its setting', proofs: ['unit:feature'] }, { id: 'AC-2', text: 'The restarted loop serves the change', proofs: ['manual:post-deploy/loop-serves-change'] }];
 
 test('unit:review-self-prints-standard — review self prints the reviewer standard for HEAD against the base merge-base, exits 0 and issues only reads', async t => {
-  const work = await temporaryDirectory('review-self');
-  const git = (...args: string[]) => {
-    const result = spawnSync('git', args, { cwd: work, encoding: 'utf8' });
-    if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
-    return result.stdout.trim();
-  };
   // A local history with a fetched base: main, its origin/main ref, and a worker branch one commit ahead.
-  git('init', '-b', 'main');
-  git('config', 'user.email', 'worker@example.com');
-  git('config', 'user.name', 'Worker');
-  writeFileSync(join(work, 'README.md'), 'base\n');
-  git('add', '--', 'README.md');
-  git('commit', '--no-gpg-sign', '-m', 'base');
-  const base = git('rev-parse', 'HEAD');
+  const { root: work, head: base, git } = await gitRepo({ label: 'review-self', files: { 'README.md': 'base\n' } });
   git('update-ref', 'refs/remotes/origin/main', base);
   git('checkout', '-b', 'graphyard/gy-1-1');
   mkdirSync(join(work, 'src'), { recursive: true });

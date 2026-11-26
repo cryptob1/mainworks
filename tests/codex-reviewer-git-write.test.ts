@@ -19,6 +19,7 @@ import { setupMaster } from '../src/master.js';
 import { WorkerSandboxError } from '../src/worker-sandbox.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 
 // GY-3235: on Huck's install the served repository is not the checkout the CLI release runs from.
@@ -48,14 +49,11 @@ test(`e2e:codex-reviewer-git-write — ${layout}: a codex reviewer launched for 
   const credentialDirectory = await temporaryDirectory('codex-reviewer-credentials');
   try {
     const repo = join(base, 'served-repository');
-    const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    execFileSync('git', ['init', '-q', '-b', 'main', repo]);
-    gitIn(repo, 'config', 'user.name', 'Fixture'); gitIn(repo, 'config', 'user.email', 'fixture@example.com');
-    gitIn(repo, 'commit', '-q', '--allow-empty', '-m', 'base'); const baseSha = gitIn(repo, 'rev-parse', 'HEAD');
-    gitIn(repo, 'commit', '-q', '--allow-empty', '-m', 'candidate'); const head = gitIn(repo, 'rev-parse', 'HEAD');
-    gitIn(repo, 'remote', 'add', 'origin', `https://github.com/${repository}.git`);
+    const { head: baseSha } = await gitRepo({ root: repo, files: {} });
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'candidate'); const head = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'remote', 'add', 'origin', `https://github.com/${repository}.git`);
     const root = layout === 'repository' ? repo : join(base, 'coordinator');
-    if (layout === 'linked-worktree') gitIn(repo, 'worktree', 'add', '-q', '--detach', root);
+    if (layout === 'linked-worktree') git(repo, 'worktree', 'add', '-q', '--detach', root);
     await setupMaster(root, { url, token: credentials[0].token, cliPath: launcher, credentialDirectory, herdrWorkspace: 'workspace-mainworks', run: { worktreeRoot: join(base, 'sessions') } });
     await saveReviewerProfile(root, { name: 'reviewer-codex', agentName: 'review-codex-1', kind: 'codex' });
     const now = new Date().toISOString();

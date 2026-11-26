@@ -1,7 +1,6 @@
 import { after, before } from 'node:test';
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -27,6 +26,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { reconcileReviews, saveReviewLedger } from '../src/reviewer.js';
 import { neededRework } from '../src/daemon/rework.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -75,7 +75,6 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const worker: Principal = { id: 'implementer', role: 'worker' };
 const credentials = [operator, coordinator, worker].map(principal => ({ ...principal, token: `${principal.id}-token-${'x'.repeat(32)}` }));
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 /** A port the deleted GitHub client or shadow gate would have been: any touch fails the case. */
 const trap = (what: string) => new Proxy({}, { get: (_, name) => { if (name === 'then') return undefined; throw new Error(`the loop touched ${what} (${String(name)})`); } });
 
@@ -98,12 +97,10 @@ async function request(principal: Principal, path: string, body?: unknown, key: 
 before(async () => {
   // The origin holds only the base branch; the worker's head sits in the shared object store alone.
   fixture = await realpath(await temporaryDirectory('github-client-removed-repo'));
-  origin = join(fixture, 'origin.git'); checkout = join(fixture, 'checkout'); managed = join(fixture, 'managed'); deployKey = join(fixture, 'deploy-key');
+  managed = join(fixture, 'managed'); deployKey = join(fixture, 'deploy-key');
   await writeFile(deployKey, 'not a real key: the origin is a local path\n', { mode: 0o600 });
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await commit(checkout, 'src/a.ts', 'export const a = 1;\n', 'base');
+  const repo = await gitRepo({ root: join(fixture, 'checkout'), files: { 'src/a.ts': 'export const a = 1;\n' }, origin: true });
+  checkout = repo.root; origin = repo.origin;
   await commit(checkout, 'tests/a.test.ts', "import { test } from 'node:test';\ntest('unit:a — a answers', () => {});\n", 'test');
   git(checkout, 'push', '-q', 'origin', 'main');
   baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
@@ -115,7 +112,6 @@ before(async () => {
   git(origin, 'config', 'uploadpack.hideRefs', 'refs'); git(origin, 'config', '--add', 'uploadpack.hideRefs', '!refs/heads/main');
   const tree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
   git(checkout, 'worktree', 'add', '-q', '-b', branch, tree, baseTip);
-  git(tree, 'config', 'user.email', 't@example.com'); git(tree, 'config', 'user.name', 'T');
   head = await commit(tree, 'src/a.ts', 'export const a = 2;\n', 'change');
 
   store = await withDatabase('merge-writer-compatibility'); await store.init();

@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,6 +10,7 @@ import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -27,7 +27,6 @@ const own = 'unit:tests/proof-runner-counts.test.ts';
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
 const coordinator: Principal = { id: 'coordinator', role: 'coordinator' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 // Stands in for vitest's CLI, which this repository does not depend on: real `npx` runs it from the
 // fixture's node_modules, it reads the title of each case and whether it fails from the test file,
@@ -46,16 +45,12 @@ process.exit(cases.some(entry => entry.failed) ? 1 : 0);
 interface Fixture { origin: string; checkout: string; baseTip: string; write: (path: string, value: string) => Promise<void> }
 /** A repository with a base commit on origin: the given files, and a local `vitest` when package.json declares it. */
 async function repository(directory: string, files: Record<string, string>): Promise<Fixture> {
-  const origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout');
-  await mkdir(directory, { recursive: true });
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
+  const { root: checkout, origin } = await gitRepo({ root: join(directory, 'checkout'), origin: true });
   const write = async (path: string, value: string) => { await mkdir(join(checkout, path, '..'), { recursive: true }); await writeFile(join(checkout, path), value); };
   for (const [path, value] of Object.entries(files)) await write(path, value);
   if (files['package.json']?.includes('vitest')) { await write('node_modules/.bin/vitest', fakeVitest); await chmod(join(checkout, 'node_modules/.bin/vitest'), 0o755); }
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
-  return { origin, checkout, baseTip: git(origin, 'rev-parse', 'main'), write };
+  return { origin: origin, checkout, baseTip: git(origin, 'rev-parse', 'main'), write };
 }
 const vitestPackage = (test = 'vitest run') => JSON.stringify({ scripts: { test }, devDependencies: { vitest: '^3.0.0' } });
 const vitestProof = (how: 'pass' | 'fail') => `test('unit:declared works', ${how});\n`;

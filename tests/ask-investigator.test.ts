@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { priorityServer } from './helpers/priority-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { masterPrompt } from '../src/master/harness.js';
 import { guideText } from '../src/guide.js';
@@ -37,10 +38,7 @@ test('integration:ask-investigator — one read-only headless session on the ite
     await f.ok(`work/${item.id}/workspace`, { epoch: claimed.epoch, host: 'test-host', path: '/tmp/ask-investigator-worktree', branch }, f.tokens.worker);
 
     // The caller's checkout: main says one thing, the item's branch head another.
-    const repo = await temporaryDirectory('ask-investigator-repo');
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
-    git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@example.com'); git('config', 'user.name', 't');
-    writeFileSync(join(repo, 'README.md'), 'main head\n'); git('add', '.'); git('commit', '-qm', 'main');
+    const { root: repo, git } = await gitRepo({ label: 'ask-investigator-repo', files: { 'README.md': 'main head\n' }, message: 'main' });
     git('checkout', '-qb', branch); writeFileSync(join(repo, 'README.md'), 'item head\n'); git('commit', '-qam', 'item'); git('checkout', '-q', 'main');
     const before = { head: git('rev-parse', 'HEAD'), refs: git('for-each-ref'), status: git('status', '--porcelain') };
 

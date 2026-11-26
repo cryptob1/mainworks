@@ -3,7 +3,7 @@
 // restart mid-item and submits without a new attempt.
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
@@ -13,6 +13,7 @@ import type { Server } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
@@ -100,10 +101,7 @@ test('e2e:builder-survives-update — restarts the control plane mid-item and as
   const store = await withDatabase('builder-survives-update');
   await store.init();
 
-  const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@t' };
-  const git = (...args: string[]) => execFileSync('git', ['-C', worktree, ...args], { env: gitEnv, encoding: 'utf8' }).trim();
-  git('init', '--quiet');
-  git('commit', '--allow-empty', '--quiet', '-m', 'base');
+  const { git } = await gitRepo({ root: worktree, files: {} });
   git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   git('commit', '--allow-empty', '--quiet', '-m', 'builder work');
   const head = git('rev-parse', 'HEAD');

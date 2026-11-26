@@ -1,13 +1,11 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -29,10 +27,8 @@ before(async () => {
   engine = new Engine(store, 120, 'owner/shop');
   // The served main holds one case file: e2e/cases/passed-case.json.
   const checkout = await temporaryDirectory('tests-page-readable-main');
-  await mkdir(join(checkout, 'e2e/cases'), { recursive: true });
-  await writeFile(join(checkout, 'e2e/cases/passed-case.json'), JSON.stringify({ id: 'passed-case', title: 'Checkout passes', target: 'uat', steps: [{ kind: 'http', method: 'GET', path: '/healthz', status: 200 }] }));
-  const git = (...args: string[]) => execFileSync('git', ['-C', checkout, '-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { stdio: 'pipe' });
-  git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-q', '-m', 'main'); git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const files = { 'e2e/cases/passed-case.json': JSON.stringify({ id: 'passed-case', title: 'Checkout passes', target: 'uat', steps: [{ kind: 'http', method: 'GET', path: '/healthz', status: 200 }] }) };
+  (await gitRepo({ root: checkout, files, message: 'main' })).git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   engine.gitRunner = gitRunnerFor(checkout);
   http = server(engine, [{ ...operator, token }]);
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));

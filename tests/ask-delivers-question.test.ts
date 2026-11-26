@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { priorityServer } from './helpers/priority-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 const cli = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
@@ -22,10 +23,7 @@ test('integration:ask-delivers-question — ask gives the investigator its quest
   const f = await priorityServer();
   try {
     const item = await f.ok('work', { type: 'chore', priority: 3, title: 'Ask me', why: 'w', simplest: 's', criteria: [{ id: 'AC-1', text: 'Asked', proofs: ['e2e:create-work-item'] }] });
-    const repo = await temporaryDirectory('ask-delivers-question-repo');
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo });
-    git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@example.com'); git('config', 'user.name', 't');
-    writeFileSync(join(repo, 'README.md'), 'hello\n'); git('add', '.'); git('commit', '-qm', 'main');
+    const { root: repo } = await gitRepo({ label: 'ask-delivers-question-repo', files: { 'README.md': 'hello\n' } });
     const bin = await temporaryDirectory('ask-delivers-question-bin');
     writeFileSync(join(bin, 'claude'), stubRuntime, { mode: 0o755 });
     const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, NODE_COMPILE_CACHE: join(bin, 'compile-cache'), GRAPHYARD_URL: f.url, GRAPHYARD_TOKEN: f.tokens.worker };

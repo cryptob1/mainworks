@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,7 @@ import type { VerificationMap } from '../src/verification-maps.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { reviewPrompt } from '../src/reviewer.js';
 import { emptyProjectMemory, projectMemoryDigest, recordNoteInMemory } from '../src/model/project-memory.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
@@ -75,13 +75,8 @@ const sample = (paths: string) => `Paths: ${paths}\n\n## Tests\n\n- tests/x.test
 
 test('unit:verification-maps-read-from-base — maps are read from origin/BASE with ls-tree and show, never the working tree; a malformed map or an unreadable base yields no section', async () => {
   const { parseVerificationMap, readVerificationMaps } = await maps();
-  const repo = await temporaryDirectory('verification-maps');
-  git(repo, 'init', '--quiet', '-b', 'main');
-  await mkdir(join(repo, 'verification', 'nested'), { recursive: true });
-  await writeFile(join(repo, 'verification', 'store.md'), sample('src/store/**'));
-  await writeFile(join(repo, 'verification', 'broken.md'), 'no paths line\n## Tests\nx\n');
-  await writeFile(join(repo, 'verification', 'nested', 'deep.md'), sample('src/deep/**'));
-  git(repo, 'add', '-A'); git(repo, 'commit', '--quiet', '-m', 'maps');
+  const { root: repo } = await gitRepo({ label: 'verification-maps', message: 'maps', files: {
+    'verification/store.md': sample('src/store/**'), 'verification/broken.md': 'no paths line\n## Tests\nx\n', 'verification/nested/deep.md': sample('src/deep/**') } });
   git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
   // The working tree moves on; only the base is read.
   await writeFile(join(repo, 'verification', 'store.md'), sample('src/elsewhere/**'));

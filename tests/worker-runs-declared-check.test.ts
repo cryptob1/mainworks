@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { runWorkerCheck } from '../src/merge-writer/worker-check.js';
@@ -58,9 +59,7 @@ dns.lookup = (host, options, callback) => lookup(host === 'db' ? '127.0.0.1' : h
   // The coordinator checkout, and the worker's assigned worktree on graphyard/<key>-<epoch>.
   const coordinator = await temporaryDirectory('coordinator', root), base = await temporaryDirectory('trials', root);
   const branch = `graphyard/${work.key.toLowerCase()}-1`, repository = join(root, 'worker');
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
-  git(coordinator, 'init', '-q', '-b', 'main'); git(coordinator, 'config', 'user.name', 'Fixture'); git(coordinator, 'config', 'user.email', 'fixture@example.invalid');
-  git(coordinator, 'commit', '--allow-empty', '-qm', 'base');
+  await gitRepo({ root: coordinator, files: {} });
   git(coordinator, 'worktree', 'add', '-qb', branch, repository);
   const query = (sql: string) => `import net from 'node:net';
 const socket = net.connect({ host: process.env.GRAPHYARD_SERVICE_DB_HOST, port: Number(process.env.GRAPHYARD_SERVICE_DB_PORT) });
@@ -132,13 +131,10 @@ socket.write(${JSON.stringify(sql)});
 
 test('a worker check hands the trial the head\'s own changed files and base, so a check that selects its files selects what the merge trial would', async () => {
   const root = await temporaryDirectory('worker-check-files', process.cwd());
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
-  writeFileSync(join(root, 'kept.ts'), 'base\n'); git('add', '-A'); git('commit', '-qm', 'base');
-  const baseTip = git('rev-parse', 'HEAD');
-  git('checkout', '-qb', 'graphyard/gy-1-1');
-  writeFileSync(join(root, 'changed.ts'), 'head\n'); git('add', '-A'); git('commit', '-qm', 'head');
-  const head = git('rev-parse', 'HEAD');
+  const { head: baseTip } = await gitRepo({ root, files: { 'kept.ts': 'base\n' } });
+  git(root, 'checkout', '-qb', 'graphyard/gy-1-1');
+  writeFileSync(join(root, 'changed.ts'), 'head\n'); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'head');
+  const head = git(root, 'rev-parse', 'HEAD');
   let seen: Parameters<typeof runTrial>[0] | undefined;
   const result = await runWorkerCheck({ root, base: root, baseBranch: 'main', key: 'GY-1', head, check: 'test',
     trial: async input => { seen = input; return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, logTail: 'ran' } as any; } });

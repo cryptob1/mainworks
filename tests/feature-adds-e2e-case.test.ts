@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,12 +11,12 @@ import { masterGuide } from '../src/master/guide.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git } from './helpers/git-repo.js';
 
 // GY-3168: a feature's head adds or changes an e2e case its criteria name, read from real git
 // merges through the production merge port; the trial itself is stood in for as passing.
 
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
 const delivered = 'e2e/cases/delivered.json', other = 'e2e/cases/other.json';
@@ -26,16 +25,16 @@ const delivered = 'e2e/cases/delivered.json', other = 'e2e/cases/other.json';
 async function merge(type: Work['type'], proofs: string[], change: (root: string, write: (path: string) => void) => void) {
   const root = await temporaryDirectory('feature-case-repo', tmpdir());
   const write = (path: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), `${path}\n${Math.random()}\n`); };
-  gitIn(root, 'init', '-q', '-b', 'main');
+  git(root, 'init', '-q', '-b', 'main');
   [delivered, other].forEach(write);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', '--detach');
+  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
+  const base = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', '--detach');
   write('src/app.ts');
   change(root, write);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'head');
-  const head = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', 'main');
+  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'head');
+  const head = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', 'main');
   const reads = mergeWriterReads(config, root, (command, args, options) => defaultChildRun(command, args, { ...options, env: { ...process.env, ...identity, ...options?.env } }), { base: await temporaryDirectory('feature-case-trials', tmpdir()), record: async () => {}, environment: { PATH: process.env.PATH! } });
   const passing = Object.fromEntries(proofs.map(proof => [proof, { executed: 1, failed: 0 }]));
   const ports: MergePorts = { baseBranch: 'main', now: () => Date.parse('2030-01-01T00:00:00Z'), fetch: async () => base, merge: reads.merge,
@@ -57,7 +56,7 @@ test('unit:tests/feature-adds-e2e-case.test.ts — a feature head that leaves ev
 test('unit:tests/feature-adds-e2e-case.test.ts — a head that deletes a bound case, or renames it away, is refused: neither adds nor modifies it', async () => {
   const deleted = await merge('feature', ['e2e:delivered'], root => rmSync(join(root, delivered)));
   assert.equal((deleted as { reason: string }).reason, refusal('e2e:delivered'));
-  const renamed = await merge('feature', ['e2e:delivered'], root => gitIn(root, 'mv', delivered, 'e2e/cases/moved.json'));
+  const renamed = await merge('feature', ['e2e:delivered'], root => git(root, 'mv', delivered, 'e2e/cases/moved.json'));
   assert.equal((renamed as { reason: string }).reason, refusal('e2e:delivered'));
 });
 

@@ -17,6 +17,7 @@ import { buildStaticSite, type StaticBuildShell } from '../src/release-project.j
 import { loadCases } from '../src/e2e/case.js';
 import { runCases } from '../src/e2e/runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-1902: a change's preview is checked out, served by `serveHead` and its declared cases run
@@ -26,7 +27,6 @@ import { workFixture } from './helpers/work-fixture.js';
 const made: string[] = [];
 after(async () => { for (const directory of made) await rm(directory, { recursive: true, force: true }); });
 const scratch = async (label: string) => { const directory = await realpath(await temporaryDirectory(label)); made.push(directory); return directory; };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 const site: Application = { id: 'site', kind: 'static', directory: 'dist', build: 'mkdir -p dist && cp -R site/. dist/' };
 /** A preview of `input`'s change running `cases` against its static site, closed once it answers. */
@@ -38,8 +38,7 @@ const copySite: StaticBuildShell = async (_command, cwd) => { execFileSync('sh',
 async function repository(label: string, best: unknown, extraCases: Record<string, unknown>[] = []) {
   const root = await scratch(label), repo = join(root, 'repo'), base = join(root, 'worktrees');
   await mkdir(base);
-  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
-  git(repo, 'config', 'user.email', 't@example.com'); git(repo, 'config', 'user.name', 'T');
+  await gitRepo({ root: repo });
   const write = async (path: string, content: unknown) => { await mkdir(join(repo, path, '..'), { recursive: true }); await writeFile(join(repo, path), typeof content === 'string' ? content : `${JSON.stringify(content, null, 2)}\n`); };
   const http = (path: string, expect: unknown[] = []) => ({ kind: 'http', name: `read ${path}`, method: 'GET', path, status: 200, expect });
   await write('site/index.html', '<h1>Play</h1>');

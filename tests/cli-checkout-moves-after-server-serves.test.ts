@@ -12,23 +12,21 @@ import { cliReleasePath } from '../src/install/cli-release.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2978: a deploy pass moves the watched checkout — the workers' CLI checkout when the unit watches
 // it — only after the new server passed health and serves the same commit; the server deploys from
 // the install's own build worktree, and a failed server deploy leaves the CLI checkout where it was.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const head = (checkout: string) => git(checkout, 'rev-parse', 'HEAD');
 const short = (sha: string) => sha.slice(0, 7);
 
 /** An origin, a second clone that pushes to it, and the CLI checkout the deploy unit watches, at commit A. */
 async function repositories(label: string, seed?: (pusher: string) => Promise<void>) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  if (seed) { await seed(pusher); git(pusher, 'add', '-A'); git(pusher, 'commit', '-q', '-m', 'A'); git(pusher, 'push', '-q', 'origin', 'HEAD:main'); }
-  else { await writeFile(join(pusher, 'release.txt'), 'A'); git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'A'); git(pusher, 'push', '-q', 'origin', 'HEAD:main'); }
+  const pusher = join(base, 'pusher'), checkout = join(base, 'checkout');
+  await mkdir(pusher); await seed?.(pusher);
+  const { origin } = await gitRepo({ root: pusher, label, files: seed ? {} : { 'release.txt': 'A' }, message: 'A', origin: true });
   const commit = async (name: string) => { await writeFile(join(pusher, 'release.txt'), name); git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', name); git(pusher, 'push', '-q', 'origin', 'HEAD:main'); return git(pusher, 'rev-parse', 'HEAD'); };
   const a = git(pusher, 'rev-parse', 'HEAD');
   git(base, 'clone', '-q', origin, checkout);

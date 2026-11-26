@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { Engine } from '../src/engine.js';
@@ -42,9 +43,8 @@ before(async () => {
   root = await temporaryDirectory('product-review-build-root'); credentials = await temporaryDirectory('product-review-build-credentials');
   const browserBin = await temporaryDirectory('product-review-build-browser');
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const commit = (message: string) => { git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', message); return git('rev-parse', 'HEAD'); };
-  git('init', '-q', '--initial-branch=main');
+  const { git } = await gitRepo({ root });
+  const commit = (message: string) => { git('add', '.'); git('commit', '-qm', message); return git('rev-parse', 'HEAD'); };
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   // The build's output is untracked, as the repository's dist/ is.
   await writeFile(join(root, '.gitignore'), 'node_modules/\ndist/\n');

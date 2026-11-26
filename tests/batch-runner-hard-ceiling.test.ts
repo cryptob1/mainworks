@@ -14,6 +14,7 @@ import { runFiles } from '../src/runner/pi.js';
 import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { masterConfigSchema } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3509: after GY-3507 bounded a gate run at 90 minutes, a new batch run's trial still received
 // hours: the gate handed its runner the time left plus two more bounds, and a host with busy trial
@@ -22,7 +23,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const repository = 'owner/project', minute = 60_000, ceilingMs = 5_400_000;
 const start = Date.parse('2026-11-18T08:00:00Z');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const passing = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {}, e2e: [] } as unknown as MergeTrialRun;
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository, baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { mergeWriter: { deployKeyFile: '/keys/deploy' } } });
@@ -37,11 +37,8 @@ async function world(label: string) {
   await mkdir(slots, { recursive: true }); await mkdir(trialSlots, { recursive: true });
   await writeFile(join(slots, 'limit'), '4\n');
   process.env[slotsDirectoryVariable] = slots;
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'base'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: { 'graphyard.json': '{}' } });
   const verified = git(pusher, 'rev-parse', 'HEAD');
   await writeFile(join(pusher, 'f1.ts'), 'ok\n');
   git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'change 1'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');

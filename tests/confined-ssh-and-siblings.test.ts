@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { coordinatorConfinement, credentialMaskFor, sessionMountNamespaceWorks, type MaskProbe } from '../src/master/confinement.js';
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3384: confined sessions ran with a scratch HOME while /etc/ssh/ssh_config.d held files the
 // user namespace reads as nobody-owned, so ssh refused to start — "Bad owner or permissions" —
@@ -27,15 +28,9 @@ test('e2e:confined-ssh-and-siblings — under real bwrap a confined worker runs 
   process.env.HOME = home;
   try {
     const parent = join(home, 'code', 'da'), root = join(parent, 'project');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
-    mkdirSync(root, { recursive: true });
     // The repository declares one sibling readable; the other stays unlisted.
     const listed = join(parent, 'ims-api'), unlisted = join(parent, 'other-checkout');
-    writeFileSync(join(root, 'graphyard.json'), JSON.stringify({ confinement: { readonlyPaths: [listed] } }));
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-    git(root, 'init', '-q', '-b', 'main');
-    git(root, 'add', '.');
-    git(root, 'commit', '-qm', 'seed');
+    await gitRepo({ root, files: { 'graphyard.json': JSON.stringify({ confinement: { readonlyPaths: [listed] } }), '.gitignore': '.graphyard/\n' }, message: 'seed' });
     const worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1');
     mkdirSync(dirname(worktree), { recursive: true });
     git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree, 'main');

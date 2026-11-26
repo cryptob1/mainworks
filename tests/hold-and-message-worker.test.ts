@@ -1,11 +1,11 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
@@ -35,7 +35,6 @@ const workerB: Principal = { id: 'worker-b', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA, workerB].map(principal => ({ ...principal, token: `hold-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 const loopId = 'hold-and-message-operator';
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, root: string, checkout: string, config: MasterConfig;
 
 const request = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
@@ -72,7 +71,6 @@ async function claimWithWorkspace(worker: Principal, id: string, name: string) {
   const claimed = await call(token(worker.id), 'POST', `work/${id}/claim`, {});
   const epoch = claimed.lease.epoch, branch = `graphyard/${name}-${epoch}`, workspace = join(root, `${name}-${epoch}`);
   git(checkout, 'worktree', 'add', '-q', '-b', branch, workspace);
-  git(workspace, 'config', 'user.email', 't@example.com'); git(workspace, 'config', 'user.name', 'T');
   await writeFile(join(workspace, `${name}-${epoch}.txt`), 'work\n'); git(workspace, 'add', '-A'); git(workspace, 'commit', '-q', '-m', 'work');
   await call(token(worker.id), 'POST', `work/${id}/workspace`, { epoch, host: 'test', path: workspace, branch });
   return { epoch, workspace, head: git(workspace, 'rev-parse', 'HEAD') };
@@ -80,11 +78,7 @@ async function claimWithWorkspace(worker: Principal, id: string, name: string) {
 
 before(async () => {
   root = await realpath(await temporaryDirectory('hold-and-message-worker'));
-  const origin = join(root, 'origin.git'); checkout = join(root, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', '-A'); git(checkout, 'commit', '-q', '-m', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
+  ({ root: checkout } = await gitRepo({ root: join(root, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true }));
   store = await withDatabase('hold-and-message-worker'); await store.init();
   engine = new Engine(store, 300, repository); engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';
   const secrets = await realpath(await temporaryDirectory('hold-and-message-secrets'));

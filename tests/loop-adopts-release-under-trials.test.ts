@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,7 +13,7 @@ import type { MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import type { Work } from '../src/model.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3148: the deploy unit serves a new release while the merge writer's concurrent per-head
 // trials keep it never idle. The loop still restarts onto the served release within a bound — its
@@ -112,12 +111,7 @@ test('unit:loop-adopts-release-under-trials — the deploy unit serves a release
   assert.ok(releaseAdoptionBoundMs + 60_000 <= 5 * 60_000, 'the bound plus a slow cycle stays inside the five minutes the criterion names');
 
   // The loop's checkout: a git repository whose HEAD is the commit the deploy unit serves.
-  const root = await temporaryDirectory('loop-adopts-release');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  await writeFile(join(root, 'file'), 'served\n');
-  execFileSync('git', ['-C', root, 'add', '.']);
-  execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'served']);
-  const served = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const { root, head: served } = await gitRepo({ label: 'loop-adopts-release', files: { file: 'served\n' }, message: 'served' });
   const loaded = sha('the-release-this-loop-loaded');
   await mkdir(join(root, '.graphyard'), { recursive: true });
   await writeFile(join(root, '.graphyard', 'deploy.json'), JSON.stringify({ tip: served, failed: null, reason: null, at: new Date().toISOString() }));

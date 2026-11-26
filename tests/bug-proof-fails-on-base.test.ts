@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,12 +14,12 @@ import { proofPassesOnBasePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2984, GY-3167: a feature or bug item's proofs run on the base tip in the merge writer's trial; one whose
 // proofs all already pass there is refused as not reproduced. Chores are exempt.
 
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const own = 'unit:tests/bug-proof-fails-on-base.test.ts';
 const proof = 'unit:bug-proof-fails-on-base', e2eProof = 'e2e:home-shows-fix';
 const servePort = 20000 + ((process.pid + 7) % 20_000);
@@ -34,7 +33,6 @@ const policy = { mode: 'local', mergeGate: { preMerge: [{ check: 'test', command
 async function repository(fixedOnBase: boolean, e2e = false, newProof = false) {
   const root = await temporaryDirectory('bug-proof-repo', tmpdir());
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
   write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
   write('graphyard.json', JSON.stringify({ delivery: policy, ...(e2e ? { e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${servePort}`, readySeconds: 10 } } } : {}) }));
   if (e2e) {
@@ -45,14 +43,13 @@ async function repository(fixedOnBase: boolean, e2e = false, newProof = false) {
   write('test.js', `const { existsSync } = require('node:fs');\nif (!existsSync('tests/fix.test.ts')) process.exit(0);\nconst ok = existsSync('src/fixed');\nconsole.log((ok ? 'ok' : 'not ok') + ' 1 - ${proof} the fix holds');\nprocess.exit(ok ? 0 : 1);\n`);
   if (!newProof) write('tests/fix.test.ts', `// ${proof}\n`);
   if (fixedOnBase) write('src/fixed', '');
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', '--detach');
+  const { head: base } = await gitRepo({ root, files: {} });
+  git(root, 'checkout', '-q', '--detach');
   write(fixedOnBase ? 'src/other' : 'src/fixed', '');
   if (newProof) write('tests/fix.test.ts', `// ${proof}\n`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'head');
-  const head = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', 'main');
+  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'head');
+  const head = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', 'main');
   return { root, base, head };
 }
 
@@ -141,14 +138,14 @@ test('integration:candidate-e2e-on-base — edited cases and new or edited asser
         ${modifiedScript ? `assert.equal(fs.readFileSync('${script}', 'utf8'), '// old weaker assertion\\n');` : `assert.equal(fs.existsSync('${script}'), false);`}
       }
       console.log('ok 1 - base checks see original proof files');`);
-    gitIn(repo.root, 'add', '-A'); gitIn(repo.root, 'commit', '-qm', 'base with existing weak case');
-    repo.base = gitIn(repo.root, 'rev-parse', 'HEAD');
+    git(repo.root, 'add', '-A'); git(repo.root, 'commit', '-qm', 'base with existing weak case');
+    repo.base = git(repo.root, 'rev-parse', 'HEAD');
     write('src/returns.html', '<h1>Home</h1><section data-k="returns">Returns</section>');
     write(script, `import assert from 'node:assert/strict'; const html = await fetch(process.env.TARGET_URL).then(r => r.text()); assert.match(html, /data-k="returns"/, 'returns UI must exist');`);
     write('e2e/cases/home-shows-fix.json', JSON.stringify({ ...oldCase, steps: [...oldCase.steps, { kind: 'command', run: `node ${script}` }] }));
-    gitIn(repo.root, 'add', '-A'); gitIn(repo.root, 'commit', '-qm', 'candidate strengthens existing case and adds returns UI');
-    repo.head = gitIn(repo.root, 'rev-parse', 'HEAD');
-    gitIn(repo.root, 'checkout', '-q', '--detach', repo.base);
+    git(repo.root, 'add', '-A'); git(repo.root, 'commit', '-qm', 'candidate strengthens existing case and adds returns UI');
+    repo.head = git(repo.root, 'rev-parse', 'HEAD');
+    git(repo.root, 'checkout', '-q', '--detach', repo.base);
 
     const base = await runTrial({ root: repo.root, base: await temporaryDirectory('candidate-e2e-base'), mergeSha: repo.base,
       e2eFrom: repo.head, e2eProofs: [e2eProof], changedFiles: [], timeoutMs: 120_000, environment: { PATH: process.env.PATH! }, run });

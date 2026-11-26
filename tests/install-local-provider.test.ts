@@ -11,6 +11,7 @@ import type { LocalRuntime } from '../src/install/local-runtime.js';
 import { REDACTED } from '../src/install/types.js';
 import { harness, type Harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 /**
  * GY-1500: `mainworks install --provider local` (and `mainworks up --local`) runs the control plane
@@ -195,9 +196,7 @@ test('integration:local-provider-embedded-postgres — --apply creates the clust
     assert.equal(systemd.starts(), starts, 'the runtime was not restarted');
 
     // A deploy from a source root at another commit (upgrade --watch moved the checkout) restarts the runtime onto it.
-    const moved = await temporaryDirectory('local-source');
-    execFileSync('git', ['init', '--quiet', moved]);
-    execFileSync('git', ['-C', moved, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'tip']);
+    const { root: moved } = await gitRepo({ label: 'local-source', files: {}, message: 'tip' });
     assert.equal(await applyProvider(await prepareInstall(fixture.root, inputs, { ...deps, sourceRoot: moved }, 'apply')), url);
     assert.equal(systemd.starts(), starts + 1, 'the runtime restarted for the moved source');
   } finally { await systemd.stop(); await fixture.cleanup(); }

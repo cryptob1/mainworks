@@ -17,25 +17,15 @@ import type { Work } from '../src/model.js';
 import { statusLine } from '../src/model/incidents.js';
 import { HomeStatus } from '../web/components/home.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3833: master status and Home's status line show non-blank line counts in src/ and tests/
 // for the latest verified commit and their change against seven days earlier (or oldest kept).
 
 const repository = 'owner/code-size-trend';
 const unreachable = async () => { throw new TypeError('fetch failed'); };
-const gitEnv = {
-  ...process.env,
-  GIT_AUTHOR_NAME: 't',
-  GIT_AUTHOR_EMAIL: 't@t',
-  GIT_COMMITTER_NAME: 't',
-  GIT_COMMITTER_EMAIL: 't@t',
-} as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv }).trim();
-
 async function makeInstall(label: string) {
-  const root = await temporaryDirectory(`${label}-root`);
-  git(root, 'init', '-q', '-b', 'main');
+  const { root } = await gitRepo({ label: `${label}-root` });
   const credentials = await temporaryDirectory(`${label}-credentials`);
   const credentialFile = join(credentials, 'coordinator.token');
   writeFileSync(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
@@ -143,7 +133,7 @@ test('e2e:code-size-trend — on a running test install master status shows code
     fetch: async () => tip,
     cores: 2,
     parallel: 1,
-    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...gitEnv, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...extra } }),
     gate: { root, repository },
     merge: async head => ({ mergeSha: head, files: [] }),
     trial: async () => ({ build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 10, logTail: '', files: [], proofs: {} }),
@@ -232,7 +222,7 @@ test('code-size-trend — repositories without src/ or tests/ record nothing and
     fetch: async () => tip,
     cores: 2,
     parallel: 1,
-    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...gitEnv, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...extra } }),
     gate: { root, repository },
     merge: async head => ({ mergeSha: head, files: [] }),
     trial: async () => ({ build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 10, logTail: '', files: [], proofs: {} }),

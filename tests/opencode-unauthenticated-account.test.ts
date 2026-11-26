@@ -1,6 +1,5 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +12,7 @@ import { opencodeAuthList } from '../src/master/runtimes.js';
 import { spawnHeadless, startHeadlessSession } from '../src/headless-session.js';
 import { clearRuns } from '../src/runner/registry.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3414: on lumina-investor opencode-a/b/c held an auth.json with a Z.AI key, read as logged in,
 // while OpenCode itself listed no authenticated provider: every review ran the free fallback model,
@@ -65,11 +65,9 @@ function memoryRegistry(host: string) {
 
 async function installation() {
   const root = join(scratch, 'repository'), credentials = join(scratch, 'credentials');
-  await mkdir(root); await mkdir(credentials, { mode: 0o700 });
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'opencode login\n');
-  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  await mkdir(credentials, { mode: 0o700 });
+  const { git } = await gitRepo({ root, files: { 'README.md': 'opencode login\n' }, message: 'initial' });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: join(scratch, 'worktrees') } }, coordinatorStatus, { probe: durable });
   return { root, config: await loadMasterConfig(root) };
 }

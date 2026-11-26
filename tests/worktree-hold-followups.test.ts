@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { runChild } from '../src/child-runner.js';
 import { releaseHeldBranch, releaseUnderFailure, reserveReleasingHold } from '../src/master/branch-release.js';
 import { workspaceCommands } from '../src/cli/workspace.js';
@@ -15,17 +15,9 @@ import type { CliContext } from '../src/cli/context.js';
 // bounded diff; only Mainworks's own session worktrees are released; a refused failure release is
 // never reported as one; and the `worktree` command is driven end to end against a held branch.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const attached = (cwd: string) => spawnSync('git', ['-C', cwd, 'symbolic-ref', '-q', 'HEAD'], { stdio: 'ignore' }).status === 0;
 
-async function host() {
-  const root = await temporaryDirectory('hold-followups');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  for (const [key, value] of [['user.email', 'hold@example.com'], ['user.name', 'Hold Test'], ['commit.gpgsign', 'false']]) git(root, 'config', key, value);
-  await writeFile(join(root, 'source.ts'), 'export const value = 1;\n');
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
-  return root;
-}
+const host = async () => (await gitRepo({ label: 'hold-followups', files: { 'source.ts': 'export const value = 1;\n' } })).root;
 function attemptWorktree(root: string, key: string, epoch: number) {
   const path = join(root, '.graphyard', 'worktrees', `${key}-${epoch}`), branch = `graphyard/${key.toLowerCase()}-${epoch}`;
   git(root, 'worktree', 'add', '-q', '-b', branch, path, 'main');

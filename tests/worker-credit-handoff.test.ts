@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -16,6 +15,7 @@ import { accountHeldForRole } from '../src/model/capacity.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // Exercise the real limit-stop preservation, capacity transaction and successor handoff with real Git,
 // through the headless worker dispatch (GY-3259): the run stops on its limit and the same dispatch moves on.
@@ -43,7 +43,6 @@ const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, bo
   return result.body;
 };
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
-const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 useTestStore('worker-credit-handoff', { leaseSeconds: 7200, repository: 'owner/credit-work', credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
@@ -52,20 +51,14 @@ for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean
     await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');
     const root = await temporaryDirectory(`credit-${shape}`);
     const branch = 'graphyard/attempt-1', worktree = join(root, 'attempt');
-    git(['init', '-q', '-b', 'main'], root);
-    git(['config', 'user.email', 'fixture@graphyard.invalid'], root);
-    git(['config', 'user.name', 'Mainworks Fixture'], root);
-    await writeFile(join(root, 'finding.txt'), 'base\n');
-    git(['add', 'finding.txt'], root);
-    git(['commit', '-q', '-m', 'base'], root);
-    const base = git(['rev-parse', 'HEAD'], root);
-    git(['worktree', 'add', '-b', branch, worktree], root);
+    const { head: base } = await gitRepo({ root, files: { 'finding.txt': 'base\n' } });
+    git(root, 'worktree', 'add', '-b', branch, worktree);
     let committed = base;
     if (shape.includes('committed-and') || shape === 'clean-with-commits') {
       await writeFile(join(worktree, 'finding.txt'), 'committed finding\n');
-      git(['add', 'finding.txt'], worktree);
-      git(['commit', '-q', '-m', 'finding so far'], worktree);
-      committed = git(['rev-parse', 'HEAD'], worktree);
+      git(worktree, 'add', 'finding.txt');
+      git(worktree, 'commit', '-q', '-m', 'finding so far');
+      committed = git(worktree, 'rev-parse', 'HEAD');
     }
     const dirty = shape.includes('uncommitted');
     if (dirty) {
@@ -110,7 +103,7 @@ for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean
     const prepare = async () => {
       const claimed = await ok(workerA, 'POST', `work/${filed.id}/claim`, {}) as Work;
       const path = claimed.epoch === 1 ? worktree : join(root, 'attempt-2'), at = claimed.epoch === 1 ? branch : 'graphyard/attempt-2';
-      if (claimed.epoch !== 1) git(['worktree', 'add', '-q', '-b', at, path, base], root);
+      if (claimed.epoch !== 1) git(root, 'worktree', 'add', '-q', '-b', at, path, base);
       const registered = await ok(workerA, 'POST', `work/${filed.id}/workspace`, { epoch: claimed.epoch, host: HOST, path, branch: at }) as Work;
       return { epoch: claimed.epoch, path, base, branch: at, work: registered };
     };
@@ -118,16 +111,16 @@ for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean
       probe: { quota: false, now: () => clock, cacheMs: 0, smoke: async () => ({ ok: false, error: "You've reached your Fable limit. Run /usage-credits to continue or switch models with /model." }) } as never, capacity: event => ok(coordinator, 'POST', `work/${filed.id}/capacity`, event) });
     const after = await reload(filed.id);
     const partial = after.capacity?.exhaustions[0]?.partialWork;
-    const saved = git(['rev-parse', 'HEAD'], worktree);
+    const saved = git(worktree, 'rev-parse', 'HEAD');
     assert.equal(partial?.state, dirty ? 'committed' : 'clean');
     assert.equal(partial?.commit, saved);
     assert.equal(partial?.branch, branch);
     assert.equal(partial?.path, worktree);
-    assert.equal(git(['status', '--porcelain'], worktree), '');
-    assert.equal(git(['merge-base', committed, saved], root), committed, 'prior commits are ancestors of the saved work');
+    assert.equal(git(worktree, 'status', '--porcelain'), '');
+    assert.equal(git(root, 'merge-base', committed, saved), committed, 'prior commits are ancestors of the saved work');
     if (dirty) {
-      assert.equal(git(['show', `${saved}:finding.txt`], root), 'unfinished finding');
-      assert.equal(git(['show', `${saved}:untracked.txt`], root), 'new finding');
+      assert.equal(git(root, 'show', `${saved}:finding.txt`), 'unfinished finding');
+      assert.equal(git(root, 'show', `${saved}:untracked.txt`), 'new finding');
     } else assert.equal(saved, committed, 'clean trees keep their existing HEAD without a synthetic commit');
     assert.equal(launched.account?.environment, 'claude-d', 'the successor runs on the next account in the same dispatch');
     assert.deepEqual(runs.map(run => run.account), [join(root, 'claude-c'), join(root, 'claude-d')]);
@@ -139,7 +132,7 @@ for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean
     assert.ok(handoff.includes('git log and git show'));
     assert.ok(handoff.includes('cherry-pick or git merge instead of redoing it'));
     // Removing the ended tree leaves the named branch/commit available to the successor.
-    git(['worktree', 'remove', worktree], root);
-    assert.equal(git(['rev-parse', branch], root), saved);
+    git(root, 'worktree', 'remove', worktree);
+    assert.equal(git(root, 'rev-parse', branch), saved);
   });
 }

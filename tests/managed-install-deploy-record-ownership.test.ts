@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -11,6 +10,7 @@ import { daemonStatePath } from '../src/daemon/state.js';
 import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
 import type { MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2955: the control plane's deploy unit persists its own deploy record in the managed checkout
 // it upgrades. A record counts as a repository's release health only when it names that repository
@@ -18,15 +18,13 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // repository cannot impersonate a game deployment; the loop still restarts onto the revision the
 // upgrade serves, and a record naming the managed repository is still its release health.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const plane = 'cryptob1/graphyard', game = 'cryptob1/graphyard-openworld';
 
 /** An origin, a pusher that commits to it, and a checkout of it at the first commit. */
 async function repository(label: string, name = 'release.txt') {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const checkout = join(base, 'checkout');
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true });
   const commit = async (what: string) => { await writeFile(join(pusher, name), what); git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', what); git(pusher, 'push', '-q', 'origin', 'HEAD:main'); return git(pusher, 'rev-parse', 'HEAD'); };
   const a = await commit('A');
   git(base, 'clone', '-q', origin, checkout);

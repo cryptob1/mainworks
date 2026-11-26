@@ -14,6 +14,7 @@ import { confinedMaster } from '../src/cli/master/operations.js';
 import { masterRecords } from '../src/master/conversation.js';
 import { sshdHost } from './helpers/shard-hosts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-1658: the loop-launched master session ran with the coordinator checkout writable (it opted
 // out of GY-888's confinement), and it and standing agent panes hotfixed the serving checkout until
@@ -21,22 +22,11 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // itself. The master session now launches with the checkout read-only, and a launch that cannot be
 // confined is refused.
 
-function coordinator(base: string) {
-  const root = join(base, 'coordinator');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  writeFileSync(join(root, 'src', 'gone.ts'), 'export const gone = 1;\n');
-  writeFileSync(join(root, 'Dockerfile'), 'FROM node:22\n');
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n*.log\n');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  git('config', 'user.email', 'graphyard@localhost'); git('config', 'user.name', 'Mainworks');
-  git('add', '.'); git('commit', '-q', '-m', 'coordinator');
-  return { root, git };
-}
+const coordinator = (base: string) => gitRepo({ root: join(base, 'coordinator'), message: 'coordinator', files: {
+  'src/loop.ts': 'export const loop = 1;\n', 'src/gone.ts': 'export const gone = 1;\n', 'Dockerfile': 'FROM node:22\n', '.gitignore': '.graphyard/\n*.log\n' } });
 test('integration:master-session-checkout-readonly — the master session cannot write a tracked path of the coordinator checkout, directly or through a host process it asks to start, while its managed state and its admin writes still work', async () => {
   const base = await temporaryDirectory('master-confinement');
-  const { root, git } = coordinator(base);
+  const { root, git } = await coordinator(base);
   const confinement = await masterSessionConfinement('claude', root, { bwrap: 'bwrap', platform: 'linux', mountNamespaceWorks: true });
   assert.equal(confinement.mechanism, 'read-only-mount');
   const words = confinement.wrapper;
@@ -91,7 +81,7 @@ test('integration:master-session-checkout-readonly — the master session cannot
 
 test('unit:master-session-peer-grant — a recorded peer\'s token directory is granted writable while its install and an unpeered one stay masked', async () => {
   const base = await temporaryDirectory('master-peer-grant');
-  const { root } = coordinator(base);
+  const { root } = await coordinator(base);
   // Two installs under one config home beside an unrelated third: this one's credential, a peer's
   // directory holding the token this Master placed for it, and one no configuration names.
   const configHome = join(base, 'config'), mine = join(configHome, 'a-install'), theirs = join(configHome, 'b-install');
@@ -122,7 +112,7 @@ test('unit:master-session-peer-grant — a recorded peer\'s token directory is g
 
 test('unit:master-session-confinement-refusal — a master launch that cannot carry the confinement is refused, never started unconfined', async () => {
   const base = await temporaryDirectory('master-refusal');
-  const { root } = coordinator(base);
+  const { root } = await coordinator(base);
   for (const probe of [{ bwrap: null, platform: 'linux' }, { bwrap: 'bwrap', platform: 'darwin' }, { bwrap: 'bwrap', platform: 'linux', mountNamespaceWorks: false }])
     await assert.rejects(masterSessionConfinement('claude', root, probe), /Mainworks never starts a session unconfined.*The master session is refused rather than started with the checkout writable/s, `refused on ${JSON.stringify(probe)}`);
   // Through the launcher: the refusal comes before anything is typed into the pane.
@@ -145,7 +135,7 @@ test('e2e:master-sandbox-allows-only-its-work — from a confined master session
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   // Keep fixture state outside /tmp: bwrap replaces /tmp with its own scratch.
   const base = await temporaryDirectory('master-host-add', join(checkout, '.graphyard'));
-  const { root } = coordinator(base);
+  const { root } = await coordinator(base);
   const config = join(base, 'config'), install = join(config, 'own-install'), machine = join(config, 'machine');
   mkdirSync(join(install, 'masters'), { recursive: true });
   mkdirSync(machine, { recursive: true });
