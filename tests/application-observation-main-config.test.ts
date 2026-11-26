@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { listen } from './helpers/http-server.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { MasterConfig } from '../src/master.js';
 import { previewDemand } from '../src/project-previews.js';
@@ -23,12 +23,10 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd,
   env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 /** A health endpoint answering the commit it serves as JSON; resolves to its URL. */
-const endpoint = (commit: () => string) => new Promise<{ url: string; close(): void }>(resolve => {
-  const server = createServer((_, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ commit: commit() })); }).listen(0, '127.0.0.1', () => {
-    const { port } = server.address() as { port: number };
-    resolve({ url: `http://127.0.0.1:${port}/healthz`, close: () => server.close() });
-  });
-});
+const endpoint = async (commit: () => string) => {
+  const { url, close } = await listen((_, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ commit: commit() })); });
+  return { url: `${url}/healthz`, close };
+};
 
 /** An origin and a coordinator checkout cloned from it; `publish` commits graphyard.json on origin's main and fetches, leaving the checkout behind. */
 async function staleCheckout(name: string, checkoutDelivery: unknown) {

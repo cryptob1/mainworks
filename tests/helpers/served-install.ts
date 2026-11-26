@@ -6,6 +6,7 @@ import { syncTeamAccess } from '../../src/master/team-access.js';
 import { fakeTailscale, onPath } from './fake-tailscale.js';
 import { withDatabase } from './postgres.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { listen } from './http-server.js';
 
 // GY-3480: a machine whose Tailscale serves the install over HTTPS on another port (:8447 → the
 // server's loopback port), with a machine directory written before GY-3294 recorded the node. The
@@ -25,9 +26,7 @@ export async function servedInstall(label: string, options: { funnel?: boolean; 
   engine.gitRunner = null;
   const operator = `test-operator-${label}`, loop = `test-loop-coordinator-${label}-credential-0123456789`, credentialFile = join(host, 'loop.token');
   await writeFile(credentialFile, loop, { mode: 0o600 });
-  const http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: operator }, { id: 'loop', role: 'coordinator', token: loop }], options.clock ? { clock: options.clock } : {});
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const port = (http.address() as { port: number }).port, base = `http://127.0.0.1:${port}`;
+  const { server: http, port, url: base, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: operator }, { id: 'loop', role: 'coordinator', token: loop }], options.clock ? { clock: options.clock } : {}));
   const restorePath = onPath(await fakeTailscale(host, servedNode));
   const serve = (mapping: Record<string, string>) => writeFile(join(host, 'served-https.json'), JSON.stringify(mapping));
   await serve({ 8447: base });
@@ -38,6 +37,6 @@ export async function servedInstall(label: string, options: { funnel?: boolean; 
   return {
     port, base, operator, call, serve, host, engine, store, http, loop,
     sync: (now?: number) => syncTeamAccess({ url: base, credentialFile }, { machineDir, now }),
-    close: async () => { restorePath(); await new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); }); await store.close(); },
+    close: async () => { restorePath(); await close(); await store.close(); },
   };
 }

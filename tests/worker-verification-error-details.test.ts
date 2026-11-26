@@ -18,6 +18,7 @@ import type { WorkerVerificationResult } from '../src/cli/worker-verification.js
 import type { WorkerVerificationInput } from '../src/merge-writer/worker-verification.js';
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3506: a failing confined verification step must preserve its exit status/signal and masked
@@ -101,10 +102,9 @@ test('e2e:worker-verification-error-details — forced runner failure surfaces e
   work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
   work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: worktree, branch: 'graphyard/gy-1-1' }, randomUUID());
 
-  const http = server(engine, [worker, coordinator]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  t.after(() => { http.closeAllConnections(); return new Promise<void>(resolve => http.close(() => resolve())); });
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
+  t.after(close);
+  const url = serverUrl;
   const mutate = async (path: string, body: unknown) => (await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinator.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) })).json();
 
   let mode: 'crash' | 'proof-fail' | 'proof-pass' = 'crash';

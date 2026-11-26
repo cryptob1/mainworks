@@ -18,6 +18,7 @@ import { mergeIntent } from './helpers/merge-ledger.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // The merge writer merges (GY-1524, GY-2010): what it may push is a head its trial passed with every
@@ -589,9 +590,7 @@ test('integration:intake-authority-routing — routine intake is autonomous, hum
   // Scoped operator agents: a second control plane bound to a repository, so
   // operator-agent scope is live on the delegation and intake routes.
   const scopedEngine = new Engine(store, 120, 'owner/delegation'); scopedEngine.principals = roster;
-  const scopedHttp = server(scopedEngine, credentials);
-  await new Promise<void>(resolve => scopedHttp.listen(0, '127.0.0.1', resolve));
-  const scopedUrl = `http://127.0.0.1:${(scopedHttp.address() as { port: number }).port}`;
+  const { url: scopedUrl, close } = await listen(server(scopedEngine, credentials));
   try {
     const adminToken = credentials.find(c => c.id === admin.id)!.token;
     const agentToken = `scoped-operator-${'z'.repeat(32)}`;
@@ -636,7 +635,7 @@ test('integration:intake-authority-routing — routine intake is autonomous, hum
     assert.equal(permitted.status, 200);
     assert.equal((await permitted.json()).sourceWorkId, inScope.id);
   } finally {
-    scopedHttp.close();
+    await close();
     await engine.execute(workerA, 'release', (await store.list()).find(w => w.title === 'scoped-visible')!.id, { epoch: 1 }, id());
     await engine.execute(workerB, 'release', (await store.list()).find(w => w.title === 'scoped-hidden')!.id, { epoch: 1 }, id());
   }

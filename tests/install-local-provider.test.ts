@@ -12,6 +12,7 @@ import { REDACTED } from '../src/install/types.js';
 import { harness, type Harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { freePort } from './helpers/http-server.js';
 
 /**
  * GY-1500: `mainworks install --provider local` (and `mainworks up --local`) runs the control plane
@@ -25,10 +26,6 @@ const runtimeModule = () => import('../src/install/local-runtime.js');
 const INSTALL = 'owner-project';
 
 /** A loopback port nothing listens on, for the server this install would serve on. */
-const freePort = () => new Promise<number>((accept, reject) => {
-  const server = createServer(); server.once('error', reject);
-  server.listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
-});
 
 /**
  * A systemd user manager that runs the unit in this process: `enable --now` starts the runtime the

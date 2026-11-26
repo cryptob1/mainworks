@@ -17,6 +17,7 @@ import { type FleetView } from '../src/model/registry.js';
 import type { Principal } from '../src/model.js';
 import { sealForHost } from '../web/seal.js';
 import { ConnectCard, default as FleetPage, type ConnectView } from '../web/pages/fleet.js';
+import { listen } from './helpers/http-server.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const coordinator: Principal = { id: 'master', role: 'coordinator' };
@@ -27,7 +28,7 @@ const HOST = 'connect-host-1';
 const KEY = `fixture-${randomUUID()}`;
 
 let store: Store, engine: Engine;
-let http: ReturnType<typeof server>, url: string, scratch: string, bin: string;
+let close: (() => Promise<void>) | undefined, url: string, scratch: string, bin: string;
 let originalPath = '';
 
 before(async () => {
@@ -37,9 +38,7 @@ before(async () => {
 
   store = await withDatabase('connect-account'); await store.init();
   engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })))));
   // The provider CLIs this host pretends to have: `login` prints a URL and code, then blocks — as
   // a real device login does — until the operator signs in (the test drops `signed-in` into the
   // login home), and only then writes the login file; anything else is the smoke prompt answering
@@ -89,11 +88,7 @@ before(async () => {
   await runWorker();
 });
 
-after(async () => {
-  process.env.PATH = originalPath;
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  if (store) await store.close();
-});
+after(async () => { process.env.PATH = originalPath; await close?.(); if (store) await store.close(); });
 
 async function call(path: string, actor: Principal, data?: unknown) {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: data === undefined ? undefined : JSON.stringify(data) });

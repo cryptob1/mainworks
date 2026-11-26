@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3638 AC-2: a stub Builder submits a head whose proof id is missing from its test title.
 // complete refuses within 10 seconds naming the proof id, the item stays in build with the same
@@ -34,7 +34,7 @@ async function stubPlane() {
     criteria: [{ id: 'AC-1', text: 'Stub builder proof', proofs: [proofId] }],
   };
   const requests: { method: string; url: string; body?: any }[] = [];
-  const server: Server = createServer(async (req, res) => {
+  const { url, close } = await listen(async (req, res) => {
     res.on('error', () => {});
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -54,12 +54,11 @@ async function stubPlane() {
     }
     return send(404, {});
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+    url: url,
     item,
     requests,
-    close: () => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }),
+    close: close,
   };
 }
 
@@ -115,7 +114,4 @@ test('e2e:complete-preflight-saves-a-round — complete refuses a head missing i
     assert.equal(accepted.ok, true, `complete should accept fixed head: ${accepted.ok ? '' : accepted.stderr}`);
     assert.equal(plane.item.stage, 'review', 'accepted submission moves item to review');
     assert.deepEqual(plane.item.submission, { epoch: 1, head: goodHead });
-  } finally {
-    await plane.close();
-  }
-});
+  } finally { await plane.close(); } });

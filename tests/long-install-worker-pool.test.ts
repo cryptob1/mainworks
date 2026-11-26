@@ -28,6 +28,7 @@ import { server } from '../src/server.js';
 import { sessionNameRefusal } from '../src/session-name.js';
 import { Store } from '../src/store.js';
 import HumanRequestsPage from '../web/pages/human-requests.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3299: hwd-backend's install (inspecthoa-hwd-backend) allows 13 workers — 13 accounts × concurrency 1 —
 // but growWorkerPool named the second profile's session inspecthoa-hwd-backend-claude-1-2, 33 characters,
@@ -40,7 +41,7 @@ const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const first = { name: 'claude-1', principal: worker.id, agentName: 'inspecthoa-hwd-backend-claude-1', mode: 'launch' as const, kind: 'claude' as const };
 const existing = { name: 'hand-configured', principal: 'hand-configured', agentName: 'hand-configured', mode: 'existing' as const };
-let store: Store, engine: Engine, http: ReturnType<typeof server>, root: string, url: string, credentialFile: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, root: string, url: string, credentialFile: string;
 
 before(async () => {
   store = await withDatabase('long-install-worker-pool'); await store.init();
@@ -48,9 +49,7 @@ before(async () => {
   const scratch = await temporaryDirectory('long-install-worker-pool', join(process.cwd(), '.graphyard'));
   root = await temporaryDirectory('coordinator', scratch);
   engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root); engine.principals = [admin];
-  http = server(engine, [coordinator, admin, worker].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [coordinator, admin, worker].map(principal => ({ ...principal, token: token(principal) })))));
   const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const credentials = await temporaryDirectory('credentials', scratch);
@@ -68,10 +67,7 @@ before(async () => {
     models: [{ name: 'fixture', id: 'fixture-model' }], roles: [{ name: 'worker', accounts, concurrency: 1 }], reason: 'hwd-backend fleet',
   }, randomUUID());
 });
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

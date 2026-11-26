@@ -14,6 +14,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { queryName } from '../src/store/slow-queries.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3764: on the live install the flow's attempts read hit the 60 s statement timeout every minute:
 // its "written to within the window" test was a subquery over every event id of the window, too many
@@ -23,16 +24,14 @@ const adminToken = `operator-${'a'.repeat(32)}`;
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
 const ITEMS = 3500, ACTIVE = 1750, EVENTS = 50_000, ATTEMPTS = 60;
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 // The fixture's own statements run on a plain client, outside the timed pools, so the server's slowest-query report holds only what the server ran.
 let fixture: pg.Client;
 
 before(async () => {
   store = await withDatabase('flow-attempts-fast'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   const { id } = await created.json() as { id: string };
@@ -61,10 +60,7 @@ before(async () => {
   await fixture.query(flowLedgerSql, [new Date(Date.now() - 7 * 86_400_000), flowKinds]);
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await fixture?.end(); await store?.close();
-});
+after(async () => { await close?.(); await fixture?.end(); await store?.close(); });
 
 const trimmed = (list: any) => Array.isArray(list) ? list.map((a: any) => ({ claimedAt: a.claimedAt ?? null, endedAt: a.endedAt ?? null, end: a.end ?? null })) : null;
 

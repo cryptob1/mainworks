@@ -27,6 +27,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { loopRunAdoption } from '../src/daemon/run-adoption.js';
 import { existsSync, readdirSync } from 'node:fs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { listen } from './helpers/http-server.js';
 
 // Headless reviews: one child run of the reviewer's runtime, no Herdr pane, its
 // JSON answer posted through review post's own route under the launch's token and reviewer identity.
@@ -36,16 +37,14 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
 const reviewer = 'review-claude-1';
 const now = () => new Date().toISOString();
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let root: string, credentials: string, base: string, head: string;
 
 before(async () => {
   store = await withDatabase('headless-review'); await store.init();
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
-  http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   // A master over a real repository: the base, and a head that changes one file.
   root = await temporaryDirectory('headless-review-root'); credentials = await temporaryDirectory('headless-review-credentials');
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -69,7 +68,7 @@ before(async () => {
   await saveReviewerProfile(root, { name: 'reviewer-claude', agentName: reviewer, kind: 'claude', agentArgs: ['--setting-sources', 'user'] });
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (root) await rm(root, { recursive: true, force: true });
   if (credentials) await rm(credentials, { recursive: true, force: true });

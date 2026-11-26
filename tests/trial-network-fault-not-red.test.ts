@@ -22,6 +22,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3249: Huck's merge trials failed at next/font fetching from Google Fonts, each counted a red
 // head, and Huck's master worked around it in Huck's repository. A trial step that fails fetching
@@ -65,15 +66,13 @@ test('e2e:trial-network-fault-not-red — a build failing on a network fetch rer
     if (args.includes('build')) builds++;
     return defaultChildRun(command, args, options);
   };
-  let store: Store | undefined, http: ReturnType<typeof server> | undefined;
+  let store: Store | undefined, close: (() => Promise<void>) | undefined;
   try {
     store = await withDatabase('trial-network-fault'); await store.init();
     const engine = new Engine(store, 120, 'owner/proofs');
     engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
     const token = 'fixture-coordinator-' + 'x'.repeat(32);
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close: stop } = await listen(server(engine, [{ ...coordinator, token }])); close = stop;
     let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'fonts', criteria: [{ id: 'AC-1', text: 'Builds', proofs: ['unit:builds', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
     work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
@@ -111,11 +110,7 @@ test('e2e:trial-network-fault-not-red — a build failing on a network fetch rer
     assert.equal(trialRefusalHeld(current.candidate, current.mergeLedger), null, 'the head is not refused as a failed trial');
     assert.notEqual(current.mergeLedger?.state, 'refused');
     assert.equal(current.blocker, null, 'nothing parks the item');
-  } finally {
-    if (http) await new Promise<void>(resolve => http!.close(() => resolve()));
-    if (store) await store.close();
-  }
-});
+  } finally { await close?.(); if (store) await store.close(); } });
 
 test('e2e:trial-network-fault-not-red — the external host is read from resolver, socket and next/font failures; loopback and plain build errors are the head\'s', () => {
   assert.equal(networkFaultHost('TypeError: fetch failed\n  [cause]: Error: getaddrinfo ENOTFOUND fonts.googleapis.com'), 'fonts.googleapis.com');

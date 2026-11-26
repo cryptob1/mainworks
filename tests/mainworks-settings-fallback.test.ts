@@ -2,33 +2,29 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { setting } from '../src/setting.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3573: every setting reads MAINWORKS_X before GRAPHYARD_X through one helper.
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const cli = join(repository, 'bin', 'graphyard.mjs');
-const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
 const token = (tag: string) => tag.repeat(40);
 
 test('e2e:mainworks-settings-fallback — only MAINWORKS_URL and only GRAPHYARD_URL reach the same control plane, the new name winning when both are set', async () => {
   const seen: string[] = [];
-  const server = createServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     seen.push(String(request.headers.authorization));
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true }));
     if (request.url === '/api/work/GY-1') return response.end(JSON.stringify({ id: 'work-1', key: 'GY-1', epoch: 1, stage: 'build' }));
     response.statusCode = 404; response.end(JSON.stringify({ error: 'Not found' }));
   });
-  await listen(server);
-  const url = `http://127.0.0.1:${(server.address() as any).port}`;
   const base = await temporaryDirectory('mainworks-settings');
   const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_)/.test(name)));
   const outside = join(base, 'outside'), home = join(base, 'home');
@@ -70,7 +66,4 @@ test('e2e:mainworks-settings-fallback — only MAINWORKS_URL and only GRAPHYARD_
       if (direct.test(line) && !/^\s*(\*|\/\/)/.test(line) && !/GRAPHYARD_[A-Z0-9_]+\s*=[^=]|delete\s/.test(line)) reads.push(`src/${file}:${index + 1}`);
     });
     assert.deepEqual(reads, [], 'every GRAPHYARD_* setting is read through setting()');
-  } finally {
-    await close(server);
-  }
-});
+  } finally { await close(); } });

@@ -19,6 +19,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3535: a merge trial whose test failed or timed out while its containers waited over a minute for
 // the CPU to cool is inconclusive: the same head is trialled again, never reworked; the third heat
@@ -65,9 +66,7 @@ async function trialWithHeat(heat: string, cycles: number, stdout = testTimeout)
   const engine = new Engine(store, 120, 'owner/proofs');
   engine.gitRunner = gitRunnerFor(root); engine.baseBranch = 'main';
   const token = 'fixture-coordinator-' + 'x'.repeat(32);
-  const http = server(engine, [{ ...coordinator, token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(engine, [{ ...coordinator, token }]));
   try {
     let work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'heat', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
     work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
@@ -105,7 +104,7 @@ async function trialWithHeat(heat: string, cycles: number, stdout = testTimeout)
       after.push({ work: document, queued: state.mergeWriter.queue.some(entry => entry.key === document.key), attempts });
     }
     return { key: work.key, after, reworks, attempts, state, trials: (await store.workDocument(work.id))!.mergeLedger };
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); }
+  } finally { await close(); await store.close(); }
 }
 
 test('integration:heat-wait-not-red — a test that timed out while its containers waited over a minute on heat is inconclusive: the same head is trialled again, never reworked, and the third heat failure raises one attention line', { timeout: 300_000 }, async () => {

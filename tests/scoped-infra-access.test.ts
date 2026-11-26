@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +15,7 @@ import { SetupView, type InfraActionRow } from '../web/pages/setup.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3515: an owner-approved infra task gives the confined master a credential limited to one
 // repository and one hosting project. With it the master creates and pushes the repository and
@@ -28,7 +28,7 @@ const githubToken = 'ghp_provider_secret_0123456789abcdefghijklmnop', railwayTok
 /** GitHub's and Railway's APIs as the control plane calls them; a created repository is a bare repository under GITROOT that git pushes to. */
 async function fakeProviders(gitRoot: string) {
   const calls: { path: string; auth: string; body: any }[] = [];
-  const http = createServer(async (req, res) => {
+  const { url, close } = await listen(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : null, path = req.url ?? '';
     calls.push({ path, auth: String(req.headers.authorization ?? ''), body });
@@ -42,8 +42,7 @@ async function fakeProviders(gitRoot: string) {
     if (path === '/graphql' && body.query.includes('environmentCreate')) return reply(200, { data: { environmentCreate: { id: `env-${body.variables.input.name}`, name: body.variables.input.name } } });
     reply(404, { message: 'Not Found' });
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  return { calls, url: `http://127.0.0.1:${(http.address() as { port: number }).port}`, close: () => new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); }) };
+  return { calls, url: url, close: close };
 }
 
 /** A control plane with the owner and the master, the provider fakes, and a checkout the confined master works in. */
@@ -56,9 +55,7 @@ async function infraInstall(label: string) {
   engine.gitRunner = null;
   const owner = `owner-token-${label}-0123456789abcdefghijklmnopqrstuvwxyz`, master = `master-token-${label}-0123456789abcdefghijklmnopqrstuvwxyz`;
   const env = { GRAPHYARD_INFRA_GITHUB_TOKEN: githubToken, GRAPHYARD_INFRA_GITHUB_API: providers.url, GRAPHYARD_INFRA_GIT_URL: gitRoot, GRAPHYARD_INFRA_RAILWAY_TOKEN: railwayToken, GRAPHYARD_INFRA_RAILWAY_API: `${providers.url}/graphql` };
-  const http = server(engine, [{ id: 'owner', role: 'admin', sessionKind: 'human', token: owner }, { id: 'master', role: 'admin', sessionKind: 'ai', token: master }], { env });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url: base, close } = await listen(server(engine, [{ id: 'owner', role: 'admin', sessionKind: 'human', token: owner }, { id: 'master', role: 'admin', sessionKind: 'ai', token: master }], { env }));
   const { git } = await gitRepo({ root: checkout, files: { '.gitignore': '.graphyard/\n', 'README.md': '# new app\n' }, message: 'first' });
   // Everything the CLI prints and the server logs, to show the credential is in none of it.
   const output: string[] = [];
@@ -74,7 +71,7 @@ async function infraInstall(label: string) {
   for (const method of ['log', 'error', 'warn'] as const) console[method] = (...args: unknown[]) => { logged.push(args.map(String).join(' ')); original[method](...args); };
   return {
     base, owner, master, checkout, gitRoot, providers, store, output, logged, cli, git,
-    close: async () => { Object.assign(console, original); await providers.close(); await new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); }); await store.close(); },
+    close: async () => { Object.assign(console, original); await providers.close(); await close(); await store.close(); },
   };
 }
 

@@ -16,6 +16,7 @@ import { createContext } from '../src/cli/context.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { withDatabase } from './helpers/postgres.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3332: on rexera-remote /tmp is a 15.7 GB tmpfs, under the 30 GB disk floor. Every merge and gate
 // trial made its scratch there, waited forever on the floor while holding its place in the queue,
@@ -134,10 +135,9 @@ test(`${proof} — a verification start that must wait prints the reason through
   work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
   work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
   await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'test', path: root, branch: 'graphyard/test' }, randomUUID());
-  const http = server(engine, [worker, coordinator]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  t.after(() => { http.closeAllConnections(); return new Promise<void>(resolve => http.close(() => resolve())); });
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url: serverUrl, close: closeServer } = await listen(server(engine, [worker, coordinator]));
+  t.after(closeServer);
+  const url = serverUrl;
   const mutate = async (path: string, body: unknown) => (await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinator.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
   // One slot on this machine, held by a running merge trial: the verification start must wait for it.
   const occupant = host.launch([await host.volume('merge')], host.load(trialStartOrder.merge, { cap: 1 }));

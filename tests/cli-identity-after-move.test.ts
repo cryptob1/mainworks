@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmod, cp, mkdir, rm, symlink, unlink, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3317: a CLI release is a Git worktree whose .git names the source checkout of the host that
 // made it. Copied to another host, Git cannot read it, and the CLI reported `unreleased unknown`, so
@@ -16,8 +16,6 @@ import { git } from './helpers/git-repo.js';
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
-const listen = (server: Server) => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-const close = (server: Server) => new Promise<void>(resolve => server.close(() => resolve()));
 
 /** Host A: a Mainworks source checkout, a CLI release worktree of it under the install directory, and a managed checkout connected to `url`. */
 async function hostA(root: string, url: string) {
@@ -42,15 +40,13 @@ async function hostA(root: string, url: string) {
 test('e2e:cli-identity-after-move — a CLI release copied to another host passes the version check, a missing identity file is named with its repair, and a really older CLI is still refused', async () => {
   let served = { version: '', commit: '' };
   const requests: string[] = [];
-  const server = createServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     requests.push(`${request.method} ${request.url}`);
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/healthz') return response.end(JSON.stringify({ ok: true, ...served }));
     if (request.url === '/api/work/GY-1') return response.end(JSON.stringify({ id: 'work-1', key: 'GY-1', epoch: 1, stage: 'build' }));
     response.statusCode = 404; response.end(JSON.stringify({ error: 'Not found' }));
   });
-  await listen(server);
-  const url = `http://127.0.0.1:${(server.address() as any).port}`;
   const base = await temporaryDirectory('cli-identity-move');
   const [a, b] = [join(base, 'host-a'), join(base, 'host b')];
   try {
@@ -95,8 +91,4 @@ test('e2e:cli-identity-after-move — a CLI release copied to another host passe
     const older = await status();
     assert.notEqual(older.code, 0, 'a CLI older than the server is refused');
     assert.match(older.stderr, new RegExp(`CLI commit ${commit} and server commit ${newer} differ: run mainworks upgrade`));
-  } finally {
-    await close(server);
-    await rm(base, { recursive: true, force: true });
-  }
-});
+  } finally { await close(); await rm(base, { recursive: true, force: true }); } });

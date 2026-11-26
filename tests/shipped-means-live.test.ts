@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AddressInfo } from 'node:net';
 import { parseRepositoryConfig } from '../src/model-boundary/documentation.js';
 import { liveRelease } from '../src/deploy-watch.js';
 import { shippedCounts } from '../src/model/board.js';
 import type { Work } from '../src/model/work.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3452: shipped means live. Of the week's merges, only those the live commit contains are
 // shipped; the rest are waiting to go live. An install that deploys elsewhere (lumina-investor on
@@ -36,10 +35,9 @@ test('integration:shipped-means-live — shipped counts only merges the live com
 
   // app.healthUrl declared: its answer is the live commit — a JSON field, like lumina's /version, then a plain sha.
   let body = JSON.stringify({ commit: merges[1].sha.slice(0, 12) });
-  const server = createServer((_request, response) => response.end(body));
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { url: serverUrl, close } = await listen((_request, response) => response.end(body));
   try {
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/version`;
+    const url = `${serverUrl}/version`;
     const declared = JSON.stringify({ app: { healthUrl: url } });
     assert.equal(parseRepositoryConfig(declared).app?.healthUrl, url, 'graphyard.json accepts app.healthUrl');
     await writeFile(join(root, 'graphyard.json'), declared);
@@ -56,5 +54,5 @@ test('integration:shipped-means-live — shipped counts only merges the live com
     }
     assert.deepEqual(deployed, { commit: main, waiting: [] });
     assert.deepEqual(keys(shippedCounts(work, deployed, now)), { shipped: ['GY-1', 'GY-2', 'GY-3'], waiting: [] });
-  } finally { server.close(); }
+  } finally { await close(); }
 });

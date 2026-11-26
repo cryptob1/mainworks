@@ -13,6 +13,7 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-2978: a deploy pass moves the watched checkout — the workers' CLI checkout when the unit watches
 // it — only after the new server passed health and serves the same commit; the server deploys from
@@ -38,12 +39,10 @@ test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and r
   const { checkout, commit, a } = await repositories('cli-checkout-deploy');
   const b = await commit('B');
   let served = a, refused: string | null = null;
-  const server = createHttpServer((request, response) => {
+  const { url, close } = await listen(createHttpServer((request, response) => {
     const ok = served !== refused;
     response.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok, healthy: ok, commit: served }));
-  });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  }));
   const tree = gitWatchPorts(checkout, defaultChildRun);
   const samples: string[] = [];
   const ports: DeployWatchPorts = {
@@ -78,7 +77,7 @@ test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and r
       'the failed deploy never moved the CLI checkout, and the rollback finds it already on the old commit');
     assert.equal(head(checkout), b, 'the CLI checkout stays on the old commit');
     assert.deepEqual([readDeployRecord(file)?.tip, readDeployRecord(file)?.failed], [b, c]);
-  } finally { server.close(); }
+  } finally { await close(); }
 });
 
 test('unit:deploy-builds-from-its-own-worktree — a watch pass over a fixture install redeploys from the install\'s build worktree at the new commit while the watched checkout still holds the old one, then publishes the ready CLI without moving or npm-ci-ing the watched checkout', async () => {
@@ -116,13 +115,11 @@ appendFileSync(process.env.GRAPHYARD_TEST_REDEPLOY_LOG, JSON.stringify({ args: p
     process.env.GRAPHYARD_TEST_REDEPLOY_LOG = log;
     const b = await commit('B');
 
-    const server = createHttpServer((request, response) => {
+    const { url, close } = await listen(createHttpServer((request, response) => {
       // The new commit serves only once the redeploy restarted the server (GY-3700: the watch probes first).
       const up = existsSync(log);
       response.writeHead(up ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: up, healthy: up, version: up ? `unreleased ${b.slice(0, 12)}` : 'unreleased old' }));
-    });
-    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    }));
     const repoRoot = await temporaryDirectory('deploy-build-repo'), file = deployRecordPath(repoRoot);
     const ports = await watchPorts({ cliRoot: checkout, repoRoot, repository: 'owner/project', url, run: defaultChildRun });
     if (typeof ports === 'string') throw new Error(ports);
@@ -150,7 +147,7 @@ appendFileSync(process.env.GRAPHYARD_TEST_REDEPLOY_LOG, JSON.stringify({ args: p
       execFileSync(process.execPath, [join(checkout, 'bin/graphyard.mjs'), 'status'], { cwd: checkout, env: process.env });
       const published = JSON.parse((await readFile(log, 'utf8')).trim().split('\n').at(-1)!);
       assert.equal(published.root, build + '/', 'the watched launcher loads the published source and its isolated loader');
-    } finally { server.close(); }
+    } finally { await close(); }
   } finally {
     for (const [name, value] of [['GRAPHYARD_CONFIG_HOME', saved.configHome], ['GRAPHYARD_TEST_CLI', saved.testCli], ['GRAPHYARD_TEST_REDEPLOY_LOG', saved.testLog]] as const) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;

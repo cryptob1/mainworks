@@ -24,6 +24,7 @@ import { loopPresenceHeader, loopStepFailureHeader } from '../src/model/loop-pre
 import { server } from '../src/server.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { Store } from '../src/store.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3293: the loop never writes a config it cannot read, and repairs one it cannot load instead
 // of failing every cycle. The real control plane, agent registry, loop cycle, config load and
@@ -34,7 +35,7 @@ const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 // Eight accounts, so a worker role allowing 128 is 8 × 16 and a pre-GY-3285 total of 16 becomes 2 per account.
 const accounts = ['claude-a', 'claude-b', 'codex-a', 'codex-b', 'muse-a', 'muse-b', 'pi-a', 'pi-b'];
-let store: Store, http: ReturnType<typeof server>, registry: AgentRegistry;
+let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
 let root: string, scratch: string, url: string;
 
 before(async () => {
@@ -43,9 +44,7 @@ before(async () => {
   scratch = await temporaryDirectory('loop-config-self-repair', join(process.cwd(), '.graphyard'));
   root = await temporaryDirectory('coordinator', scratch);
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  http = server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })))));
   const { git } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
@@ -63,10 +62,7 @@ before(async () => {
     accounts: fleet, models: [{ name: 'fixture', id: 'fixture-model' }], roles: [{ name: 'worker', accounts, concurrency: 16 }], reason: 'eight accounts at concurrency 16' }, randomUUID());
 });
 
-after(async () => {
-  if (http) await new Promise<void>(resolve => { http.closeAllConnections?.(); http.close(() => resolve()); });
-  if (store) await store.close();
-});
+after(async () => { await close?.(); if (store) await store.close(); });
 
 const api = async (method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

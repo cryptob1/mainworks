@@ -17,11 +17,8 @@ import { projectCaseSuite } from '../src/release-project.js';
 import { runCases, type E2eReport } from '../src/e2e/runner.js';
 import { trialEnvironment } from '../src/merge-writer/trial.js';
 import { remoteableTestFile } from '../src/merge-writer/remote-shards.js';
-import { createServer } from 'node:net';
+import { freePort } from './helpers/http-server.js';
 
-const freePort = () => new Promise<number>((accept, reject) => {
-  const server = createServer().once('error', reject).listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
-});
 
 // GY-2969: Mainworks's own graphyard.json declares e2e.serve, so its user-facing items can carry
 // e2e: proofs. AC-1: the declared command serves this head's control plane and create-work-item

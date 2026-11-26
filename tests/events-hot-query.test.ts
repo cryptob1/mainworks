@@ -9,6 +9,7 @@ import { server } from '../src/server.js';
 import { readRegistry } from '../src/agent-registry.js';
 import { compactLedger } from '../src/store/compaction.js';
 import type { Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 /**
  * GY-3402: the core database ran at 87% CPU. The reads of the install-wide records — the agent
@@ -20,7 +21,7 @@ import type { Work } from '../src/model.js';
  * and the pages and item history read the same before and after a retention pass.
  */
 const token = 'operator-' + 'a'.repeat(32);
-let store: Store, http: ReturnType<typeof server>, base: string, itemId: string;
+let store: Store, close: (() => Promise<void>) | undefined, base: string, itemId: string;
 const families = ['agent-registry.', 'connect-account.', 'team-access.'];
 // Every events statement the reads under test send, as the database receives it. Installed before
 // the store connects: each connection's query wrapper (store/statements.ts) binds the prototype's.
@@ -51,9 +52,7 @@ const pages = async () => ({
 before(async () => {
   store = await withDatabase('events-hot-query'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url: base, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token }])));
 
   // 200,000 old loop bookkeeping rows (work_id NULL), the bulk of an unowned ledger.
   await store.pool.query(`INSERT INTO events(actor, kind, payload, created_at)
@@ -87,10 +86,7 @@ before(async () => {
   await store.pool.query('ANALYZE events');
 });
 
-after(async () => {
-  http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve()));
-  await store.close();
-});
+after(async () => { await close?.(); await store.close(); });
 
 test('integration:events-hot-query — the install-wide record reads (agent registry, connect requests, team access) go through an index, never a sequential scan of events, and return the rows the kind LIKE returned', async () => {
   recording = true;

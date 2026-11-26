@@ -32,6 +32,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { dispatchKey } from '../src/daemon/reconcile.js';
+import { listen } from './helpers/http-server.js';
 // Time-bomb allowance (GY-1694): the 2026-09-20 at/now/resetsAt trio is the fixed clock handed to fleetView, chooseSession and sessionEnded; Date.now() only builds relative expiries and reset times.
 
 const operator: Principal = { id: 'operator', role: 'admin' };
@@ -46,7 +47,7 @@ const hour = 3_600_000, future = (ms = hour) => new Date(Date.now() + ms).toISOS
 const HOST = 'build-host-1';
 
 let store: Store, engine: Engine;
-let http: ReturnType<typeof server>, url: string, scratch: string;
+let close: (() => Promise<void>) | undefined, url: string, scratch: string;
 
 const inheritedCodexHome = process.env.CODEX_HOME;
 before(async () => {
@@ -55,11 +56,9 @@ before(async () => {
 
   store = await withDatabase('agent-registry'); await store.init();
   engine = new Engine(store, 120, 'owner/project');
-  http = server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })));
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(engine, principals.map(p => ({ ...p, token: tokens.get(p.id)! })))));
 });
-after(async () => { if (inheritedCodexHome !== undefined) process.env.CODEX_HOME = inheritedCodexHome; if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
+after(async () => { if (inheritedCodexHome !== undefined) process.env.CODEX_HOME = inheritedCodexHome; await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 async function call(path: string, actor: Principal, data?: unknown, key: string = randomUUID()) {
   const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: data === undefined ? undefined : JSON.stringify(data) });

@@ -15,6 +15,7 @@ import { itemLedger, masterStatusReport } from '../src/cli/master-status.js';
 import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';
 import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { appendSave, eventStageSql } from '../src/store/snapshot-delta.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3766: the events history's stage mode resolved every delta row's whole document just to read its stage. A delta
 // row now carries the stage beside its delta, so the read takes it from the row and resolves only older rows without it.
@@ -23,7 +24,7 @@ const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
 const stages = ['ready', 'build', 'review', 'test', 'acceptance', 'merge'];
 const ITEMS = 50, ROWS = 800, KB = 180, EVERY = 100;
 const start = Date.parse('2026-11-20T00:00:00Z');
-let store: Store, http: ReturnType<typeof server>, url: string, templateId: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, templateId: string;
 const items: { id: string; key: string; rows: number; legacy: boolean }[] = [];
 const stageAt = (r: number) => stages[Math.floor((r - 1) / EVERY) % stages.length];
 const minuteAt = (r: number) => new Date(start + r * 60_000).toISOString();
@@ -37,9 +38,7 @@ const api = async (path: string) => {
 before(async () => {
   store = await withDatabase('event-stage-stored'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  http = server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
   const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
     body: JSON.stringify({ title: 'Template', why: 'Its document seeds the ledger.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
   templateId = (await created.json() as { id: string }).id;
@@ -68,10 +67,7 @@ before(async () => {
   await store.pool.query('ANALYZE events');
 });
 
-after(async () => {
-  http?.closeAllConnections(); if (http) await new Promise<void>(resolve => http.close(() => resolve()));
-  await store?.close();
-});
+after(async () => { await close?.(); await store?.close(); });
 
 test('integration:event-stage-stored — a delta row written by appendSave carries the stage, and the stage read of 50 items with 800-row delta chains on 180 KB documents answers in under 1 s with unchanged stages', { timeout: 600_000 }, async () => {
   // appendSave writes the item's stage beside its delta.

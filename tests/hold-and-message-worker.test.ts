@@ -20,6 +20,7 @@ import type { CliContext } from '../src/cli/context.js';
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { listen } from './helpers/http-server.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -35,7 +36,7 @@ const workerB: Principal = { id: 'worker-b', role: 'worker', sessionKind: 'ai' }
 const credentials = [operator, coordinator, workerA, workerB].map(principal => ({ ...principal, token: `hold-${principal.id}-${'x'.repeat(32)}` }));
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 const loopId = 'hold-and-message-operator';
-let store: Store, engine: Engine, http: ReturnType<typeof server>, url: string, root: string, checkout: string, config: MasterConfig;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, root: string, checkout: string, config: MasterConfig;
 
 const request = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
   const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...(path === 'work-snapshot' ? { [coordinationViewHeader]: 'coordination' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -52,9 +53,7 @@ const master = (id: string, ...args: string[]) => runAutonomyCommand(checkout, c
   coordinator: path => call(token(coordinator.id), 'GET', path), readSecret: async () => '', agents: () => [], daemonLock: async () => null });
 const lapse = (id: string) => store.pool.query(`UPDATE work_items SET document=jsonb_set(document, '{lease,expiresAt}', to_jsonb($2::text)) WHERE id=$1`, [id, new Date(Date.now() - 1000).toISOString()]);
 const startServer = async () => {
-  http = server(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(engine, credentials)));
   config = { ...config, url };
 };
 
@@ -90,7 +89,7 @@ before(async () => {
   await startServer();
   await call(token(operator.id), 'POST', 'operator-agents', { id: loopId, displayName: 'Loop', capabilities: [], scope: { repositories: [repository], workItems: ['*'] }, token: agentToken, reason: 'the loop applies its decisions' });
 });
-after(async () => { http?.close(); await store?.close(); if (root) await rm(root, { recursive: true, force: true }); });
+after(async () => { await close?.(); await store?.close(); if (root) await rm(root, { recursive: true, force: true }); });
 
 test('integration:hold-and-message-worker — a held item is skipped by dispatch for several cycles with its lease, history and candidate kept; its worker reads and acknowledges the master message at sync, a restart keeps an unread one, the successor inherits it, and release resumes dispatch', async () => {
   const file = (title: string) => call(token(operator.id), 'POST', 'work', { why: 'w', simplest: 's', title, type: 'chore', description: 'A fixture item',
@@ -118,7 +117,7 @@ test('integration:hold-and-message-worker — a held item is skipped by dispatch
   }
   // The master messages the worker; a control plane restart before the worker reads it keeps it.
   await master('message', item.key, 'Stop retrying the upstream call; stub it behind the existing adapter');
-  http.close(); await startServer();
+  await close?.(); await startServer();
   // The worker's next sync shows it with author and time, and acknowledges it under its epoch.
   const first = await sync(workerA, item.id, a.workspace);
   assert.equal(first.merged, true);

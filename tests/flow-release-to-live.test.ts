@@ -14,6 +14,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3725: flow numbers measure merge-to-live time (median, p90, samples and oldest merged change
 // not yet serving) as the 'live' station, joining each merge with the first serving deploy record
@@ -22,7 +23,7 @@ const admin: Principal = { id: 'operator', role: 'admin' };
 const adminToken = `operator-${'t'.repeat(32)}`;
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
 const repository = 'owner/game';
-let store: Store, http: ReturnType<typeof server>, url: string, repoRoot: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string, repoRoot: string;
 const previousRoot = process.env.GRAPHYARD_REPOSITORY_ROOT;
 
 const commitFile = async (cwd: string, name: string, content: string) => {
@@ -36,13 +37,11 @@ before(async () => {
   ({ root: repoRoot } = await gitRepo({ label: 'flow-release-to-live-repo', files: { 'base.txt': 'base\n' }, message: 'add base.txt' }));
   process.env.GRAPHYARD_REPOSITORY_ROOT = repoRoot;
   store = await withDatabase('flow-release-to-live'); await store.init();
-  http = server(new Engine(store, 120, repository), [{ ...admin, token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(server(new Engine(store, 120, repository), [{ ...admin, token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
 });
 
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (previousRoot === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT;
   else process.env.GRAPHYARD_REPOSITORY_ROOT = previousRoot;

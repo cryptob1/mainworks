@@ -15,6 +15,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DispatchEffects } from '../src/dispatch/effects.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
+import { listen } from './helpers/http-server.js';
 
 test('loop-state-dispatch-concurrent: two writers of the dispatch cursor get a conflict and a retry, never a 500 (GY-3366)', async t => {
   const dbUrl = await databaseUrl('loop_state_dispatch_race');
@@ -25,10 +26,8 @@ test('loop-state-dispatch-concurrent: two writers of the dispatch cursor get a c
   await store.close();
   const served = new Store(dbUrl); await served.init();
   const token = 'fixture-coordinator-token'.padEnd(40, 'x');
-  const http = server(new Engine(served, 120, 'owner/project'), [{ id: 'fixture-loop', role: 'coordinator', token }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-  t.after(async () => { http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve())); await served.close(); });
+  const { url, close } = await listen(server(new Engine(served, 120, 'owner/project'), [{ id: 'fixture-loop', role: 'coordinator', token }]));
+  t.after(async () => { await close(); await served.close(); });
   const credentialFile = join(await temporaryDirectory('loop-state-race'), 'coordinator.token');
   await writeFile(credentialFile, token, { mode: 0o600 });
   const config = masterConfigSchema.parse({ version: 1, url, credentialFile, cliPath: '/bin/graphyard', repository: 'owner/project', baseBranch: 'main', githubAppId: 1, hostId: 'machine-a', masterAgentName: 'gmp', workers: [] });

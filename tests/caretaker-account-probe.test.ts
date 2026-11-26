@@ -21,6 +21,7 @@ import { parseProbeFailure } from '../src/model/account-quota.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { emptyRegistry, proposedRuntimes } from '../src/model/registry.js';
 import type { Principal } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -35,11 +36,8 @@ const heldCheck = (home: string) => recordHostAccountCheck(home, {
 });
 
 const stores: Store[] = [];
-const servers: ReturnType<typeof server>[] = [];
-after(async () => {
-  for (const http of servers) http.close();
-  for (const store of stores) await store.close();
-});
+const servers: (() => Promise<void>)[] = [];
+after(async () => { for (const stop of servers) await stop(); for (const store of stores) await store.close(); });
 
 async function startFixtureControlPlane(label: string) {
   const operator: Principal = { id: 'care-operator', role: 'admin', sessionKind: 'human' };
@@ -49,10 +47,8 @@ async function startFixtureControlPlane(label: string) {
   const store = await withDatabase(label);
   stores.push(store);
   await store.init();
-  const http = server(new Engine(store, 7200, 'owner/caretaker'), credentials);
-  servers.push(http);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close } = await listen(server(new Engine(store, 7200, 'owner/caretaker'), credentials));
+  servers.push(close);
   const ok = async (bearer: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, body === undefined
       ? { headers: { Authorization: `Bearer ${bearer}` } }

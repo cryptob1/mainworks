@@ -19,6 +19,7 @@ import { mergeOne, mergeTrialShots, type MergePorts, type MergeRecordEvent, type
 import { mergeRecordBodySchema } from '../src/server/merge-record.js';
 import { keepTrialScreenshots, readTrialScreenshot, trialScreenshotRetentionDays } from '../src/server/trial-screenshots.js';
 import type { StepRecord } from '../src/e2e/steps.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3267: an item that changes the dashboard shows before and after screenshots of the changed
 // page. The trial's e2e group keeps the last screenshot of each browser case it ran (after, on the
@@ -57,8 +58,7 @@ async function fakeAgentBrowser(directory: string, reply: string) {
 
 test('integration:trial-e2e-group-keeps-last-screenshot — the trial\'s e2e group keeps each browser case\'s last screenshot on its result, an agent step\'s or a browser-driving command step\'s, and a case that drove no browser keeps none', async () => {
   const directory = await temporaryDirectory('trial-shot-group');
-  const served = (await import('node:http')).createServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ message: 'served' })); });
-  await new Promise<void>(resolve => served.listen(0, '127.0.0.1', resolve));
+  const { url, close } = await listen((await import('node:http')).createServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ message: 'served' })); }));
   try {
     const put = async (path: string, content: unknown) => { await mkdir(join(directory, 'e2e/cases', path, '..'), { recursive: true }); await writeFile(join(directory, 'e2e/cases', path), JSON.stringify(content)); };
     await put('plays.json', { id: 'plays', title: 'An agent plays', target: 'any', steps: [{ kind: 'agent', goal: 'Play the game', success: ['The board shows "You win"'] }] });
@@ -66,9 +66,9 @@ test('integration:trial-e2e-group-keeps-last-screenshot — the trial\'s e2e gro
     await put('drives.json', { id: 'drives', title: 'A browser command', target: 'any', steps: [{ kind: 'command', name: 'browser', run: `mkdir -p "$E2E_SCREENSHOTS_DIR/test-a" && printf 'old' > "$E2E_SCREENSHOTS_DIR/test-a/first.png" && sleep 0.05 && printf '\\211PNG\\r\\n\\032\\nlast' > "$E2E_SCREENSHOTS_DIR/test-a/test-finished-1.png"` }] });
     await put('asks.json', { id: 'asks', title: 'The page answers', target: 'any', steps: [{ kind: 'http', method: 'GET', path: '/', status: 200, expect: [{ path: 'message', equals: 'served' }] }] });
     const bin = await fakeAgentBrowser(directory, 'The board says You win.\nVERDICT: PASS');
-    const cases = await runTrialE2eGroup(commandApplication({ command: 'true', url: `http://127.0.0.1:${(served.address() as { port: number }).port}`, readySeconds: 1 }),
+    const cases = await runTrialE2eGroup(commandApplication({ command: 'true', url: url, readySeconds: 1 }),
       ['e2e:plays', 'e2e:drives', 'e2e:asks'], { worktree: directory, mergeSha: 'a'.repeat(40), proofs: [], env: { PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME! }, scratch: directory, budgetMs: 120_000, holds: async () => true, log: () => {} },
-      `http://127.0.0.1:${(served.address() as { port: number }).port}`);
+      url);
     const plays = cases.find(entry => entry.case === 'plays')!, asks = cases.find(entry => entry.case === 'asks')!;
     assert.equal(plays.failed, 0, plays.failingStep ?? '');
     assert.equal(plays.screenshot, Buffer.concat([pngSignature, Buffer.from('body')]).toString('base64'), 'the agent case\'s last screenshot rides the result');
@@ -77,7 +77,7 @@ test('integration:trial-e2e-group-keeps-last-screenshot — the trial\'s e2e gro
     assert.equal(drives.screenshot, Buffer.concat([pngSignature, Buffer.from('last')]).toString('base64'), 'a browser-driving command step keeps its newest screenshot');
     assert.equal(asks.failed, 0, asks.failingStep ?? '');
     assert.equal(asks.screenshot, undefined, 'a case whose steps drove no browser keeps none');
-  } finally { served.close(); await rm(directory, { recursive: true, force: true }); }
+  } finally { await close(); await rm(directory, { recursive: true, force: true }); }
 });
 
 test('unit:trial-case-shots — the candidate run\'s kept screenshots are the after side and the base tip\'s are added as the before, bounded as the trial record accepts', () => {

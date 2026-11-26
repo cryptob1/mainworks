@@ -16,6 +16,7 @@ import { createSchema } from '../src/model-boundary/work.js';
 import { dispatchSort } from '../src/model/coordination.js';
 import { mergeQueue } from '../src/model/merge-queue.js';
 import type { Work } from '../src/model.js';
+import { listen } from './helpers/http-server.js';
 
 // GY-3102: a yard-repair item takes its own route past a broken pipeline.
 
@@ -55,7 +56,7 @@ const coordinator: Principal = { id: 'master-loop', role: 'coordinator', session
 const loopId = 'graphyard-master-yard-operator';
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `yard-${principal.id}-${'x'.repeat(32)}` }));
 const agentToken = `yard-agent-${randomUUID()}`;
-let store: Store, http: ReturnType<typeof server>, url: string;
+let store: Store, close: (() => Promise<void>) | undefined, url: string;
 
 const call = async (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
@@ -72,13 +73,11 @@ const file = (title: string, extra: Record<string, unknown> = {}) => call(creden
 before(async () => {
   store = await withDatabase('yard-repair-route');
   await store.init();
-  http = server(new Engine(store, 300, repository), credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  ({ url, close } = await listen(server(new Engine(store, 300, repository), credentials)));
   await call(credentials[0].token, 'operator-agents', { id: loopId, displayName: 'Master loop', capabilities: [],
     scope: { repositories: [repository], workItems: ['*'] }, token: agentToken, reason: 'the loop releases under its own identity' });
 });
-after(async () => { http?.close(); await store?.close(); });
+after(async () => { await close?.(); await store?.close(); });
 
 test('unit:yard-repair-route releaseBacklog releases a yard repair past a full pipeline and holds ordinary backlog', async () => {
   const inFlight = await file('In flight');

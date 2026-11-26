@@ -7,6 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './postgres.js';
+import { listen } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
 import { AgentRegistry } from '../../src/agent-registry.js';
 import { Engine } from '../../src/engine.js';
@@ -31,9 +32,7 @@ const launcher = fileURLToPath(new URL('../../bin/graphyard.mjs', import.meta.ur
 export async function reviewAbandonHarness(name: string) {
   const store: Store = await withDatabase(name); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  const http = server(engine, [{ ...coordinator, token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url, close: closeHttp } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }]));
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   const scratch = await temporaryDirectory(name, join(process.cwd(), '.graphyard'));
   const root = await temporaryDirectory('coordinator', scratch), bin = await temporaryDirectory('bin', scratch);
@@ -137,6 +136,6 @@ console.log(JSON.stringify({ verdict: 'APPROVE', body: 'Reviewed head ${head} ag
   }
 
   const cursor = async () => emptyDispatchCursor(await loadMasterConfig(root));
-  const close = async () => { await new Promise<void>(resolve => http.close(() => resolve())); await store.close(); };
+  const close = async () => { await closeHttp(); await store.close(); };
   return { root, configure, insertReviewItem, recordFailures, tick, masterReview, settled, stored, cursor, close };
 }

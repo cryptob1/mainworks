@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
-import { createServer } from 'node:net';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildPlan, prepareInstall } from '../src/install/index.js';
@@ -14,13 +13,10 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { freePort, listen } from './helpers/http-server.js';
 
 // GY-2877: the continuous deploy runs in its own unit, graphyard-deploy.service, beside the loop's.
 
-const freePort = () => new Promise<number>((accept, reject) => {
-  const server = createServer(); server.once('error', reject);
-  server.listen(0, '127.0.0.1', () => { const { port } = server.address() as { port: number }; server.close(() => accept(port)); });
-});
 const foreground = (): LocalSupervisor => ({ systemd: null, reason: 'no systemd user manager answers (test host)', systemctl: async () => { throw new Error('no systemd'); }, detach: async () => { throw new Error('a plan starts nothing'); }, kill: async () => {} });
 
 /** An origin, a second clone that pushes to it, and the CLI checkout the deploy unit watches, at commit A. */
@@ -51,12 +47,10 @@ test('unit:deploy-unit-watches-main — install --plan lists graphyard-deploy.se
   const { checkout, commit, a } = await repositories();
   const b = await commit('B');
   let served = a, healthy = (sha: string) => sha !== 'never';
-  const server = createHttpServer((request, response) => {
+  const { url, close } = await listen(createHttpServer((request, response) => {
     const ok = request.url === '/healthz' && healthy(served);
     response.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok, commit: served }));
-  });
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
-  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  }));
   const steps: string[] = [];
   let schema: number | null = 7;
   const migrates: Record<string, number> = {};
@@ -138,7 +132,7 @@ test('unit:deploy-unit-watches-main — install --plan lists graphyard-deploy.se
     assert.deepEqual(steps, [`build ${e.slice(0, 7)}`, `restart ${e.slice(0, 7)}`, `healthz ${e.slice(0, 7)}`, `pin ${e.slice(0, 7)}`], 'the next pass completes the rollback');
     assert.deepEqual([readDeployRecord(file)?.tip, readDeployRecord(file)?.failed, readDeployRecord(file)?.restore], [e, f, undefined]);
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), e);
-  } finally { server.close(); }
+  } finally { await close(); }
 
   assert.ok(!cycleSteps.some(step => /deploy|upgrade/.test(step)), 'the master loop\'s cycle holds no deploy step');
 });
