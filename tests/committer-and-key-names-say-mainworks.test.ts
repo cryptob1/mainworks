@@ -49,7 +49,7 @@ function github(keys: { id: number; key: string; title: string }[]): GitHubCli {
   };
 }
 
-test('integration:committer-and-key-names-say-mainworks — a new merge, revert and worker commit are committed by mainworks- names, a branch of old graphyard- commits still merges and completes, and a new deploy key is titled mainworks-merge-writer-<host> while an old-titled key is kept, not duplicated', async () => {
+test('integration:committer-and-key-names-say-mainworks — a new merge, revert and worker commit are committed by mainworks- names, a branch of old-name commits still merges and completes, and a new deploy key is titled mainworks-merge-writer-<host> while an old-titled key is kept, not duplicated', async () => {
   // A checkout whose git config is an old worker identity, as in-flight branches made before the change are.
   const root = await temporaryDirectory('mainworks-names');
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: clean });
