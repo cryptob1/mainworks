@@ -24,6 +24,7 @@ import { awaitsMerge } from '../model/merge-queue.js';
 import { itemPreviewStep, type ItemPreviewPorts, type LivePreview } from '../merge-writer/preview.js';
 import type { PreviewCaseRun } from '../merge-writer/served-previews.js';
 import { relandItemFor, relandTitle, runServeRevert, type RelandInput } from '../merge-writer/serve-revert.js';
+import { moveTouches } from '../merge-writer/stale-trial.js';
 import { slotsDirectoryVariable, testMergeLabel, waitStep, withHeavyJob } from '../master/verification-slots.js';
 import { adoptTrialRun, finishedTrialRun, launchTrialRun, stopTrialRun, trialRunsDirectory, type TrialRunHandle, type TrialRunRequest } from '../merge-writer/trial-run.js';
 import { loadProjectDelivery } from '../model-boundary/project-applications.js';
@@ -162,6 +163,8 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     // GY-1902: an item citing a case bound to a declared static application is previewed from the coordinator checkout, its record written through the merge-record route.
     itemPreviews: { root, base: options.base, timeoutMs: trialTimeoutMinutes * 60_000, run, hostEnvironment: options.environment, now: options.now,
       delivery: () => loadProjectDelivery(options.environment ?? process.env, root), baseTip: tip, record: (item, preview, site) => options.record(item, previewRecordEvent(preview, site)), ...options.itemPreviews },
+    // GY-3881: whether the commits that moved the tip after a trial touch what the head's files import.
+    moveTouches: (from, to, files, at) => moveTouches(args => git(...args), from, to, files, at),
     // Only git's own stale-lease wording is a rejection the executor re-reads the tip for; a remote's refusal (a branch rule, a hook) or a transport failure is thrown as it came, with git's stderr in the message (GY-2940).
     push: async (mergeSha, baseTip) => {
       try { await run('git', ['-C', root, ...pushArgs(base, baseTip, mergeSha, remote)], { env: pushEnvironment(settings, options.environment) }); return 'pushed'; }
@@ -971,6 +974,7 @@ export async function mergeWriterStep(cycle: Cycle) {
         if (state.actions[trialImageKey]?.state === 'failed') delete state.actions[trialImageKey];
         if (outcome.outcome === 'merged' || outcome.outcome === 'reconciled') {
           writer.lastMergeAt = at();
+          if (outcome.outcome === 'merged' && outcome.untrialled) writer.untrialledLandings = (writer.untrialledLandings ?? 0) + 1;
           // GY-2079: this head's trial passed — the timed-out heads' evidence that the host completes trials.
           for (const counted of writer.timeouts) if (counted.key !== itemKey) counted.othersPassed = true;
           delivered = true;
@@ -1062,7 +1066,9 @@ export async function mergeWriterStep(cycle: Cycle) {
       if (busy.has(item.key) || settledNow.has(item.key) || !awaitsMerge(item, ledger, now())) continue;
       const record = attemptRecorder(writer, reads.record, randomUUID(), at);
       try {
-        if (!await pushPassedTrial({ ...reads, record }, item)) continue;
+        const landed = await pushPassedTrial({ ...reads, record }, item);
+        if (!landed) continue;
+        if (landed.untrialled) writer.untrialledLandings = (writer.untrialledLandings ?? 0) + 1;
       } catch (error) { if (writer.unconfirmed?.length) await effects.persist(state); throw error; }
       writer.lastMergeAt = at();
       writer.queue = writer.queue.filter(entry => entry.key !== item.key);
@@ -1156,6 +1162,8 @@ export async function mergeWriterStep(cycle: Cycle) {
 export type MergeWriterSummary = {
   trials?: MergeWriterState['trials']; stepMedians?: Record<string, number>;
   queue: MergeWriterState['queue']; inFlight: (MergeWriterState['inFlight'] & { stepMs?: number; stalled?: boolean }) | null; lastMergeAt: string | null;
+  /** GY-3881: landings onto a moved tip with no second trial. */
+  untrialledLandings?: number;
   /** Every head the flight trials at once, timed like `inFlight`; absent while nothing merges. */
   inFlights?: (NonNullable<MergeWriterState['inFlights']>[number] & { stepMs?: number; stalled?: boolean })[];
   refusals: MergeWriterState['refusals']; reworks: MergeWriterState['reworks'];
@@ -1170,7 +1178,7 @@ export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, 
     return Number.isFinite(at) && now !== undefined ? { ...entry, stepMs: Math.max(0, now - at), stalled: now - at >= mergeStallMs } : entry;
   };
   const inFlight = writer.inFlight && timed(writer.inFlight);
-  return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert };
+  return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, untrialledLandings: writer.untrialledLandings ?? 0, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert };
 };
 ;
 ;
