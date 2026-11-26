@@ -144,8 +144,10 @@ test(`${proof} — placement uses both a v1 host and a v2 host, sending v1 calls
         return tag === image ? imageDigest : `sha256:${'d'.repeat(64)}`;
       }
       if (args[0] === 'images') return [...localImages].filter(tag => tag.startsWith('graphyard-warm:')).join('\n');
-      if (args[0] === 'commit') {
-        const tag = args.at(-1)!;
+      if (args[0] === 'commit') { localImages.add(args.at(-1)!); return ''; }
+      // GY-3936: the checked candidate is tagged as the warm image.
+      if (args[0] === 'tag') {
+        const tag = args[2]!;
         localImages.add(tag);
         if (pendingBuildScript) dockerBuildScripts.push({ tag, script: pendingBuildScript });
         pendingBuildScript = null;
