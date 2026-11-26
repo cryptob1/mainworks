@@ -83,7 +83,7 @@ export async function localDirectory(root: string) {
 
 // --- Drop-in setup: read-only repository scan ---------------------------------
 
-export interface ScanInput { files: string[]; contents: Record<string, string> }
+export interface ScanInput { files: string[]; contents: Record<string, string>; truncated?: { seen: number; skipped: number } }
 
 // `.claude` is the Claude runtime's own state in a checkout, never project content: its working
 // copies under `.claude/worktrees`, its lock files and its local settings. One checkout held 10,409
@@ -97,33 +97,52 @@ const scanInteresting: RegExp[] = [
   /^\.nojekyll$/, /^CNAME$/, /^index\.html$/, /^\.env\.example$/, /^pytest\.ini$/, /^conftest\.py$/,
   /^\.github\/workflows\/[^/]+\.ya?ml$/, /^graphyard\.json$/, /^e2e\/cases\/[^/]+\.json$/,
 ];
-const scanLimits = { files: 5000, depth: 6, bytes: 262_144 };
+const scanLimits = { files: 5000, depth: 6, bytes: 262_144, plainFilesPerDirectory: 500 };
 
-/** Read-only bounded walk that keeps only paths and whitelisted manifest/config text. Never executes repository code. */
+/**
+ * Read-only bounded walk that keeps only paths and whitelisted manifest/config text. Never executes
+ * repository code and never refuses on size (GY-3871): the walk is breadth-first, so the root and
+ * shallow manifests are read first; once the entry budget is spent it stops and marks the result
+ * truncated, and a directory stops yielding plain files after 500 of them.
+ */
 export async function collectScanInput(root: string): Promise<ScanInput> {
   const files: string[] = [], contents: Record<string, string> = {};
-  let seen = 0;
-  const walk = async (prefix: string, depth: number): Promise<void> => {
-    if (depth > scanLimits.depth) return;
+  let seen = 0, skipped = 0;
+  const queue: { prefix: string; depth: number }[] = [{ prefix: '', depth: 0 }];
+  for (let next = 0; next < queue.length; next++) {
+    const { prefix, depth } = queue[next]!;
+    if (seen >= scanLimits.files) { skipped += queue.length - next; break; }
     const entries = await readdir(resolve(root, prefix || '.'), { withFileTypes: true }).catch((error: any) => { if (error.code === 'ENOENT') return []; throw error; });
+    let plain = 0;
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (++seen > scanLimits.files) throw new Error('Repository exceeds the scan file limit; inspect a narrower checkout');
       const path = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isSymbolicLink() || scanExcluded.has(entry.name)) continue;
-      if (entry.isDirectory()) { await walk(path, depth + 1); continue; }
+      if (entry.isDirectory()) { if (depth < scanLimits.depth) queue.push({ prefix: path, depth: depth + 1 }); seen++; continue; }
       if (!entry.isFile()) continue;
+      const interesting = scanInteresting.some(pattern => pattern.test(path));
+      if (!interesting && (plain >= scanLimits.plainFilesPerDirectory || seen >= scanLimits.files)) { skipped++; continue; }
+      if (!interesting) plain++;
+      seen++;
       files.push(path);
       // The workflows `init --apply` generates are Mainworks's output, never an input to the next
       // scan: reading them back would make every apply change the scan it was applied from.
       if ((generatedWorkflowFiles as readonly string[]).includes(path) || path === deliveryWorkflowFile) continue;
-      if (scanInteresting.some(pattern => pattern.test(path))) {
+      if (interesting) {
         const bytes = await readFile(resolve(root, path)).catch((error: any) => { if (error.code === 'ENOENT') return null; throw error; });
         if (bytes && bytes.length <= scanLimits.bytes) contents[path] = bytes.toString('utf8');
       }
     }
-  };
-  await walk('', 0);
-  return { files, contents };
+  }
+  // Depth-first order, as callers have always seen it.
+  const segments = new Map(files.map(file => [file, file.split('/')]));
+  files.sort((left, right) => {
+    const a = segments.get(left)!, b = segments.get(right)!;
+    for (let index = 0; index < Math.min(a.length, b.length); index++) if (a[index] !== b[index]) return a[index]!.localeCompare(b[index]!);
+    return a.length - b.length;
+  });
+  if (!skipped) return { files, contents };
+  process.stderr.write(`Scanned ${seen} entries of this repository; skipped ${skipped} more.\n`);
+  return { files, contents, truncated: { seen, skipped } };
 }
 
 const parseJson = (input: ScanInput, path: string): any | null => {
