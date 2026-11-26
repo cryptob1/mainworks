@@ -4,6 +4,7 @@
 // before the runtime starts. Tests that stub Herdr use this to read the launch the way the
 // runtime would: the runtime kind, its arguments after expansion, and the request it starts on.
 import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
 
 export interface TypedLaunch { stem: string | null; words: string[]; kind: string; args: string[] }
 
@@ -36,7 +37,8 @@ export function expandTypedCommand(command: string): TypedLaunch {
     runtime = runtime.slice(runtime.indexOf('--') + 1);
   }
   // Herdr reports the runtime by kind, not by the command that started it: Cursor's is `agent` (GY-976).
-  return { stem, words, kind: runtime[0] === 'agent' ? 'cursor' : runtime[0], args: runtime.slice(1) };
+  const kind = basename(runtime[0]);
+  return { stem, words, kind: kind === 'agent' ? 'cursor' : kind, args: runtime.slice(1) };
 }
 
 /** The instruction the runtime would read from its own arguments, per the real CLI contracts. */

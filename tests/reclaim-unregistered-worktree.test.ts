@@ -46,7 +46,7 @@ before(async () => {
 });
 after(async () => { http?.close(); await store?.close(); });
 
-test('e2e:reclaim-unregistered-worktree — the loop removes an ended attempt\'s unregistered directory holding a 0555 tree, leaving a live attempt and an outside path alone', async () => {
+test('e2e:reclaim-unregistered-worktree — the loop removes an ended attempt\'s unregistered directory holding a 0555 tree, leaving a live attempt and an outside path alone', async t => {
   git(['init', '-q', '-b', 'main']);
   await writeFile(join(install, '.gitignore'), 'scratch/\n');
   git(['add', '.gitignore']);
@@ -63,6 +63,9 @@ test('e2e:reclaim-unregistered-worktree — the loop removes an ended attempt\'s
     await mkdir(leaf, { recursive: true });
     await writeFile(join(leaf, 'index.js'), 'module.exports = 1;\n');
     for (const nested of [leaf, dirname(leaf), dirname(dirname(leaf))]) await chmod(nested, 0o555);
+    t.after(async () => {
+      for (const nested of [leaf, dirname(leaf), dirname(dirname(leaf))]) if (existsSync(nested)) await chmod(nested, 0o755);
+    });
     const claimed = await ok(worker, `work/${filed.id}/claim`, {}) as Work;
     await ok(worker, `work/${filed.id}/workspace`, { epoch: claimed.epoch, host: HOST, path: directory, branch });
     return { filed, directory };
