@@ -4,6 +4,10 @@
  * that reads an identity reads the committer as before. An install with no owner recorded authors
  * as 'Mainworks <mainworks@localhost>'.
  */
+import { execFileSync } from 'node:child_process';
+import { renameSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 export interface CheckInOwner { name: string; email: string }
 
 const unownedAuthor = { name: 'Mainworks', email: 'mainworks@localhost' } as const;
@@ -25,18 +29,39 @@ export const ownerAttentionLine = 'Commits are authored "Mainworks": name the ow
 
 /** The owner the loop read on its latest snapshot; its merges, reverts, kept work and launched workers author with it. */
 let loopOwner: CheckInOwner | null = null;
-export const recordLoopOwner = (owner: CheckInOwner | null) => { loopOwner = owner; };
+let liveAuthorFile: string | null = null;
+/**
+ * GY-3912: the loop also writes the owner to `mainworks-author.gitconfig` in the checkout's shared git directory, which
+ * every local session it launches (each in a worktree of that checkout) includes through environment config, so a running session's next commit carries the current owner.
+ */
+export const recordLoopOwner = (owner: CheckInOwner | null, root?: string) => {
+  loopOwner = owner;
+  liveAuthorFile = null;
+  if (!root) return;
+  const common = execFileSync('git', ['-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  const file = join(common, 'mainworks-author.gitconfig'), author = checkInAuthor(owner);
+  const quoted = (value: string) => `"${value.replace(/[\\"]/g, '\\$&')}"`;
+  writeFileSync(`${file}.next`, `[user]\n\tname = ${quoted(author.name)}\n\temail = ${quoted(author.email)}\n`);
+  renameSync(`${file}.next`, file);
+  liveAuthorFile = file;
+};
 export const loopAuthorEnvironment = () => authorEnvironment(loopOwner);
+/** A local session's author: read from the live file at each commit once the loop has written it, else fixed at launch. */
+export const sessionAuthorEnvironment = (): Record<string, string> => liveAuthorFile
+  ? { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'include.path', GIT_CONFIG_VALUE_0: liveAuthorFile }
+  : loopAuthorEnvironment();
 
 /**
- * The first commit in `log` (lines `SHA<TAB>AUTHOR NAME`) whose author is not the owner's, as the
- * one line `complete` refuses with; null when every commit carries it.
+ * The first commit in `log` (lines `SHA<TAB>AUTHOR NAME<TAB>AUTHOR EMAIL`) authored by none of the
+ * accepted forms — the current owner's, the one in force when the attempt was claimed (GY-3912) and
+ * the install default — as the one line `complete` refuses with; null when every commit carries one.
  */
-export function foreignAuthor(log: string, owner: CheckInOwner | null | undefined, base: string): string | null {
+export function foreignAuthor(log: string, owner: CheckInOwner | null | undefined, base: string, claimOwner?: CheckInOwner | null): string | null {
   const author = checkInAuthor(owner), expected = author.name;
+  const accepted = new Set([owner, claimOwner, null].map(form => (a => `${a.name}\t${a.email}`)(checkInAuthor(form))));
   for (const line of log.split('\n').filter(Boolean)) {
-    const [sha, ...name] = line.split('\t');
-    if (name.join('\t') !== expected) return `complete refused: commit ${sha!.slice(0, 12)} is authored '${name.join('\t')}'; every commit must be authored '${authorLine(owner)}': run GIT_AUTHOR_NAME='${expected}' GIT_AUTHOR_EMAIL='${author.email}' git rebase ${base} --exec 'git commit --amend --no-edit --reset-author', then complete again`;
+    const [sha, name = '', email = ''] = line.split('\t');
+    if (!accepted.has(`${name}\t${email}`)) return `complete refused: commit ${sha!.slice(0, 12)} is authored '${name}'; every commit must be authored '${authorLine(owner)}': run GIT_AUTHOR_NAME='${expected}' GIT_AUTHOR_EMAIL='${author.email}' git rebase ${base} --exec 'git commit --amend --no-edit --reset-author', then complete again`;
   }
   return null;
 }

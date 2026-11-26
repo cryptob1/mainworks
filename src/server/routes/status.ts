@@ -35,7 +35,7 @@ import { readFlow, sharedFlow } from '../flow.js';
 import { boundedHistoryRead } from '../history-reads.js';
 import { longestLockHold, slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
-import { checkInOwner } from './owner.js';
+import { checkInOwner } from '../../store/check-in-owner.js';
 import { setting } from '../../setting.js';
 
 
