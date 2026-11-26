@@ -7,8 +7,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { hostShimDigest, hostShimScript, hostShimVerbs } from '../src/host-shim.js';
-import { helperSigner, helperSigningKeyFile, readHostReadings, shareHost } from '../src/hosts.js';
-import { shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { helperSigningKeyFile, readHostReadings, shareHost } from '../src/hosts.js';
+import { fixtureShim, shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3879 AC-1: a key added with `host share` runs only the helper's trial verbs: update-shim, share and
@@ -30,8 +30,8 @@ before(async () => {
   keys = join(hosts.home('box'), '.ssh', 'authorized_keys');
   await mkdir(join(hosts.home('box'), '.ssh'), { recursive: true });
   await writeFile(keys, `restrict,command="graphyard-host-shim" ${keyA}\n`);
-  // What prepare records root-owned beside the installed helper: this machine's signing key.
-  await writeFile(join(hosts.root, 'graphyard-helper-signers'), `mainworks-helper namespaces="mainworks-helper" ${helperSigner(config)}\n`);
+  // What prepare records root-owned: this machine's signing key.
+  await writeFile(hosts.shim, fixtureShim(hostShimScript, hosts.root));
 });
 after(() => { if (saved === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = saved; });
 
@@ -80,13 +80,13 @@ test(`${proof} — the owner's key takes only a signed helper update: a caller-c
   }
   assert.equal(existsSync(shims()), false, 'nothing was written');
   // An older helper on the host: the loop sends this release's, signed, and the host runs it.
-  await writeFile(hosts.shim, hostShimScript.replace(hostShimDigest, 'a'.repeat(64)));
+  await writeFile(hosts.shim, fixtureShim(hostShimScript.replace(hostShimDigest, 'a'.repeat(64)), hosts.root));
   await writeFile(join(hosts.root, 'hosts.json'), JSON.stringify([{ target, addedAt: 'x' }]));
   const reading = (await readHostReadings([], { file: join(hosts.root, 'hosts.json'), run, local: 'here', update: true })).find(entry => entry.host === target)!;
   assert.equal(reading.away, false, reading.reason);
   assert.equal(reading.older, undefined, 'the genuine update applied');
   assert.match(call('probe', '').stdout, new RegExp(`^shim ${hostShimDigest}$`, 'm'));
-  await writeFile(hosts.shim, hostShimScript);
+  await writeFile(hosts.shim, fixtureShim(hostShimScript, hosts.root));
 });
 
 test(`${proof} — unshare by the owner's key removes only the shared line it names, never the owner's own`, async () => {

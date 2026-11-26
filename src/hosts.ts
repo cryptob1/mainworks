@@ -113,7 +113,7 @@ cat > /usr/local/bin/${helper} <<'GRAPHYARD_SHIM'
 ${shim.script}GRAPHYARD_SHIM
 chmod 755 /usr/local/bin/${helper}
 # Helper updates this machine signs are the only ones the helper takes (GY-3879).
-signers=/usr/local/bin/graphyard-helper-signers
+signers=/etc/ssh/graphyard_helper_signers
 signer=${shellQuote(`mainworks-helper namespaces="mainworks-helper" ${signer}`)}
 touch "$signers"; grep -qxF "$signer" "$signers" || echo "$signer" >> "$signers"; chmod 644 "$signers"
 home=$(getent passwd "$user" | cut -d: -f6)

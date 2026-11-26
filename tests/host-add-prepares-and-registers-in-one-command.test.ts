@@ -90,7 +90,7 @@ test(`${proof} — guide infra says how to add a machine in at most three senten
   assert.match(sentences[2]!, /^Helper updates then need nobody\.$/);
 });
 
-test(`${proof} — AC-4: prepare keeps another install's helper; host add updates an older update-shim:1 helper to this release's digest`, { timeout: 120_000 }, async () => {
+test(`${proof} — AC-4: prepare keeps another install's helper; host add updates an older update-shim:2 helper to this release's digest`, { timeout: 120_000 }, async () => {
   // (a) Prepare removes only this install's superseded helper and never another install's helper (direct or shared --home).
   const keyOther = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHTV6f52ARa/vlYRkS8yKc4Chbk2xf06bI6Tny1m2lZq other-install';
   const keyShared = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAB12cd34EF56gh78IJ90kl12MN34op56QR78st90UV1 shared-install';
@@ -114,13 +114,13 @@ test(`${proof} — AC-4: prepare keeps another install's helper; host add update
     assert.equal(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${digestOld}`)), false, "this install's superseded helper is removed");
     assert.ok(existsSync(join(pair.host('shared'), 'usr-local-bin', `graphyard-host-shim-${digestOther}`)), "another install's helper is still kept");
 
-    // (b) A host whose probed shim has an older digest that lists update-shim:1 is NOT counted as already prepared:
+    // (b) A host whose probed shim has an older digest that lists update-shim:2 is NOT counted as already prepared:
     // host add updates it through update-shim (without sudo) until its probed digest is hostShimDigest.
     await pair.prepare('outdated', { shim: { script: hostShimScript.replace(hostShimDigest, digestOld), digest: digestOld } });
     const beforeProbe = await probeHost('gy-compute@outdated');
     assert.equal(beforeProbe.ok, true);
-    assert.equal(beforeProbe.ok && beforeProbe.shim, digestOld, 'starts on an older digest that still speaks update-shim:1');
-    assert.ok(beforeProbe.ok && beforeProbe.verbs?.includes('update-shim:1'));
+    assert.equal(beforeProbe.ok && beforeProbe.shim, digestOld, 'starts on an older digest that still speaks update-shim:2');
+    assert.ok(beforeProbe.ok && beforeProbe.verbs?.includes('update-shim:2'));
 
     const sudoBefore = (await readFile(join(pair.host('outdated'), 'log'), 'utf8').catch(() => '')).split('\n').filter(line => line.startsWith('sudo sh -c')).length;
     terminal(false);
@@ -137,7 +137,7 @@ test(`${proof} — AC-4: prepare keeps another install's helper; host add update
     const noop = await output(['host', 'add', `${ownerLogin}@outdated`]);
     assert.deepEqual(noop.lines, ['gy-compute@outdated is already prepared and added: nothing to do.']);
 
-    // Even when already recorded, an older update-shim:1 helper is updated to hostShimDigest rather than treated as a no-op.
+    // Even when already recorded, an older update-shim:2 helper is updated to hostShimDigest rather than treated as a no-op.
     await pair.prepare('outdated', { shim: { script: hostShimScript.replace(hostShimDigest, digestOld), digest: digestOld } });
     const reupdated = await output(['host', 'add', `${ownerLogin}@outdated`]);
     assert.deepEqual(reupdated.lines, ["Updated gy-compute@outdated's helper to this release."]);

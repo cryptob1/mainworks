@@ -16,7 +16,7 @@
 //   clean RUN                      remove a run directory
 //   update-shim DIGEST             GY-3780: an SSH signature then this release's shim on stdin, kept as gy-compute's own copy, which the
 //                                  installed shim runs from then on, only when its SHA-256 is DIGEST and (GY-3879) a coordinator key in the
-//                                  root-owned graphyard-helper-signers beside the installed helper signed it
+//                                  root-owned /etc/ssh/graphyard_helper_signers signed it
 //   share / unshare                GY-3834: one ssh-ed25519 public key line on stdin, bound to this same helper (restrict: no shell,
 //                                  pty or forwarding) with its own state directory under ~/.graphyard/installs, or that key's shared line removed
 // GY-3879: a shared key (the helper started with --home) is refused update-shim, share and unshare, and never re-tags an image another install loaded.
@@ -94,7 +94,7 @@ refuse() { echo "graphyard-host-shim refuses: $SSH_ORIGINAL_COMMAND" >&2; exit 1
 [ $# -eq 0 ] || { [ $# -eq 2 ] && [ "$1" = --home ]; } || refuse
 # GY-3780: run this user's own updated copy when there is one, one per installed helper and coordinator address: another install's update is not this one's.
 if [ -z "$MAINWORKS_SHIM" ]; then
-  export MAINWORKS_SHIM="\${2:-$HOME}/.graphyard/shims/\${0##*/}-\${SSH_CLIENT%% *}" MAINWORKS_SIGNERS="\${0%/*}/graphyard-helper-signers"
+  export MAINWORKS_SHIM="\${2:-$HOME}/.graphyard/shims/\${0##*/}-\${SSH_CLIENT%% *}" MAINWORKS_SIGNERS=/etc/ssh/graphyard_helper_signers
   [ ! -f "$MAINWORKS_SHIM" ] || exec sh "$MAINWORKS_SHIM" "$@"
 fi
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
@@ -298,7 +298,9 @@ elif verb == 'prepare-run':
                 os.chmod(path, os.stat(path).st_mode | 0o060)
     print('run ' + os.path.basename(run))
 elif verb == 'update-shim':
-    signature, _, content = sys.stdin.buffer.read(1 << 20).partition(b'-----END SSH SIGNATURE-----\\n')
+    signature, signed, content = sys.stdin.buffer.read(1 << 20).partition(b'-----END SSH SIGNATURE-----\\n')
+    if not signed:
+        signature, content = b'', signature
     own = os.environ['MAINWORKS_SHIM']
     if hashlib.sha256(content).hexdigest() != args[0]:
         sys.exit('graphyard-host-shim refuses the update: its content does not match ' + args[0])

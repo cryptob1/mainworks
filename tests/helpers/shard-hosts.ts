@@ -10,11 +10,12 @@
 // them, and a container created on a service's network resolves the project's service names to this machine.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createServer } from 'node:net';
 import { temporaryDirectory } from './temp-dirs.js';
 import { hostShimScript } from '../../src/host-shim.js';
+import { helperSigner } from '../../src/hosts.js';
 
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
 
@@ -251,13 +252,19 @@ elif command == 'start':
     sys.exit(subprocess.call(container['command'], cwd=container['workdir'], env=container['env']))
 `;
 
+/** GY-3879: a shim as these hosts install it: the signers prepare records root-owned live in the fixture root, holding this machine's signing key. */
+export const fixtureShim = (script: string, root: string) => {
+  writeFileSync(join(root, 'graphyard-helper-signers'), `mainworks-helper namespaces="mainworks-helper" ${helperSigner()}\n`);
+  return script.replace('/etc/ssh/graphyard_helper_signers', join(root, 'graphyard-helper-signers'));
+};
+
 export interface ShardHostsFixture { root: string; bin: string; shim: string; localState: string; home(name: string): string; state(name: string): string; down(name: string, down: boolean): Promise<void> }
 
 /** Hosts `names`, each with its own home and Docker state, reached as gy-compute@NAME through the ssh on `bin`; this machine's Docker holds `images` (name to id). */
 export async function shardHosts(label: string, names: string[], images: Record<string, string> = {}): Promise<ShardHostsFixture> {
   const root = await temporaryDirectory(label), bin = join(root, 'bin'), shim = join(root, 'graphyard-host-shim'), localState = join(root, 'local-docker');
   await mkdir(bin, { recursive: true });
-  await executable(shim, hostShimScript);
+  await executable(shim, fixtureShim(hostShimScript, root));
   await executable(join(bin, 'docker'), dockerStandIn(localState));
   await mkdir(localState);
   await writeFile(join(localState, 'state.json'), JSON.stringify({ images, containers: {} }));
