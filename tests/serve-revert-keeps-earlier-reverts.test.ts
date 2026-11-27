@@ -8,13 +8,12 @@ import { runServeRevert, type ServeRevertPorts } from '../src/merge-writer/serve
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3881 AC-2: reverting the newest landing takes back out only that landing. A plain revert
 // nothing owns, or a direct landing, that sits before the merge on main stays on main: the merge's
 // "before" is its own first parent, never the previous owned landing.
 
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 const passTrial = { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {} } as unknown as MergeTrialRun;
 
 const item = (key: string, mergeSha: string) => ({
@@ -24,8 +23,7 @@ const item = (key: string, mergeSha: string) => ({
 
 async function repository(label: string) {
   const base = await temporaryDirectory(label);
-  const repo = join(base, 'repo');
-  git(base, 'init', '-q', '-b', 'main', repo);
+  const { root: repo, head: verified } = await gitRepo({ root: join(base, 'repo'), files: { 'keep.txt': 'keep\n' } });
   const write = async (files: Record<string, string>, message: string) => {
     for (const [name, text] of Object.entries(files)) { await mkdir(join(repo, name, '..'), { recursive: true }); await writeFile(join(repo, name), text); }
     git(repo, 'add', '.');
@@ -39,9 +37,8 @@ async function repository(label: string) {
     git(repo, 'merge', '-q', '--no-ff', '-m', `Merge ${key}: page`, key);
     return git(repo, 'rev-parse', 'HEAD');
   };
-  const verified = await write({ 'keep.txt': 'keep\n' }, 'base');
   const ports: ServeRevertPorts = {
-    git: async (args, extra) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extra } }),
     trial: async () => passTrial,
     push: async (revertSha, baseTip) => { if (git(repo, 'rev-parse', 'main') !== baseTip) return 'rejected'; git(repo, 'update-ref', 'refs/heads/main', revertSha); return 'pushed'; },
     file: async () => ({ key: 'GY-9' }),

@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { withDatabase } from './helpers/postgres.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -24,21 +22,16 @@ const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.ex
 const ample = async () => ({ totalBytes: 128 * 2 ** 30, availableBytes: 100 * 2 ** 30 });
 const small = async () => ({ totalBytes: 8 * 2 ** 30, availableBytes: 7 * 2 ** 30 });
 const files = Array.from({ length: 24 }, (_, i) => `tests/file-${i}.test.ts`);
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com' };
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 async function repository() {
-  const root = await temporaryDirectory('share-cores-repo'), base = await temporaryDirectory('share-cores-base');
-  git(root, 'init', '-q', '-b', 'main');
-  const content = {
+  const base = await temporaryDirectory('share-cores-base');
+  const { root, head: mergeSha } = await gitRepo({ label: 'share-cores-repo', message: 'fixture', files: {
     'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true' } }),
     'graphyard.json': JSON.stringify({ delivery: { mergeGate: { perCandidate: [], preMerge: [{ check: 'test', command: 'node scripts/tests.mjs', source: 'script', reason: 'fixture', selection: { command: 'node scripts/select.mjs', pattern: '^tests/[\\w./-]+\\.test\\.ts$' } }] } } }),
     'scripts/select.mjs': '', 'scripts/tests.mjs': '',
     ...Object.fromEntries(files.map(file => [file, 'fixture\n'])),
-  };
-  for (const [path, text] of Object.entries(content)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'fixture');
-  return { root, base, mergeSha: git(root, 'rev-parse', 'HEAD') };
+  } });
+  return { root, base, mergeSha };
 }
 const commands: ChildRun = async (command, args, options) => {
   if (command === 'npm') return '';

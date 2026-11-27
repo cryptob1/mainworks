@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
 import { deployRecordPath } from '../src/deploy-watch.js';
 import type { MasterConfig } from '../src/master/profiles.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2951: master status compares the managed repository's served revision to its base tip — only
@@ -16,16 +16,11 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // control plane's upgrade record (or one an older control plane left without a name) is not the
 // game's release health.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const build = '1ea42dc24a1a4f4b6e2d8d2f1e0c9b8a7d6c5b4a', gameMain = 'ec5a2827eb41c3d2a1f0e9d8c7b6a5f4e3d2c1b0', served = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 
 /** A managed checkout (a git repository, so its cursor is readable) whose cursor records the control plane's own build. */
 async function managed() {
-  const root = await temporaryDirectory('master-status-root');
-  git(root, 'init', '-q', '-b', 'main');
-  await writeFile(join(root, 'README.md'), 'the game\n');
-  git(root, 'add', '.');
-  git(root, 'commit', '-q', '-m', 'the game');
+  const { root } = await gitRepo({ label: 'master-status-root', files: { 'README.md': 'the game\n' }, message: 'the game' });
   const credentialDirectory = await temporaryDirectory('master-status-credentials');
   const config = {
     url: 'http://127.0.0.1:5', repository: 'cryptob1/graphyard-openworld', credentialFile: join(credentialDirectory, 'coordinator.token'),
