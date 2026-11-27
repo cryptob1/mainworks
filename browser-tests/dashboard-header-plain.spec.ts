@@ -77,7 +77,9 @@ for (const width of [1280, 390]) {
       await expect(strip).toHaveAttribute('data-in-trial', '1', { timeout: 15_000 });
       await expect(strip).toHaveAttribute('data-on-shift', '0');
       await expect(strip).toHaveAttribute('data-shipped-tonight', '0');
-      await expect(strip).toHaveText(/0 agents working · 1 check running · 0 merged today/);
+      // GY-3987: on Work the Shipped today chip carries today's merges, so the strip leaves them out there.
+      await expect(strip).toHaveText(/0 agents working · 1 check running$/);
+      await expect(page.locator('[data-filter="shipped-today"]')).toHaveText('Shipped today 0');
       // No deploy: no release line. No reverts or gates removed: no week line.
       await expect(page.locator('.top-bar .release-line')).toHaveCount(0);
       await expect(page.locator('.top-bar .week-line')).toHaveCount(0);
@@ -91,6 +93,7 @@ for (const width of [1280, 390]) {
         for (const absent of ['No deploy configured', 'Reverts this week', 'Gates removed this week', 'local-viewer', 'updated', principalId])
           expect(text, `${label} at ${width}px shows ${absent}`).not.toContain(absent);
         await expect(page.locator('.top-bar .activity-strip')).toContainText('1 check running');
+        if (label !== 'Work') await expect(page.locator('.top-bar .activity-strip')).toContainText('0 merged today');
       }
 
       // Delivery is a Settings tab, and says there is no deploy.

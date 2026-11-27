@@ -221,7 +221,7 @@ test('integration:item-view-structure — state, who acts next and why on the pl
   // GY-3392: the plate answers who acts next and why, with no pull request wording anywhere; the
   // gate detail folds under Technical details, so its lines read on the opened fold.
   const opened = (html: string) => text(html.replaceAll(' hidden=""', '').replace('<details class="more-details"', '<details open class="more-details"'));
-  const order = [at('Moving'), at('Testing 2 of 3 proofs passed'), at('Next: Prover agent')];
+  const order = [at('Moving'), at('Why: 2 of 3 proofs passed'), at('Next: Prover agent runs the proofs')];
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'state, why, who acts next');
   assert.ok(opened(view).indexOf('What is left') < opened(view).indexOf('The proof integration:login-latency has not passed yet'), 'the folded gate detail keeps its plain lines');
   // Only the current step's reasons are listed as what is left, inside the collapsed Technical
@@ -340,12 +340,15 @@ test('unit:work-page-single-count-row — the page shows one row of counts, the 
   assert.equal(new Set(labels.map(stem)).size, labels.length, `no grammatical-twin labels: ${labels.join(' | ')}`);
 });
 
-test('unit:work-page-no-derived-totals — the heading carries no count; the in-flight total is said once in the header line and matches its filter', () => {
+test('unit:work-page-no-derived-totals — the heading carries no count; the in-flight total is said once, on its filter, and the header line does not repeat it', () => {
   const page = home();
   assert.ok(!page.includes('aria-label="Open items"'), 'no Open count');
   assert.match(page, /<h1>Work<\/h1>/, 'the heading carries no derived count');
   const line = /data-work-header="true">([^<]*)<\/p>/.exec(page)![1];
-  assert.match(line, new RegExp(`^${Object.fromEntries(filterCounts(page))['in-flight']} in flight · `));
+  // GY-3987: the filter chip carries the in-flight count; the header line starts with the merge rate instead.
+  assert.ok(Object.fromEntries(filterCounts(page))['in-flight'] > 0, 'the in-flight filter counts the moving work');
+  assert.doesNotMatch(line, /in flight|merged today/);
+  assert.match(line, /^[\d.]+ merges\/hour \(6h\) · /);
 });
 
 test('integration:work-page-density — an empty Needs you draws no strip, and the page answers what is stuck and why, what is moving and what shipped within the 165-word budget', () => {

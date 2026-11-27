@@ -165,7 +165,7 @@ test('unit:ui-needs-you-and-timers — a human-only decision is listed once, und
 });
 
 test('unit:ui-item-first-screen — an item page says on its first screen what state it is in, why, which named role acts next, in plain words with no internal jargon and no pull request wording; the guide is under 300 words', () => {
-  const roles = ['You', 'Builder agent', 'Reviewer agent', 'Prover agent', 'Automated checks', 'Mainworks (automatic)', 'Mainworks (assigns a builder)', 'Master agent', 'Nobody yet', 'Nobody — it is live', 'Nobody — it has merged'];
+  const roles = ['You', 'Builder agent', 'Reviewer agent', 'Prover agent', 'Automated checks', 'Mainworks (automatic)', 'Mainworks', 'Mainworks (assigns a builder)', 'Master agent', 'Nobody yet', 'Nobody — it is live', 'Nobody — it has merged'];
   const banned = ['epoch', 'lease', 'candidate', 'policy revision', 'producer', 'attestation', 'trusted evidence', 'session kind', 'pull request'];
   for (const item of board()) {
     const screen = firstScreen(itemPage(item.key));
@@ -188,7 +188,8 @@ test('unit:ui-item-first-screen — an item page says on its first screen what s
   // The why and the next step in plain words for the three cases a newcomer meets most.
   assert.match(firstScreen(itemPage('GY-20')), /Waiting on your decision about spending money or opening third-party accounts/);
   assert.match(firstScreen(itemPage('GY-17')), /A fault blocks it; the master agent clears it/);
-  assert.match(firstScreen(itemPage('GY-22')), /In review · 1 of 2 checks done/);
+  // GY-3987: the state word sits beside the title and Now carries what it waits on, each once.
+  assert.match(firstScreen(itemPage('GY-22')), /<strong>In review<\/strong>[\s\S]*Now:<\/span> <span class="status-sentence[^"]*">1 of 2 checks done\./);
   // GY-22 waits on CI and on review: both fold into Checking (GY-1979), so what is left lists every
   // Checking requirement at once, the checks first, each with who clears it.
   const left = /aria-label="What is left"[\s\S]*?<\/section>/.exec(itemPage('GY-22'))?.[0] ?? '';
