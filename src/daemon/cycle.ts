@@ -683,11 +683,9 @@ async function dispatchStep(cycle: Cycle) {
     if (!rework) continue;
     const key = reworkKey(item, rework.binding);
     if (state.actions[key]?.state === 'done') continue;
-    try {
-      await effects.rework(item, rework.reason, rework.binding);
-      const lastRework = { reason: rework.reason, binding: rework.binding ?? null, at: new Date(clock).toISOString() };
+    const lastRework = { reason: rework.reason, binding: rework.binding ?? null, at: new Date(clock).toISOString() };
+    try { await effects.rework(item, rework.reason, rework.binding); await note(cycle, key, 'judgement', item.key, 'done', `Returned ${item.key} to a worker: ${rework.reason}`);
       Object.assign(item, { reworkRequested: true, lease: null, lastRework, reworkHistory: [...item.reworkHistory ?? [], { attempt: item.submission?.epoch ?? item.epoch, ...lastRework }] });
-      await note(cycle, key, 'judgement', item.key, 'done', `Returned ${item.key} to a worker: ${rework.reason}`);
     } catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not return ${item.key} to a worker: ${message(error)}`); }
   }
   const health = profileHealth(config.workers, credentials, herdr.agents, state, clock, snapshot.work);
@@ -778,10 +776,8 @@ async function dispatchStep(cycle: Cycle) {
     let settled!: () => void;
     ahead.push({ key, priority: item.priority, done: new Promise<void>(resolve => { settled = resolve; }) });
     launcher.submit(key, [free.profile.name], async sink => {
-      try {
-        await Promise.all(before.map(entry => entry.done));
-        if (before.some(entry => state.actions[entry.key]?.state === 'waiting')) return;
-        await launchWorker(cycle, item, key, free.profile, sink, canaries, held.exclude);
+      try { await Promise.all(before.map(entry => entry.done));
+        if (!before.some(entry => state.actions[entry.key]?.state === 'waiting')) await launchWorker(cycle, item, key, free.profile, sink, canaries, held.exclude);
       } finally { settled(); }
     });
     launched.push(item);
@@ -819,8 +815,8 @@ async function dispatchStep(cycle: Cycle) {
   // still running after tickWaitMs runs on beside the cycle; GY-3965: a cycle that finds one running
   // starts no second and never waits on it, so the merge step goes on.
   let timer: NodeJS.Timeout | undefined;
-  const tick = !ticking.has(state) ? effects.dispatchTick?.(snapshot, cpuWaitingLine) : undefined;
-  if (tick) { ticking.add(state); tick.then(() => ticking.delete(state), () => ticking.delete(state)); }
+  const tick = ticking.has(state) ? undefined : effects.dispatchTick?.(snapshot, cpuWaitingLine)?.finally(() => ticking.delete(state));
+  if (tick) ticking.add(state);
   try { if (tick) await Promise.race([tick, new Promise(resolve => { timer = setTimeout(resolve, tickWaitMs); })]); }
   finally { clearTimeout(timer); await masterSession(cycle, open); }
 }
