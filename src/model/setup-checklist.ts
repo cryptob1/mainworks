@@ -52,7 +52,8 @@ export function requestedView(hash: string, pages: readonly string[]): { view: s
   return { view: pages.includes(page) ? page : null, hash };
 }
 
-const roleTitle: Record<RequiredSetupRole, string> = { worker: 'An agent account that writes code', reviewer: 'An agent account that reviews code' };
+// GY-3989: one account can do both, so the review row says so instead of reading as a second account to buy.
+const roleTitle: Record<RequiredSetupRole, string> = { worker: 'Connect an AI coding account', reviewer: 'Let an account review the code' };
 
 /**
  * Whether ROLE has an account that is connected, signed in and allowed to take that role now: the
@@ -86,7 +87,7 @@ function accountItems(status: any | null): SetupItem[] {
   for (const role of requiredSetupRoles) {
     const done = roleReady(status?.fleet, role);
     items.push({ id: `account:${role}`, title: roleTitle[role], done, human: true,
-      line: done ? 'Connected and signed in.' : role === 'worker' ? 'Connect an AI coding account (an API key or a subscription sign-in) to write the code.' : 'Connect an AI coding account to review the code. It may be the same account.',
+      line: done ? 'Connected and signed in.' : role === 'worker' ? 'Connect an AI coding account (an API key or a subscription sign-in) to write the code.' : 'The account that writes can also review: connect it for review too, or add another.',
       action: done ? null : { kind: 'connect', label: 'Connect an account', role } });
   }
   // GY-3225: the standing checkout-trust refusal the live loop raised (`setup.checkoutTrust`, the

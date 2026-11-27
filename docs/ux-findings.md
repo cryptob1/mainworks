@@ -1,7 +1,7 @@
 # UX findings: the dashboard as a newcomer sees it
 
 Captured with `npm run ux:captures` (every page and state below, 390 and 1280 px, from the README's demo data).
-Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, the Lead/Settings wording rows in GY-3994; the rest are for follow-up items.
+Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, the Setup, Sign-in and Empty first run rows in GY-3989, and the Lead/Settings wording rows in GY-3994; the rest are for follow-up items.
 Rules: *plain* (one plain sentence per idea, owner first), *next* (state, numbers and the one next action),
 *internal* (no ids, hashes, model ids, jargon or agent chatter outside Details), *error* (says what to do, never false),
 *twice* (show nothing twice), *fit* (390 and 1280 px, no sideways scroll).
@@ -90,15 +90,15 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 
 | Where | What a newcomer sees | Rule | Sev | Status |
 |---|---|---|---|---|
-| Checklist | "1 of 4 steps left." but four rows, one with no action button | next | 2 | Open |
-| Connect step | "An agent account that writes code / reviews code": two rows a newcomer reads as two accounts to buy | plain | 2 | Open |
+| Checklist | "1 of 4 steps left." but four rows, one with no action button | next | 2 | Fixed |
+| Connect step | "An agent account that writes code / reviews code": two rows a newcomer reads as two accounts to buy | plain | 2 | Fixed |
 | Advanced folds | "Watch agents in a terminal" and "Where things run" closed with no hint of what is inside | plain | 3 | Open |
 
 ## Sign-in
 
 | Where | What a newcomer sees | Rule | Sev | Status |
 |---|---|---|---|---|
-| Helper text | "Operator? Run mainworks open on the Mainworks host, or mainworks login…" | internal | 2 | Open |
+| Helper text | "Operator? Run mainworks open on the Mainworks host, or mainworks login…" | internal | 2 | Fixed |
 | Button | "Open control plane ↗": the arrow reads as a new tab, and "control plane" is builder jargon | plain | 3 | Open |
 | Heading | "Keep the work moving forward." says nothing about what the product does | plain | 3 | Open |
 
@@ -107,8 +107,8 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 | Where | What a newcomer sees | Rule | Sev | Status |
 |---|---|---|---|---|
 | Step 2 | "No Builder account is connected yet." with no next step in the sentence | next | 2 | Fixed |
-| Step 2 | "A live request checks that your Builder account answers on its registered model" | internal | 2 | Open |
-| Step 2 | "Prefer a terminal? mainworks master registry propose --apply" in the first screen | internal | 2 | Open |
+| Step 2 | "A live request checks that your Builder account answers on its registered model" | internal | 2 | Fixed |
+| Step 2 | "Prefer a terminal? mainworks master registry propose --apply" in the first screen | internal | 2 | Fixed |
 | Work (empty) | "The yard is quiet. File a goal and wake the crew." then a second sentence saying the same | twice | 3 | Open |
 
 ## Error state
