@@ -215,10 +215,37 @@ export const humanProofRule: HumanOnlyRule = {
 // has stood — it stays on the Master page and in master status attention, never on Needs you.
 
 /**
+ * GY-4029: an attention action only the master answers, on an item where the loop recorded after
+ * the action that no account can run the master: the owner answers it with a note on the item.
+ */
+export const unservedAttentionRule: HumanOnlyRule = {
+  kind: 'unserved-attention',
+  refuse: parkRule.refuse,
+  open: ({ work }, now) => {
+    const spent = work.capacity?.spent?.find(entry => entry.role === 'master');
+    if (!spent) return [];
+    return (work.actionQueue?.actions ?? []).filter(action => action.kind === 'attention' && action.state === 'pending' && !action.claim && action.requestedAt <= spent.at).map(action => {
+      const needed = action.inputs.kind === 'attention' ? action.inputs.detail : action.reason;
+      return {
+        rule: 'unserved-attention', work: work.key, id: work.id, title: work.title,
+        request: { id: action.id, kind: 'attention', epoch: work.epoch, at: action.requestedAt, requestedBy: action.requestedBy, needed,
+          reason: `No agent account can run the master to answer it: ${spent.accounts.map(account => account.reason).join('; ')}`,
+          why: 'Your note goes on the item; the next session that works on it reads it.' },
+        waitedMs: Math.max(0, now - Date.parse(action.requestedAt)), decision: 'an answer no agent can give',
+        refusal: parkRule.refuse({ id: 'an agent identity', role: 'operator-agent', sessionKind: 'ai' })!,
+        choices: [{ label: 'Answer with a note…', input: 'text' as const, declines: false, body: { type: 'note' }, note: null }],
+        answer: { cli: `POST /api/work/${work.key}/request {"type":"note","reason":"…"}`, decline: '', dashboard: 'Work → Needs you', api: `POST /api/work/${work.key}/request`,
+          post: { command: 'request', body: { type: 'note' }, field: 'reason', submit: `Add the answer to ${work.key}`, decline: null } },
+      };
+    });
+  },
+};
+
+/**
  * Every rule, in the order the surface lists them. Enforcement reads this table and so does the
  * page: adding a rule here is the one change a new human-only action needs.
  */
-const humanOnlyRules: HumanOnlyRule[] = [parkRule, humanProofRule];
+const humanOnlyRules: HumanOnlyRule[] = [parkRule, humanProofRule, unservedAttentionRule];
 const humanOnlyRule = (kind: string, rules: readonly HumanOnlyRule[] = humanOnlyRules) => rules.find(rule => rule.kind === kind) ?? null;
 /**
  * Why this session may not answer a row of that rule, or null when it may. A rule this reader

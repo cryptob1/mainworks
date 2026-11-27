@@ -294,6 +294,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       exhaust: (account, notice) => recordObservedExhaustion(config, account, { at: new Date().toISOString(), reason: notice.reason, resetsAt: notice.resetsAt, role: 'master', profile: masterProfile, work: null }),
     }),
     masterMessages: deps.messages,
+    reportCapacity: (work, event) => mutate(`work/${work.id}/capacity`, event, randomUUID()),
     masterSession: {
       ...masterSessionEffects(root, current, run),
       // GY-2949: the master pane's limit notice holds its account exactly as a worker's holds theirs,
