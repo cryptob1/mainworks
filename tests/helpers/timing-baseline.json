@@ -332,7 +332,7 @@
     "tests/loop-restart-execstart.test.ts": 1445,
     "tests/loop-restarts-stale-deploy-unit.test.ts": 559,
     "tests/loop-state-dispatch-concurrent.test.ts": 8943,
-    "tests/loop-steps-bounded.test.ts": 964,
+    "tests/loop-step-stalls-bounded.test.ts": 964,
     "tests/loop-survives-slow-host.test.ts": 13609,
     "tests/loop-unit-runs-current-release.test.ts": 1063,
     "tests/loop-wakes-on-event.test.ts": 4864,
