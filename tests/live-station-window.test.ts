@@ -15,6 +15,10 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+// The repositories these tests seed carry an e2e proof, so the policy in force says how a head is served
+// for them; it is read once per process, and nothing reads it ahead of this line.
+setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3732: the live station counts only merges made inside each window, timed from merge to the first
 // deploy that served a commit containing it, so a week-old merge never inflates the 6h or 24h numbers.

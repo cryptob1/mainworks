@@ -13,6 +13,7 @@ import { harness, type Harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { freePort } from './helpers/http-server.js';
+import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
 /**
  * GY-1500: `mainworks install --provider local` (and `mainworks up --local`) runs the control plane
@@ -208,6 +209,9 @@ test('integration:local-runtime-restart — the supervised process starts the cl
   const { fixture, deps, inputs } = await localFixture(systemd.supervisor, port);
   let child: ChildProcess | null = null;
   let runtime: LocalRuntime | null = null;
+  // The item filed below carries an e2e proof: the in-process control plane shares this test's policy, read once.
+  const policyBefore = repositoryPolicy();
+  setRepositoryPolicy({ ...policyBefore, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
   try {
     const session = await prepareInstall(fixture.root, inputs, deps, 'apply');
     await applyProvider(session);
@@ -261,7 +265,7 @@ test('integration:local-runtime-restart — the supervised process starts the cl
       child = null;
       assert.equal(existsSync(join(paths.data, 'postmaster.pid')), false, 'the cluster stopped with it');
     }
-  } finally { child?.kill('SIGKILL'); await runtime?.stop(); await systemd.stop(); await fixture.cleanup(); }
+  } finally { child?.kill('SIGKILL'); await runtime?.stop(); await systemd.stop(); await fixture.cleanup(); setRepositoryPolicy(policyBefore); }
 });
 
 test('unit:local-provider-credentials-outside-repo — the local provider writes every credential under the install directory, none inside the repository, and embedded-postgres is a runtime dependency', async () => {
