@@ -1,0 +1,13 @@
+{
+  "id": "orphaned-product-review-is-reclaimed",
+  "title": "A product review whose run is gone after a loop restart is reclaimed and asked again",
+  "description": "The dispatch loop over a stubbed runtime and an in-memory agent registry. A product review is working; the loop restarts, its headless run dies with it, and the control plane is unreachable for the new loop's first ticks. Once it answers, the vanished run is lost on its second missed report, its registry reviewer session ends, exactly one fresh product reviewer launches for the head, and after its verdict no reviewer is left recorded running. A live adopted review is neither duplicated nor ended.",
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "Reclaim a product review lost across a loop restart",
+    "run": "node --import tsx tests/helpers/run-tests.ts tests/orphaned-product-review-is-reclaimed.test.ts",
+    "timeoutSeconds": 300
+  }]
+}
