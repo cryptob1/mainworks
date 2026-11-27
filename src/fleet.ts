@@ -32,7 +32,7 @@ import { setting } from './setting.js';
  * action with no restart and no file edit. Every role must be defined before it can launch.
  */
 export type FleetConfig = Pick<MasterConfig, 'credentialFile'> & Partial<Pick<MasterConfig, 'url' | 'hostId' | 'run' | 'repository'>>;
-export interface FleetProbe extends EnvironmentProbe { work?: string; /** Which runtimes a worker is tried on first (GY-1746). */ prefer?: 'fast' | 'strong'; /** Accounts this dispatch already failed to start a session on. */ exclude?: string[]; /** GY-3632: the one account to choose, when a rework goes back to its Builder's. */ only?: string; principal?: string; /** The proof group a producer launch answers; one live session per group, not per item. */ group?: string; /** Replaces the HTTP client, for executors embedded beside the control plane and for tests. */ registry?: FleetClient;
+export interface FleetProbe extends EnvironmentProbe { work?: string; /** Which runtimes a worker is tried on first (GY-1746). */ prefer?: 'fast' | 'strong'; /** Accounts this dispatch already failed to start a session on. */ exclude?: string[]; /** GY-3632: the one account to choose, when a rework goes back to its Builder's. */ only?: string; principal?: string; /** The proof group a producer launch answers, or a reviewer launch's review kind; one live session per group, not per item. */ group?: string; /** Replaces the HTTP client, for executors embedded beside the control plane and for tests. */ registry?: FleetClient;
   /** The runtime sessions Herdr lists on this host right now: a registry session whose runtime session is gone does not count toward its role (GY-190). */
   runtime?: RuntimeInventory;
   /** Runs the one-prompt smoke test of an account (GY-446); replaced by tests. */

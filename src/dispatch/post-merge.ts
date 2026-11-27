@@ -1,7 +1,7 @@
 import { type Work } from '../model.js';
 import { type DispatchRequest } from '../model/dispatch.js';
 import { postMergeFindingsMax, type ReviewRecord } from '../reviewer.js';
-import { parseFinding, postMergeFollowUp, postMergeRequestId, wholeFindings } from '../model/post-merge-review.js';
+import { parseFinding, postMergeFollowUp, postMergeRequestId, reviewLaunchesOf, wholeFindings } from '../model/post-merge-review.js';
 import { blockingFindings, followUpFindingsOf } from '../review-cap.js';
 import type { DispatchEffects } from './effects.js';
 /** What the loop did with one post-merge verdict (GY-1525): the follow-up item per BLOCKING finding, the nits kept in memory, and a filing failure to retry. */
@@ -57,7 +57,7 @@ export async function postFollowUpItem(base: string, token: string, body: unknow
  */
 export async function filePostMergeFollowUps(work: Work, record: ReviewRecord, effects: Pick<DispatchEffects, 'createWork' | 'recordFindings'>, now: Date): Promise<PostMergeOutcome | null> {
   if (!record.postMerge || !record.verdict) return null;
-  const launch = work.reviewLaunch && (record.launch ? work.reviewLaunch.id === record.launch : work.reviewLaunch.head === record.sha) ? work.reviewLaunch : null;
+  const launch = reviewLaunchesOf(work).find(entry => record.launch ? entry.id === record.launch : entry.postMerge && entry.head === record.sha) ?? null;
   const body = launch?.verdict?.sha === record.sha ? launch.verdict.body : null;
   if (body === null) return null;
   const filed = [...(record.postMergeFollowUps?.filed ?? [])];

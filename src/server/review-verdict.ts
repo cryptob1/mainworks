@@ -5,7 +5,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { demand, implementerIdentities, operatorScopeIncludes, type Principal } from '../model.js';
 import { dispatchHistoryLimit, liveReviewRequest } from '../model/dispatch.js';
-import type { ControlPlaneReviewLaunch, ControlPlaneVerdict } from '../model/post-merge-review.js';
+import { reviewLaunchKind, reviewLaunchesOf, type ControlPlaneReviewLaunch, type ControlPlaneVerdict } from '../model/post-merge-review.js';
 import { reviewEvents, verdictStateOf } from '../review-post.js';
 import { blockingFindings, verdictRefusal } from '../review-cap.js';
 import { validateAssertionRulings } from '../model/changed-assertions.js';
@@ -117,7 +117,12 @@ export const independenceRefusal = (reviewer: string, how: 'implemented' | 'requ
 export async function launchTokenActor(services: Services, tokenHash: string): Promise<Principal | null> {
   const rows = await services.engine.store.pool.query(`
     SELECT launch FROM work_items
-    CROSS JOIN LATERAL (VALUES (document->'reviewLaunch')) AS launches(launch)
+    CROSS JOIN LATERAL (
+      SELECT value AS launch FROM jsonb_each(CASE WHEN jsonb_typeof(document->'reviewLaunches') = 'object' THEN document->'reviewLaunches' ELSE '{}'::jsonb END)
+      UNION ALL
+      SELECT document->'reviewLaunch'
+      WHERE jsonb_typeof(document->'reviewLaunch') = 'object' AND COALESCE(jsonb_typeof(document->'reviewLaunches'), 'null') <> 'object'
+    ) AS launches
     WHERE launch->>'tokenHash' = $1
       AND (launch->>'expiresAt')::timestamptz > now()
       AND launch->>'verdict' IS NULL AND launch->>'refused' IS NULL
@@ -148,9 +153,10 @@ export async function recordReviewLaunch(services: Services, actor: Principal, i
       const diffBase = work!.observation!.mergeBase ?? work!.observation!.candidate.baseSha;
       demand(diffBase.toLowerCase() === data.baseTip, `${work!.key}'s candidate is judged against base ${diffBase.slice(0, 12)}, not ${data.baseTip.slice(0, 12)}`, 409);
     }
-    // One launch stands per item: a relaunch replaces the earlier registration and withdraws its token.
+    // One launch stands per review kind (code, product, post-merge): a relaunch replaces only its own kind's registration and withdraws its token.
     const expiresAt = new Date(Math.min(Date.parse(data.expiresAt), now.getTime() + launchTokenBoundMs)).toISOString();
     const launch: ControlPlaneReviewLaunch = { id: randomUUID(), reviewer: data.reviewer, requester: actor.id, head: data.head, baseTip: data.baseTip, policyRevision: work!.policyRevision, tokenHash: data.tokenHash, at: now.toISOString(), expiresAt, postMerge: data.postMerge, ...(data.product ? { product: true } : {}), ...(data.changedAssertions?.length ? { changedAssertions: data.changedAssertions } : {}), verdict: null };
+    work!.reviewLaunches = { ...(work!.reviewLaunch ? { [reviewLaunchKind(work!.reviewLaunch)]: work!.reviewLaunch } : {}), ...work!.reviewLaunches, [reviewLaunchKind(launch)]: launch };
     work!.reviewLaunch = launch;
     await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4)', [work!.id, actor.id, reviewLaunchEvent, JSON.stringify({ key: work!.key, ...launch })]);
     await save(db, work!, actor.id, `${reviewLaunchEvent}.recorded`, now, { launch: launch.id, reviewer: launch.reviewer, head: launch.head, postMerge: launch.postMerge });
@@ -201,10 +207,15 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
   const judged: Judged = await engine.store.transaction(async (db: pg.PoolClient, now: Date) => once(db, actor, key, receiptInput, async (): Promise<Judged> => {
     const all = await decisionWork(db, [id]);
     const work = all.find(item => item.id === id || item.key === id); demand(work, 'Work item not found', 404);
-    const launch = work!.reviewLaunch;
-    demand(launch, `${work!.key} has no registered reviewer launch; a control-plane verdict is posted only by the session Mainworks launched`, 409);
-    const offered = Buffer.from(tokenHashOf(data.token), 'hex'), registered = Buffer.from(launch!.tokenHash, 'hex');
-    demand(offered.length === registered.length && timingSafeEqual(offered, registered), tokenRefusal, 403);
+    const launches = reviewLaunchesOf(work!);
+    demand(launches.length > 0, `${work!.key} has no registered reviewer launch; a control-plane verdict is posted only by the session Mainworks launched`, 409);
+    const offered = Buffer.from(tokenHashOf(data.token), 'hex');
+    const launch = launches.find(entry => { const registered = Buffer.from(entry.tokenHash, 'hex'); return offered.length === registered.length && timingSafeEqual(offered, registered); });
+    demand(launch, tokenRefusal, 403);
+    const writeLaunch = (updated: ControlPlaneReviewLaunch) => {
+      work!.reviewLaunches = { ...(work!.reviewLaunch ? { [reviewLaunchKind(work!.reviewLaunch)]: work!.reviewLaunch } : {}), ...work!.reviewLaunches, [reviewLaunchKind(updated)]: updated };
+      if (!work!.reviewLaunch || work!.reviewLaunch.id === updated.id) work!.reviewLaunch = updated;
+    };
     demand(!launch!.verdict, secondVerdictRefusal(work!.key, launch!.head), 409);
     demand(actor.id === launch!.reviewer, `This verdict is posted as ${actor.id}, not as the registered reviewer ${launch!.reviewer}`, 403);
     demand(!launch!.refused, `${work!.key}'s launch was refused: ${launch!.refused?.reason}`, 403);
@@ -223,7 +234,7 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
     const how = implementerIdentities(work!).includes(launch!.reviewer) ? 'implemented' : launch!.reviewer === launch!.requester ? 'requested' : null;
     if (how) {
       const reason = independenceRefusal(launch!.reviewer, how, work!.key);
-      work!.reviewLaunch = { ...launch!, refused: { at: now.toISOString(), reason } };
+      writeLaunch({ ...launch!, refused: { at: now.toISOString(), reason } });
       await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4)', [work!.id, actor.id, independenceRefusedEvent, JSON.stringify({ key: work!.key, launch: launch!.id, reviewer: launch!.reviewer, requester: launch!.requester, head: launch!.head, how, reason })]);
       await save(db, work!, actor.id, `${independenceRefusedEvent}.recorded`, now, { launch: launch!.id, reviewer: launch!.reviewer, how, reason });
       return { refusal: { reason, status: 403 } };
@@ -267,7 +278,7 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
       observation.reviews = [...(observation.reviews ?? []), { reviewer: launch!.reviewer, sha: data.sha, state, id: reviewId, submittedAt, body: data.body, baseSha, policyRevision, ...(state === 'CHANGES_REQUESTED' ? { blocking: blockingFindings(data.body) } : {}), source: 'control-plane' } as (typeof observation.reviews)[number]];
       observation.reviewIds = [...(observation.reviewIds ?? []), reviewId];
     }
-    work!.reviewLaunch = { ...launch!, verdict };
+    writeLaunch({ ...launch!, verdict });
     if (product) work!.productReview = { sha: launch!.head, baseSha, verdict: productVerdict!, reviewer: launch!.reviewer, findings: data.body, screenshots: await keepProductScreenshots(db, work!.id, data.screenshots ?? [], productScreenshots(data.body)), at: submittedAt };
     if (launch!.postMerge) work!.postMergeReview = 'reviewed';
     if (work!.stage !== 'done') {

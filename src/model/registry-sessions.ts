@@ -47,20 +47,21 @@ export function sessionEnded(session: FleetSession, work: SessionWork | undefine
     if (!lease || Date.parse(lease.expiresAt) <= now) return `${work.key} holds no live lease`;
     return session.principal && lease.owner !== session.principal ? `${work.key} is leased to ${lease.owner}` : null;
   }
-  if (session.role === 'reviewer') return work.autoDispatch?.review?.state === 'requested' && age <= reviewSessionMs ? null : `${work.key} has no standing review request`;
+  if (session.role === 'reviewer') return (session.group === 'product' ? work.autoDispatch?.product : work.autoDispatch?.review)?.state === 'requested' && age <= reviewSessionMs ? null : `${work.key} has no standing review request`;
   return (work.autoDispatch?.producers ?? []).some(request => request.state === 'requested') && age <= producerSessionMs ? null : `${work.key} has no standing producer request`;
 }
 
 /** Close every session whose reason to exist has gone; returns the ones it closed. */
 export function settleSessions(registry: AgentRegistry, work: readonly SessionWork[], at: string) {
   const now = Date.parse(at), byKey = new Map(work.map(item => [item.key, item])), closed: FleetSession[] = [];
-  // A relaunch for the same work supersedes the session it replaces: a reviewer request is answered
-  // by one session, a worker lease held by one, and a producer request group by one each.
+  // A relaunch for the same work supersedes the session it replaces: a reviewer request of one kind
+  // (code, product, post-merge) is answered by one session, a worker lease held by one, and a producer request group by one each.
   const open = registry.sessions.filter(session => !session.endedAt);
   for (const session of open) {
     let ended = sessionEnded(session, session.work ? byKey.get(session.work) : undefined, now);
     if (!ended && session.work && session.role !== 'producer') {
-      const newer = open.find(other => other !== session && other.role === session.role && other.work === session.work && Date.parse(other.selectedAt) > Date.parse(session.selectedAt));
+      const newer = open.find(other => other !== session && other.role === session.role && other.work === session.work
+        && (session.role !== 'reviewer' || (other.group ?? null) === (session.group ?? null)) && Date.parse(other.selectedAt) > Date.parse(session.selectedAt));
       if (newer) ended = `superseded by the ${newer.account} session launched for ${session.work}`;
     }
     if (!ended && session.work && session.role === 'producer') {
@@ -91,7 +92,8 @@ export const liveSessions = (registry: Pick<AgentRegistry, 'sessions'>) => regis
 export function supersededByRequest(registry: Pick<AgentRegistry, 'sessions'>, request: Pick<SelectionRequest, 'role' | 'work' | 'group'>): FleetSession[] {
   if (!request.work) return [];
   return liveSessions(registry).filter(session => session.role === request.role && session.work === request.work
-    && (request.role !== 'producer' || (!!request.group && (session.group ?? null) === request.group)));
+    && (request.role !== 'producer' || (!!request.group && (session.group ?? null) === request.group))
+    && (request.role !== 'reviewer' || (session.group ?? null) === (request.group ?? null)));
 }
 
 /**
@@ -253,7 +255,7 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
   if (running.length >= limit) return { account: null, skipped: [],
     reason: role.concurrency === 0 ? `role ${role.name} is paused (concurrency 0)` : `role ${role.name} is at its concurrency limit (${running.length} of ${limit} live: ${running.map(session => `${session.account}${session.work ? ` on ${session.work}` : ''}`).join(', ')})` };
   const occupied = running.find(session => request.work && session.work === request.work
-    && (request.role !== 'producer' || (session.group ?? null) === (request.group ?? null)));
+    && (request.role !== 'producer' && request.role !== 'reviewer' || (session.group ?? null) === (request.group ?? null)));
   if (occupied) return { account: null, skipped: [], reason: `role ${role.name} already reserved for ${occupied.work ?? occupied.principal}` };
   const skipped: SessionSkip[] = [], diverse = role.name === 'reviewer' ? diversity : null, others: SessionSkip[] = [], busy: SessionSkip[] = [], order = workerOrder(registry, role, request.prefer ?? null);
   let fallback: { account: FleetAccount; index: number; skip: SessionSkip } | null = null; const shared = new Set<SessionSkip>();

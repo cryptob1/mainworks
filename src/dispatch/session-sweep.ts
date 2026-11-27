@@ -28,7 +28,7 @@ import type { DispatchTick } from './tick.js';
 export function launchedSessionHandle(kind: 'review' | 'proof', request: DispatchRequest, subject: string, host: string, launched: { pane?: string | null; agentName?: string | null } | undefined, runtime: string, workspace?: string, principal?: string): SessionHandleInput {
   return {
     id: request.id, kind, runtime, host,
-    role: kind === 'proof' && request.group ? `proof:${request.group}` : kind, head: request.sha,
+    role: kind === 'proof' && request.group ? `proof:${request.group}` : request.kind === 'product' ? 'review:product' : kind, head: request.sha,
     ...(launched?.agentName ? { agentName: launched.agentName } : {}),
     // Whose session it is, when the launcher knows: a producer session runs under its own
     // credential, and naming it here is what lets that session — and nobody else — fill in the
