@@ -17,19 +17,23 @@ writeFileSync(written, '');
 const refuse = (step, error) => {
   const failingStep = `${step} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
   for (const proof of proofs) appendFileSync(written, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
-  process.exit(1);
+  finish(1);
 };
 // GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
-// where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in a
-// private clone of the commit that shares the clone's objects and packages.
+// where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in its
+// own worktree of the commit, as a trial's checkout is one: its own files and index, the clone's objects and packages.
 const checkout = process.cwd(), scratch = mkdtempSync(join(tmpdir(), 'e2e-shard-')), worktree = join(scratch, 'checkout');
 const git = args => execFileSync('git', args, { stdio: 'pipe' });
 try {
-  git(['clone', '-q', '--shared', '--no-checkout', checkout, worktree]);
-  git(['-C', worktree, 'checkout', '-q', '--detach', mergeSha]);
+  git(['worktree', 'add', '--detach', worktree, mergeSha]);
   if (existsSync(join(checkout, 'node_modules'))) symlinkSync(join(checkout, 'node_modules'), join(worktree, 'node_modules'));
   process.chdir(worktree);
-} catch (error) { refuse(`the shard's clone of ${mergeSha.slice(0, 12)}`, error); }
+} catch (error) { refuse(`the shard's worktree of ${mergeSha.slice(0, 12)}`, error); }
+/** The shard ends with its worktree, as a trial does, leaving the clone as the shim made it. */
+const finish = code => {
+  try { git(['-C', checkout, 'worktree', 'remove', '--force', worktree]); } catch { /* never registered, or already gone */ }
+  process.exit(code);
+};
 // GY-3968: the shard's checkout is a fresh clone, so build it first as a trial does: a served dashboard needs dist/.
 const scripts = existsSync('package.json') ? JSON.parse(readFileSync('package.json', 'utf8')).scripts : undefined;
 const build = scripts?.build ? buildArgv(packageManager(worktree), null) : null;
@@ -40,4 +44,4 @@ if (build) {
 const cases = await runTrialE2eCases({ worktree, mergeSha, proofs, env: { ...process.env }, scratch,
   budgetMs: Number(budget), holds: async path => existsSync(join(worktree, path)), log: line => console.log(line) });
 for (const entry of cases) appendFileSync(written, `${JSON.stringify({ ...entry, screenshot: undefined })}\n`);
-process.exit(cases.some(entry => entry.failed > 0 || entry.missing || entry.executed === 0) ? 1 : 0);
+finish(cases.some(entry => entry.failed > 0 || entry.missing || entry.executed === 0) ? 1 : 0);

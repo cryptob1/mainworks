@@ -19,8 +19,8 @@ import { until } from './helpers/until.js';
 // GY-3974: the 04:23Z diagnostics on b325b3da timed out in this machine's shard after 2700 s. It held
 // 263 cases — the 142 only this machine can run and, by count, an equal share of the rest — while one
 // test machine ran the other 262 in a single lane. The trials' recorded medians put the tests a
-// local-only case runs at 14.8 s and any other's at 3.6 s, and each case pays about 5 s more to start:
-// 20 s and 5 s a case here. The head's own catalog is placed as the daily run places it.
+// local-only case runs at 14.7 s and any other's at 3.6 s, and each case pays about 5 s more to start.
+// The head's own catalog is placed as the daily run places it and priced that way.
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const text = (file: string) => readFileSync(join(root, file), 'utf8');
@@ -33,7 +33,7 @@ const pinned = new Set(catalog.filter(id => {
   const caseText = text(`e2e/cases/${id}.json`);
   return compose.has(delivery.cases?.[id]) || localOnlyTestPattern.test([caseText, ...named(caseText)].join('\n'));
 }).map(id => `e2e:${id}`));
-const seconds = (cases: readonly string[]) => cases.reduce((sum, proof) => sum + (pinned.has(proof) ? 20 : 5), 0);
+const seconds = (cases: readonly string[]) => cases.reduce((sum, proof) => sum + 5 + (pinned.has(proof) ? 14.7 : 3.6), 0);
 
 const passing = (proofs: readonly string[]) => ({ build: 'pass', tests: { passed: 1, failed: [], files: 0 }, durationMs: 1, logTail: '', files: [], proofs: {},
   e2e: proofs.map(proof => ({ proof, case: proof.slice(4), executed: 1, failed: 0 })) }) as unknown as MergeTrialRun;
@@ -62,7 +62,7 @@ test('integration:e2e-catalog-fits-bound — the whole catalog ends inside 45 mi
   const msi = 'gy-compute@vish-msi-compute', omarchy = 'gy-compute@omarchypc-compute';
   // vish-msi-compute as the 04:23Z run read it — 10.7 of its 24 cores free, the one ready test machine —
   // then both test machines as they read a day later, then none.
-  for (const [named, hosts, shards] of [
+  for (const [found, hosts, shards] of [
     ['one test machine', [reading(msi, 24, 13.3)], { [msi]: 2 }],
     ['two test machines', [reading(msi, 24, 6), reading(omarchy, 40, 8)], { [msi]: 3, [omarchy]: 4 }],
     ['no test machine', [], {}],
@@ -71,19 +71,19 @@ test('integration:e2e-catalog-fits-bound — the whole catalog ends inside 45 mi
     const here = ran.filter(shard => shard.host === 'local');
     const longest = [...ran].sort((a, b) => seconds(b.cases) - seconds(a.cases))[0]!;
     assert.ok(seconds(longest.cases) < gateLimitMs / 1000,
-      `${named}: the longest shard, on ${longest.host} with ${longest.cases.length} cases, runs ${seconds(longest.cases)} s: inside 2700 s`);
-    assert.deepEqual(ran.flatMap(shard => shard.cases).sort(), catalog.map(id => `e2e:${id}`).sort(), `${named}: every case runs exactly once`);
-    assert.deepEqual(result.failed, [], `${named}: nothing fails`);
-    for (const shard of here) assert.equal(shard.timeout, gateLimitMs, `${named}: this machine's trial keeps the 45-minute bound`);
+      `${found}: the longest shard, on ${longest.host} with ${longest.cases.length} cases, runs ${seconds(longest.cases).toFixed(0)} s: inside 2700 s`);
+    assert.deepEqual(ran.flatMap(shard => shard.cases).sort(), catalog.map(id => `e2e:${id}`).sort(), `${found}: every case runs exactly once`);
+    assert.deepEqual(result.failed, [], `${found}: nothing fails`);
+    for (const shard of here) assert.equal(shard.timeout, gateLimitMs, `${found}: this machine's trial keeps the 45-minute bound`);
     if (hosts.length) {
-      assert.ok(here.every(shard => shard.cases.every(proof => pinned.has(proof))), `${named}: this machine keeps only the cases a test machine cannot run`);
+      assert.ok(here.every(shard => shard.cases.every(proof => pinned.has(proof))), `${found}: this machine keeps only the cases a test machine cannot run`);
       for (const [host, count] of Object.entries(shards)) {
-        assert.equal(ran.filter(shard => shard.host === host).length, count, `${named}: ${host} runs one shard per six of its free cores, at most four`);
+        assert.equal(ran.filter(shard => shard.host === host).length, count, `${found}: ${host} runs one shard per six of its free cores, at most four`);
       }
     }
     assert.deepEqual(result.shards?.map(({ host, cases }) => [host, cases]), ran.map(shard => [shard.host, shard.cases.length]),
-      `${named}: the run records where each shard ran and how many cases it held`);
-    assert.ok(result.shards?.every(shard => typeof shard.ms === 'number'), `${named}: each recorded shard says how long it ran, so the next slow run names its longest`);
+      `${found}: the run records where each shard ran and how many cases it held`);
+    assert.ok(result.shards?.every(shard => typeof shard.ms === 'number'), `${found}: each recorded shard says how long it ran, so the next slow run names its longest`);
   }
 });
 
@@ -195,4 +195,5 @@ test('integration:e2e-catalog-fits-bound — the shards a test machine runs at o
   }
   assert.deepEqual(git(root, 'status', '--porcelain').split('\n').filter(Boolean).sort(), ['?? list', '?? records-one', '?? records-two'],
     'the checkout the shards were given holds only what the caller put there');
+  assert.equal(git(root, 'worktree', 'list', '--porcelain').split('\n\n').filter(Boolean).length, 1, 'and no worktree of theirs stays registered in it');
 });
