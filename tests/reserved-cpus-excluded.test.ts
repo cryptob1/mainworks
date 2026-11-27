@@ -24,7 +24,7 @@ const cpus = (list: string) => list.trim().split(',').flatMap(part => { const [f
 /** This host's CPUs, as a list such as `0-23`. */
 const online = () => readFileSync('/sys/devices/system/cpu/online', 'utf8').trim();
 /** Reserves 0-3 as the owner's host does, never more than leaves this host two CPUs. */
-const reserved = `0-${Math.min(3, cpus(online()).length - 3)}`;
+const reserved = `0-${Math.max(0, Math.min(3, cpus(online()).length - 3))}`;
 /** The host's CPUs less the reserved ones, as numbers: a host's own count does not matter. */
 const others = () => cpus(online()).filter(cpu => !cpus(reserved).includes(cpu));
 const allowedOf = (words: readonly string[]) => {
