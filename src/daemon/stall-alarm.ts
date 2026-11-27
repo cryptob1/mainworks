@@ -79,7 +79,8 @@ function nextStepOwner(item: Work, all: readonly Work[], now: number): NextStepO
   const sessions = (item.sessions ?? []).filter(s => s.state === 'running');
   const backedOff = (item.actionQueue?.actions ?? []).some(a => a.state === 'pending' && !!a.retryAt && Date.parse(a.retryAt) <= now && !(a.claim && Date.parse(a.claim.expiresAt) > now));
   if ((backedOff || item.blocker) && !sessions.length) return 'nobody';
-  if (sessions.some(s => s.kind === 'implementation') || (!!item.lease && Date.parse(item.lease.expiresAt) > now && (item.stage === 'build' || item.stage === 'ready'))) return 'a builder';
+  // Ready or building work with no blocker waits on a builder (a slot, a lease or a session), judged by the stage's usual time.
+  if (sessions.some(s => s.kind === 'implementation') || item.stage === 'ready' || item.stage === 'build') return 'a builder';
   if (item.stage === 'review') return sessions.some(s => s.kind === 'review') ? 'a reviewer' : 'nobody';
   return item.stage === 'test' || item.stage === 'merge' || item.stage === 'acceptance' ? 'the merge step' : 'nobody';
 }
@@ -88,7 +89,8 @@ function nextStepOwner(item: Work, all: readonly Work[], now: number): NextStepO
 export function deriveNotMoving(work: readonly Work[], now: number, eventsByWork: ReadonlyMap<string, readonly FlowEvent[]> = new Map()): { notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[] } {
   const medians = stageMedians(work, eventsByWork), notMoving: NotMovingItem[] = [], waitingOnPerson: NotMovingItem[] = [];
   for (const item of work) {
-    if (item.stage === 'done' || isClosed(item) || (!item.ready && item.stage === 'backlog')) continue;
+    // Work waiting on an open dependency is not itself stalled: the dependency is, and is reported.
+    if (item.stage === 'done' || isClosed(item) || (!item.ready && item.stage === 'backlog') || item.dependencies?.some(id => work.find(dep => dep.id === id)?.stage !== 'done')) continue;
     const owner = nextStepOwner(item, work, now), ageMs = Math.max(0, now - lastMovedAt(item, eventsByWork.get(item.id) ?? [], now));
     const entry: NotMovingItem = { key: item.key, title: item.title, stage: item.stage, ageMs, owner };
     if (owner === 'a person') { waitingOnPerson.push(entry); continue; }

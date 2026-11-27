@@ -187,8 +187,11 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   return <>
     <PageHeader title="Lead" fact="Steer the Lead and act on its cards."/>
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
-    {stalledLines.length > 0 && <section className="stall-alarm" data-not-moving role="alert" aria-label="Not moving">
-      <ul>{stalledLines.map(entry => <li key={entry}>{entry}</li>)}</ul>
+    {stalledLines.length > 0 && <section className="panel" data-not-moving aria-label="Not moving"><h2>Not moving ({notMoving.length})</h2>
+      <ul className="master-owes">{stalledLines.map((entry, i) => {
+        const id = work.find(item => item.key === notMoving[i]?.key)?.id;
+        return <li key={entry}>{id && i < 5 ? <button className="text-button" onClick={() => setSelected(id)}>{entry}</button> : <span className="muted">{entry}</span>}</li>;
+      })}</ul>
     </section>}
     {owes.length > 0 && <section className="panel" aria-label="Blockers the Lead owes"><h2>Blocked ({owes.length})</h2>
       <ul className="master-owes">{owes.map(entry => <li key={entry.id}>

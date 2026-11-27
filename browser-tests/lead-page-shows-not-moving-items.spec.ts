@@ -42,8 +42,13 @@ for (const width of [390, 1280]) {
     await expect(section).toContainText('DEMO-105 Add dark mode toggle');
     await expect(section).toContainText('45m');
     await expect(section).toContainText('nobody');
+    await expect(section.getByRole('heading', { name: 'Not moving (2)' })).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `no horizontal scroll at ${width} px`).toBe(0);
+
+    // Each line opens its item, like the Blocked list.
+    await section.getByRole('button', { name: /DEMO-104/ }).click();
+    await expect(page.getByRole('heading', { name: 'Add dark mode to account settings', level: 1 })).toBeVisible();
   });
 }

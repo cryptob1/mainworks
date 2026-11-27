@@ -105,7 +105,14 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
     sessions: [{ id: 'b-1', kind: 'implementation', state: 'running', principal: 'worker-1', startedAt: at(-250 * min) } as never],
   });
 
-  const result = deriveNotMoving([...finished, staleBlocker, reviewOk, reviewSlow, backedOff, humanWait, buildCapped], now, events);
+  // 7. Ready work queued behind busy builders: no blocker, lease or session. Its next step is a builder's,
+  // judged by the usual ready time (floored at 30m): 20m queued is not reported, 40m is.
+  const queuedFresh = workFixture({ id: 'w-queued-fresh', key: 'GY-107', title: 'Queued for a builder', stage: 'ready', ready: true, stageEnteredAt: at(-20 * min), sessions: [] });
+  const queuedOld = workFixture({ id: 'w-queued-old', key: 'GY-108', title: 'Queued long for a builder', stage: 'ready', ready: true, stageEnteredAt: at(-40 * min), sessions: [] });
+  // 8. Ready work waiting on an open dependency is not stalled itself: the dependency is.
+  const waitsOnDep = workFixture({ id: 'w-dep', key: 'GY-109', title: 'Waits on GY-106', stage: 'ready', ready: true, stageEnteredAt: at(-3 * hr), sessions: [], dependencies: ['w-build-cap'] });
+
+  const result = deriveNotMoving([...finished, staleBlocker, reviewOk, reviewSlow, backedOff, humanWait, buildCapped, queuedFresh, queuedOld, waitsOnDep], now, events);
 
   // Waiting on a person is separate and never in notMoving.
   assert.deepEqual(result.waitingOnPerson.map(i => i.key), ['GY-105']);
@@ -115,8 +122,9 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
   // Review inside usual time is not reported.
   assert.equal(result.notMoving.some(i => i.key === 'GY-102'), false, 'live review inside usual time is not reported');
 
-  // Oldest first: GY-106 (250m), GY-103 (80m), GY-104 (50m), GY-101 (45m).
-  assert.deepEqual(result.notMoving.map(i => i.key), ['GY-106', 'GY-103', 'GY-104', 'GY-101']);
+  // Oldest first: GY-106 (250m), GY-103 (80m), GY-104 (50m), GY-101 (45m), GY-108 (40m); never GY-107 or GY-109.
+  assert.deepEqual(result.notMoving.map(i => i.key), ['GY-106', 'GY-103', 'GY-104', 'GY-101', 'GY-108']);
+  assert.equal(result.notMoving.find(i => i.key === 'GY-108')!.owner, 'a builder', 'queued ready work waits on a builder, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-101')!.owner, 'nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-103')!.owner, 'a reviewer');
   assert.equal(result.notMoving.find(i => i.key === 'GY-104')!.owner, 'nobody');
