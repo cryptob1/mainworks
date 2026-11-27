@@ -17,6 +17,21 @@ sudo swapon /swapfile
 
 Each repository gets its own install: run `mainworks up --repo OWNER/NAME` once per repository. An install owns its server container and Postgres (`graphyard-OWNER-NAME-server-1`, `graphyard-OWNER-NAME-db-1`), its loop and deploy units (`graphyard-master-OWNER-NAME.service`, `graphyard-deploy-OWNER-NAME.service`), its port and its sign-in. `mainworks guide infra` lists every part.
 
+To keep Mainworks off the cores another project on the server depends on, set `MAINWORKS_RESERVED_CPUS` where its work starts: the loop's unit, and any shell that runs `mainworks watch`. Sessions, merge trials and checks then run on the other cores only, with no limit on how many run. With no setting, placement is unchanged. A drop-in survives `master init` rewriting the unit:
+
+```sh
+systemctl --user edit graphyard-master-OWNER-NAME.service
+```
+
+```ini
+[Service]
+Environment=MAINWORKS_RESERVED_CPUS=0-3
+```
+
+```sh
+systemctl --user restart graphyard-master-OWNER-NAME.service
+```
+
 ## Sharing the machine over Tailscale
 
 Install Tailscale on the server, sign in, rerun `mainworks up`: every install is served on the tailnet with `tailscale serve --bg --http=PORT` — never `tailscale funnel`; nothing is public. To let a person in, press **Invite** in the top bar. The first time it asks once for a Tailscale API key, which the browser seals to this machine; each invite then makes the Tailscale device invite itself (multi-use when it names several people). Until then a machine share link saved earlier (Tailscale admin console: Machines, this machine, Share) is used; Tailscale expires an unused one 30 days after it was made.

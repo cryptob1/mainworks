@@ -79,8 +79,6 @@ These are our own measurements on our own repository, not a benchmark. Your proj
 
 A good fit is a [Hetzner dedicated server](https://www.hetzner.com/dedicated-rootserver/) from the AX line with 64 GB RAM — roughly 50 to 110 US dollars a month; check the current price. (We have no affiliation with Hetzner.)
 
-On a shared host, set `MAINWORKS_RESERVED_CPUS=0-3` in the environment of its Mainworks launchers (legacy: `GRAPHYARD_RESERVED_CPUS`). New session and merge-trial scopes use `AllowedCPUs=4-23` on a 24-core host; check containers use the same CPU set. With no setting, placement is unchanged. This does not limit how many sessions or checks run.
-
 When tests become the limit, add another machine with one command:
 
 ```sh

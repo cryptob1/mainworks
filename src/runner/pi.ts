@@ -1,5 +1,5 @@
 import { setting } from '../setting.js';
-import { reservedCpuProperties } from '../reserved-cpus.js';
+import { reservedCpuPrefix, reservedCpuProperties } from '../reserved-cpus.js';
 import { sessionScopeProperties } from '../session-share.js';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -136,19 +136,20 @@ export function cgroupService(line: string) {
  * `systemd` when this process runs in a systemd service's cgroup and the user manager answers;
  * `setsid` otherwise. A service whose launcher cannot reach a user manager (a system-level unit)
  * falls back to setsid inside that service's cgroup, where a stop of the service still kills the
- * run: that is logged, once a process.
+ * run: that is logged, once a process. With CPUs reserved for another project (GY-4006) a run
+ * outside every service gets its scope when a user manager answers, since the scope names the run's CPUs.
  */
 export function runContainment(input: { cgroup?: string | null; systemd?: () => boolean; log?: (line: string) => void } = {}): RunContainment {
   let cgroup = input.cgroup;
   if (cgroup === undefined) { try { cgroup = readFileSync('/proc/self/cgroup', 'utf8'); } catch { cgroup = null; } }
   const service = cgroup?.split(/\r?\n/).map(cgroupService).find(Boolean) ?? null;
-  if (setting('RESERVED_CPUS')?.trim()) return 'systemd';
-  if (!service) return 'setsid';
+  if (!service && !setting('RESERVED_CPUS')?.trim()) return 'setsid';
   const reachable = input.systemd ?? (() => {
     if (systemdReachable === null) { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore', timeout: 5_000 }); systemdReachable = true; } catch { systemdReachable = false; } }
     return systemdReachable;
   });
   if (reachable()) return 'systemd';
+  if (!service) return 'setsid';
   const log = input.log ?? (line => { if (!fallbackLogged) { fallbackLogged = true; process.stderr.write(`${line}\n`); } });
   log(`mainworks: headless runs started from ${service} get no transient scope (no systemd user manager answers), so a stop or restart of ${service} still ends them`);
   return 'setsid';
@@ -197,7 +198,7 @@ export function detachedLaunch(directory: string, id: string, command: string, a
     + `for grace in 1 2 3 4 5; do kill -0 $$ 2>/dev/null || exit 0; sleep 1; done; kill -KILL -$$ ) & watchdog=$!; ` : '';
   const script = `trap : TERM INT HUP; ${watchdog}if command -v "$0" >/dev/null 2>&1; then ${confined}"$0" "$@" <${stdinFile ? quoted(stdinFile) : '/dev/null'} >${quoted(files.stdout)} 2>${quoted(files.stderr)}; code=$?; `
     + `else printf '%s: command not found\\n' "$0" >${quoted(files.stderr)}; code=spawn; fi; ${watchdog ? 'kill -TERM "$watchdog" 2>/dev/null; ' : ''}printf '%s\\n' "$code" >${quoted(pending)} && mv -f ${quoted(pending)} ${quoted(files.exit)}`;
-  const shell = ['/bin/sh', '-c', script, command, ...args];
+  const shell = [...reservedCpuPrefix(), '/bin/sh', '-c', script, command, ...args];
   const unit = containment === 'systemd' ? `graphyard-run-${id}.scope` : null;
   return unit ? { file: 'systemd-run', args: ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, ...scopeProperties, ...reservedCpuProperties(), '--', ...shell], unit } : { file: shell[0], args: shell.slice(1), unit };
 }

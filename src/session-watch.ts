@@ -1,4 +1,4 @@
-import { reservedCpuProperties } from './reserved-cpus.js';
+import { reservedCpuPrefix, reservedCpuProperties } from './reserved-cpus.js';
 // Concern: `mainworks watch`'s worker supervision — the systemd scope a session runs in, process-tree
 // signalling, lease renewal through control-plane restarts, the headless run log and surrender.
 import { execFileSync, spawn } from 'node:child_process';
@@ -27,7 +27,7 @@ export function systemdContainment(command: string, args: string[], run: typeof 
   const unit = `graphyard-watch-${process.pid}-${randomUUID()}.scope`;
   return {
     command: 'systemd-run', unit,
-    args: ['--user', '--scope', '--quiet', `--unit=${unit}`, ...properties, ...reservedCpuProperties(), '--', command, ...args],
+    args: ['--user', '--scope', '--quiet', `--unit=${unit}`, ...properties, ...reservedCpuProperties(), '--', ...reservedCpuPrefix(), command, ...args],
     signal: signal => { run('systemctl', ['--user', 'kill', '--kill-whom=all', `--signal=${signal}`, unit], { stdio: 'ignore' }); },
     empty: () => {
       const query = ['--user', 'show', '--property=LoadState', '--property=ActiveState', unit];

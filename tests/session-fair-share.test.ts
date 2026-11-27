@@ -12,6 +12,8 @@ import { loopUnitText } from '../src/install/loop-unit.js';
 import { herdrServerUnitText } from '../src/herdr-host.js';
 import { composeBundle, type AdapterContext } from '../src/install/adapters.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+// GY-4006: the scope words these tests pin are the ones with no reserved CPUs, whatever the host reserves.
+delete process.env.MAINWORKS_RESERVED_CPUS; delete process.env.GRAPHYARD_RESERVED_CPUS;
 
 // GY-3438: a worker started 16 browsers at once (GY-3411) and nothing noticed: the loop limits only
 // what it launches, and the per-session test budget is an env hint agents ignore. Every agent

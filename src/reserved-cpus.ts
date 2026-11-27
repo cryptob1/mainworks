@@ -24,7 +24,19 @@ export function allowedCpus(reserved = setting('RESERVED_CPUS'), online?: string
   return ranges.join(',');
 }
 
+/** The `systemd-run` properties naming a scope's CPUs, where the user manager holds the cpuset controller. */
 export function reservedCpuProperties(): string[] {
   const cpus = allowedCpus();
   return cpus ? ['-p', `AllowedCPUs=${cpus}`] : [];
+}
+
+/**
+ * The words before a launched command that keep it, and every process it starts, off the reserved
+ * CPUs: `taskset -c`. A user manager that holds only the cpu, memory and pids controllers records
+ * a scope's AllowedCPUs without applying it (systemd's user@.service delegates just those), so the
+ * affinity is what holds on such a host.
+ */
+export function reservedCpuPrefix(): string[] {
+  const cpus = allowedCpus();
+  return cpus ? ['taskset', '-c', cpus] : [];
 }
