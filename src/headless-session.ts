@@ -447,6 +447,15 @@ export function remoteWorkerRuns(root: string): { work: string; host: string; st
     return record?.host ? [{ work: record.work, host: record.host, startedAt: record.startedAt, running: !!meta && readText(runFiles(directory).exit) === null && runAlive(meta) }] : [];
   }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
+/** GY-4004: where each worker run still running runs: its added host, or null on this machine. */
+export function runningWorkerPlaces(root: string): (string | null)[] {
+  let names: string[];
+  try { names = readdirSync(workerRunsDirectory(root)); } catch { return []; }
+  return names.flatMap(name => {
+    const directory = join(workerRunsDirectory(root), name), record = readWorkerRecord(directory), meta = readRunMeta(directory);
+    return record && meta && readText(runFiles(directory).exit) === null && runAlive(meta) ? [record.host ?? null] : [];
+  });
+}
 /** The added host of each worker run still running, one entry per run. */
 export const liveWorkerHosts = (root: string) => remoteWorkerRuns(root).filter(run => run.running).map(run => run.host);
 export const readWorkerRecord = (directory: string) => { try { return workerRecordSchema.parse(JSON.parse(readFileSync(join(directory, sessionFile), 'utf8'))); } catch { return null; } };
