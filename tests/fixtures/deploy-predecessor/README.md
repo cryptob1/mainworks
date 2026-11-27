@@ -7,5 +7,6 @@ test process; git and worker CLI loading remain real.
 
 Edits since: GY-3201 deleted `parseServeDeclaration`, so the snapshot's
 serve declaration reads graphyard.json through `servedApplication`; GY-3964
-deleted `createBackup`, so its backup step calls `writeBackupFile`. The
-watch ports under test are untouched.
+deleted `createBackup`, so its backup step calls `writeBackupFile`, and
+reduced `src/master.ts` to one re-export, so it loads the config from
+`master/config.js`. The watch ports under test are untouched.

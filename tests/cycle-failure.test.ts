@@ -159,7 +159,7 @@ test('unit:detached-rejection-survived — an unhandled rejection or uncaught ex
     await writeFile(script, `
       import { emptyDaemonState } from ${JSON.stringify(source('daemon/state.ts'))};
       import { runDaemon } from ${JSON.stringify(source('daemon/run.ts'))};
-      import { masterConfigSchema } from ${JSON.stringify(source('master.ts'))};
+      import { masterConfigSchema } from ${JSON.stringify(source('master/profiles.ts'))};
       const master = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: ${JSON.stringify(token)}, cliPath: ${JSON.stringify(launcher)},
         repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, mergeMethod: 'merge', workers: [] });
       const state = emptyDaemonState(master);

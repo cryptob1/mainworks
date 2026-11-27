@@ -70,6 +70,12 @@ test('unit:dispatch-prefers-non-overlapping — dispatchSort offers items touchi
   assert.equal(dispatchSort([directory, coldOld], heat)[0], coldOld, 'a directory scope that contains the hot file touches it, by scope overlap and not exact equality');
   const urgentHot = work('GY-urgentHot', { priority: 0, createdAt: iso(-60_000), ...observed([hotFile]) });
   assert.equal(dispatchSort([coldOld, urgentHot], heat)[0], urgentHot, 'priority dominates: a hot P0 is still offered before a cold P2');
+  // A returned rework is an attempted item: it goes first within its priority whatever the heat of its files (GY-1891),
+  // and the order of two items never depends on the order they were handed in.
+  const rework = submitted('GY-rework', [hotFile], 'd'.repeat(40), { reworkRequested: true });
+  assert.equal(dispatchSort([coldOld, rework], heat)[0], rework, 'an attempted item is offered before a fresh one, hot or not');
+  for (const [a, b] of [[coldOld, hotOld], [hotOld, directory], [rework, coldNew]] as [Work, Work][])
+    assert.deepEqual(dispatchSort([a, b], heat).map(item => item.key), dispatchSort([b, a], heat).map(item => item.key), `the order of ${a.key} and ${b.key} does not depend on the input order`);
 });
 
 function daemonConfig(credentialFile: string, workers: WorkerProfile[]): MasterConfig {

@@ -304,3 +304,16 @@ test('unit:role-concurrency-deterministic-tags — this suite\'s request ids are
     assert.ok(name.endsWith(`-${tag(item.autoDispatch!.review!.id)}`), `${profile.agentName} counts ${name}`);
   }
 });
+
+// GY-122: what the launcher derives, whatever reads it back. The names stay inside the runtime's limit and end in
+// their tag, with the attempt after the first, for hex and all-digit tags on a plain and a digest-shortened profile.
+test('unit:profile-session-name-shape — every name sessionAgentName derives stays inside the runtime\'s limit and ends in its tag, with the attempt after the first, for hex and all-digit tags on a plain and a digest-shortened profile', () => {
+  const short = { name: 'claude-reviewer', agentName: 'review-claude', concurrency: 3 };
+  const long = { name: 'long', agentName: 'review-claude-on-the-second-acct', concurrency: 2 };
+  for (const profile of [short, long]) for (const requestTag of ['a1b2c3d4', '12345678', '00000000']) for (const attempt of [undefined, 1, 12]) {
+    const name = sessionAgentName(profile, { id: randomUUID(), requestId: `${requestTag}-${randomUUID()}`, ...(attempt === undefined ? {} : { attempt }) });
+    assert.ok(name.length <= sessionNameLimit && name.endsWith(attempt !== undefined && attempt > 1 ? `-${requestTag}-${attempt}` : `-${requestTag}`), name);
+  }
+  // A profile name near the limit is digest-shortened: an all-digit tag then follows the eight-hex digest.
+  assert.match(sessionAgentName(long, { id: randomUUID(), requestId: '12345678-0000-4000-8000-000000000000' }), /^review-claude-[0-9a-f]{8}-12345678$/);
+});

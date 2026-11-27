@@ -18,7 +18,7 @@ import { caseDirectory, loadCases } from '../e2e/case.js';
 import { runCases } from '../e2e/runner.js';
 import { servedApplication, readServeRecord, serveBaselineCheckoutPath, serveCheckoutPath, serveRecordPath, watchServe, type ServeCheck, type ServeDeclaration, type ServeRecord, type ServePorts } from '../serve-app.js';
 import { defaultChildRun } from '../child-runner.js';
-import { loadMasterConfig } from '../master.js';
+import { loadMasterConfig } from '../master/config.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 
 export type UpgradeStepId = 'checkout' | 'npm-ci' | 'backup' | 'redeploy' | 'restart' | 'refresh' | 'health';
