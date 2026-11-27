@@ -1,11 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -26,15 +26,11 @@ import { listen } from './helpers/http-server.js';
 // runs scripts/e2e-serve.mjs in the shared checkout, whose .graphyard/e2e-serve.json sends
 // scripts/e2e-serve-record.mjs to another root while it runs, so the record missed this control plane.
 
-const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 /** Runs the case from `source` (the checkout holding the case and its script) against a control plane serving a checkout of its own. */
 async function runLinkCase(source: string) {
   const operator: Principal = { id: 'e2e-operator', role: 'admin' }, token = `trial-${randomUUID()}`;
-  const root = await temporaryDirectory('served-app-link-root');
-  git(['init', '-q', '-b', 'main'], root);
-  await writeFile(join(root, 'served.txt'), 'the fixture app the record claims is served\n');
-  git(['add', '.'], root); git(['commit', '-q', '-m', 'the fixture app'], root);
+  const { root } = await gitRepo({ label: 'served-app-link-root', message: 'the fixture app', files: { 'served.txt': 'the fixture app the record claims is served\n' } });
   await mkdir(join(root, 'scripts')); await copyFile(join(source, 'scripts', 'e2e-serve-record.mjs'), join(root, 'scripts', 'e2e-serve-record.mjs'));
   let close: (() => Promise<void>) | undefined, store: Store | null = null;
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;

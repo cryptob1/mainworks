@@ -1,12 +1,14 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
@@ -105,19 +107,13 @@ before(async () => {
 after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
 const identity = { GIT_AUTHOR_NAME: 'Push Rights', GIT_AUTHOR_EMAIL: 'push-rights@example.invalid', GIT_COMMITTER_NAME: 'Push Rights', GIT_COMMITTER_EMAIL: 'push-rights@example.invalid' };
-const gitEnv = { ...process.env, ...identity };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-const commit = (cwd: string, file: string, text: string, message: string) => execFileSync('sh', ['-c', 'printf "%s\\n" "$1" > "$2" && git add -- "$2" && git commit -q -m "$3"', 'commit', text, file, message], { cwd, env: gitEnv });
+const commit = (cwd: string, file: string, text: string, message: string) => { writeFileSync(join(cwd, file), `${text}\n`); git(cwd, 'add', '--', file); git(cwd, 'commit', '-q', '-m', message); };
 const tokenOf = (principal: Principal) => credentials.find(entry => entry.id === principal.id)!.token;
 
 test('integration:authorized-rework-is-executable — a rework over an ejected, contaminated tip is carried out by the dispatched attempt alone: reset, sync, lease push, complete', async () => {
   // The repository: main holds both items' files; this item owns src-own.txt, another src-foreign.txt.
-  const origin = join(scratch, 'origin.git'), seed = join(scratch, 'seed'), queue = join(scratch, 'queue'), attempt = join(scratch, 'attempt-2');
-  git(scratch, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(scratch, 'clone', '-q', origin, seed);
-  git(seed, 'symbolic-ref', 'HEAD', 'refs/heads/main');
-  commit(seed, 'README.md', 'base', 'Seed'); commit(seed, 'src-own.txt', 'own v0', 'Own file'); commit(seed, 'src-foreign.txt', 'foreign v0', 'Foreign file');
-  git(seed, 'push', '-q', 'origin', 'main');
+  const seed = join(scratch, 'seed'), queue = join(scratch, 'queue'), attempt = join(scratch, 'attempt-2');
+  const { origin } = await gitRepo({ root: seed, origin: true, files: { 'README.md': 'base\n', 'src-own.txt': 'own v0\n', 'src-foreign.txt': 'foreign v0\n' }, message: 'Seed' });
 
   let work: Work = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Contaminated rework', criteria: [{ id: 'AC-1', text: 'Own change', proofs: ['unit:own', 'e2e:fixture'] }] }, randomUUID());
   const foreign: Work = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Foreign unlanded', criteria: [{ id: 'AC-1', text: 'Foreign change', proofs: ['unit:foreign', 'e2e:fixture'] }] }, randomUUID());

@@ -4,7 +4,6 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -16,6 +15,7 @@ import { gitleaksIgnorePath, gitleaksSha256, runSecretScan, secretScanArgv, secr
 import { runTrialAttempt, TrialRunnerError, TrialTimeoutError } from '../src/merge-writer/trial.js';
 import { installCommands, refuseUpAppReuse } from '../src/cli/install.js';
 import { harness } from './install-harness.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 test('unit:install-no-github-gates — default --plan lists the merge writer deploy key and no App or protection step; removed flags are unknown', async () => {
@@ -80,15 +80,10 @@ test('unit:github-gates-removed — repository setup writes no workflow; trial s
   assert.ok(argv.some(arg => arg.endsWith(gitleaksIgnorePath)));
 });
 
-const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 /** A one-commit repository with no package.json, so a trial past the scan builds and tests nothing. */
 async function scanRepository() {
-  const root = await temporaryDirectory('scan-repo', tmpdir());
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-  git('init', '-q');
-  await writeFile(join(root, 'README.md'), 'scan me\n');
-  git('add', '-A'); git('commit', '-qm', 'one');
-  return { root, sha: git('rev-parse', 'HEAD'), base: await temporaryDirectory('scan-base', tmpdir()) };
+  const { root, head: sha } = await gitRepo({ root: await temporaryDirectory('scan-repo', tmpdir()), files: { 'README.md': 'scan me\n' }, message: 'one' });
+  return { root, sha, base: await temporaryDirectory('scan-base', tmpdir()) };
 }
 
 test('unit:github-gates-removed — the merge writer\'s trial runs the secret scan on its checkout: findings fail the trial as secret-scan, an unobtainable binary is no verdict', async () => {
@@ -96,7 +91,7 @@ test('unit:github-gates-removed — the merge writer\'s trial runs the secret sc
   const calls: (SecretScanInput & { head: string })[] = [];
   const trial = (secretScan: (input: SecretScanInput) => Promise<SecretScanResult>) =>
     runTrialAttempt({ root: repo.root, base: repo.base, mergeSha: repo.sha, changedFiles: ['README.md'], timeoutMs: 60_000, key: 'GY-2009', environment: { PATH: process.env.PATH! },
-      secretScan: async input => { calls.push({ ...input, head: execFileSync('git', ['-C', input.worktree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() }); return secretScan(input); } });
+      secretScan: async input => { calls.push({ ...input, head: git(input.worktree, 'rev-parse', 'HEAD') }); return secretScan(input); } });
 
   const passed = await trial(async () => ({ ok: true }));
   assert.equal(passed.build, 'pass', passed.logTail);

@@ -14,13 +14,13 @@ import { trialConfinement, trialHiddenPaths } from '../src/merge-writer/trial.js
 import { runCases } from '../src/e2e/runner.js';
 import { parseCase } from '../src/e2e/case.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-2997: the merge writer's trial children run the merge's code without reaching the deploy key or
 // the coordinator's credentials, by $HOME or by absolute path; the push child still uses the key.
 
 const proof = 'unit:trial-credential-isolation';
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const policy = { mode: 'local', mergeGate: { preMerge: [{ check: 'test', command: 'npm run test', source: 'script', reason: 'fixture' }], perCandidate: [] }, candidateSchedule: null, deploy: { adapter: 'command', project: null, uat: null, production: null } };
 
 test(`${proof} — a candidate whose test reads $HOME/.config/graphyard/<install>/deploy-key and the same absolute path finds neither inside the trial, while the merge writer's push authenticates with that key`, { timeout: 300_000 }, async () => {
@@ -32,12 +32,10 @@ test(`${proof} — a candidate whose test reads $HOME/.config/graphyard/<install
   writeFileSync(join(config, 'coordinator.token'), 'coordinator-secret\n', { mode: 0o600 });
 
   // The candidate's test reads the key through its own $HOME and by the absolute path, and fails if either answers.
-  const root = await temporaryDirectory('trial-credential-repo', tmpdir());
-  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { test: 'node test.js' } }));
-  write('graphyard.json', JSON.stringify({ delivery: policy }));
-  write('test.js', `const fs = require('node:fs'), path = require('node:path');
+  const { root, git, head: base } = await gitRepo({ label: 'trial-credential-repo', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { test: 'node test.js' } }),
+    'graphyard.json': JSON.stringify({ delivery: policy }),
+    'test.js': `const fs = require('node:fs'), path = require('node:path');
 const read = file => { try { return 'READ ' + fs.readFileSync(file, 'utf8').trim(); } catch (error) { return error.code; } };
 const viaHome = read(path.join(process.env.HOME, '.config/graphyard/owner-project/deploy-key'));
 const absolute = read(${JSON.stringify(key)});
@@ -46,19 +44,18 @@ const coordinator = read(${JSON.stringify(join(config, 'coordinator.token'))});
 const viaWriter = read(${JSON.stringify(`/proc/${process.pid}/root${key}`)});
 console.log('home read: ' + viaHome + '; absolute read: ' + absolute + '; coordinator read: ' + coordinator + '; writer root read: ' + viaWriter);
 process.exit([viaHome, absolute, coordinator, viaWriter].some(result => result.startsWith('READ')) ? 1 : 0);
-`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const base = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', '--detach');
-  write('src/change.txt', 'head\n');
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'head');
-  const head = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', 'main');
+`,
+  } });
+  git('checkout', '-q', '--detach');
+  mkdirSync(join(root, 'src')); writeFileSync(join(root, 'src/change.txt'), 'head\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'head');
+  const head = git('rev-parse', 'HEAD');
+  git('checkout', '-q', 'main');
 
   // origin is reached over "ssh": a stand-in that admits the push only when -i names a file holding the deploy key.
   const remote = join(await temporaryDirectory('trial-credential-remote', tmpdir()), 'origin.git');
   execFileSync('git', ['clone', '-q', '--bare', root, remote]);
-  gitIn(root, 'remote', 'add', 'origin', `ssh://deploy-host${remote}`);
+  git('remote', 'add', 'origin', `ssh://deploy-host${remote}`);
   const bin = await temporaryDirectory('trial-credential-bin', tmpdir()), authenticated = join(bin, 'authenticated');
   writeFileSync(join(bin, 'ssh'), `#!/bin/sh
 key=

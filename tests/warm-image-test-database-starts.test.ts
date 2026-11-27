@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { ensureWarmImage } from '../src/merge-writer/remote-shards.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3936 AC-1: the coordinator's warm-image build leaves an embedded Postgres that starts, and the
@@ -17,9 +18,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const source = fileURLToPath(new URL('..', import.meta.url));
 const cleanups: (() => Promise<void>)[] = [];
 after(async () => { for (const cleanup of cleanups) await cleanup().catch(() => {}); });
-
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com' };
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 /** docker: images and containers are directories under STATE; `run` runs the script with /deps and /warm rewritten into the container's root. */
 const fakeDocker = String.raw`#!/usr/bin/env node
@@ -72,18 +70,17 @@ for (const name of fs.readdirSync(from)) {
 test('integration:warm-image-test-database-starts — the warm image build links the embedded Postgres libraries, and the coordinator runs postgres --version and a start-and-stop in the new image before tagging it', { timeout: 300_000 }, async () => {
   const base = await temporaryDirectory('warm-database');
   cleanups.push(() => rm(base, { recursive: true, force: true }));
-  const root = join(base, 'repo'), bin = join(base, 'bin'), state = join(base, 'docker');
-  for (const dir of [root, bin, state]) execFileSync('mkdir', ['-p', dir]);
+  const bin = join(base, 'bin'), state = join(base, 'docker');
+  for (const dir of [bin, state]) execFileSync('mkdir', ['-p', dir]);
   await writeFile(join(bin, 'docker'), fakeDocker); await writeFile(join(bin, 'npm'), fakeNpm);
   await chmod(join(bin, 'docker'), 0o755); await chmod(join(bin, 'npm'), 0o755);
 
-  git(root, 'init', '-q', '-b', 'main');
   const range = (JSON.parse(await readFile(join(source, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies['embedded-postgres']!;
   const manifest = { name: 'fixture', version: '1.0.0', dependencies: { 'embedded-postgres': range } };
-  await writeFile(join(root, 'package.json'), `${JSON.stringify(manifest)}\n`);
-  await writeFile(join(root, 'package-lock.json'), `${JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': manifest } })}\n`);
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'database');
-  const commit = git(root, 'rev-parse', 'HEAD');
+  const { root, head: commit } = await gitRepo({ root: join(base, 'repo'), message: 'database', files: {
+    'package.json': `${JSON.stringify(manifest)}\n`,
+    'package-lock.json': `${JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': manifest } })}\n`,
+  } });
 
   const image = 'mainworks-trial:warm-database';
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_DOCKER_STATE: state, FAKE_DOCKER_BASE: image, FAKE_NPM_MODULES: join(source, 'node_modules') };

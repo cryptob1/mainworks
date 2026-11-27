@@ -7,21 +7,18 @@ import { gitWatchPorts } from '../src/cli/upgrade.js';
 import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 
 // GY-2942: each install's deploy watcher uses its own checkout and checks health against the
 // deployed commit's release, so two installs on one host no longer roll each other back.
 
-
 /** An origin, a second clone that pushes to it, and the CLI checkout the deploy unit watches, at commit A. */
 async function repositories() {
   const base = await temporaryDirectory('deploy-watch-isolation');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const { root: pusher, origin, head: a } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: { 'release.txt': 'A' }, message: 'A' });
+  const checkout = join(base, 'checkout');
   const commit = async (name: string) => { await writeFile(join(pusher, 'release.txt'), name); git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', name); git(pusher, 'push', '-q', 'origin', 'HEAD:main'); return git(pusher, 'rev-parse', 'HEAD'); };
-  const a = await commit('A');
   git(base, 'clone', '-q', origin, checkout);
   git(checkout, 'checkout', '-q', '--detach', a);
   return { checkout, commit, a };

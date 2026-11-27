@@ -15,7 +15,8 @@ import {
   warmLockHash,
 } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { commitFile, dockerCount, dockerCreates, git, shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { gitRepo } from './helpers/git-repo.js';
+import { commitFile, dockerCount, dockerCreates, shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
 // GY-3627 AC-1 & AC-2: the warm image is tagged with the lockfile hash and the main commit it was
 // built from, holds that commit's dist/cli.mjs, dist/server.mjs and a filled compile cache that
@@ -54,17 +55,15 @@ const runWithHosts: ChildRun = (command, args, options) =>
 
 /** A small real git repository carrying the real Mainworks bin/, src/, package.json and package-lock.json. */
 async function cliRepository(label: string) {
-  const root = await temporaryDirectory(label);
-  git(root, 'init', '-q', '-b', 'main');
+  const { root, git } = await gitRepo({ label });
   await cp(join(source, 'bin'), join(root, 'bin'), { recursive: true });
   await cp(join(source, 'src'), join(root, 'src'), { recursive: true });
   await cp(join(source, 'package.json'), join(root, 'package.json'));
   await cp(join(source, 'package-lock.json'), join(root, 'package-lock.json'));
   await mkdir(join(root, 'tests'), { recursive: true });
   await writeFile(join(root, 'tests', 'cli.test.ts'), 'export {};\n');
-  git(root, 'add', '-A');
-  git(root, 'commit', '-qm', 'base');
-  return { root, sha: git(root, 'rev-parse', 'HEAD') };
+  git('add', '-A'); git('commit', '-qm', 'base');
+  return { root, sha: git('rev-parse', 'HEAD') };
 }
 
 test('integration:warm-image-serves-the-head — warm image is keyed to lockfile and commit, pushed before shards, starts the CLI under 0.6 CPU-seconds, and a head changing a source file runs its own code in concurrent shards, two newest images kept, signals end the in-process CLI', { timeout: 240_000 }, async () => {

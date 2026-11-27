@@ -1,15 +1,14 @@
 /** GY-3171: the trial's secret scan reads only the commits the change adds, and its refusal names the scan. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runSecretScan, secretScanArgv, secretScanCacheDirectory } from '../src/merge-writer/secret-scan.js';
 import { runTrialAttempt } from '../src/merge-writer/trial.js';
 import { trialFailureReason } from '../src/merge-writer/executor.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
-const identity = { GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' };
 // A stand-in gitleaks: reports a leak when the commits its --log-opts name add the marker.
 const fakeGitleaks = `#!/bin/sh
 range=HEAD; for arg in "$@"; do case "$arg" in --log-opts=*) range="\${arg#--log-opts=}";; esac; wt="$arg"; done
@@ -17,11 +16,8 @@ if git -C "$wt" log -p $range | grep -q '^+.*PLANTED-LEAK'; then echo "leaks fou
 `;
 
 async function repository() {
-  const root = await temporaryDirectory('scan-scope');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
+  const { root, git } = await gitRepo({ label: 'scan-scope', files: { 'notes.txt': 'token PLANTED-LEAK\n' }, message: 'token PLANTED-LEAK' });
   const commit = async (body: string) => { await writeFile(join(root, 'notes.txt'), body); git('add', '-A'); git('commit', '-qm', body.slice(0, 20)); return git('rev-parse', 'HEAD'); };
-  git('init', '-q');
-  await commit('token PLANTED-LEAK\n');
   const tip = await commit('cleaned\n');
   const base = await temporaryDirectory('scan-scope-base');
   const cache = secretScanCacheDirectory(base);

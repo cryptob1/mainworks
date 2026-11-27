@@ -11,9 +11,10 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { freePort } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { git, gitRepo } from './git-repo.js';
 import { hostShimScript } from '../../src/host-shim.js';
 import { helperSigner } from '../../src/hosts.js';
 
@@ -327,8 +328,7 @@ export const dockerCount = (state: string, word: string) => dockerCalls(state).f
 export const dockerCreates = async (state: string): Promise<string[][]> => existsSync(join(state, 'creates.jsonl'))
   ? (await readFile(join(state, 'creates.jsonl'), 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com' };
-export const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
+export { git };
 
 /** A repository whose test runner runs the files its list names, writes one record per file (a file named `fails` fails), and prints the checkout's commit count. */
 const shardRunner = `import { readFileSync, appendFileSync } from 'node:fs';
@@ -346,19 +346,15 @@ for (const file of files) {
 process.exit(failed ? 1 : 0);
 `;
 export async function shardRepository(label: string, files: readonly string[], extra: Record<string, string> = {}) {
-  const root = await temporaryDirectory(label);
-  git(root, 'init', '-q', '-b', 'main');
-  const content: Record<string, string> = {
+  const { root, head: sha } = await gitRepo({ label, message: 'fixture', files: {
     'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true' } }),
     'package-lock.json': JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }),
     'graphyard.json': JSON.stringify({ delivery: { mergeGate: { perCandidate: [], preMerge: [{ check: 'test', command: 'node scripts/tests.mjs', source: 'script', reason: 'fixture', selection: { command: 'node scripts/select.mjs', pattern: '^tests/[\\w./-]+\\.test\\.ts$' } }] } } }),
     'scripts/select.mjs': '', 'scripts/tests.mjs': shardRunner,
     ...Object.fromEntries(files.map(file => [file, 'fixture\n'])),
     ...extra,
-  };
-  for (const [path, text] of Object.entries(content)) { await mkdir(dirname(join(root, path)), { recursive: true }); await writeFile(join(root, path), text); }
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'fixture');
-  return { root, sha: git(root, 'rev-parse', 'HEAD') };
+  } });
+  return { root, sha };
 }
 export const commitFile = async (root: string, path: string, text: string) => { await writeFile(join(root, path), text); git(root, 'add', '-A'); git(root, 'commit', '-qm', `change ${path}`); return git(root, 'rev-parse', 'HEAD'); };
 

@@ -3,7 +3,6 @@
 // now a restart leaves the run going and the next loop collects its result instead of starting over.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord } from '../src/batch-gate.js';
@@ -14,22 +13,15 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { TrialRunHandle, TrialRunRequest } from '../src/merge-writer/trial-run.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { until } from './helpers/until.js';
 
 const repository = 'owner/project';
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 
 /** A checkout whose verified main holds one case; its diagnostics are six days old. */
 async function fixture(label: string) {
-  const base = await temporaryDirectory(label), origin = join(base, 'origin.git'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, checkout);
-  await mkdir(join(checkout, 'e2e', 'cases'), { recursive: true });
-  await writeFile(join(checkout, 'e2e', 'cases', 'smoke.json'), '{}');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-q', '-m', 'base'); git(checkout, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(checkout, 'rev-parse', 'HEAD');
+  const { root: checkout, head: verified } = await gitRepo({ label, origin: true, files: { 'e2e/cases/smoke.json': '{}' } });
   await writeGateRecord(gateRecordPath(checkout), { ...bootstrapGate(repository, verified), diagnosticsAt: '2026-11-18T04:14:18.630Z' });
   return { checkout, verified };
 }
@@ -50,7 +42,7 @@ function world(checkout: string) {
   const reads = (restarted: boolean): MergeWriterReads => ({
     baseBranch: 'main', now: Date.now,
     fetch: async () => { git(checkout, 'fetch', '-q', 'origin', 'main'); return git(checkout, 'rev-parse', 'origin/main'); },
-    git: async (args, extra) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8', env: { ...env, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8', env: { ...process.env, ...extra } }),
     merge: async () => { throw new Error('unused'); },
     trial: async commit => { inProcess.push(commit); return new Promise<MergeTrialRun>(() => {}); },
     launchTrialRun: request => {

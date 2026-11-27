@@ -17,7 +17,7 @@ import { controlPlaneRecordPath, deployRecordPath, readControlPlaneRecord, readD
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
 import { until } from './helpers/until.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const modules = resolve(createRequire(import.meta.url).resolve('tsx'), '../../..');
@@ -69,7 +69,7 @@ test('integration:deploy-watch-runs-deployed-code — a watch that deploys a com
 
   // The repository the watch serves: this source as a fixture checkout whose origin is local but
   // configured as github.com/owner/project, so the record and the gate name the repository.
-  await mkdir(checkout);
+  await gitRepo({ root: checkout });
   await Promise.all([
     ...['src', 'bin', 'scripts', 'docs', 'e2e', 'fixtures'].map(name => cp(join(source, name), join(checkout, name), { recursive: true })),
     ...['package.json', 'package-lock.json', 'graphyard.json', 'README.md'].map(name => cp(join(source, name), join(checkout, name))),
@@ -85,7 +85,7 @@ test('integration:deploy-watch-runs-deployed-code — a watch that deploys a com
   assert.ok(fastWatch.includes("join(build, 'dist', 'cli.mjs')"), 'the fixture invokes the built CLI for install');
   await writeFile(join(checkout, 'src', 'cli', 'upgrade.ts'), fastWatch);
   await writeFile(join(checkout, '.gitignore'), 'node_modules/\n.graphyard/\n');
-  git(checkout, 'init', '-q', '-b', 'main', '.'); git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'A');
+  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'A');
   const a = git(checkout, 'rev-parse', 'HEAD');
   const origin = join(base, 'origin.git'); git(base, 'init', '-q', '--bare', '-b', 'main', origin);
   git(checkout, 'remote', 'add', 'origin', origin);

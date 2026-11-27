@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { sessionSlotsGrant } from '../src/master/harness.js';
 import { gateSlot, heavyCommand, heavyJobLimit, heldSlots, hostHeavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable, verificationBin, verificationEnvironment, waitStep, withHeavyJob } from '../src/master/verification-slots.js';
 import { until } from './helpers/until.js';
@@ -21,7 +21,7 @@ const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 async function host() {
   const scratch = await temporaryDirectory('heavy-budget'), data = join(scratch, 'data'), log = join(scratch, 'runs.log'), go = join(scratch, 'go');
   writeFileSync(log, '');
-  const installs = ['acme/app', 'acme/site'].map(project => {
+  const installs = await Promise.all(['acme/app', 'acme/site'].map(async project => {
     const root = join(scratch, project.replace('/', '-')), managed = join(scratch, `${project.replace('/', '-')}-managed`);
     mkdirSync(join(root, 'site'), { recursive: true }); mkdirSync(managed);
     // The session's commands: the whole suite is the recorded job, and one run with NESTED starts another whole suite through the wrappers.
@@ -37,9 +37,9 @@ appendFileSync(process.env.RUN_LOG, 'end ' + id + '\\n');\n`);
     mkdirSync(join(root, 'e2e', 'cases'), { recursive: true });
     writeFileSync(join(root, 'e2e', 'cases', 'home.json'), JSON.stringify({ id: 'home', title: 'The home page answers', tags: ['api'], target: 'any', required: true,
       steps: [{ kind: 'http', name: 'read /', method: 'GET', path: '/', status: 200, expect: [] }] }));
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'fixture');
+    await gitRepo({ root, message: 'fixture', files: {} });
     return { project, root, managed };
-  });
+  }));
   const base = { PATH: process.env.PATH, HOME: process.env.HOME, GRAPHYARD_DATA_HOME: data, RUN_GO: go };
   const started: { id: string; project: string; child: ChildProcess; stderr: () => string; closed: Promise<number | null> }[] = [];
   after(() => { for (const job of started) job.child.kill('SIGKILL'); });

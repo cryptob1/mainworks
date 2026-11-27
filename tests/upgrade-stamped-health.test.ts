@@ -11,6 +11,7 @@ import type { InstallRecord } from '../src/install/secrets.js';
 import { cliChangesOf, liveEffects, resolveTarget, runUpgrade, upgradePlan, type UpgradeInputs } from '../src/cli/upgrade.js';
 import { checkoutRelease, imageRepository } from '../src/release.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 import { pulledTrialImageFile } from '../src/merge-writer/trial-container.js';
 
 const previousVersion = '2026.10.18.1', version = '2026.10.18.2';
@@ -27,12 +28,10 @@ before(async () => {
  * borrowed through its objects, detached at the previous release, with the candidate one commit on.
  */
 async function cliCheckout() {
-  const root = await temporaryDirectory('upgrade-stamped-cli');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=gate', '-c', 'user.email=gate@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'advice.detachedHead=false', ...args], { encoding: 'utf8' }).trim();
-  git('init', '--quiet');
-  const objects = execFileSync('git', ['-C', repositoryRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  const { root, git } = await gitRepo({ label: 'upgrade-stamped-cli' });
+  const objects = gitIn(repositoryRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir');
   await writeFile(join(root, '.git/objects/info/alternates'), `${join(objects, 'objects')}\n`);
-  git('checkout', '--quiet', '--detach', execFileSync('git', ['-C', repositoryRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
+  git('checkout', '--quiet', '--detach', gitIn(repositoryRoot, 'rev-parse', 'HEAD'));
   let modules = repositoryRoot;
   while (!existsSync(join(modules, 'node_modules'))) modules = dirname(modules);
   await symlink(join(modules, 'node_modules'), join(root, 'node_modules'));

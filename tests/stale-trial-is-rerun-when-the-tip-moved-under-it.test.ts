@@ -11,28 +11,18 @@ import { riskOf } from '../src/model-boundary/risk-class.js';
 import { mergeWriterSummary } from '../src/daemon/cycle-merge-writer.js';
 import { emptyMergeWriterState } from '../src/daemon/merge-writer-state.js';
 import type { Work } from '../src/model/work.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3881 AC-3: a head whose passing trial ran on a base older than the tip it lands on is trialled
 // again on the new merge when it is sensitive, or when the commits that moved the tip touch a file
 // its changed or selected test files import, directly or through one level. Otherwise it takes the
 // GY-3120 fast path, and the landing says so for status to count.
 
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 const sha = (seed: string) => createHash('sha1').update(seed).digest('hex');
 
 /** A repository whose base holds a TypeScript chain and one Go package, and one tip per move, each a commit on the base. */
 async function repository(t: { after(fn: () => unknown): void }) {
-  const dir = await temporaryDirectory('stale-trial');
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const write = async (files: Record<string, string>, message: string) => {
-    for (const [name, text] of Object.entries(files)) { await mkdir(join(dir, name, '..'), { recursive: true }); await writeFile(join(dir, name), text); }
-    git('add', '.'); git('commit', '-q', '-m', message);
-    return git('rev-parse', 'HEAD');
-  };
-  git('init', '-q', '-b', 'main');
-  const base = await write({
+  const { root: dir, head: base, git } = await gitRepo({ label: 'stale-trial', files: {
     'src/app.ts': "import { lib } from './lib.js';\nexport const app = lib;\n",
     'src/lib.ts': "import { deep } from './deep.js';\nexport const lib = deep;\n",
     'src/deep.ts': 'export const deep = 1;\n',
@@ -42,10 +32,16 @@ async function repository(t: { after(fn: () => unknown): void }) {
     'go.mod': 'module example.com/hwd\n',
     'internal/inspect/report.go': 'package inspect\n\nfunc Report() {}\n',
     'internal/inspect/score.go': 'package inspect\n\nfunc Score() {}\n',
-  }, 'base');
+  } });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const write = async (files: Record<string, string>, message: string) => {
+    for (const [name, text] of Object.entries(files)) { await mkdir(join(dir, name, '..'), { recursive: true }); await writeFile(join(dir, name), text); }
+    git('add', '.'); git('commit', '-q', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
   const move = async (files: Record<string, string>) => { git('checkout', '-q', '--detach', base); return write(files, 'move'); };
   const merge = (head: string, into: string) => { git('checkout', '-q', '--detach', into); git('merge', '-q', '--no-ff', '-m', 'merge', head); return git('rev-parse', 'HEAD'); };
-  return { base, move, merge, git: async (args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env }) };
+  return { base, move, merge, git: async (args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }) };
 }
 
 function world(repo: { base: string; git: (args: string[]) => Promise<string> }, movedTo: string, files: string[]) {

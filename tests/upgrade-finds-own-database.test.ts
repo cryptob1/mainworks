@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -12,6 +12,7 @@ import { Store } from '../src/store.js';
 import type { InstallRecord } from '../src/install/secrets.js';
 import { checkoutRelease } from '../src/release.js';
 import { startPostgres } from './helpers/postgres.js';
+import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3524: `mainworks upgrade` backs up the install's own database, read from its recorded deploy
@@ -86,12 +87,10 @@ const repositoryRoot = new URL('..', import.meta.url).pathname;
 
 /** A clean install's CLI checkout of this repository's code, with a newer commit to upgrade to. */
 async function cliCheckout() {
-  const root = await temporaryDirectory('upgrade-own-database-cli');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=gate', '-c', 'user.email=gate@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'advice.detachedHead=false', ...args], { encoding: 'utf8' }).trim();
-  git('init', '--quiet');
-  const objects = execFileSync('git', ['-C', repositoryRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  const { root, git } = await gitRepo({ label: 'upgrade-own-database-cli' });
+  const objects = gitIn(repositoryRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir');
   await writeFile(join(root, '.git/objects/info/alternates'), `${join(objects, 'objects')}\n`);
-  git('checkout', '--quiet', '--detach', execFileSync('git', ['-C', repositoryRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
+  git('checkout', '--quiet', '--detach', gitIn(repositoryRoot, 'rev-parse', 'HEAD'));
   let modules = repositoryRoot;
   while (!existsSync(join(modules, 'node_modules'))) modules = dirname(modules);
   await symlink(join(modules, 'node_modules'), join(root, 'node_modules'));
