@@ -443,6 +443,98 @@ function firstFailingLine(output: string): string | null {
 
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const commandCallPattern = /(?:mainworks|\$?\{[^}]*(?:COMMAND_NAME|cli|cliPath)[^}]*\})\s+([a-z][a-z0-9-]{2,})(?=[:\s'"`/<]|$)/g;
+const siblingSweepScope = /^(?:src|web|docs)\//;
+
+/**
+ * GY-4054: incomplete sweeps leaving untouched sibling callers/surfaces behind was the top shared
+ * review and product-review rework cause in the 6 h before filing. Detects CLI command renames
+ * (`mainworks OLD` -> `mainworks NEW`, `${cli} OLD` -> `${cli} NEW`, etc.) in non-test hunks.
+ */
+export function detectCommandRenames(diff: string): { from: string; to: string }[] {
+  const renames = new Map<string, { from: string; to: string }>();
+  let inScope = false;
+  let removed = new Set<string>();
+  let added = new Set<string>();
+  const flush = () => {
+    if (inScope) {
+      const removedOnly = [...removed].filter(cmd => !added.has(cmd));
+      const addedOnly = [...added].filter(cmd => !removed.has(cmd));
+      if (removedOnly.length === 1 && addedOnly.length === 1) {
+        const from = removedOnly[0]!, to = addedOnly[0]!;
+        renames.set(`${from}->${to}`, { from, to });
+      }
+    }
+    removed = new Set<string>();
+    added = new Set<string>();
+  };
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('diff --git ')) { flush(); inScope = false; continue; }
+    if (line.startsWith('+++ b/')) { inScope = siblingSweepScope.test(line.slice(6)); continue; }
+    if (line.startsWith('@@ ')) { flush(); continue; }
+    if (!inScope) continue;
+    const isRemoved = line.startsWith('-') && !line.startsWith('---');
+    const isAdded = line.startsWith('+') && !line.startsWith('+++');
+    if (!isRemoved && !isAdded) continue;
+    const target = isRemoved ? removed : added;
+    for (const match of line.slice(1).matchAll(commandCallPattern)) target.add(match[1]!);
+  }
+  flush();
+  return [...renames.values()];
+}
+
+const commandFor = (name: string) => new RegExp(`(?:mainworks|\\$?\\{[^}]*(?:COMMAND_NAME|cli|cliPath)[^}]*\\})\\s+${escapeRegex(name)}(?=[:\\s'"\`/<]|$)`);
+
+/**
+ * GY-4054: when a head renames a CLI command, refuses untouched sibling callers and user-facing
+ * surfaces under `src/`, `web/`, and `docs/` that still reference only the old command, unless
+ * updated to include the new command or ruled out of scope (`PATH — out of scope: WHY`).
+ */
+export async function validateSiblingCommandSweep(
+  git: (args: string[]) => Promise<string>,
+  head: string,
+  diff: string,
+  commitMessages: string,
+): Promise<string | null> {
+  const renames = detectCommandRenames(diff);
+  if (!renames.length) return null;
+  for (const { from, to } of renames) {
+    let grepOut = '';
+    try { grepOut = await git(['grep', '-n', '-I', '-F', from, head, '--', 'src', 'web', 'docs']); }
+    catch { continue; }
+    const oldPattern = commandFor(from), newPattern = commandFor(to);
+    const firstByFile = new Map<string, string>();
+    const prefix = `${head}:`;
+    for (const raw of grepOut.split('\n')) {
+      if (!raw.startsWith(prefix)) continue;
+      const rest = raw.slice(prefix.length);
+      const firstColon = rest.indexOf(':');
+      if (firstColon < 0) continue;
+      const path = rest.slice(0, firstColon);
+      if (firstByFile.has(path)) continue;
+      const afterPath = rest.slice(firstColon + 1);
+      const secondColon = afterPath.indexOf(':');
+      if (secondColon < 0) continue;
+      const lineNo = afterPath.slice(0, secondColon);
+      const text = afterPath.slice(secondColon + 1);
+      if (oldPattern.test(text)) firstByFile.set(path, `${path}:${lineNo}: ${text.trim()}`);
+    }
+    const missed: string[] = [];
+    for (const [path, detail] of firstByFile) {
+      if (new RegExp(`(?:^|[^\\w./-])${escapeRegex(path)}\\s*(?:[-–—:]\\s*)?(?:out\\s+of\\s+scope|kept\\s+old\\s+command)\\b`, 'i').test(commitMessages)) continue;
+      const content = await git(['show', `${head}:${path}`]).catch(() => '');
+      if (newPattern.test(content)) continue;
+      missed.push(detail);
+    }
+    if (missed.length) {
+      return `complete refused: this head renames command \`${from}\` to \`${to}\`, but untouched sibling files still reference \`${from}\`:\n`
+        + missed.join('\n')
+        + `\nUpdate each sibling caller/surface (or keep the alias alongside \`${to}\`), or add a line "PATH — out of scope: WHY" for each intentionally untouched file to a commit message, then complete again.`;
+    }
+  }
+  return null;
+}
+
 /**
  * GY-4038: unmet acceptance criteria was code review's largest rework cause after GY-3939.
  * Requires a commit-message ruling "AC-N — met: HOW" for each non-bootstrap criterion, and refuses
@@ -532,10 +624,13 @@ export async function completePreflight(
   }
 
   // GY-3939: a weakened assertion was review's largest rework cause; the worker rules on each changed one first, as the reviewer will.
+  let baseFrom: string | null = null;
+  let baseDiff: string | null = null;
   if (baseTip) {
-    const from = (await git(['merge-base', baseTip, head])).trim();
-    const changed = extractChangedAssertions(await git(['diff', '--no-color', '--no-ext-diff', from, head]));
-    if (validateAssertionRulings(await git(['log', '--format=%B', `${from}..${head}`]), changed)) {
+    baseFrom = (await git(['merge-base', baseTip, head])).trim();
+    baseDiff = await git(['diff', '--no-color', '--no-ext-diff', baseFrom, head]);
+    const changed = extractChangedAssertions(baseDiff);
+    if (validateAssertionRulings(await git(['log', '--format=%B', `${baseFrom}..${head}`]), changed)) {
       throw new Error(`complete refused: this head removes or changes ${changed.length} assertion line${changed.length === 1 ? '' : 's'} in existing tests or cases, and review sends back any that is weakened:\n`
         + changed.map(item => `${item.path}:${item.line}: ${item.before}${item.after ? ` -> ${item.after}` : ' (removed)'}`).join('\n')
         + '\nKeep each check, or add a line "PATH:LINE — kept meaning: WHY" for it to a commit message, then complete again.');
@@ -622,10 +717,16 @@ export async function completePreflight(
 
   // 6. GY-4038: unmet acceptance criteria was code review's largest rework cause after GY-3939;
   // the worker checks and rules each criterion met in a commit message first, as the reviewer will.
-  if (baseTip && criteria.length) {
-    const from = (await git(['merge-base', baseTip, head])).trim();
-    const criteriaFailure = validateCriteriaRulings(await git(['log', '--reverse', '--format=%B', `${from}..${head}`]), criteria);
-    if (criteriaFailure) throw new Error(criteriaFailure);
+  // 7. GY-4054: incomplete sweeps leaving untouched sibling callers/surfaces behind was the top
+  // shared review and product-review rework cause in the 6 h before filing.
+  if (baseTip && baseFrom) {
+    const commitMessages = await git(['log', '--reverse', '--format=%B', `${baseFrom}..${head}`]);
+    if (criteria.length) {
+      const criteriaFailure = validateCriteriaRulings(commitMessages, criteria);
+      if (criteriaFailure) throw new Error(criteriaFailure);
+    }
+    const siblingFailure = await validateSiblingCommandSweep(git, head, baseDiff ?? '', commitMessages);
+    if (siblingFailure) throw new Error(siblingFailure);
   }
 }
 
