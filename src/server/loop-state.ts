@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { demand, Refusal, type Principal } from '../model.js';
 import type { Store } from '../store.js';
-import { reviewRecordSchema } from '../reviewer.js';
+import { reviewRecordSchema, type ReviewRecord } from '../reviewer.js';
+import { reviewLaunchKind } from '../model/post-merge-review.js';
 import { producerRecordSchema } from '../producer.js';
 import { dispatchCursorSchema } from '../dispatch/cursor.js';
 import type { LoopStateClient } from '../loop-state.js';
@@ -31,12 +32,34 @@ export function storedLoopState(store: Store, actor: Principal, scope: string): 
       await store.transaction(async db => {
         await db.query(`SET LOCAL lock_timeout = '${loopStateLockWaitMs}ms'`);
         const ids = parsed.map(record => kind === 'dispatch' ? 'cursor' : (record as { id: string }).id);
+        const inserted: ReviewRecord[] = [];
         for (const [index, record] of parsed.entries()) {
           const id = ids[index];
-          await db.query(`INSERT INTO loop_state(scope,kind,id,data) VALUES($1,$2,$3,$4)
-            ON CONFLICT(scope,kind,id) ${migrate ? 'DO NOTHING' : 'DO UPDATE SET data=EXCLUDED.data'}`, [scope, kind, id, JSON.stringify(record)]);
+          if (kind !== 'reviews' || migrate) {
+            await db.query(`INSERT INTO loop_state(scope,kind,id,data) VALUES($1,$2,$3,$4)
+              ON CONFLICT(scope,kind,id) ${migrate ? 'DO NOTHING' : 'DO UPDATE SET data=EXCLUDED.data'}`, [scope, kind, id, JSON.stringify(record)]);
+            continue;
+          }
+          // GY-3990: a review record is saved only onto the revision it was read at.
+          const review = record as ReviewRecord, revision = review.revision ?? 0;
+          const saved = await db.query(`INSERT INTO loop_state(scope,kind,id,data) VALUES($1,$2,$3,$4)
+            ON CONFLICT(scope,kind,id) DO UPDATE SET data=EXCLUDED.data WHERE COALESCE((loop_state.data->>'revision')::bigint, 0) = $5
+            RETURNING (xmax = 0) AS inserted`, [scope, kind, id, JSON.stringify({ ...review, revision: revision + 1 }), revision]);
+          if (!saved.rows.length) throw new Refusal(`Review record ${id} changed since it was read; re-read it and reapply`, 409, { code: 'loop-state-revision' });
+          if (saved.rows[0].inserted && review.state === 'pending') inserted.push(review);
         }
         if (removed.length) await db.query('DELETE FROM loop_state WHERE scope=$1 AND kind=$2 AND id=ANY($3::text[])', [scope, kind, removed]);
+        if (kind === 'reviews' && !migrate) {
+          // The slot row is the reservation of a head and review kind: one conditional insert, freed when its record settles or goes.
+          const freed = [...parsed.filter(record => (record as ReviewRecord).state !== 'pending').map(record => (record as ReviewRecord).id), ...removed];
+          if (freed.length) await db.query(`DELETE FROM loop_state WHERE scope=$1 AND kind='review-slot' AND data->>'record' = ANY($2::text[])`, [scope, freed]);
+          for (const review of inserted) {
+            const slot = `${review.key}@${review.sha}#${reviewLaunchKind({ postMerge: !!review.postMerge, product: !!review.product })}`;
+            const taken = await db.query(`INSERT INTO loop_state(scope,kind,id,data) VALUES($1,'review-slot',$2,$3) ON CONFLICT(scope,kind,id) DO NOTHING RETURNING id`,
+              [scope, slot, JSON.stringify({ record: review.id, launcher: actor.id, agentName: review.agentName, at: review.requestedAt })]);
+            if (!taken.rows.length) throw new Refusal(`A review of ${slot} is already reserved by another launch`, 409, { code: 'review-reserved' });
+          }
+        }
         // GY-3342: the records live in loop_state; the ledger row names only which ids changed,
         // each id once — dispatch names its one cursor row however many records it wrote.
         await db.query('INSERT INTO events(actor,kind,payload) VALUES($1,$2,$3)', [actor.id, `loop-state.${migrate ? 'migrated' : 'saved'}`, JSON.stringify({ scope, kind, ids: [...new Set(ids)], removed })]);
