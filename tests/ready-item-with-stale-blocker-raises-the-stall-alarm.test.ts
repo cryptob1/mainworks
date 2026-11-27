@@ -97,7 +97,10 @@ test(`${proof} — a ready item with an open blocker, no live session and no cha
   const scopeBlocked = blockedReadyItem('GY-220', {
     agentRequests: [{ id: 'sr-1', type: 'scope-request' as any, epoch: 1, requestedBy: 'worker-a', at: iso(start), reason: 'Need extra file', decider: { kind: 'rule', who: 'master', command: null }, releasedLease: true, state: 'open' }],
   });
-  const f = await fixture([item, humanBlocked, scopeBlocked]);
+  const humanDecidedBlocked = blockedReadyItem('GY-221', {
+    agentRequests: [{ id: 'br-1', type: 'blocker', epoch: 1, requestedBy: 'worker-a', at: iso(start), reason: longBlocker, humanDecision: 'goals-and-priorities', decider: { kind: 'human', who: 'the human operator (goals and priorities)', command: null }, releasedLease: true, state: 'open' }],
+  });
+  const f = await fixture([item, humanBlocked, scopeBlocked, humanDecidedBlocked]);
 
   // Before 60 minutes: no stall alarm.
   await f.cycle();
@@ -118,6 +121,7 @@ test(`${proof} — a ready item with an open blocker, no live session and no cha
   assert.ok(alarm.includes('(1h)'), `alarm includes the blocker age: ${alarm}`);
   assert.equal(alarm.includes('GY-219'), false, 'item blocked on an open human request is excluded');
   assert.equal(alarm.includes('GY-220'), false, 'item blocked on an open scope request is excluded');
+  assert.equal(alarm.includes('GY-221'), false, 'item blocked on a request the human decides is excluded');
 
   // master status reports the stall alarm (not null).
   const report = await f.status();
