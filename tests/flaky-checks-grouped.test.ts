@@ -39,7 +39,7 @@ test('integration:flaky-checks-grouped — rerun-passed test files of the window
     { check: 'tests/f3.test.ts', count: 2, assertion: null },
     { check: 'tests/f5.test.ts', count: 2, assertion: 'five' },
   ]);
-  const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, asOf: at(0), ageSeconds: 0 } }));
+  const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, onboarding: [], asOf: at(0), ageSeconds: 0 } }));
   assert.match(html, /data-flaky-checks[^>]*>Flaky checks: tests\/f1\.test\.ts 4 · tests\/f4\.test\.ts 3/);
 });
 

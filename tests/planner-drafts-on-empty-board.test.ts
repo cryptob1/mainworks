@@ -61,6 +61,7 @@ function workerProfiles(count: number): WorkerProfile[] {
 const sampleFlow: FlowReport = {
   asOf: new Date(start).toISOString(),
   ageSeconds: 12,
+  onboarding: [],
   attention: null,
   '6h': {
     hours: 6,

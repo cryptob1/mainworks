@@ -37,6 +37,22 @@ export const flowLedgerSql = `SELECT ${columns} FROM events WHERE work_id IS NOT
 export const flowAttemptsSql = `SELECT id, attempts FROM work_index WHERE attempts IS NOT NULL AND (NOT settled OR merged_at > $1 OR touched_at > $1)`;
 type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: string | null }[]>;
 
+/**
+ * GY-4059: the repository's onboarding, from timestamps already recorded: connected at the control
+ * plane's first schema record or its first work item, whichever is earlier, to its first merge.
+ */
+export const onboardingSql = `SELECT LEAST((SELECT min(applied_at) FROM graphyard_schema), (SELECT min((document->>'createdAt')::timestamptz) FROM work_items)) AS connected_at,
+  (SELECT min(merged_at) FROM work_index) AS merged_at`;
+/** One connected repository's onboarding: minutes from connection to first merge, or waiting so far. */
+export interface OnboardingTime { repository: string; connectedAt: string; firstMergeAt: string | null; minutes: number; waiting: boolean }
+async function onboarding(pool: Queryable, repository: string | null | undefined, now: number): Promise<OnboardingTime[]> {
+  const row = (await pool.query(onboardingSql, [])).rows[0];
+  if (!row?.connected_at) return [];
+  const connected = new Date(row.connected_at).getTime(), merged = row.merged_at ? new Date(row.merged_at).getTime() : null;
+  return [{ repository: repository ?? 'This repository', connectedAt: new Date(connected).toISOString(), firstMergeAt: merged === null ? null : new Date(merged).toISOString(),
+    minutes: Math.max(0, Math.round(((merged ?? now) - connected) / 60_000)), waiting: merged === null }];
+}
+
 async function rows(pool: Queryable, now: number) {
   const since = new Date(now - readSpanMs);
   const [ledger, attempts] = await Promise.all([pool.query(flowLedgerSql, [since, flowKinds]), pool.query(flowAttemptsSql, [since])]);
@@ -139,27 +155,28 @@ async function resolveDeployedAt(work: readonly Flowed[], deploys: readonly Depl
   return result;
 }
 
-interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null; releaseFlakes?: readonly FlakeEvent[] }
-export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
+interface FlowLiveOptions { repository?: string | null; deploys?: readonly DeployHistoryEntry[]; git?: GitRead | null; releaseFlakes?: readonly FlakeEvent[] }
+export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention>; onboarding: OnboardingTime[] };
 /** The flow as every reader gets it: the stored numbers, when they were computed and how long ago. */
 export type FlowReport = Flow & { asOf: string; ageSeconds: number };
 export type NotMovingReport = { notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[]; held: HeldItem[]; asOf: string; ageSeconds: number };
 
-function numbers(items: readonly FlowItem[], now: number, releaseFlakes: readonly FlakeEvent[] = []): Flow {
+function numbers(items: readonly FlowItem[], now: number, releaseFlakes: readonly FlakeEvent[] = []): Omit<Flow, 'onboarding'> {
   const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now, releaseFlakes)])) as Record<FlowWindow, FlowNumbers>;
   return { ...windows, attention: flowAttention(windows['24h']) };
 }
 
 /** The flow numbers for 6 hours, 24 hours and 7 days over `work`, and the attention line the 24 hours raise. */
 export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow & { items: FlowItem[]; notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[]; held: HeldItem[] }> {
-  const [{ ledger, attempts }, deployed] = await Promise.all([
+  const [{ ledger, attempts }, deployed, onboarded] = await Promise.all([
     rows(pool, now),
     live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
+    onboarding(pool, live?.repository, now),
   ]);
   const items = flowItems(work, ledger, attempts, deployed, now);
   const eventsByWork = new Map(work.map((item, i) => [item.id, items[i]!.events]));
   const stall = deriveNotMoving(work as readonly Work[], now, eventsByWork);
-  return { ...numbers(items, now, live?.releaseFlakes), items, ...stall };
+  return { ...numbers(items, now, live?.releaseFlakes), onboarding: onboarded, items, ...stall };
 }
 
 type Stored = { at: number; work: readonly (Flowed & { reportedBy?: string })[]; flow: Flow & { items: FlowItem[]; notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[]; held: HeldItem[] } };
@@ -186,7 +203,7 @@ export async function sharedFlow(key: object, now: number, compute: (now: number
   const stored = await loadSharedFlow(key, now, compute);
   // A reporter sees only its own items: its numbers come from the stored histories, not a new read.
   const keys = new Set(visible([...stored.work]).map(item => item.key));
-  const { items: _items, notMoving: _nm, waitingOnPerson: _wp, held: _held, ...flow } = keys.size === stored.work.length ? stored.flow : { ...numbers(stored.flow.items.filter(item => keys.has(item.key)), stored.at), items: [], notMoving: [], waitingOnPerson: [], held: [] };
+  const { items: _items, notMoving: _nm, waitingOnPerson: _wp, held: _held, ...flow } = keys.size === stored.work.length ? stored.flow : { ...numbers(stored.flow.items.filter(item => keys.has(item.key)), stored.at), onboarding: stored.flow.onboarding, items: [], notMoving: [], waitingOnPerson: [], held: [] };
   return { ...flow, asOf: new Date(stored.at).toISOString(), ageSeconds: Math.max(0, Math.round((now - stored.at) / 1000)) };
 }
 /** GY-4000: not-moving open items, human-waiting items, and held items from the same shared flow computation. */
