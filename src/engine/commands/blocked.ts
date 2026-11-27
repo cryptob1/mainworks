@@ -10,6 +10,7 @@ export function run(c: Ctx) {
   activeLease(work, actor, data.epoch, now);
   work.blocker = data.reason;
   work.blockedAt = data.reason ? now.toISOString() : null;
+  work.blockedBy = data.reason ? actor.id : null;
   if (data.reason) {
     // GY-3335: a blocker that names the head its attempt finished at keeps it on the item, past
     // the unblock, for the loop to resubmit itself — only a head this attempt committed on its

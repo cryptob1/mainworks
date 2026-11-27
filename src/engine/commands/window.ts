@@ -13,4 +13,5 @@ export function run(c: Ctx) {
   observationHold(work, data.notBefore, now, 'operator-hold', `${actor.id} held it until then: ${data.reason}`);
   work.blocker = null;
   work.blockedAt = null;
+  work.blockedBy = null;
 }

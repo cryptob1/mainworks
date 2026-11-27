@@ -1,6 +1,7 @@
 // Concern: `master unblock` clearing a blocker, retried when the item's revision moved under it.
 import { randomUUID } from 'node:crypto';
 import type { Work } from '../model.js';
+import { blockerAuthor, blockerSince } from '../model/work.js';
 import { setting } from '../setting.js';
 
 /** How many times `master unblock` writes before a stale-revision refusal is reported (GY-1103). */
@@ -31,4 +32,19 @@ export async function unblockWithRetry<T>(work: Work, write: (work: Work, attemp
       work = fresh;
     }
   }
+}
+
+/**
+ * GY-3996: one line printed after `master release` when the released item still carries an open
+ * recorded blocker — its first 120 characters, who recorded it and when, and the command that
+ * clears it. Null when no blocker remains.
+ */
+export function remainingBlockerNotice(work: Pick<Work, 'key' | 'blocker' | 'blockedAt' | 'blockedBy' | 'agentRequests' | 'capacity' | 'pipeline'> | null | undefined): string | null {
+  if (!work?.blocker) return null;
+  const text = work.blocker.replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!text) return null;
+  const who = blockerAuthor(work) ?? 'unknown';
+  const since = blockerSince(work);
+  const when = work.blockedAt ?? (since !== null ? new Date(since).toISOString() : 'unknown time');
+  return `Note: ${work.key} still has an open blocker (recorded by ${who} at ${when}): ${text} — clear it with: mainworks master unblock ${work.key} REASON`;
 }

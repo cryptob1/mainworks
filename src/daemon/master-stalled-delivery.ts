@@ -8,13 +8,15 @@ import { parseBaseFailureReason } from '../merge-writer/executor.js';
 import { gateCauses, type GateRecord } from '../batch-gate.js';
 import { normalizeFailureReason, repeatedFailureCause, repeatingItems } from './repeated-failure.js';
 import { reworkCapCause } from '../model/rework-ground.js';
-import { isEmptyBoardAlarm, stallAlarmKey } from './stall-alarm.js';
+import { isEmptyBoardAlarm, isStaleBlockerAlarm, stallAlarmKey } from './stall-alarm.js';
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 
 /** GY-3770: repeat a sign-off wait wake every 30 minutes while the item remains unchanged. */
 const signoffWakeRepeatMs = 30 * 60_000;
 /** GY-3778: repeat an empty-board wake at most once per 30 minutes while builders sit idle with no work. */
 const emptyBoardWakeRepeatMs = 30 * 60_000;
+/** GY-3996: repeat a stale-blocker stall wake once per hour while it lasts. */
+const staleBlockerWakeRepeatMs = 60 * 60_000;
 
 /**
  * GY-3770: open items whose passed trial leaves only `manual:` proofs unpassed that the Lead
@@ -96,8 +98,11 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
     // GY-3778: when the alarm is an empty board, ask the Lead to file work from the brief and repeat at most once per 30 minutes.
     if (key === stallAlarmKey) {
       const empty = isEmptyBoardAlarm(action.detail);
+      const staleBlocker = isStaleBlockerAlarm(action.detail);
       const detail = empty ? `${action.detail} The board is empty: file new work from the product brief and goals so idle builders have work to build.` : action.detail;
-      causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(action.detail)).digest, ...(empty ? { repeatMs: emptyBoardWakeRepeatMs } : {}) });
+      const normalized = staleBlocker ? action.detail.replace(/\(\d+[dhm](?: \d+[hm])?\)/g, '(age)') : action.detail;
+      const repeatMs = empty ? emptyBoardWakeRepeatMs : staleBlocker ? staleBlockerWakeRepeatMs : undefined;
+      causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(normalized)).digest, ...(repeatMs ? { repeatMs } : {}) });
       continue;
     }
     // GY-3103: a failed runtime canary names its runtime, not an item the master would see open.

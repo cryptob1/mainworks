@@ -232,6 +232,8 @@ export interface Work extends Create {
    * back to the end of the attempt that recorded the blocker.
    */
   blockedAt?: string | null;
+  /** GY-3996: who recorded the standing blocker; set and cleared beside `blockedAt`. */
+  blockedBy?: string | null;
   /**
    * GY-3335: the finished head a worker named in a blocker its own `complete` failed on — a fault
    * of the host, never the change (a trial-host fault, the control plane unreachable, a timeout).
@@ -280,4 +282,25 @@ export function blockerSince(work: Pick<Work, 'blocker'> & { blockedAt?: string 
   const recorded = work.blockedAt ?? [...(work.pipeline?.attempts ?? [])].reverse().find(attempt => attempt.endedAt)?.endedAt ?? null;
   const at = recorded === null ? Number.NaN : Date.parse(recorded);
   return Number.isFinite(at) ? at : null;
+}
+
+/**
+ * GY-3996: who recorded the standing blocker — its own `blockedBy` field, else the open blocker
+ * request's requester, the latest capacity exhaustion's recorder/owner, or the last ended attempt's
+ * owner. Null when no blocker stands or no author was recorded.
+ */
+export function blockerAuthor(work: Pick<Work, 'blocker'> & {
+  blockedBy?: string | null;
+  agentRequests?: readonly { type: string; state: string; requestedBy: string }[];
+  capacity?: { exhaustions?: readonly { recordedBy?: string | null; owner?: string | null }[] } | null;
+  pipeline?: { attempts?: readonly { owner?: string | null; endedAt: string | null }[] } | null;
+}): string | null {
+  if (!work.blocker) return null;
+  if (work.blockedBy) return work.blockedBy;
+  const request = [...(work.agentRequests ?? [])].reverse().find(entry => entry.type === 'blocker' && entry.state === 'open');
+  if (request?.requestedBy) return request.requestedBy;
+  const exhaustion = [...(work.capacity?.exhaustions ?? [])].reverse().find(entry => entry.recordedBy || entry.owner);
+  if (exhaustion?.recordedBy ?? exhaustion?.owner) return (exhaustion!.recordedBy ?? exhaustion!.owner)!;
+  const attempt = [...(work.pipeline?.attempts ?? [])].reverse().find(entry => entry.endedAt && entry.owner);
+  return attempt?.owner ?? null;
 }
