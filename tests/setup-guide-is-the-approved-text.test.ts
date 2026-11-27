@@ -72,7 +72,7 @@ That's it. From here you give goals; Mainworks does the rest and asks you only a
 
 1. Run \`mainworks doctor\`. Most problems are a missing tool or a sign-in that expired, and it says which.
 2. Open the **Lead** page. If Mainworks needs a decision from you, it is listed there in plain words.
-3. Run \`mainworks master status\` for the full picture.
+3. Run \`mainworks lead status\` for the full picture.
 
 Everything else — resource sharing, test machines in depth, accounts, project configuration, publishing — is in the [reference](reference.md).
 `;
