@@ -75,9 +75,12 @@ export type CycleStep = typeof cycleSteps[number];
 export const stepFailureThreshold = 10;
 /** The cursor key of one step's standing repeated-failure line. */
 export const stepFailureKey = (step: string) => `step-failure:${step}`;
-/** The step-failure lines standing on the cursor, newest first (what the loop names to the control plane and master status shows). */
+const stepRunningKey = (step: string) => `step-running:${step}`;
+const stuckStepBoundMs = 10 * 60_000;
+const runningSteps = new WeakMap<DaemonState, Map<CycleStep, { startedAt: number; stuck?: NodeJS.Timeout }>>();
+/** The step-failure and still-running lines standing on the cursor, newest first (what the loop names to the control plane and master status shows). */
 export const standingStepFailures = (state: Pick<DaemonState, 'actions'>) =>
-  Object.entries(state.actions).filter(([key, action]) => key.startsWith('step-failure:') && action.state === 'failed')
+  Object.entries(state.actions).filter(([key, action]) => (key.startsWith('step-failure:') || key.startsWith('step-running:')) && action.state === 'failed')
     .sort((a, b) => Date.parse(b[1].at) - Date.parse(a[1].at)).map(([, action]) => action.detail);
 /** The one timeout every step runs under. */
 /** GY-3605: how long the dispatch step waits the dispatcher's tick out; a slower tick runs on beside the cycle. */
@@ -169,7 +172,7 @@ export interface Cycle {
  * (GY-3341): a slow but progressing cycle is alive to its supervisor and to `master status`, while a
  * loop that makes no progress at all is still the stall both report.
  */
-export async function runCycle(config: MasterConfig, state: DaemonState, effects: DaemonEffects, now: () => number = Date.now, launcher?: Launcher, log: (line: string) => void = line => console.error(line), progress?: () => void) {
+export async function runCycle(config: MasterConfig, state: DaemonState, effects: DaemonEffects, now: () => number = Date.now, launcher?: Launcher, log: (line: string) => void = line => console.error(line), progress?: () => void, stuckBoundMs: number = stuckStepBoundMs) {
   const own = !launcher, launches = launcher ?? new Launcher(Number.POSITIVE_INFINITY);
   if (!own) launches.concurrency = config.run.launchConcurrency ?? defaultLaunchConcurrency;
   const steps: CycleStep[] = [];
@@ -205,15 +208,36 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
       void effects.persist(state).catch(() => {});
     }
   };
+  const running = runningSteps.get(state) ?? (() => { const map = new Map<CycleStep, { startedAt: number; stuck?: NodeJS.Timeout }>(); runningSteps.set(state, map); return map; })();
   const step = async <T>(name: CycleStep, body: () => Promise<T>): Promise<T | undefined> => {
+    const runningKey = stepRunningKey(name), prior = running.get(name);
+    const runningLine = (since: string) => `The loop's ${name} step is still running since ${since}; skipping it until it settles`;
+    const exitStuck = (since: string) => { log(`[mainworks-master] cycle ${state.cycle}: the ${name} step has been running since ${since} and never settled; exiting`); process.exit(1); };
+    if (prior) {
+      const since = new Date(prior.startedAt).toISOString();
+      if (now() - prior.startedAt >= stuckBoundMs) exitStuck(since);
+      const detail = runningLine(since);
+      storeAction(state, runningKey, { kind: 'attention', work: null, principal: null, state: 'failed', detail, attempts: 1, epoch: null, cycle: state.cycle, at: since });
+      log(`[mainworks-master] cycle ${state.cycle}: ${detail}`);
+      if (name === 'snapshot') throw new Error(detail);
+      return undefined;
+    }
+    if (state.actions[runningKey]) delete state.actions[runningKey];
     steps.push(name);
-    let timer: NodeJS.Timeout | undefined;
+    const startedAt = now(), since = new Date(startedAt).toISOString(), entry: { startedAt: number; stuck?: NodeJS.Timeout } = { startedAt };
+    const checkStuck = () => { const left = stuckBoundMs - (now() - startedAt); if (left > 0) { entry.stuck = setTimeout(checkStuck, left); entry.stuck.unref?.(); } else exitStuck(since); };
+    (entry.stuck = setTimeout(checkStuck, stuckBoundMs)).unref?.();
+    running.set(name, entry);
+    let timer: NodeJS.Timeout | undefined, timedOut = false;
+    const work = Promise.resolve().then(body).finally(() => { clearTimeout(entry.stuck); running.delete(name); if (state.actions[runningKey]) { delete state.actions[runningKey]; void effects.persist(state).catch(() => {}); } });
+    work.catch(() => {});
     try {
-      const value = await Promise.race([body(), new Promise<never>((_, reject) => { timer = setTimeout(() => { stalled.push(name); reject(new Error(`it ran past its ${Math.round(timeoutMs / 1000)}s timeout`)); }, timeoutMs); timer.unref?.(); })]);
+      const value = await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => { timedOut = true; stalled.push(name); reject(new Error(`it ran past its ${Math.round(timeoutMs / 1000)}s timeout`)); }, timeoutMs); timer.unref?.(); })]);
       settled();
       noteStep(name);
       return value;
     } catch (error) {
+      if (timedOut) storeAction(state, runningKey, { kind: 'attention', work: null, principal: null, state: 'failed', detail: runningLine(since), attempts: 1, epoch: null, cycle: state.cycle, at: since });
       settled();
       noteStep(name, error);
       if (name === 'snapshot') throw error;
