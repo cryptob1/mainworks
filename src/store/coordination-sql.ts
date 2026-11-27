@@ -27,8 +27,11 @@ export const detoasted = (document: string) => `(${document} || '{}'::jsonb)`;
  */
 export const coordinationTail = 20, coordinationRecords = 3, coordinationSessions = 5;
 const array = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN ${path} ELSE '[]'::jsonb END)`;
-/** The last `keep` entries of the array at `path`, each passed through `each` (which reads it as `<as>.entry`). */
-const tail = (path: string, keep: number, each = (entry: string) => entry, as = 't') => `(SELECT COALESCE(jsonb_agg(${each(`${as}.entry`)} ORDER BY ${as}.position), '[]'::jsonb) FROM jsonb_array_elements(${array(path)}) WITH ORDINALITY AS ${as}(entry, position) WHERE ${as}.position > jsonb_array_length(${array(path)}) - ${keep})`;
+/**
+ * The last `keep` entries of the array at `path`, each passed through `each` (which reads it as `<as>.entry`).
+ * The array is read once (`OFFSET 0`): a length in the WHERE extracted it again for every element (GY-4058).
+ */
+const tail = (path: string, keep: number, each = (entry: string) => entry, as = 't') => `(SELECT COALESCE(jsonb_agg(${each(`${as}.entry`)} ORDER BY ${as}.position), '[]'::jsonb) FROM (SELECT ${array(path)} AS list OFFSET 0) ${as}_list CROSS JOIN LATERAL jsonb_array_elements(${as}_list.list) WITH ORDINALITY AS ${as}(entry, position) WHERE ${as}.position > jsonb_array_length(${as}_list.list) - ${keep})`;
 /** A resolved action row with only its most recent attempt records. */
 const resolvedRow = (row: string) => `CASE WHEN jsonb_typeof(${row}->'history') = 'array' THEN jsonb_set(${row}, '{history}', ${tail(`${row}->'history'`, coordinationRecords, entry => entry, 'records')}) ELSE ${row} END`;
 const length = (path: string) => `(CASE WHEN jsonb_typeof(${path}) = 'array' THEN jsonb_array_length(${path}) ELSE 0 END)`;
@@ -91,11 +94,12 @@ const relevantEvidence = `((entry->>'sha' = r.head AND entry->>'baseSha' IS NOT 
  * the full snapshot instead — throughput attribution of coordination sessions and the session
  * summaries. A new reader of finished sessions belongs on the full snapshot, or must unsettle what it reads.
  */
-export const coordinationDocument = ({ keep, settled }: { keep: number; settled: boolean }) => `d.document - 'pipeline' - 'evidence' - 'observation' - 'queueHistory' - 'actionQueue' - 'autoDispatch' - 'sessions'
+// Keys are removed with one `- text[]`: each chained `- 'key'` rebuilt the whole document again (GY-4058).
+export const coordinationDocument = ({ keep, settled }: { keep: number; settled: boolean }) => `d.document - '{pipeline,evidence,observation,queueHistory,actionQueue,autoDispatch,sessions}'::text[]
   ${settled ? '' : `|| CASE WHEN ${object("d.document->'pipeline'")} AND d.document->'pipeline' ? 'reworkRounds' THEN jsonb_build_object('reworkRounds', d.document->'pipeline'->'reworkRounds') ELSE '{}'::jsonb END
   || CASE WHEN ${object("d.document->'pipeline'")} AND jsonb_typeof(d.document->'pipeline'->'attempts') = 'array' THEN jsonb_build_object('attemptCount', jsonb_array_length(d.document->'pipeline'->'attempts')) ELSE '{}'::jsonb END
   || CASE WHEN jsonb_typeof(d.document->'pipeline'->'attempts') = 'array' AND jsonb_array_length(d.document->'pipeline'->'attempts') > 0 THEN jsonb_build_object('attemptEnd', jsonb_build_object('epoch', (d.document->'pipeline'->'attempts'->-1->>'epoch')::int, 'end', d.document->'pipeline'->'attempts'->-1->'end') || jsonb_strip_nulls(jsonb_build_object('endedAt', d.document->'pipeline'->'attempts'->-1->'endedAt', 'cause', d.document->'pipeline'->'attempts'->-1->'cause'))) ELSE '{}'::jsonb END`}
-  || jsonb_build_object('evidence', (SELECT COALESCE(jsonb_agg(entry - 'artifacts' - 'scopeFiles' - 'provenance' ORDER BY position), '[]'::jsonb) FROM jsonb_array_elements(${array("d.document->'evidence'")}) WITH ORDINALITY AS e(entry, position) WHERE ${relevantEvidence}))
+  || jsonb_build_object('evidence', (SELECT COALESCE(jsonb_agg(entry - '{artifacts,scopeFiles,provenance}'::text[] ORDER BY position), '[]'::jsonb) FROM jsonb_array_elements(${array("d.document->'evidence'")}) WITH ORDINALITY AS e(entry, position) WHERE ${relevantEvidence}))
   || CASE WHEN d.document ? 'observation' THEN jsonb_build_object('observation', CASE WHEN ${object("d.document->'observation'")} THEN (d.document->'observation') - 'scopeFiles' ELSE d.document->'observation' END) ELSE '{}'::jsonb END
   || CASE WHEN jsonb_typeof(d.document->'queueHistory') = 'array' THEN jsonb_build_object('queueHistory', ${tail("d.document->'queueHistory'", keep)}) ELSE '{}'::jsonb END
   || CASE WHEN ${object("d.document->'actionQueue'")} THEN jsonb_build_object('actionQueue', ((d.document->'actionQueue') - 'history') || jsonb_build_object('history', ${tail("d.document->'actionQueue'->'history'", keep, resolvedRow)})) ELSE '{}'::jsonb END
