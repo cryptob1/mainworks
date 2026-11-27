@@ -917,6 +917,8 @@ export async function launchReview(root: string, work: Work, profileName: string
   postMerge?: { mergeSha: string; baseTip?: string };
   /** GY-2989: a product review — the session walks the head's preview and the served app and judges the feature as a product. Control-plane mode only. */
   product?: boolean;
+  /** GY-3963: a fixed serve port another product review holds refuses this launch (ServeTurnTakenError) instead of waiting; the dispatcher's launches, which record the turn as a wait. */
+  refuseServeTurn?: boolean;
   /** GY-3331: how the browser tool a product review walks with is resolved on a PATH; the host's own lookup by default. */
   browserTool?: (environment: { PATH?: string }) => string | null;
   /** GY-3331: how a launch that cannot give its reviewer the three things its environment owes records the review as could not run; the coordinator-credential route by default. */
@@ -1154,7 +1156,7 @@ export async function launchReview(root: string, work: Work, profileName: string
                   catch (error: any) { throw new Error(`${build.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${`${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-1500) || error.message}`); }
                 }
                 // GY-3751: each review serves on its own free port; a command that binds the declared port takes turns on it.
-                serving = await serveReviewHead({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env) });
+                serving = await serveReviewHead({ root, id, worktree: checkout.worktree, serve: declared, env: runEnvironment(process.env), refuseTurn: dependencies.refuseServeTurn });
               } else noApp = true;
             }
           }

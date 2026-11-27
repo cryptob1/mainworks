@@ -2,13 +2,13 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { serveReviewHead, ServeTurnTakenError } from '../src/review-serve.js';
+import { serveReviewHead } from '../src/review-serve.js';
 import { freePort } from '../src/serve-app.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3751: two runs of one project's e2e serve never collide on its address. Each run is given its
 // own free port as PORT and MAINWORKS_SERVE_PORT; a command that binds the declared port anyway is
-// detected, and that project's runs then take turns on the declared address: a later run is told to wait its turn.
+// detected, and that project's runs then take turns on the declared address instead of failing.
 
 const directories: string[] = [];
 after(async () => { for (const directory of directories) await rm(directory, { recursive: true, force: true }); });
@@ -40,21 +40,20 @@ test('unit:e2e-serve-runs-do-not-collide — two concurrent runs of a port-aware
   } finally { await Promise.all([one!.close(), two!.close()]); }
 });
 
-test('unit:e2e-serve-runs-do-not-collide — two runs of a fixed-port serve run one after the other: the later one is told to take its turn, never parked', async () => {
+test('unit:e2e-serve-runs-do-not-collide — two runs of a fixed-port serve run one after the other, neither refused', async () => {
   const declaredPort = await freePort(), declared = `http://127.0.0.1:${declaredPort}/healthz`;
   const { root, worktree } = await project(stub(`const port = ${declaredPort};`));
   const serve = { command: 'node serve-it.mjs', url: declared, readySeconds: 30 };
-  const runs = ['one', 'two'].map(id => serveReviewHead({ root, id, worktree, serve, env: env(), containment: 'setsid' }).then(served => ({ id, served }), error => ({ id, error })));
-  const [first, second] = await Promise.all(runs);
-  const earlier = 'served' in first! ? first : second!, turned = earlier === first ? second! : first!;
-  assert.ok('served' in earlier, 'one run serves');
+  const ready: string[] = [];
+  const runs = ['one', 'two'].map(id => serveReviewHead({ root, id, worktree, serve, env: env(), containment: 'setsid' }).then(served => { ready.push(id); return { id, served }; }));
+  const earlier = await Promise.race(runs);
   assert.equal(earlier.served.url, new URL(declared).origin, 'a fixed-port command is served on the declared address');
-  assert.ok('error' in turned && turned.error instanceof ServeTurnTakenError, 'the other run is told to take its turn while the declared address is served');
-  assert.ok((turned as { error: Error }).error.message.includes(declared), 'the turn names the served address');
+  await new Promise(accept => setTimeout(accept, 1_500));
+  assert.deepEqual(ready, [earlier.id], 'the other run waits while the declared address is served');
   await earlier.served.close();
-  const later = await serveReviewHead({ root, id: turned.id, worktree, serve, env: env(), containment: 'setsid' });
+  const later = await runs.find((_run, index) => ['one', 'two'][index] !== earlier.id)!;
   try {
-    assert.equal(later.url, new URL(declared).origin, 'the later run serves the declared address once it is free');
+    assert.equal(later.served.url, new URL(declared).origin, 'the later run serves the declared address once it is free');
     assert.ok(await answers(declared), 'the later run is ready');
-  } finally { await later.close(); }
+  } finally { await later.served.close(); }
 });

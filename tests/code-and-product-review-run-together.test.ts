@@ -268,7 +268,7 @@ test('unit:product-reviews-share-only-a-fixed-port — two product reviews launc
         reconcileProducers: async () => ({ producers: [] }),
         launchReview: async () => ({ agentName: 'code-noop', pane: null }),
         launchProductReview: async (work: Work) => {
-          const handle = await serveReviewHead({ root: host, id: `fixed-port-${work.key}`, worktree, serve, env: env(), containment: 'setsid' });
+          const handle = await serveReviewHead({ root: host, id: `fixed-port-${work.key}`, worktree, serve, env: env(), containment: 'setsid', refuseTurn: true });
           served.push({ key: work.key, url: handle.url, close: handle.close });
           return { agentName: `product-${work.key}`, pane: null };
         },
