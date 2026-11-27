@@ -5,6 +5,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { setHostSessions } from '../src/hosts.js';
 import { remoteRuntimes, remoteSessionHost, runRemoteSession } from '../src/remote-session.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -34,6 +35,8 @@ printf '%s' "$(cat "$${variable}/${login}")" | sha256sum | cut -d' ' -f1 > ${kin
 git add ${kind}.txt && git commit -qm "${kind} work on the host"
 printf 'refreshed-${kind}' > "$${variable}/${login}"
 `;
+/** The fixture host's probe reads this machine's own cores and load; placement here is judged by runtime, so it reads an idle, cool host (load is integration:builders-stay-within-host-share's). */
+const idle: ChildRun = async (command, args, options) => String(await defaultChildRun(command, args, options)).replace(/^cores \d+$/m, 'cores 8').replace(/^load \S+$/m, 'load 0.00').replace(/^temp.*$/gm, '');
 let hosts: ShardHostsFixture, hostsFile: string, worktree: string, cli: string;
 
 before(async () => {
@@ -75,8 +78,8 @@ test(`${proof} — the worker image holds every runtime remoteRuntimes lists`, a
 for (const runtime of runtimes) {
   test(`${proof} — a ${runtime.kind} builder is placed on the host, runs there, and its login never reaches the host's disk`, { timeout: 300_000 }, async () => {
     await setHostSessions(target, 1, { file: hostsFile });
-    assert.equal(await remoteSessionHost(runtime.kind, () => [], undefined, hostsFile), target, `a ${runtime.kind} builder goes to the host before the coordinator`);
-    assert.equal(await remoteSessionHost(runtime.kind, () => [target], undefined, hostsFile), null, 'with the host full it runs on the coordinator');
+    assert.equal(await remoteSessionHost(runtime.kind, () => [], idle, hostsFile), target, `a ${runtime.kind} builder goes to the host before the coordinator`);
+    assert.equal(await remoteSessionHost(runtime.kind, () => [target], idle, hostsFile), null, 'with the host full it runs on the coordinator');
     const account = await temporaryDirectory(`every-runtime-${runtime.kind}`), token = `secret-${runtime.kind}-${randomUUID()}`;
     await mkdir(dirname(join(account, runtime.login)), { recursive: true });
     await writeFile(join(account, runtime.login), token, { mode: 0o600 });
