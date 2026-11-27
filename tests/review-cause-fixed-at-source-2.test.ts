@@ -39,12 +39,14 @@ test('integration:review-cause-fixed-at-source-2 — complete refuses a head unt
     return true;
   });
 
-  // Ruling a criterion unmet is refused too.
+  // Ruling a criterion unmet is refused too, until a later commit supersedes it with met.
   git('commit', '-q', '--allow-empty', '-m', 'GY-1: check\n\nAC-1 — unmet: three files still inline item()\nAC-2 — met: 520 lines removed');
   await assert.rejects(completePreflight(root, work, git('rev-parse', 'HEAD')), /AC-1.*unmet/i);
+  git('commit', '-q', '--allow-empty', '-m', 'GY-1: fix remaining files\n\nAC-1 — met: all inline item() helpers call workFixture');
+  await completePreflight(root, work, git('rev-parse', 'HEAD'));
 
   // Ruling only one of two criteria still refuses, naming only the unruled one.
-  git('reset', '-q', '--hard', 'HEAD~1');
+  git('reset', '-q', '--hard', 'HEAD~2');
   git('commit', '-q', '--allow-empty', '-m', 'GY-1: partial\n\nAC-1 — met: all inline item() helpers call workFixture');
   await assert.rejects(completePreflight(root, work, git('rev-parse', 'HEAD')), (error: Error) => {
     assert.doesNotMatch(error.message, /\[AC-1\]/);

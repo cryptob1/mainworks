@@ -446,7 +446,9 @@ const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'
 /**
  * GY-4038: unmet acceptance criteria was code review's largest rework cause after GY-3939.
  * Requires a commit-message ruling "AC-N — met: HOW" for each non-bootstrap criterion, and refuses
- * any criterion left unruled or ruled unmet/not met.
+ * any criterion left unruled or whose latest ruling is unmet/not met. Expects commitMessages in
+ * chronological order (`git log --reverse --format=%B`) so a later commit or line supersedes an
+ * earlier mention.
  */
 export function validateCriteriaRulings(
   commitMessages: string,
@@ -458,10 +460,15 @@ export function validateCriteriaRulings(
   const unmet: typeof required = [];
   const unruled: typeof required = [];
   for (const criterion of required) {
-    const idPattern = new RegExp(`(?:^|[^\\w-])${escapeRegex(criterion.id)}(?:$|[^\\d])`);
-    const matching = lines.filter(line => idPattern.test(line));
-    if (matching.some(line => /\b(?:unmet|not\s+met)\b/i.test(line))) unmet.push(criterion);
-    else if (!matching.some(line => /\bmet\b/i.test(line))) unruled.push(criterion);
+    const id = escapeRegex(criterion.id);
+    const rulingPattern = new RegExp(`(?:^|[^\\w-])${id}\\s*(?:[-–—:]\\s*)?(met|unmet|not\\s+met)\\b`, 'i');
+    let latest: 'met' | 'unmet' | null = null;
+    for (const line of lines) {
+      const match = rulingPattern.exec(line);
+      if (match) latest = /^met$/i.test(match[1]!) ? 'met' : 'unmet';
+    }
+    if (latest === 'unmet') unmet.push(criterion);
+    else if (latest !== 'met') unruled.push(criterion);
   }
   if (!unmet.length && !unruled.length) return null;
   const format = (list: typeof required) => list.map(criterion => `[${criterion.id}]${criterion.text ? ` ${criterion.text}` : ''}`).join('\n');
@@ -617,7 +624,7 @@ export async function completePreflight(
   // the worker checks and rules each criterion met in a commit message first, as the reviewer will.
   if (baseTip && criteria.length) {
     const from = (await git(['merge-base', baseTip, head])).trim();
-    const criteriaFailure = validateCriteriaRulings(await git(['log', '--format=%B', `${from}..${head}`]), criteria);
+    const criteriaFailure = validateCriteriaRulings(await git(['log', '--reverse', '--format=%B', `${from}..${head}`]), criteria);
     if (criteriaFailure) throw new Error(criteriaFailure);
   }
 }
