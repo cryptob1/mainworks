@@ -15,6 +15,7 @@ import { Store } from '../src/store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -36,18 +37,13 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 let masterRoot: string, credentialDirectory: string, config: MasterConfig;
 
-const api = async (credential: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const text = await response.text();
-  assert.equal(response.status, 200, text);
-  return JSON.parse(text);
-};
+const call = (credential: string, path: string, body?: unknown) => apiOk(url, credential, path, { body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const unblocks = async (work: Work) => (await store.pool.query(`SELECT actor FROM events WHERE work_id=$1 AND kind='unblock' ORDER BY seq`, [work.id])).rows.map(row => row.actor);
 
 /** A released, claimed item its worker has reported blocked. */
 async function blocked(title: string, reason = 'Waiting on an external decision', keepLease = false) {
-  let work = await api(master.token, 'work', { why: 'w', simplest: 's', title, type: 'chore', description: `Why ${title}`, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }], reason: 'Operator goal' }) as Work;
+  let work = await call(master.token, 'work', { why: 'w', simplest: 's', title, type: 'chore', description: `Why ${title}`, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }], reason: 'Operator goal' }) as Work;
   work = await engine.execute(operator, 'ready', work.id, { reason: 'Next by priority' }, randomUUID());
   work = await engine.execute(implementer, 'claim', work.id, {}, randomUUID());
   const lease = work.lease!;
@@ -65,7 +61,7 @@ async function blocked(title: string, reason = 'Waiting on an external decision'
 function racing(race: (read: number) => Promise<void>) {
   let reads = 0;
   const dependencies: AutonomyDependencies = { readSecret: async () => '', agents: () => [], daemonLock: async () => null,
-    coordinator: async path => { const result = await api(token(coordinator), path); if (path === 'work-snapshot') await race(++reads); return result; } };
+    coordinator: async path => { const result = await call(token(coordinator), path); if (path === 'work-snapshot') await race(++reads); return result; } };
   return { dependencies, reads: () => reads };
 }
 
@@ -73,7 +69,7 @@ before(async () => {
   store = await withDatabase('unblock-stale-revision'); await store.init();
   engine = new Engine(store, 120, repository);
   ({ url, close } = await listen(server(engine, credentials)));
-  await api(token(operator), 'operator-agents', { id: master.id, displayName: master.id, capabilities: master.capabilities, scope: { repositories: [repository], workItems: ['*'] }, token: master.token, reason: 'Onboarding provisions agent identities' });
+  await call(token(operator), 'operator-agents', { id: master.id, displayName: master.id, capabilities: master.capabilities, scope: { repositories: [repository], workItems: ['*'] }, token: master.token, reason: 'Onboarding provisions agent identities' });
   masterRoot = await temporaryDirectory('unblock-root');
   execFileSync('git', ['init', '-q', masterRoot]);
   await writeFile(join(masterRoot, '.gitignore'), '.graphyard/\n');

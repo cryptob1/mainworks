@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
 import { gateFiledItem } from '../src/daemon/control-plane.js';
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
+import { apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -21,16 +21,7 @@ const defaultAc1Text = 'The fault is fixed at its cause, not skipped or weakened
 
 let url: string;
 
-const ok = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const parsed = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(parsed));
-  return parsed;
-};
+const ok = (method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token, path, { method, body });
 
 const assertSeamGuidance = (text: string) => {
   assert.match(text, /reproduces the race/i);

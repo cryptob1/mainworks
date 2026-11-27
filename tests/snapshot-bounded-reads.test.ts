@@ -17,6 +17,7 @@ import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -190,8 +191,7 @@ test('unit:work-snapshot-paged — GET /api/work-snapshot supports paging with c
   // disclose nothing of the items outside its scope.
   const scopedKeys = [whole.body.work[4].key, whole.body.work[20].key] as string[];
   const scopedToken = `bounded-scoped-reader-${'s'.repeat(32)}`;
-  const provisioned = await fetch(`${url}/api/operator-agents`, { method: 'POST', headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify({ id: 'scoped-reader', displayName: 'scoped-reader', capabilities: [], scope: { repositories: ['owner/project'], workItems: scopedKeys }, token: scopedToken, reason: 'A scoped reader pages only its own work' }) });
-  assert.equal(provisioned.status, 200, await provisioned.text());
+  await apiOk(url, operatorToken, 'operator-agents', { body: { id: 'scoped-reader', displayName: 'scoped-reader', capabilities: [], scope: { repositories: ['owner/project'], workItems: scopedKeys }, token: scopedToken, reason: 'A scoped reader pages only its own work' } });
   const scopedNumbers = scopedKeys.map(key => Number(/(\d+)$/.exec(key)![1]));
   const firstScoped = await get('work-snapshot?view=full&cursor=0&pageSize=1', scopedToken);
   assert.equal(firstScoped.status, 200, JSON.stringify(firstScoped.body));

@@ -1,12 +1,12 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { planAsRows, withDatabase } from './helpers/postgres.js';
 import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { flowAttemptsSql, flowLedgerSql, readFlow } from '../src/server/flow.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 // GY-3763: the flow numbers were one of the heaviest reads on the install they measure. They are now
 // computed by one job at most once a minute over the last 7 days' rows, read by a range on insertion
@@ -20,9 +20,7 @@ before(async () => {
   store = await withDatabase('flow-numbers-computed-once-a-minute'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  const { id } = await created.json() as { id: string };
+  const { id } = (await api(url, adminToken, 'work', { body: { title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } })).body as { id: string };
   const template = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;
   await store.pool.query(`INSERT INTO work_items(id, document) SELECT g.id, $1::jsonb || jsonb_build_object('id', g.id::text, 'key', 'GY-' || (g.n + 100))
     FROM (SELECT gen_random_uuid() AS id, n FROM generate_series(1, ${ITEMS - 1}) n) g`, [template]);
@@ -44,12 +42,7 @@ before(async () => {
 
 after(async () => { await close?.(); await store?.close(); });
 
-const get = async (path: string) => {
-  const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(60_000) });
-  const body = await response.json() as any;
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(body).slice(0, 300)}`);
-  return body;
-};
+const get = (path: string) => apiOk(url, adminToken, path, { signal: AbortSignal.timeout(60_000) });
 
 test('integration:flow-numbers-computed-once-a-minute — one job reads the 7-day window by a created_at range in under 2 s, planned as on two million events, with the rows of the plain statement, and concurrent readers share its result with its age', { timeout: 900_000 }, async () => {
   assert.ok(Number((await store.pool.query('SELECT count(*) FROM events')).rows[0].count) >= EVENTS);

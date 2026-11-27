@@ -19,6 +19,7 @@ import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -30,17 +31,7 @@ const credentials = [operator, coordinator].map(principal => ({ ...principal, to
 const agentToken = `queue-agent-${randomUUID()}`;
 let store: Store, close: (() => Promise<void>) | undefined, url: string;
 
-const call = async (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const parsed = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(parsed));
-  return parsed;
-};
-
+const call = (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => apiOk(url, bearer, path, { body, headers });
 const file = (title: string, extra: Record<string, unknown> = {}) => call(credentials[0].token, 'work', {
   why: 'Keep test queue bounded', simplest: 'Gate releaseBacklog on twice the available trial slots',
   title, type: 'chore', priority: 1,

@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { apiOk } from './helpers/api.js';
 import { daemonStatePath, emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
@@ -40,17 +40,8 @@ const credentials = [operator, coordinator, worker].map(principal => ({ ...princ
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
 let url: string;
-const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const parsed = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(parsed));
-  return parsed;
-};
-const coordinationSnapshot = async () => {
-  const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator.id)}`, 'X-Graphyard-View': 'coordination' } });
-  assert.equal(response.status, 200);
-  return response.json() as Promise<{ work: Work[]; now: string }>;
-};
+const ok = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, bearer, path, { method, body });
+const coordinationSnapshot = (): Promise<{ work: Work[]; now: string }> => apiOk(url, token(coordinator.id), 'work-snapshot', { headers: { 'X-Graphyard-View': 'coordination' } });
 
 useTestStore('heat-limit-min', { leaseSeconds: 7200, repository: repository, credentials: credentials }, ctx => { ({ url } = ctx); });
 

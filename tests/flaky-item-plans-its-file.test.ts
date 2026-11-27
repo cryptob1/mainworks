@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
@@ -13,6 +12,7 @@ import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
+import { apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -27,16 +27,7 @@ const credentials = [operator, coordinator, ...workers].map(principal => ({ ...p
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 let store: Store, url: string;
 
-const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const parsed = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(parsed));
-  return parsed;
-};
+const ok = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => apiOk(url, bearer, path, { method, body, headers });
 const update = (id: string, patch: Record<string, unknown>) =>
   store.pool.query('UPDATE work_items SET document = document || $1::jsonb WHERE id = $2', [JSON.stringify(patch), id]);
 

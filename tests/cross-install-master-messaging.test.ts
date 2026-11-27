@@ -20,6 +20,7 @@ import { messageCauses } from '../src/daemon/master-stalled-delivery.js';
 import { messageThreads } from '../web/pages/master.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3345: two installs' Masters message each other through Mainworks, with replies. Two real
 // control planes on their own temporary Postgres databases; each issues the other a reporter
@@ -39,12 +40,7 @@ async function install(name: string, peer: string) {
   let running = true;
   const stop = async () => { if (!running) return; running = false; await closeServer(); };
   closers.push(async () => { await stop(); await store.close(); });
-  const api = async (path: string, body?: unknown, key?: string) => {
-    const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key ?? crypto.randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json() as any;
-    if (!response.ok) throw new Error(JSON.stringify(result));
-    return result;
-  };
+  const api = (path: string, body?: unknown, key?: string) => apiOk(url, token(coordinator), path, { body, key });
 
   // The install's coordinator checkout, where its Master's commands run.
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });

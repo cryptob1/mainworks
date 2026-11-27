@@ -11,6 +11,7 @@ import { queryCaller } from '../src/store/slow-queries.js';
 import { lockHoldAttention } from '../src/cli/master-status.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-3799: every coordination-lock hold is timed and master status names the longest of the last
 // 10 minutes; the routes that held it for seconds (a preview's record on merge-record, an agent
@@ -31,11 +32,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const call = async (as: Principal, method: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, signal: AbortSignal.timeout(20_000),
-    headers: { authorization: `Bearer ${token(as)}`, 'content-type': 'application/json', 'idempotency-key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() };
-};
+const call = (as: Principal, method: string, path: string, body?: unknown) => api(url, token(as), path, { method, body, signal: AbortSignal.timeout(20_000) });
 
 test('integration:coordination-lock-short — a transaction holding the coordination lock 3 s is named, with its duration, as the longest hold in master status', async () => {
   await queryCaller.run('POST /api/seeded-hold as operator', () => store.transaction(db => db.query('SELECT pg_sleep(3)')));

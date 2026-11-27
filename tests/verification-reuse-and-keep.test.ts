@@ -1,6 +1,5 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -19,6 +18,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { until } from './helpers/until.js';
+import { apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -49,14 +49,7 @@ test('integration:reuse-required', () => assert.equal(answer, 42));
   const { url: serverUrl, close } = await listen(server(engine, [worker, host]));
   t.after(close);
   const url = serverUrl;
-  const api = async (path: string, body?: unknown, token = host.token) => {
-    const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(result)}`);
-    return result;
-  };
+  const api = (path: string, body?: unknown, token = host.token) => apiOk(url, token, path, { body });
   const pending = async () => (await api('work-snapshot')).workerVerifications as unknown[];
   const verified = async () => (await store.events(work.id)).filter(event => event.kind === 'work.self-verified');
   return { root, git, head, work, store, api, pending, verified, worker };

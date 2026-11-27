@@ -16,6 +16,7 @@ import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.j
 import { explainAnalyzeBuffers } from './helpers/query-plan.js';
 import { appendSave, eventStageSql } from '../src/store/snapshot-delta.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 // GY-3766: the events history's stage mode resolved every delta row's whole document just to read its stage. A delta
 // row now carries the stage beside its delta, so the read takes it from the row and resolves only older rows without it.
@@ -28,20 +29,13 @@ let store: Store, close: (() => Promise<void>) | undefined, url: string, templat
 const items: { id: string; key: string; rows: number; legacy: boolean }[] = [];
 const stageAt = (r: number) => stages[Math.floor((r - 1) / EVERY) % stages.length];
 const minuteAt = (r: number) => new Date(start + r * 60_000).toISOString();
-const api = async (path: string) => {
-  const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${adminToken}`, 'X-Mainworks-Command': 'master status' }, signal: AbortSignal.timeout(120_000) });
-  const body = await response.json();
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(body).slice(0, 300)}`);
-  return body;
-};
+const read = (path: string) => apiOk(url, adminToken, path, { headers: { 'X-Mainworks-Command': 'master status' }, signal: AbortSignal.timeout(120_000) });
 
 before(async () => {
   store = await withDatabase('event-stage-stored'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Template', why: 'Its document seeds the ledger.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  templateId = (await created.json() as { id: string }).id;
+  templateId = (await api(url, adminToken, 'work', { body: { title: 'Template', why: 'Its document seeds the ledger.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } })).body.id;
   await store.pool.query('ALTER TABLE events SET UNLOGGED');
   // Each item: 800 rows on a 180 KB document, a full snapshot opening each run of EVERY rows with the next stage and
   // deltas on it after, carrying the stage as appendSave now writes. One more item has 60 rows of the older shape without it.
@@ -84,24 +78,24 @@ test('integration:event-stage-stored — a delta row written by appendSave carri
   assert.ok(saved[1].delta, 'the second save is a delta');
   assert.equal(saved[1].stage, 'build');
   assert.deepEqual(saved[1].details, { n: 1 });
-  const page = await api(`events?work=${id}&order=asc&limit=10&view=page&payload=stage`);
+  const page = await read(`events?work=${id}&order=asc&limit=10&view=page&payload=stage`);
   assert.deepEqual(page.events.map((event: { stage: string }) => event.stage), ['build', 'build']);
   // The full payload of a delta row is still the resolved document's shape.
-  const full = await api(`events?work=${id}&order=asc&limit=10&view=page`);
+  const full = await read(`events?work=${id}&order=asc&limit=10&view=page`);
   assert.deepEqual(Object.keys(full.events[1].payload).sort(), ['details', 'work']);
   assert.equal(full.events[1].payload.work.revision, work.revision + 1);
 
   // The read master status makes, every item at once: each answers in under 1 s with the same stages as before.
   const timed = await Promise.all(items.filter(item => !item.legacy).map(async item => {
     const started = performance.now();
-    const events = await itemLedger(api, item.id);
+    const events = await itemLedger(read, item.id);
     return { item, events, ms: performance.now() - started };
   }));
   const slowest = timed.reduce((max, entry) => entry.ms > max.ms ? entry : max);
   assert.ok(slowest.ms < 1000, `${slowest.item.key}'s stage read took ${Math.round(slowest.ms)} ms`);
   // The older item's delta rows carry no stage and are resolved from their snapshot.
   const legacy = items.find(item => item.legacy)!;
-  timed.push({ item: legacy, events: await itemLedger(api, legacy.id), ms: 0 });
+  timed.push({ item: legacy, events: await itemLedger(read, legacy.id), ms: 0 });
   for (const { item, events } of timed) {
     assert.ok(events, `${item.key}'s ledger was read`);
     assert.deepEqual(events.map(event => event.created_at), Array.from({ length: item.rows }, (_, r) => minuteAt(r + 1)), item.key);

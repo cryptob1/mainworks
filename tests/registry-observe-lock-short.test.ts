@@ -1,6 +1,5 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { databaseUrl } from './helpers/postgres.js';
 import { Store } from '../src/store.js';
@@ -11,6 +10,7 @@ import { lockHoldAttention } from '../src/cli/master-status.js';
 import { proposedRuntimes, type AgentRegistry as Registry } from '../src/model/registry.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-3807: recording agent-registry observations writes in one batched statement and never holds
 // the coordination lock, so coordinated writes never wait behind it and master status names no
@@ -26,15 +26,7 @@ const SESSION_COUNT = 50;
 
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, database: string;
 
-const call = async (as: Principal, method: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    signal: AbortSignal.timeout(20_000),
-    headers: { authorization: `Bearer ${token(as)}`, 'content-type': 'application/json', 'idempotency-key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
+const call = (as: Principal, method: string, path: string, body?: unknown) => api(url, token(as), path, { method, body, signal: AbortSignal.timeout(20_000) });
 
 const accountNames = Array.from({ length: ACCOUNT_COUNT }, (_, i) => `claude-${i + 1}`);
 const allObservations = (percent: number, now = Date.now()) => {

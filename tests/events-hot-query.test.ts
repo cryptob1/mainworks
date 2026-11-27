@@ -10,6 +10,7 @@ import { readRegistry } from '../src/agent-registry.js';
 import { compactLedger } from '../src/store/compaction.js';
 import type { Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 /**
  * GY-3402: the core database ran at 87% CPU. The reads of the install-wide records — the agent
@@ -34,12 +35,7 @@ pg.Client.prototype.query = function (this: pg.Client, config: any, values?: any
   return (query as any).call(this, config, values, ...rest);
 } as typeof query;
 
-const call = async (path: string, body?: unknown) => {
-  const response = await fetch(`${base}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const json = await response.json() as any;
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(json)}`);
-  return json;
-};
+const call = (path: string, body?: unknown) => apiOk(base, token, path, { body });
 /** What the Agents page, connect list, team access and the item's history show. */
 const pages = async () => ({
   registry: await call('agent-registry/document'),

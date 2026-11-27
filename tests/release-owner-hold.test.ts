@@ -1,6 +1,5 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -11,6 +10,7 @@ import { Store } from '../src/store.js';
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-2605: an item whose own record reserves its release to the owner (GY-1857's 'Owner hold:') is
@@ -21,10 +21,7 @@ const credentials = [{ ...owner, token: `owner-hold-${'o'.repeat(32)}` }];
 const master = { id: 'master-operator', token: `master-operator-${'m'.repeat(32)}`, capabilities: ['policy:requirements'] };
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
-const call = async (credential: string, path: string, body: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as any };
-};
+const call = (credential: string, path: string, body: unknown) => api(url, credential, path, { method: 'POST', body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const heldInput = { type: 'chore', title: 'Owner hold: schedule credential isolation when the owner says so',
   description: 'Deferred by the owner. This item stays in the backlog until the owner releases it.',

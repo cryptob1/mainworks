@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import type { Principal } from '../src/model.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3527: /api/status serves the Work page's speed line from the real ledger: release (the first
 // `ready` event) to merge over the last merges, the last merge time and the open item released longest ago.
@@ -12,12 +13,7 @@ let store: Store, url: string;
 
 useTestStore('main-page-pipeline-time', { repository: 'owner/game', credentials: [{ ...operator, token }] }, ctx => { ({ store, url } = ctx); });
 
-const api = async (path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });
-  const json = await response.json() as any;
-  assert.ok(response.ok, `${path}: ${json?.error}`);
-  return json;
-};
+const api = (path: string, body?: unknown) => apiOk(url, token, path, { body });
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
 test('e2e:main-page-pipeline-time — /api/status reports merges in 24 hours, release-to-merge minutes, the last merge and the oldest open item from the ledger', async () => {

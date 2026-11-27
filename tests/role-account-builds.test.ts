@@ -23,6 +23,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3730: the registry's worker role decides who builds. master.json holds no worker profile at
 // all; a stub-runtime account placed first in the worker role takes the first ready item through
@@ -74,12 +75,7 @@ await fetch(process.env.GRAPHYARD_URL + '/api/work/' + key + '/submit', { method
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.ok(response.ok, `${method} ${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const api = (method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(coordinator), path, { method, body });
 const snapshot = () => api('GET', 'work-snapshot') as Promise<{ work: Work[]; now: string }>;
 
 async function cycle(state: ReturnType<typeof emptyDaemonState>) {

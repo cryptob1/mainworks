@@ -29,6 +29,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Time-bomb allowance (GY-1694): the 2030-05-01 instant is the loop's injected clock and the explicit
@@ -88,11 +89,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
   return git(cwd, 'rev-parse', 'HEAD');
 }
 
-async function request(principal: Principal, path: string, body?: unknown, key: string = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const text = await response.text();
-  return { status: response.status, body: text ? JSON.parse(text) : null };
-}
+const request = (principal: Principal, path: string, body?: unknown, key?: string) => api(url, token(principal), path, { body, key });
 
 before(async () => {
   // The origin holds only the base branch; the worker's head sits in the shared object store alone.

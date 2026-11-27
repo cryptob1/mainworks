@@ -2,7 +2,6 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { randomUUID } from 'node:crypto';
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
@@ -18,6 +17,7 @@ import { externalRunsImportGrant } from '../src/server/principals.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { catFrom, deployedRoster, harness, REPOSITORY, type Harness, type HarnessOptions } from './install-harness.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-1879: an installation keeps its principal roster in install.json as a durable record and every
 // apply reconciles with it instead of rewriting it. `mainworks principal add|remove` edits one entry,
@@ -271,10 +271,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
-async function call(path: string, actor: Principal, data?: unknown) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
+const call = (path: string, actor: Principal, data?: unknown) => api(url, tokens.get(actor.id)!, path, { body: data });
 
 test('unit:external-import-requires-grant — a producer without external-runs:import is refused 403 naming the grant; the grant authorizes nothing else, so a principal holding only it has no proof authority and submits no trusted evidence; and a producer with no grant at all is refused at principal add as secrets.ts refuses it', async () => {
   const run = { format: 'graphyard-external-run-v1', producer: 'huck', sha, runId: 'huck-run-1', cases: [{ id: 'login', verdict: 'passed', required: true }] };

@@ -5,7 +5,6 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { defaultChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge, trialSandboxFault, TrialSandboxFaultError } from '../src/merge-writer/trial.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
@@ -29,6 +28,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3339: on an AppArmor host (Ubuntu 26.04) Docker's docker-default profile denied the nested
 // bubblewrap sandbox trial tests start ("Failed to make / slave"), and apparmor=unconfined is denied a
@@ -168,8 +168,7 @@ test('e2e:trial-container-apparmor — a trial whose nested sandbox AppArmor den
       holds: async () => false,
       record: async (item, event) => {
         if (event.kind === 'trial') trials.push(event);
-        const answer = await fetch(`${url}/api/work/${item.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-        assert.equal(answer.status, 200, await answer.text());
+        await apiOk(url, token, `work/${item.id}/merge-record`, { body: event });
       },
     };
     const failed = await mergeOne(ports, work).then(() => null, (error: unknown) => error);

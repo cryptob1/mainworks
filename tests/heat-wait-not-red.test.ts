@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { readTrialCpu } from '../src/merge-writer/trial-cpu.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
@@ -21,6 +20,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3535: a merge trial whose test failed or timed out while its containers waited over a minute for
 // the CPU to cool is inconclusive: the same head is trialled again, never reworked; the third heat
@@ -80,8 +80,7 @@ async function trialWithHeat(heat: string, cycles: number, stdout = testTimeout)
         run, cores: 8, cpu: cpu.read, environment: { PATH: process.env.PATH! }, onAttempt: () => { attempts++; } }), files: ['tests/one.test.ts'], proofs: {} }),
       push: async () => { throw new Error('a failed trial never pushes'); }, holds: async () => false,
       record: async (item, event) => {
-        const answer = await fetch(`${url}/api/work/${item.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-        assert.equal(answer.status, 200, await answer.text());
+        await apiOk(url, token, `work/${item.id}/merge-record`, { body: event });
       },
     };
     const config = masterConfigSchema.parse({ version: 1, url, credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',

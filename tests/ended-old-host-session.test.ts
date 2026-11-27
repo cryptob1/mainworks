@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
@@ -10,6 +9,7 @@ import { masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { apiOk } from './helpers/api.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
@@ -29,15 +29,7 @@ const credentials = [operator, coordinator, workerA, workerB].map(principal => (
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
 let store: Store, url: string;
-const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method, headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), 'X-Graphyard-View': 'coordination' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const result = await response.json() as any;
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const ok = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(principal), path, { method, body, headers: { 'X-Graphyard-View': 'coordination' } });
 const claimed = async (worker: Principal, key: string, host: string) => {
   const filed = await ok(operator, 'POST', 'work', { why: 'w', simplest: 's', title: key, type: 'chore', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:ended-old-host-session', 'e2e:ended-old-host-session'] }] }) as Work;
   await ok(operator, 'POST', `work/${filed.id}/ready`, {});
