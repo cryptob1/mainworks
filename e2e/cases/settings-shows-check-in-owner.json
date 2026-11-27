@@ -1,7 +1,7 @@
 {
   "id": "settings-shows-check-in-owner",
   "title": "Settings names the owner every commit is authored by",
-  "description": "At 1280px and 390px Settings → Delivery's Identity section shows the owner's name and email and that commits are authored 'NAME (Mainworks)'; with no owner named it shows the one command, mainworks config owner \"NAME\" EMAIL; nothing scrolls sideways.",
+  "description": "At 1280px and 390px Settings → Delivery's Identity section shows the owner's name and email and that commits are authored 'NAME (Mainworks)'; with no owner named it shows the one form that names them, Name, Email and 'Name the owner'; nothing scrolls sideways.",
   "tags": ["dashboard"],
   "target": "any",
   "required": false,
