@@ -1,17 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { execFileSync } from 'node:child_process';
 import { createContext } from '../src/cli/context.js';
 import { requestWorkerVerification } from '../src/cli/worker-verification.js';
 import { verificationRequestTimeoutMs } from '../src/cli/verification-request.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 test('unit:worker-verification-long-wait — verify survives six minutes before headers; timeout and unreachable stay distinct', async t => {
-  const root = await temporaryDirectory('verification-long-wait');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=test', '-c', 'user.email=test@test', ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q'); git('commit', '-q', '--allow-empty', '-m', 'fixture');
-  const head = git('rev-parse', 'HEAD');
+  const { root, head } = await gitRepo({ label: 'verification-long-wait', files: {}, message: 'fixture' });
   const saved = { GRAPHYARD_URL: process.env.GRAPHYARD_URL, GRAPHYARD_TOKEN: process.env.GRAPHYARD_TOKEN, GRAPHYARD_TOKEN_FILE: process.env.GRAPHYARD_TOKEN_FILE };
   let mode: 'long' | 'timeout' | 'body-timeout' | 'refusal' | 'disconnect' = 'long';
   let submitted = false, verificationCalls = 0;
