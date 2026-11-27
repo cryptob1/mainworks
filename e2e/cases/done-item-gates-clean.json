@@ -49,6 +49,14 @@
     },
     {
       "kind": "browser",
+      "name": "open the item page's Details tab, which holds the technical details",
+      "action": "click",
+      "role": "tab",
+      "text": "Details",
+      "exact": true
+    },
+    {
+      "kind": "browser",
       "name": "unfold the technical details, where the gate decisions fold",
       "action": "click",
       "text": "Technical details"
