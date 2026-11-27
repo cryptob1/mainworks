@@ -1,15 +1,17 @@
 // `mainworks install move --to HOST` (GY-3318): one command moves an install to another host. It
-// checks through the running control plane that nothing is leased, trialled or queued to merge,
-// re-points the registry accounts placed on this host, stops the install, copies the database, the
-// install files, the credential directory (the operator tokens and the loop's state files beside
+// checks through the running control plane that nothing is leased, trialled or queued to merge and
+// that every file to copy is readable (GY-4043; the sandbox mask file stays behind), stops the loop,
+// copies the install files, the credential directory (the operator tokens and the loop's state files beside
 // the coordinator token) and every credential file master.json names, copies the main Git repository
 // (with its worktree registrations) the checkout and its CLI release copies point at, provisions the merge-trial image
-// on the target, rewrites hostId there and prints what to start. A move over SSH copies with rsync;
+// on the target and rewrites hostId there; only then re-points the registry accounts placed on this
+// host, stops the control plane, copies the database and prints what to start. A failure after
+// anything was stopped starts it again and points the accounts back. A move over SSH copies with rsync;
 // a stand-in directory (--into) copies in process, with no external tool to need. Both stay outside
 // any coordination transaction.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -37,6 +39,8 @@ export interface MoveDependencies {
   api?: MoveApi;
   /** Stops the install's units and server; default runs the stop commands the plan lists. */
   stop?: (commands: string[][]) => Promise<void>;
+  /** Starts what the move stopped, when a later step fails; default runs the commands with stop replaced by start. */
+  start?: (commands: string[][]) => Promise<void>;
   /** Runs one program; default spawns it and fails on a nonzero exit. */
   run?: (program: string, args: string[]) => Promise<void>;
   /** Docker for the trial image; default runs it on the target — over SSH, or directly for a stand-in directory. */
@@ -106,6 +110,22 @@ function worktreeRepositories(root: string, carried: string[]): string[] {
     .filter(entry => !carried.some(base => entry === base || entry.startsWith(`${base}/`)));
 }
 
+/** Every file under PATHS the move cannot read, SKIP left out: a symbolic link is copied as itself, so it is not followed. */
+function unreadablePaths(paths: string[], skip: string[]): string[] {
+  const found: string[] = [];
+  const visit = (path: string) => {
+    if (skip.includes(path)) return;
+    try {
+      const entry = lstatSync(path);
+      if (entry.isSymbolicLink()) return;
+      if (entry.isDirectory()) for (const name of readdirSync(path)) visit(join(path, name));
+      else accessSync(path, constants.R_OK);
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') found.push(path); }
+  };
+  for (const path of paths) visit(path);
+  return found;
+}
+
 /** Docker commands of the move run on the target: through SSH for a real move, directly for a stand-in directory. */
 function targetTransport(to: string, into: string | undefined, exec: (program: string, args: string[]) => Promise<void>): Transport {
   return {
@@ -167,51 +187,88 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   const registry = await api.read('agent-registry/document') as AgentRegistry;
   const accounts = registry.accounts.filter(account => account.credential.host === from).map(account => account.name);
   const destination = (path: string) => options.into ? join(resolve(options.into), path) : `${to}:${path}`;
-  const stop = [...unitNames.map(name => ['systemctl', '--user', 'stop', name]), ...(local ? [] : [['docker', 'compose', '--project-directory', join(directory, 'compose'), 'stop']])];
+  // A loop unit with no unit file is not installed here, so there is nothing of it to stop.
+  const loopStop = (units ? [units.master, units.deploy] : []).filter(name => existsSync(join(unitDirectory, name))).map(name => ['systemctl', '--user', 'stop', name]);
+  const planeStop = local ? [['systemctl', '--user', 'stop', localUnit(installId)]] : [['docker', 'compose', '--project-directory', join(directory, 'compose'), 'stop']];
+  const stop = [...loopStop, ...planeStop];
+  // GY-4043: the sandbox mask file (mode 000) is recreated on first launch, so it stays behind; every other file must be readable before anything changes.
+  const stateName = basename(stateDirectory(root)), rootSkipped = [join(stateName, 'worktrees'), join(stateName, 'masked')], databaseFiles = [basename(postgres), basename(volumeArchive)];
+  const unreadable = unreadablePaths([...directories, ...unitFiles, ...credentials], rootSkipped.map(entry => join(root, entry)));
   const start = [
     ...(local ? [] : [`docker volume create ${volume}`, `docker run --rm -v ${volume}:/data -v ${directory}:/in postgres:17-alpine tar -C /data -xf /in/graphyard-data.tar`, `docker compose --project-directory ${join(directory, 'compose')} up -d`]),
     ...(unitNames.length ? ['systemctl --user daemon-reload', `systemctl --user enable --now ${unitNames.join(' ')}`] : []),
     `cd ${root} && mainworks master status`,
   ];
-  const plan = { from, to, target: options.into ? resolve(options.into) : `${to} over SSH`, database, files, worktrees, credentials, accounts, refusals,
+  const plan = { from, to, target: options.into ? resolve(options.into) : `${to} over SSH`, database, files, worktrees, credentials, accounts, refusals, unreadable,
     trialImage: { title: trialImage.title, command: trialImage.command }, stop: stop.map(command => command.join(' ')), start };
   if (options.plan) return { ...plan, applied: false, next: refusals.length ? 'Wait until nothing is leased, trialled or queued, then rerun without --plan' : 'Rerun without --plan to move the install' };
   if (refusals.length) throw new Error(`The install cannot move while work is in flight: ${refusals.join('; ')}`);
 
+  if (unreadable.length) throw new Error(`Nothing was moved: the move cannot read ${unreadable.join(', ')}; make each readable or remove it, then rerun`);
+
   await persistLoopStateScope(masterFile, stored);
   const reason = `Install moved from ${from} to ${to}`;
-  for (const name of accounts) await registryCommand(config, ['account', 'set', name, '--host', to, '--reason', reason], api);
-  await (dependencies.stop ?? (async commands => { for (const [program, ...args] of commands) await (dependencies.run ?? run)(program!, args).catch(() => {}); }))(stop);
-
   const exec = dependencies.run ?? run;
+  const each = (commands: string[][]) => (async () => { for (const [program, ...args] of commands) await exec(program!, args).catch(() => {}); })();
+  const stopping = dependencies.stop ?? each, starting = dependencies.start ?? each;
   /** Copies one path to the target: rsync over SSH for a real move, in process for a stand-in directory — no rsync to spawn, so the move runs anywhere (the trial image ships none). */
-  const copy = (path: string, extra: { exclude?: string; mode?: number; contents?: boolean } = {}) => {
-    if (!options.into) return exec('rsync', ['-a', '--mkpath', ...(extra.exclude ? ['--exclude', `/${extra.exclude}/`] : []), ...(extra.mode !== undefined ? [`--chmod=F${extra.mode.toString(8)}`] : []), extra.contents ? `${path}/` : path, `${to}:${path}`]);
+  const copy = (path: string, extra: { exclude?: string[]; mode?: number; contents?: boolean } = {}) => {
+    const exclude = extra.exclude ?? [];
+    if (!options.into) return exec('rsync', ['-a', '--mkpath', ...exclude.flatMap(entry => ['--exclude', `/${entry}`]), ...(extra.mode !== undefined ? [`--chmod=F${extra.mode.toString(8)}`] : []), extra.contents ? `${path}/` : path, `${to}:${path}`]);
     const targetPath = join(resolve(options.into), path);
     return (async () => {
       await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
-      await cp(path, targetPath, { recursive: true, verbatimSymlinks: true, ...(extra.exclude !== undefined ? { filter: (candidate: string) => candidate !== join(path, extra.exclude!) } : {}) });
+      await cp(path, targetPath, { recursive: true, verbatimSymlinks: true, filter: (candidate: string) => !exclude.some(entry => candidate === join(path, entry)) });
       if (extra.mode !== undefined) await chmod(targetPath, extra.mode);
     })();
   };
-  if (!local) await exec('docker', ['run', '--rm', '-v', `${volume}:/data`, '-v', `${directory}:/out`, 'postgres:17-alpine', 'tar', '-C', '/data', '-cf', '/out/graphyard-data.tar', '.']);
-  for (const path of directories) await (path === root ? copy(path, { contents: true, exclude: join(basename(stateDirectory(root)), 'worktrees') }) : copy(path, { contents: true }));
-  for (const file of unitFiles) await copy(file);
-  for (const file of credentials) await copy(file, { mode: 0o600 });
-  // hostId names the target in both files the target's CLI and loop read.
-  for (const file of [masterFile, connectionFile].filter(existsSync)) {
-    const rewritten = { ...JSON.parse(await readFile(file, 'utf8')), hostId: to };
-    if (options.into) await atomicPrivateWrite(destination(file), rewritten);
-    else {
-      const scratch = await mkdtemp(join(tmpdir(), 'mainworks-move-'));
-      try {
-        const staged = join(scratch, basename(file));
-        await atomicPrivateWrite(staged, rewritten);
-        await exec('rsync', ['-a', '--mkpath', '--chmod=F600', staged, `${to}:${file}`]);
-      } finally { await rm(scratch, { recursive: true, force: true }); }
+  // The loop stops first and the control plane last: the accounts are re-pointed through the
+  // control plane once every file is on the target, and only then is the database stopped and copied.
+  const stopped: string[][][] = [], repointed: string[] = [];
+  const stopNow = async (commands: string[][]) => { if (!commands.length) return; stopped.push(commands); await stopping(commands); };
+  try {
+    await stopNow(loopStop);
+    for (const path of directories) await copy(path, { contents: true, exclude: path === root ? rootSkipped : path === directory ? databaseFiles : [] });
+    for (const file of unitFiles) await copy(file);
+    for (const file of credentials) await copy(file, { mode: 0o600 });
+    // hostId names the target in both files the target's CLI and loop read.
+    for (const file of [masterFile, connectionFile].filter(existsSync)) {
+      const rewritten = { ...JSON.parse(await readFile(file, 'utf8')), hostId: to };
+      if (options.into) await atomicPrivateWrite(destination(file), rewritten);
+      else {
+        const scratch = await mkdtemp(join(tmpdir(), 'mainworks-move-'));
+        try {
+          const staged = join(scratch, basename(file));
+          await atomicPrivateWrite(staged, rewritten);
+          await exec('rsync', ['-a', '--mkpath', '--chmod=F600', staged, `${to}:${file}`]);
+        } finally { await rm(scratch, { recursive: true, force: true }); }
+      }
     }
+    // The target's complete submissions and merge trials run in the trial image, so the move leaves it provisioned there (GY-3318).
+    await provisionTrialImage({ transport: dependencies.transport ?? targetTransport(to, options.into, exec), sourceRoot: options.into ? destination(root) : root }, published);
+    for (const name of accounts) { await registryCommand(config, ['account', 'set', name, '--host', to, '--reason', reason], api); repointed.push(name); }
+    await stopNow(planeStop);
+    if (local) await copy(postgres, { contents: true });
+    else {
+      await exec('docker', ['run', '--rm', '-v', `${volume}:/data`, '-v', `${directory}:/out`, 'postgres:17-alpine', 'tar', '-C', '/data', '-cf', '/out/graphyard-data.tar', '.']);
+      await copy(volumeArchive);
+    }
+  } catch (error) {
+    const undone: string[] = [];
+    try {
+      for (const commands of stopped.reverse()) { await starting(commands.map(([program, ...args]) => [program!, ...args.map(word => word === 'stop' ? 'start' : word)])); undone.push(`started ${commands.map(command => command.at(-1) === 'stop' ? 'the control plane' : command.at(-1)).join(', ')} again`); }
+      if (repointed.length) {
+        // The restarted control plane may take a moment to answer.
+        for (let attempt = 1; ; attempt++) {
+          try { for (const name of repointed) await registryCommand(config, ['account', 'set', name, '--host', from, '--reason', `Install move to ${to} failed`], api); break; }
+          catch (retry) { if (attempt >= 30) throw retry; await new Promise(wait => setTimeout(wait, 1000)); }
+        }
+        undone.push(`${repointed.join(', ')} point at ${from} again`);
+      }
+    } catch (undo) {
+      throw new Error(`The move to ${to} failed (${(error as Error).message}) and could not be fully undone (${(undo as Error).message})${undone.length ? `; it ${undone.join('; ')}` : ''}`);
+    }
+    throw new Error(`The move to ${to} failed: ${(error as Error).message}. Undone: ${undone.length ? undone.join('; ') : 'nothing had changed'}; the install still runs on ${from}`);
   }
-  // The target's complete submissions and merge trials run in the trial image, so the move leaves it provisioned there (GY-3318).
-  await provisionTrialImage({ transport: dependencies.transport ?? targetTransport(to, options.into, exec), sourceRoot: options.into ? destination(root) : root }, published);
   return { ...plan, applied: true, next: `On ${to}, run: ${start.join(' && ')}` };
 }
