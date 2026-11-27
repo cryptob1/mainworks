@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { agentToken, intentInput, autonomySubcommands, runAutonomyCommand } from '../../master/autonomy.js';
+import { remainingBlockerNotice } from '../../master/unblock.js';
 import { listHerdrAgents } from '../../master/herdr.js';
 import { promoteToAutonomy, assertPromotionRoute } from '../../master/promotion.js';
 import { readDaemonState } from '../../daemon/state.js';
@@ -49,8 +50,16 @@ export async function intentCommand(session: MasterSession): Promise<unknown> {
   if (id === 'create' || id === 'requirements') return print(await derivedIntent(id, args, { coordinator: masterApi, mutate: masterMutation, forPerson: master.forPerson, token: () => agentToken(root, master, 'operatorAgent') }));
   // GY-1502: a supervised install's autonomy apply is the promotion's, behind its checks and audit.
   if (id === 'autonomy') assertPromotionRoute(master, args);
-  if ((autonomySubcommands as readonly string[]).includes(id ?? '')) return print(await runAutonomyCommand(root, master, id!, args,
-    { coordinator: masterApi, readSecret: () => readSecretFromStdin(10_000), agents: listHerdrAgents, daemonLock: async () => (await readDaemonState(root, master)).lock }));
+  if ((autonomySubcommands as readonly string[]).includes(id ?? '')) {
+    const result = await runAutonomyCommand(root, master, id!, args,
+      { coordinator: masterApi, readSecret: () => readSecretFromStdin(10_000), agents: listHerdrAgents, daemonLock: async () => (await readDaemonState(root, master)).lock });
+    print(result);
+    if (id === 'release') {
+      const notice = remainingBlockerNotice(result as Work);
+      if (notice) console.log(notice);
+    }
+    return;
+  }
   if (id === 'promote') {
     // GY-1502: the operator's one audited transition to autonomy, with the admin credential read once from stdin; there is no demotion.
     if (args.some(arg => arg !== '--admin-token-stdin')) throw new Error('Use master promote --admin-token-stdin; it takes no other argument and there is no demotion');

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile, unlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { resolve } from 'node:path';
-import { readCredentialFile } from './private-file.js';
+import { atomicPrivateWrite, readCredentialFile } from './private-file.js';
 import type { MasterConfig } from './master/profiles.js';
 import { stateDirectory } from './install/layout.js';
 import { Refusal } from './model/refusal.js';
@@ -16,8 +16,16 @@ export interface LoopStateClient {
 }
 /** Embedded executors and fixtures can supply the same store without an HTTP hop. */
 export const loopStateContext = new AsyncLocalStorage<(scope: string) => LoopStateClient>();
-type Config = Pick<MasterConfig, 'url' | 'credentialFile' | 'repository' | 'hostId'>;
-const scopeOf = (config: Config) => createHash('sha256').update(`${config.repository.toLowerCase()}\n${config.hostId ?? hostname()}\n${config.credentialFile}`).digest('hex');
+type Config = Pick<MasterConfig, 'url' | 'credentialFile' | 'repository' | 'hostId' | 'loopStateScope'>;
+export const scopeOf = (config: Config) => config.loopStateScope ?? createHash('sha256').update(`${config.repository.toLowerCase()}\n${config.hostId ?? hostname()}\n${config.credentialFile}`).digest('hex');
+/** Pin the legacy scope before a host or credential path can change. Preserve the stored settings. */
+export async function persistLoopStateScope<T extends Config>(file: string, config: T): Promise<T> {
+  if (!config.loopStateScope) {
+    config.loopStateScope = scopeOf(config);
+    await atomicPrivateWrite(file, config);
+  }
+  return config;
+}
 /** A conflicted write is retried this many times in all, backing off 250 ms more each time (about 10 s overall). */
 const loopStateWriteAttempts = 9;
 export async function loopStateClient(rootOrConfig: string | Config): Promise<LoopStateClient> {

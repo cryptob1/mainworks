@@ -93,13 +93,14 @@ test('integration:events-hot-query — the install-wide record reads (agent regi
     await call('team-access/host');
   } finally { recording = false; }
   const family = seen.filter(statement => /work_id IS NULL/.test(statement.text));
-  assert.ok(family.length >= 4, `each read sent its install-wide statement: ${family.map(s => s.text).join('\n')}`);
+  assert.ok(family.length >= 3, `each read sent its install-wide statement: ${family.map(s => s.text).join('\n')}`);
   for (const statement of family) {
     const plan = (await store.pool.query(`EXPLAIN ${statement.text}`, statement.values)).rows.map(row => row['QUERY PLAN']).join('\n');
     assert.doesNotMatch(plan, /Seq Scan on events/, `no sequential scan of events for:\n${statement.text}\n${plan}`);
   }
-  const registryPlan = (await store.pool.query(`EXPLAIN ${family[0].text}`)).rows.map(row => row['QUERY PLAN']).join('\n');
-  assert.match(registryPlan, /events_unowned_family/, `the registry read probes events_unowned_family:\n${registryPlan}`);
+  // GY-4005: the registry document is its own row; its history is the family read that remains on the ledger.
+  const registryPlan = (await store.pool.query(`EXPLAIN ${family[0].text}`, family[0].values)).rows.map(row => row['QUERY PLAN']).join('\n');
+  assert.match(registryPlan, /events_unowned_family/, `the registry history read probes events_unowned_family:\n${registryPlan}`);
   // The family predicate selects exactly the rows the LIKE did.
   for (const prefix of families) {
     const like = (await store.pool.query(`SELECT seq FROM events WHERE work_id IS NULL AND kind LIKE $1 ORDER BY seq`, [`${prefix}%`])).rows.map(row => row.seq);

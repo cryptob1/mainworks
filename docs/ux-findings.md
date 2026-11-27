@@ -1,7 +1,7 @@
 # UX findings: the dashboard as a newcomer sees it
 
 Captured with `npm run ux:captures` (every page and state below, 390 and 1280 px, from the README's demo data).
-Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, and the Setup, Sign-in and Empty first run rows in GY-3989; the rest are for follow-up items.
+Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, the Setup, Sign-in and Empty first run rows in GY-3989, the Lead/Settings wording rows in GY-3994, and seven Settings rows in GY-3995; the rest are for follow-up items.
 Rules: *plain* (one plain sentence per idea, owner first), *next* (state, numbers and the one next action),
 *internal* (no ids, hashes, model ids, jargon or agent chatter outside Details), *error* (says what to do, never false),
 *twice* (show nothing twice), *fit* (390 and 1280 px, no sideways scroll).
@@ -62,29 +62,29 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 | Goal order rail | "DEMO-105 Export monthly invoices as CSV": keys before every goal | internal | 2 | Fixed |
 | Live session | "Working · lead-claude": the agent's account id as the status | internal | 2 | Fixed |
 | Product | "The master has not written the brief. It records one with master brief set FILE REASON." | internal | 1 | Fixed |
-| Product (with a brief) | "Updated Nov 13 by the master." under the title, while the menu says Lead (seen in the Lead page's browser case, not the captures) | plain | 2 | Open |
+| Product (with a brief) | "Updated Nov 13 by the master." under the title, while the menu says Lead (seen in the Lead page's browser case, not the captures) | plain | 2 | Fixed |
 | Empty rail and History | "No open goals.", "Nothing waits on you.", "Nothing typed into the Lead yet." with no next step | next | 2 | Fixed |
 | Page fact | "Steer the Lead and act on its cards.": says how, not what state the Lead is in | next | 3 | Open |
 | History | "You 10/14/2026, 8:00:00 AM" in a long US timestamp while every other page says "26m ago" | plain | 3 | Open |
-| Decision card | "Why: Turned the CSV export goal into 3 checkable criteria with bound tests…": agent wording | internal | 2 | Open |
+| Decision card | "Why: Turned the CSV export goal into 3 checkable criteria with bound tests…": agent wording | internal | 2 | Fixed |
 
 ## Settings
 
 | Where | What a newcomer sees | Rule | Sev | Status |
 |---|---|---|---|---|
-| Agents | "Reading the agents…" and "Loading the agents…" at once | twice | 2 | Open |
-| Workers | Task keys "DEMO-104" above each title | internal | 2 | Open |
+| Agents | "Reading the agents…" and "Loading the agents…" at once | twice | 2 | Fixed |
+| Workers | Task keys "DEMO-104" above each title | internal | 2 | Fixed |
 | Workers | "0 ended." in the fact and "Ended 0" as a tab | twice | 3 | Open |
-| Costs | "Reading costs…" stays with no figure when the read returns nothing to price | next | 2 | Open |
-| Setup | "Master fault: acme/storefront is not onboarded. The real serve or feature map is missing." (wording pinned by the onboarding cases) | internal | 2 | Open |
-| Setup | "Be told when the yard stops — Stall alerts: not known yet" | plain | 2 | Open |
-| Delivery | "Reading the delivery settings…" stays above the settings it already shows | next | 2 | Open |
-| Delivery | "Run mainworks config owner \"NAME\" EMAIL to name the owner." as the only way to change it | internal | 2 | Open |
-| Help | Calls the planner "the Master" while the menu calls it Lead | plain | 2 | Open |
+| Costs | "Reading costs…" stays with no figure when the read returns nothing to price | next | 2 | Fixed |
+| Setup | "Master fault: acme/storefront is not onboarded. The real serve or feature map is missing." (wording pinned by the onboarding cases) | internal | 2 | Fixed |
+| Setup | "Be told when the yard stops — Stall alerts: not known yet" | plain | 2 | Fixed |
+| Delivery | "Reading the delivery settings…" stays above the settings it already shows | next | 2 | Fixed |
+| Delivery | "Run mainworks config owner \"NAME\" EMAIL to name the owner." as the only way to change it | internal | 2 | Fixed |
+| Help | Calls the planner "the Master" while the menu calls it Lead | plain | 2 | Fixed |
 | Help | Service names "graphyard-master-OWNER-NAME.service" in the first screen | internal | 3 | Open |
-| Needs you | A five-sentence paragraph above the one request | plain | 2 | Open |
+| Needs you | A five-sentence paragraph above the one request | plain | 2 | Fixed |
 | Needs you | "Recommended:" twice on one card, and "Signed in as owner · human operator" | twice | 3 | Open |
-| Tests (empty) | "Add a case as e2e/cases/ID.json … mainworks e2e sync" as the only next step | internal | 2 | Open |
+| Tests (empty) | "Add a case as e2e/cases/ID.json … mainworks e2e sync" as the only next step | internal | 2 | Fixed |
 
 ## Setup
 

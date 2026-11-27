@@ -106,6 +106,8 @@ test('an upgrade from a pre-GY-3285 registry converts a total concurrency of 16 
     const role = { ...document.roles.find(entry => entry.name === 'worker')!, concurrency };
     document.roles = document.roles.map(entry => entry.name === 'worker' ? role : entry);
     document.revision++;
+    // Such a release kept the document on the ledger alone (GY-4005 gave it its own row).
+    await store.pool.query('DELETE FROM agent_registry');
     await store.pool.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)',
       [coordinator.id, 'agent-registry.role.set', JSON.stringify({ change: { role, reason }, registry: document })]);
   };

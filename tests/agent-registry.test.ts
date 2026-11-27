@@ -594,7 +594,7 @@ async function fullWorkerRole() {
   // Past their launch grace, so only the leases keep them live.
   const stored = await readRegistry(store.pool), launched = new Date(Date.now() - launchGraceMs - 60_000).toISOString();
   for (const session of stored.sessions.filter(entry => !entry.endedAt && keys.includes(entry.work!))) session.selectedAt = launched;
-  await store.pool.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', ['operator', 'agent-registry.fixture', JSON.stringify({ change: {}, registry: stored })]);
+  await store.pool.query('UPDATE agent_registry SET document = $1', [JSON.stringify(stored)]);
   const { root, config } = await master([{ name: 'worker-a', principal: 'implementer', kind: 'claude' }]);
   const probe = network({ 'claude-w-oauth-token': { five: 1, seven: 1 } });
   const lapse = async () => { for (const key of keys) await store.pool.query(`UPDATE work_items SET document = jsonb_set(document, '{lease,expiresAt}', to_jsonb($2::text)) WHERE document->>'key' = $1`, [key, new Date(Date.now() - 60_000).toISOString()]); };
@@ -617,28 +617,36 @@ test('unit:role-health-counts-settled-sessions — with a role\'s full concurren
   } finally { await fleet.cleanup(); }
 });
 
-test('unit:settled-sessions-end-without-a-launch — the loop\'s registry read records the end of every session settleSessions ends, with its reason, in registry history, without any launch having been requested', async () => {
+test('unit:settled-sessions-end-without-a-launch — the loop\'s registry read shows every session settleSessions ends as ended, without writing (GY-4005), and the next registry write records each end with its reason', async () => {
   const fleet = await fullWorkerRole();
   try {
     const before = (await ok('agent-registry/history?limit=500', auditor)).length;
     await fleetRoleHealth(fleet.config, 'worker', fleet.probe);
-    assert.equal((await ok('agent-registry/history?limit=500', auditor)).length, before, 'a read that ends nothing appends nothing');
     await fleet.lapse();
     // The read the loop makes each cycle, and nothing else: no select, no end, no dispatch.
     await fleetRoleHealth(fleet.config, 'worker', fleet.probe);
+    assert.equal((await ok('agent-registry/history?limit=500', auditor)).length, before, 'a read never writes');
+    const read = await ok('agent-registry/document', coordinator) as Registry;
+    for (const key of fleet.keys) assert.equal(read.sessions.find(entry => entry.work === key)!.endReason, `${key} holds no live lease`, 'the read shows the session ended');
+    // The next write records each end, with its reason, in the change it appends.
+    await ok('agent-registry/select', coordinator, { role: 'worker', host: HOST, work: `GY-${++items + 900}`, principal: 'implementer', observations: [] });
     const history = await ok('agent-registry/history?limit=500', auditor);
-    assert.deepEqual(history.slice(0, history.length - before).map((entry: any) => entry.kind), ['sessions-settled'], 'one settlement, and no selection or refusal');
-    const settled = history[0];
-    assert.equal(settled.actor, 'graphyard');
-    assert.deepEqual(settled.change.ended.map((entry: any) => [entry.role, entry.account, entry.work, entry.reason]).sort(),
+    assert.deepEqual(history.slice(0, history.length - before).map((entry: any) => entry.kind), ['selected']);
+    assert.deepEqual(history[0].change.ended.map((entry: any) => [entry.role, entry.account, entry.work, entry.reason]).sort(),
       fleet.keys.map(key => ['worker', 'claude-w', key, `${key} holds no live lease`]));
     const stored = await readRegistry(store.pool);
     for (const key of fleet.keys) {
       const session = stored.sessions.find(entry => entry.work === key)!;
       assert.ok(session.endedAt); assert.equal(session.endReason, `${key} holds no live lease`);
     }
+    const row = (await store.pool.query("SELECT payload FROM events WHERE kind = 'agent-registry.selected' ORDER BY seq DESC LIMIT 1")).rows[0].payload;
+    assert.equal('registry' in row, false, 'the event carries the change, not the whole document');
+    assert.deepEqual([row.revision, row.fields.includes('sessions')], [stored.revision, true], 'and the revision and the fields it changed');
+    // The next write records no end again.
     await fleetRoleHealth(fleet.config, 'worker', fleet.probe);
-    assert.equal((await ok('agent-registry/history?limit=500', auditor)).length, history.length, 'an ended session is recorded once');
+    await ok('agent-registry/select', coordinator, { role: 'worker', host: HOST, work: `GY-${++items + 900}`, principal: 'implementer', observations: [] });
+    const later = await ok('agent-registry/history?limit=500', auditor);
+    assert.equal(later.slice(0, later.length - history.length).flatMap((entry: any) => entry.change.ended ?? []).filter((entry: any) => fleet.keys.includes(entry.work)).length, 0, 'an ended session is recorded once');
   } finally { await fleet.cleanup(); }
 });
 

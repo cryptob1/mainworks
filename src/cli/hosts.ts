@@ -29,7 +29,8 @@ export const hostCommands = defineCommands([{
       process.stdout.write(hostPrepareScript(await localPublicKey()));
     } else if (context.id === 'add' && target) {
       const result = await addHost(target);
-      console.log(result.added ? `Added ${result.target}: ${result.probe?.cores ?? '?'} cores, rootless Docker answers through the shim. Workers lists it from the loop's next cycle, and merge trials send it test shards.`
+      console.log('matched' in result && result.matched ? `${target} is the machine already added as ${result.matched}: kept that one entry.`
+        : result.added ? `Added ${result.target}: ${result.probe?.cores ?? '?'} cores, rootless Docker answers through the shim. Workers lists it from the loop's next cycle, and merge trials send it test shards.`
         : 'prepared' in result ? (result.prepared ? `${result.target} is already prepared and added: nothing to do.` : `Updated ${result.target}'s helper to this release.`)
         : `${target} is already added.`);
       const operator = result.added ? result.operator : null;

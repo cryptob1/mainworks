@@ -335,6 +335,7 @@ export const masterConfigSchema = forwardTolerant(z.object({
   // Retained for older master.json files; control-plane reviews need no GitHub App.
   githubAppId: z.number().int().nonnegative().optional(),
   hostId: z.string().trim().min(1).max(200),
+  loopStateScope: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   herdrWorkspace: z.string().trim().min(1).max(200).optional(),
   // Legacy private server, retained only until its existing panes have drained.
   herdrInstance: z.object({ configHome: z.string().trim().min(1).max(500).refine(isAbsolute, 'must be absolute'), session: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/) }).strict().optional(),

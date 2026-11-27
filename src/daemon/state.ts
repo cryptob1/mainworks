@@ -182,7 +182,7 @@ export type LeftoverDisk = z.infer<typeof leftoverDiskSchema>;
 /** GY-3743: one kind of Mainworks disk use, one hourly free-byte sample, and the stored reading. */
 const diskKindSchema = z.object({ kind: z.string().max(200), bytes: z.number().min(0) }).strict();
 const diskSampleSchema = z.object({ at: z.string().max(64), freeBytes: z.number().min(0) }).strict();
-const diskUseSchema = z.object({ at: z.string(), freeBytes: z.number().min(0), readings: z.array(diskSampleSchema).max(48), top: z.array(diskKindSchema).max(5) }).strict();
+const diskUseSchema = z.object({ at: z.string(), freeBytes: z.number().min(0), readings: z.array(diskSampleSchema).max(48), top: z.array(diskKindSchema).max(5), reclaimed: z.object({ at: z.string(), bytes: z.number().min(0), freeBytes: z.number().min(0), removed: z.array(z.string()) }).strict().optional() }).strict();
 export type DiskKind = z.infer<typeof diskKindSchema>;
 export type DiskSample = z.infer<typeof diskSampleSchema>;
 export type DiskUse = z.infer<typeof diskUseSchema>;

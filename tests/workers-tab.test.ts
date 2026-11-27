@@ -121,7 +121,7 @@ test('integration:workers-tab-lists-every-session — a top-level Workers tab li
   for (const { work: item, handle } of handles) {
     const row = rowOf(html, handle.id);
     assert.ok(row.includes(`data-work="${item.key}"`), `${handle.id} names ${item.key}`);
-    assert.match(row, new RegExp(`<span class="mono">${item.key}</span> <span class="row-title">${item.title}</span></button>`), `${handle.id} shows its item's key and title`);
+    assert.match(row, new RegExp(`<button[^>]*><span class="row-title">${item.title}</span></button>`), `${handle.id} shows its item's title with no task key (GY-3995)`);
     // The full title stays one hover away (GY-3314: the row truncates it, the title attribute carries it whole).
     assert.ok(row.includes(`title="${item.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')}"`), `${handle.id} carries its full title on hover`);
     const role = expectedRole[handle.kind] ?? 'master';

@@ -425,6 +425,13 @@ export async function addHost(target: string, options: { file?: string; knownHos
   return { ...(await recordHost(compute, file, run, knownHosts, false, loginTarget)), target: compute, prepared: false };
 }
 
+/** GY-4009: the SSH host keys `target` answers with (ssh -G resolves an alias and its port); empty when none is read. */
+async function hostKeys(target: string, run: ChildRun) {
+  const { hostname, port } = parseSshConfig(String(await Promise.resolve(run('ssh', [...sshConfigArgs(), '-G', ...sshTarget(target)], { timeoutMs: 5_000 })).catch(() => '')));
+  const output = String(await Promise.resolve(run('ssh-keyscan', ['-T', '5', '-p', port ?? '22', hostname ?? targetHost(target)], { timeoutMs: 10_000 })).catch(() => ''));
+  return new Set([...output.matchAll(/^\S+ ((?:ssh|ecdsa|sk)-\S+ \S+)$/gm)].map(match => match[1]!));
+}
+
 /** Check a gy-compute target answers only through the shim, as neither root nor the docker group, and record it. */
 async function recordHost(target: string, file: string, run: ChildRun, knownHosts: string, checkOperator = true, login?: string) {
   const hosts = await readHosts(file);
@@ -436,6 +443,12 @@ async function recordHost(target: string, file: string, run: ChildRun, knownHost
       return { added: false, target, hosts: updated };
     }
     return { added: false, target, hosts };
+  }
+  // GY-4009: one machine under another name or port is the host already recorded, matched by its SSH host keys.
+  if (hosts.length) {
+    const [keys, ...others] = await Promise.all([target, ...hosts.map(host => host.target)].map(name => hostKeys(name, run)));
+    const matched = hosts.find((_, index) => [...others[index]!].some(key => keys!.has(key)));
+    if (matched) return { added: false, target, matched: matched.target, hosts };
   }
   const refuse = (reason: string) => { throw new Error(`${target} was not added: ${reason}`); };
   const shell = await opensPlainShell(target, run, knownHosts);
