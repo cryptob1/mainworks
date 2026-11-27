@@ -71,12 +71,12 @@ test('hard math real Git conflict through the daemon bounded adapter records nat
   const step=()=>mergeWriterStep({config,state,effects,now:Date.now,snapshot:{work:[item]},performed:[]} as unknown as Cycle);
   await step();await mergeWriterIdle(state);await step();
   const reason='trial failed: the merge conflicts in shared.txt';
-  assert.equal(mergeCalls,1);
+  assert.equal(mergeCalls,2,'the trial merge, then the rework step judges the conflict again on main as it is now (GY-4016)');
   assert.equal(events.length,1);assert.deepEqual(events[0],{kind:'refused',head,reason});
   assert.deepEqual(state.mergeWriter.refusals.map(r=>({head:r.head,reason:r.reason})),[{head,reason}]);
   assert.ok(Object.values(state.actions).some(action=>action.state==='done' && action.detail?.includes('Returned GY-1 to a worker')));
   assert.equal(reworked.length,1);assert.equal(reworked[0].head,head);assert.match(reworked[0].reason,/shared\.txt/);
   await step();await mergeWriterIdle(state);await step();
-  assert.equal(mergeCalls,1,'the refused head does not retry until the deadline');
+  assert.equal(mergeCalls,2,'the refused head does not retry until the deadline');
   assert.equal(await git(remote,'rev-parse','refs/heads/main'),tip,'conflict never pushes');
 });
