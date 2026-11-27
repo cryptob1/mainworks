@@ -110,8 +110,8 @@ function accountItems(status: any | null): SetupItem[] {
   const fetchRefusal = typeof status?.setup?.fetchRefusal === 'string' ? status.setup.fetchRefusal.trim() : '';
   if (fetchRefusal) items.push({ id: 'fetch-refusal', title: 'Authorise the repository for the merge writer', done: false, human: true, line: fetchRefusal, action: { kind: 'wait', label: 'Check again' } });
   const app = status?.serving?.onboarding;
-  items.push({ id: 'real-app', title: app?.onboarded ? 'Project onboarded' : `Master fault: ${status?.repository ?? 'this project'} is not onboarded`, done: app?.onboarded === true, human: false,
-    line: app?.onboarded ? 'The real application and its feature map are declared.' : `${app?.fault?.startsWith('Placeholder serve:') ? 'Placeholder serve: it runs none of the application.' : 'The real serve or feature map is missing.'} The master will fix it.`, action: null });
+  items.push({ id: 'real-app', title: app?.onboarded ? 'Project onboarded' : `${status?.repository ?? 'This project'} is not onboarded yet`, done: app?.onboarded === true, human: false,
+    line: app?.onboarded ? 'The real application and its feature map are declared.' : `${app?.fault?.startsWith('Placeholder serve:') ? 'Placeholder serve: it runs none of the application.' : 'The real serve or feature map is missing.'} The Lead adds it; nothing is needed from you.`, action: null });
   const loop = status?.setup?.loop === true;
   items.push({ id: 'master-loop', title: loop ? `${PRODUCT_NAME} is handing out work` : `${PRODUCT_NAME} is starting`, done: loop, human: false,
     line: loop ? 'Work starts as soon as you ask for it.' : 'The setup command starts it on your machine; this turns green once it runs.',
