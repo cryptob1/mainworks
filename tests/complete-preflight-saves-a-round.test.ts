@@ -97,7 +97,7 @@ test('e2e:complete-preflight-saves-a-round — complete refuses a head missing i
     // 2. Fix the test title, commit, and run complete again -> accepted.
     await writeFile(join(root, 'tests', 'stub.test.ts'), `import { test } from 'node:test';\ntest('${proofId} — works', () => {});\n`);
     git(root, 'add', 'tests/stub.test.ts');
-    git(root, 'commit', '--quiet', '-m', 'add proof id to test title');
+    git(root, 'commit', '--quiet', '-m', 'add proof id to test title\n\nAC-1 — met: proof id present');
     const goodHead = git(root, 'rev-parse', 'HEAD');
 
     const accepted = await runComplete(plane.url, root, goodHead);

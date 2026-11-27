@@ -46,7 +46,7 @@ for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-work
     await mkdir(join(worktree, 'src', 'store'), { recursive: true });
     await writeFile(join(worktree, 'src', 'store', 'change.ts'), 'export const changed = true;\n');
     await writeFile(join(worktree, 'proof.cjs'), "const { test } = require('node:test'); const assert = require('node:assert/strict'); test('unit:fixture', () => assert.fail('deliberate candidate failure'));\n");
-    git(worktree, 'add', '.'); git(worktree, 'commit', '-qm', 'failing head');
+    git(worktree, 'add', '.'); git(worktree, 'commit', '-qm', 'failing head\n\nAC-1 — met: fixture head');
     const head = git(worktree, 'rev-parse', 'HEAD');
 
     const store = await withDatabase('drop-worker-host-verification'); await store.init(); t.after(() => store.close());

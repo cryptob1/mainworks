@@ -100,7 +100,7 @@ test('integration:complete-runs-static-rules — complete refuses a head adding 
     'src/added.ts': "export const label = 'Mainworks banner';\n",
   });
   git(root, 'add', 'src/added.ts');
-  git(root, 'commit', '--quiet', '-m', 'use Mainworks name');
+  git(root, 'commit', '--quiet', '-m', 'use Mainworks name\n\nAC-1 — met: static rules pass');
   const cleanHead = git(root, 'rev-parse', 'HEAD');
 
   {
@@ -183,7 +183,7 @@ test('e2e:complete-runs-static-rules — on a running test install a worker comp
     // Fix the old-name line and confirm complete now submits.
     await writeFiles(root, { 'src/legacy.ts': "export const heading = 'Welcome to Mainworks';\n" });
     git(root, 'add', 'src/legacy.ts');
-    git(root, 'commit', '--quiet', '-m', 'fix old name');
+    git(root, 'commit', '--quiet', '-m', 'fix old name\n\nAC-1 — met: static rules pass');
     const cleanHead = git(root, 'rev-parse', 'HEAD');
 
     const accepted = await runComplete(cleanHead);

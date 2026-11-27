@@ -26,7 +26,7 @@ async function fixtureRepo(label: string, baseFiles: Record<string, string>, hea
   git(root, 'checkout', '--quiet', '-b', 'graphyard/gy-1-1');
   await writeFiles(root, headFiles);
   git(root, 'add', '-A');
-  git(root, 'commit', '--quiet', '--allow-empty', '-m', 'worker change');
+  git(root, 'commit', '--quiet', '--allow-empty', '-m', 'worker change\n\nAC-1 — met: unit proof present\nAC-2 — met: e2e case present');
   const head = git(root, 'rev-parse', 'HEAD');
 
   if (mainAdvance) {
