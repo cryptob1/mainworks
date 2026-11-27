@@ -21,6 +21,9 @@ const nonMovingKinds = new Set(['heartbeat', 'github.observed', 'priority', 'mes
 
 export type NextStepOwner = 'a builder' | 'a reviewer' | 'the merge step' | 'the Lead' | 'a person' | 'nobody';
 export interface NotMovingItem { key: string; title: string; stage: string; ageMs: number; owner: NextStepOwner; blocker?: string }
+export interface HeldItem { key: string; title: string; stage: string; ageMs: number; reason: string }
+/** GY-4046: an item deliberately held by the Lead with a recorded reason is shown as held, not alarmed as not moving. */
+export const isHeldWithReason = (item: Pick<Work, 'hold' | 'holdReason'>): boolean => Boolean(item.hold && item.holdReason?.trim());
 export interface StallReadings {
   now: number; open: readonly Work[]; ready: readonly Work[]; releasable?: readonly Work[];
   released?: number; freeSlots: number; state: Pick<DaemonState, 'actions' | 'lock'>;
@@ -87,26 +90,35 @@ function nextStepOwner(item: Work, all: readonly Work[], now: number): NextStepO
   return item.stage === 'test' || item.stage === 'merge' || item.stage === 'acceptance' ? 'the merge step' : 'nobody';
 }
 
-/** Derive not-moving open items and items waiting on a person (listed separately), oldest first. */
-export function deriveNotMoving(work: readonly Work[], now: number, eventsByWork: ReadonlyMap<string, readonly FlowEvent[]> = new Map()): { notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[] } {
-  const medians = stageMedians(work, eventsByWork), notMoving: NotMovingItem[] = [], waitingOnPerson: NotMovingItem[] = [];
+/** Derive not-moving open items, items waiting on a person, and items held with a reason (listed separately), oldest first. */
+export function deriveNotMoving(work: readonly Work[], now: number, eventsByWork: ReadonlyMap<string, readonly FlowEvent[]> = new Map()): { notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[]; held: HeldItem[] } {
+  const medians = stageMedians(work, eventsByWork), notMoving: NotMovingItem[] = [], waitingOnPerson: NotMovingItem[] = [], held: HeldItem[] = [];
   for (const item of work) {
+    if (item.stage === 'done' || isClosed(item)) continue;
+    const ageMs = Math.max(0, now - lastMovedAt(item, eventsByWork.get(item.id) ?? [], now));
+    if (isHeldWithReason(item)) {
+      held.push({ key: item.key, title: item.title, stage: item.stage, ageMs, reason: item.holdReason!.trim() });
+      continue;
+    }
     // Work waiting on an open dependency is not itself stalled: the dependency is, and is reported.
-    if (item.stage === 'done' || isClosed(item) || (!item.ready && item.stage === 'backlog') || item.dependencies?.some(id => work.find(dep => dep.id === id)?.stage !== 'done')) continue;
-    const owner = nextStepOwner(item, work, now), ageMs = Math.max(0, now - lastMovedAt(item, eventsByWork.get(item.id) ?? [], now));
+    if ((!item.ready && item.stage === 'backlog') || item.dependencies?.some(id => work.find(dep => dep.id === id)?.stage !== 'done')) continue;
+    const owner = nextStepOwner(item, work, now);
     const entry: NotMovingItem = { key: item.key, title: item.title, stage: item.stage, ageMs, owner, ...(item.blocker ? { blocker: item.blocker } : {}) };
     if (owner === 'a person') { waitingOnPerson.push(entry); continue; }
     const thresholdMs = owner === 'nobody' ? minStallMs : Math.min(maxStallMs, Math.max(minStallMs, 3 * (medians[item.stage] ?? 0)));
     if (ageMs > thresholdMs) notMoving.push(entry);
   }
-  const oldestFirst = (a: NotMovingItem, b: NotMovingItem) => b.ageMs - a.ageMs || a.key.localeCompare(b.key);
-  return { notMoving: notMoving.sort(oldestFirst), waitingOnPerson: waitingOnPerson.sort(oldestFirst) };
+  const oldestFirst = <T extends { ageMs: number; key: string }>(a: T, b: T) => b.ageMs - a.ageMs || a.key.localeCompare(b.key);
+  return { notMoving: notMoving.sort(oldestFirst), waitingOnPerson: waitingOnPerson.sort(oldestFirst), held: held.sort(oldestFirst) };
 }
 
 export const formatNotMovingLine = (item: NotMovingItem) =>
   `${item.key} ${item.title.length > 50 ? `${item.title.slice(0, 49)}…` : item.title} — ${formatDuration(item.ageMs / 60_000)} in ${item.stage}, next: ${item.owner}`;
 export const formatNotMovingLines = (items: readonly NotMovingItem[]) =>
   items.length ? [...items.slice(0, 5).map(formatNotMovingLine), ...(items.length > 5 ? [`+${items.length - 5} more not moving`] : [])] : [];
+export const formatHeldLine = (item: HeldItem) =>
+  `${item.key} ${item.title.length > 50 ? `${item.title.slice(0, 49)}…` : item.title} — held (${item.reason})`;
+export const formatHeldLines = (items: readonly HeldItem[]) => items.map(formatHeldLine);
 
 /** GY-3778: the newest builder start (running implementation session or completed dispatch), else the loop's own start. */
 function lastBuilderStartAt(state: StallReadings['state'], work: readonly Work[]): number | null {

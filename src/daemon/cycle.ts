@@ -18,7 +18,7 @@ import { detectRuntimeExhaustion } from '../master/runtime-prompt.js';
 import { dispatchSort, inPipeline, resourceConflicts, sharedPlannedTestFiles, sharedResources } from '../coordination.js';
 import { capacityRefusal } from '../fleet.js';
 import type { CoordinationRounds } from '../server/work-view.js';
-import { masterCauses, masterCausePrompt, messageCauses, unclaimedAttention } from './master-stalled-delivery.js';
+import { masterCauses, masterCausePrompt, messageCauses, notMovingWakeRepeatMs, unclaimedAttention } from './master-stalled-delivery.js';
 import { accountNames, advanceFailureRuns, diagnosisSection, failureHeld, normalizeFailureReason, repeatingItems } from './repeated-failure.js';
 import { reworkCapHeld, reworkCapLabel } from '../model/rework-ground.js';
 import { captureConversation } from '../master/conversation.js';
@@ -1102,7 +1102,12 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   for (const item of open) if (item.mergeLedger?.state === 'intent' && item.mergeLedger.head === item.candidate?.sha && item.mergeLedger.baseTip)
     current.add(`base:${item.mergeLedger.baseTip}`);
   for (const key of Object.keys(state.master.subjects)) if (!current.has(key)) delete state.master.subjects[key];
-  for (const key of Object.keys(state.master.subjectWakes)) if (!current.has(key)) delete state.master.subjectWakes[key];
+  for (const key of Object.keys(state.master.subjectWakes)) {
+    if (current.has(key)) continue;
+    // GY-4046: retain per-item not-moving last-sent times for the full hourly window so a transient flow miss or top-5 shift cannot re-alarm early.
+    if (key.startsWith('not-moving:') && cycle.now() - Date.parse(state.master.subjectWakes[key]!) < notMovingWakeRepeatMs) continue;
+    delete state.master.subjectWakes[key];
+  }
   const master = state.master;
   const handle = herdr.agents.find(agent => agent.name === (master.agentName ?? config.masterAgentName));
   const recoveryKey = config.forPerson ? `master:continuity:${config.forPerson}` : 'master:continuity';
@@ -1143,7 +1148,12 @@ async function masterSession(cycle: Cycle, open: Work[]) {
     const last = Date.parse(state.master.subjectWakes[cause.key] ?? '');
     return !Number.isFinite(last) || cycle.now() - last >= cause.repeatMs;
   };
-  const changed = causes.filter(cause => !cause.quiet && (state.master.subjects[cause.key] !== cause.digest || repeatDue(cause)));
+  const changed = causes.filter(cause => {
+    if (cause.quiet) return false;
+    // GY-4046: a not-moving item repeats at most hourly regardless of stage/owner digest changes.
+    if (cause.key.startsWith('not-moving:') && cause.repeatMs) return repeatDue(cause);
+    return state.master.subjects[cause.key] !== cause.digest || repeatDue(cause);
+  });
   const target = handle.pane_id ?? state.master.pane ?? handle.name;
   const since = Date.parse(state.master.lastWake?.at ?? state.master.startedAt ?? cycle.snapshot.now);
   const heartbeat = !changed.length && open.length > 0 && cycle.now() - since >= (config.run.masterHeartbeatMinutes ?? 30) * 60_000;
@@ -1249,7 +1259,10 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
         state.master = { ...emptyMasterSession(), ...launched, continuity: launched.continuity ?? previous, recoveryFailures: failures, startedAt: at,
           unusableAccounts: activeUnusableAccounts(state.master, cycle.now()),
           subjects: Object.fromEntries(causes.map(cause => [cause.key, cause.digest])),
-          subjectWakes: Object.fromEntries(causes.filter(cause => cause.repeatMs).map(cause => [cause.key, at])),
+          subjectWakes: {
+            ...Object.fromEntries(Object.entries(state.master.subjectWakes).filter(([key, sentAt]) => key.startsWith('not-moving:') && cycle.now() - Date.parse(sentAt) < notMovingWakeRepeatMs)),
+            ...Object.fromEntries(causes.filter(cause => cause.repeatMs).map(cause => [cause.key, at])),
+          },
           lastWake: causes.length ? { at, causes: causes.map(cause => cause.key).slice(0, 20), heartbeat: false } : null };
         if (pendingFailover) {
           sink.push(await record(state, failoverKey, { kind: 'failover', work: null, principal: null, state: 'done', detail: pendingFailover.detail, attempts: pendingFailover.count, cycle: state.cycle }, cycle.now(), effects.persist));

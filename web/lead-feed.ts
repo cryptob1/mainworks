@@ -7,6 +7,10 @@ import { isClosed } from '../src/model';
 export interface NotMovingRow { key: string; title: string; stage: string; ageMs: number; owner: string; blocker?: string }
 export const notMovingLine = (i: NotMovingRow) =>
   `${i.key} ${i.title.length > 50 ? `${i.title.slice(0, 49)}…` : i.title} — ${formatDuration(i.ageMs / 60_000)} in ${i.stage}, next: ${i.owner}`;
+/** GY-4046: one open item held by the Lead with a recorded reason. */
+export interface HeldRow { key: string; title: string; stage: string; ageMs: number; reason: string }
+export const heldLine = (i: Pick<HeldRow, 'key' | 'title'>) =>
+  `${i.key} ${i.title.length > 50 ? `${i.title.slice(0, 49)}…` : i.title} — held`;
 
 /**
  * The Lead's conversation (GY-3602): one time-ordered feed of the messages people typed into the
