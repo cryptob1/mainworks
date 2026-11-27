@@ -16,11 +16,12 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { mergeWriterReads } from '../../src/daemon/cycle-merge-writer.js';
-import { mergeOne, runMergeTrial } from '../../src/merge-writer/executor.js';
+import { mergeHeads, runMergeTrial } from '../../src/merge-writer/executor.js';
 import { trialHarness } from '../../src/merge-writer/trial-container.js';
 import { defaultChildRun } from '../../src/child-runner.js';
 import { git, command } from './process.js';
 import { generate } from './generator.js';
+import { components } from './work.js';
 import { oracle } from './oracle.js';
 import type { RunContext } from './runner.js';
 
@@ -146,8 +147,18 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
     if(options.waitAfterClaims) await delay(180_000,undefined,{signal:c.signal});
     return;
   }
+  // Ready heads land together, one trial per batch of up to four, as the writer's line lands them (GY-3625):
+  // a trial for each of the eight components alone was the largest share of this run (GY-4064).
+  let ready:{component:string;item:any}[]=[];
+  const land=async()=>{
+    for(const result of await mergeHeads(writer,ready.map(r=>r.item))) {if('error' in result) throw result.error;assert.equal(result.outcome.outcome,'merged',JSON.stringify(result.outcome));}
+    ready=[];
+  };
   for(let i=0;i<c.receipt.work.length;i++) {
-    const work=c.receipt.work[i];let attempt=i<3?first[i]:await claim(work,i);
+    const work=c.receipt.work[i],depends:readonly string[]=components.find(x=>x.id===work.component)?.depends??[];
+    // Its dependencies just landed: re-read the graph now, as the loop's reclaim does, not at the plane's next 2 s tick.
+    if(ready.some(r=>depends.includes(r.component))) {await land();await c.plane.call(`work/${work.id}/resync`,c.coordinator,{});}
+    let attempt=i<3?first[i]:await claim(work,i);
     let item=await submit(attempt,!(options.incorrectArtifact || options.injectRepair && work.component==='integration'));
     if(work.component==='integration'||work.component==='single') {
       if(options.injectRepair && work.component==='integration') {
@@ -162,10 +173,9 @@ export async function fixtureExecutor(c:RunContext,options:{missingDelivery?:boo
       else {assert.equal(await c.certify(item),false);return;}
       if(options.missingDelivery) return;
     }
-    item=await proofAndReview(item);
-    const merged=await mergeOne(writer,item);
-    assert.equal(merged.outcome,'merged',JSON.stringify(merged));
+    ready.push({component:work.component,item:await proofAndReview(item)});
   }
+  await land();
   await c.snapshot();
   if(options.nativePostMerge) {
     assert.ok(c.receipt.work.every(w=>w.merge));

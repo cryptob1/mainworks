@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { validateReceipt, comparison } from '../benchmarks/hard-math/receipt-schema.js';
 import { pinnedPython } from '../benchmarks/hard-math/python.js';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { runFixture } from './helpers/hard-math-fixture.js';
 import { fixtureExecutor } from '../benchmarks/hard-math/fixture.js';
 
@@ -45,4 +45,6 @@ test('integration:hard-math-smoke — real scratch Postgres/control plane and Gi
   // GY-3950: the pushed final merge is the candidate certified moments before; that walk is its artifact, not a second one.
   assert.equal(receipt.artifact?.sha,receipt.work.at(-1)?.candidate);
   assert.equal(existsSync(join(run,'delivered')),false,'the final merge was certified once, not walked a second time');
+  // GY-4064: ready heads share a trial, as the writer's line lands them: the two dependency waves and the integration, one trial base each.
+  assert.equal(readdirSync(join(run,'trials')).filter(name=>name.endsWith('.built')).length,3,'the eight components land in three trials, not one each');
 });
