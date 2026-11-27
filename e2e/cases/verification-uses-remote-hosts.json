@@ -59,6 +59,12 @@
     },
     {
       "kind": "command",
+      "name": "Reach a check's Postgres service by its name on a fake host with no DNS resolver, as a remote shard has none",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/hot-sample-checkout-cause.test.ts",
+      "timeoutSeconds": 120
+    },
+    {
+      "kind": "command",
       "name": "Run a declared check with a service image built locally on the coordinator (never pushed) and verify it is sent once and answers on the compute host",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/declared-check-runs-with-local-only-image.test.ts",
       "timeoutSeconds": 600
