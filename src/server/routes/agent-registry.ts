@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type pg from 'pg';
 import { demand } from '../../model.js';
-import { lockAgentRegistry, readRegistry } from '../../agent-registry.js';
+import { appendRegistry, lockAgentRegistry, readRegistry } from '../../agent-registry.js';
 import { unownedFamilySql } from '../../store/tables/work.js';
 import { connectDefaultRoles, connectProvider, connectProviders } from '../../fleet.js';
 import { applyRegistryMutation, registryMutationSchemas } from '../../model-boundary/registry.js';
@@ -296,7 +296,7 @@ function connectAccountRoutes(): import('../routes.js').Route[] {
           reason: `Connected ${provider.label} from Settings › Agents (GY-409): joined ${placement.join(', ')}`,
         };
         const applied = applyRegistryMutation(current, 'apply', proposal, { actor: actor.id, at });
-        await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, 'agent-registry.apply', JSON.stringify({ change: { ...proposal, removed: applied.removed }, registry: applied.registry })]);
+        await appendRegistry(db, actor, 'apply', applied.registry, { ...proposal, removed: applied.removed });
         return { id, state: 'healthy' as const, name: result.name, placement };
       }, action === 'result');
     } },

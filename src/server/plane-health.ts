@@ -66,6 +66,18 @@ export async function readDatabaseCapacity(pool: { query(sql: string): Promise<{
   } catch (error) { return { used: null, bound, advisory, detail: `pg_database_size could not be read: ${error instanceof Error ? error.message : String(error)}` }; }
 }
 
+const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
+/**
+ * GY-4005: one line once the database passes 80% of its bound: used, bound, the largest table and
+ * the action. Null below it, or when the size could not be read.
+ */
+export function databaseBoundWarning(reading: PlaneReading | null): string | null {
+  if (!reading || reading.used === null || !reading.bound || reading.used <= reading.bound * 0.8) return null;
+  const largest = reading.tables?.[0];
+  return `Database at ${Math.floor(100 * reading.used / reading.bound)}% of its bound: ${gb(reading.used)} of ${gb(reading.bound)}${largest ? `, largest table ${largest.table} ${gb(largest.bytes)}` : ''}. `
+    + `File a fix for what fills ${largest?.table ?? 'it'}, or grow the volume and raise MAINWORKS_DATABASE_MAX_BYTES.`;
+}
+
 /**
  * The plane's own health: unhealthy while writes are refused or a resource it owns is exhausted,
  * each cause named. A plane that cannot record results must not be dispatched into. A database
