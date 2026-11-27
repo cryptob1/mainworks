@@ -147,7 +147,7 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
 
     // AC-2, decisions: reversible kinds undo through the reversing command.
     const priorityCard = conversation.locator('.lead-card.decision').filter({ hasText: 'moved to P0' });
-    await expect(priorityCard).toContainText('Why: the release fix outranks new pages.');
+    await expect(priorityCard.locator('details.lead-why')).toContainText('the release fix outranks new pages.');
     await priorityCard.getByRole('button', { name: 'Undo' }).click();
     await expect.poll(() => goalTitles(page), { timeout: 20_000 }).toEqual(['Watch a worker', 'Fix the flaky release check']);
     expect((await call('test-human-operator', `work/${items.fix}`)).priority).toBe(2);
