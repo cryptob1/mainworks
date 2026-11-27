@@ -1,0 +1,16 @@
+{
+  "id": "parallel-product-reviews-own-ports",
+  "title": "Product reviews on one machine serve their heads together, each on its own port",
+  "description": "GY-3991: while one product review's head binds its declared serve address, another review of the same project serves its head on a port the OS assigns and walks it at once, instead of failing with 'another product review is serving its head'.",
+  "tags": ["review", "product-review"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "two product reviews serve their heads together",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/parallel-product-reviews-own-ports.test.ts",
+      "timeoutSeconds": 900
+    }
+  ]
+}
