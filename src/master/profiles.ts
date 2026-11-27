@@ -254,29 +254,17 @@ export const standingLimit = (limit: { value: number; until: string } | undefine
 export const masterRunSchema = z.object({
   intervalSeconds: z.number().int().min(5).max(900).default(20),
   proofWorkflow: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Name the trusted producer workflow file, such as acceptance.yml').optional(),
-  deploymentUrl: z.string().url().max(500).optional(),
-  deploymentShaField: z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/).default('commit'),
   // The deployment provider's whole name for the production environment, read from GitHub
-  // deployments when no deployment URL is configured. Railway names it `<project> / production`
+  // deployments. Railway names it `<project> / production`
   // (`mainworks / production`); unset, GRAPHYARD_PRODUCTION_ENVIRONMENT or `production` applies.
   productionEnvironment: z.string().trim().min(1).max(100).optional(),
   smokeWorkflow: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Name the trusted post-deployment smoke workflow file, such as deploy-smoke.yml').optional(),
-  // Unused since GY-1983 removed the release-candidate drive it paced; still accepted so an older master.json loads.
-  promoteEveryMinutes: z.number().int().min(0).max(10080).optional(),
   // GY-3101: the stalled-yard alert. The operator's webhook — any receiver that takes a POST
   // body, such as an ntfy topic — the loop tells directly when queued work can neither start
   // nor merge, and how long a stop lasts before it alerts. The operator owns both; no CLI
   // path writes them.
   alertUrl: z.string().url().max(500).optional(),
   alertMinutes: z.number().int().min(5).max(1440).optional(),
-  // GY-1398: how long the deployment step reuses its last verified release observation while every
-  // delivery is already served and none is pending, instead of reading GitHub every cycle. Unset: 15
-  // (`defaultDeploymentReuseMinutes`); 0 reads live every cycle.
-  deploymentReuseMinutes: z.number().int().min(0).max(1440).optional(),
-  // Automatic dispatch at submit: how often the loop reads the control plane's review and
-  // producer requests (the launch bound is 30 seconds from the request), which reviewer profile
-  // answers a request when more than one is configured, and how long a producer session may run.
-  dispatchIntervalSeconds: z.number().int().min(5).max(30).default(10),
   // How many session launches — worker dispatches, approvers, failover relaunches — the launcher
   // beside the loop's cycle runs at once (GY-616). The cycle hands launches over and never waits on
   // them; the rest queue. Each launch creates a Herdr pane, so this bounds the host's launch load.
@@ -286,11 +274,9 @@ export const masterRunSchema = z.object({
   // landing inside the window batch into one restart onto the newest. Unset: 15
   // (`defaultHandoverMinutes`); 0 hands over as soon as a release is served.
   handoverMinutes: z.number().int().min(0).max(1440).optional(),
+  // Which reviewer profile answers a review request when more than one is configured, and how long a producer session may run.
   reviewerProfile: profileName.optional(),
   producerTimeoutMinutes: z.number().int().min(5).max(1440).default(120),
-  // How long a candidate's push-triggered acceptance run has before the loop dispatches the proof
-  // workflow as a fallback, so a busy CI queue does not get a duplicate run per head; unset, 0.
-  proofDispatchGraceMinutes: z.number().int().min(0).max(1440).optional(),
   // How long a launched reviewer or producer session may show no activity before the loop
   // re-prompts it once, and how long after that re-prompt a still-quiet session is recorded as
   // never started (see acknowledgeLaunch); default 90.
@@ -338,7 +324,9 @@ export const masterRunSchema = z.object({
   runtimes: narrowRoleRuntimeSchema.optional(),
   pi: piRuntimeSchema.optional(),
   mergeWriter: mergeWriterSettingsSchema.optional(),
-}).passthrough().transform(({ research, decomposition, doctor, diagnostician, candidates, awaitReviewers, awaitReviewersMinutes, ...kept }) => kept);
+  // GY-3964: retired settings nothing read; an older master.json still carrying them loads and drops them.
+}).passthrough().transform(({ research, decomposition, doctor, diagnostician, candidates, awaitReviewers, awaitReviewersMinutes,
+  dispatchIntervalSeconds, deploymentUrl, deploymentShaField, deploymentReuseMinutes, proofDispatchGraceMinutes, promoteEveryMinutes, ...kept }) => kept);
 export type MasterRun = z.infer<typeof masterRunSchema>;
 
 export const agentIdentitySchema = z.object({ id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/), credentialFile: z.string().min(1).max(1000) }).strict();

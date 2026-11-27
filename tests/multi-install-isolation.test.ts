@@ -66,7 +66,7 @@ test('unit:per-install-units — two installs on one host write, enable and rest
   const beta = await checkout('install-beta', 'cryptob1/graphyard-game-pilot');
   const alphaUnits = perInstallUnits('cryptob1/graphyard'), betaUnits = perInstallUnits('cryptob1/graphyard-game-pilot');
   assert.equal(alphaUnits.master, 'graphyard-master-cryptob1-graphyard.service');
-  assert.equal(betaUnits.executorTemplate, 'graphyard-executor-cryptob1-graphyard-game-pilot@.service');
+  assert.equal(betaUnits.master, 'graphyard-master-cryptob1-graphyard-game-pilot.service');
 
   // The first install: its loop, under its own names, recorded beside its configuration.
   const alphaLoop = await installLoopSupervisor({ root: alpha, cliPath: launcher, repository: 'cryptob1/graphyard', intervalSeconds: 20 }, host.loopHost(home));
@@ -112,7 +112,7 @@ test('unit:per-install-units — two installs on one host write, enable and rest
   const kept = await installLoopSupervisor({ root: production, cliPath: launcher, repository: 'cryptob1/graphyard', intervalSeconds: 20 }, legacy.loopHost(legacyHome));
   assert.equal(kept.unit, legacyLoopUnit);
   assert.equal(kept.wrote, 'unchanged');
-  assert.deepEqual(JSON.parse(await readFile(join(production, installUnitsFile), 'utf8')), { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: 'graphyard-executor@.service', alias: true });
+  assert.deepEqual(JSON.parse(await readFile(join(production, installUnitsFile), 'utf8')), { version: 1, slug: null, master: legacyLoopUnit, alias: true });
   // The pilot on that host: the legacy unit is production's, so the pilot takes its own names.
   const pilot = await checkout('install-pilot', 'cryptob1/graphyard-game-pilot');
   assert.deepEqual(await resolveInstallUnits(pilot, 'cryptob1/graphyard-game-pilot', legacyDirectory, legacyHome), betaUnits);
@@ -156,7 +156,7 @@ test('unit:unit-names-fail-closed — with no units.json, a legacy-named unit th
   await writeFile(join(executorOnly, 'graphyard-executor@.service'), `[Service]\nExecStart=${process.execPath} ${production}/scripts/graphyard-executor.mjs --slot %i\n`);
   assert.throws(() => readInstallUnits(pilot, executorOnly, home), (error: unknown) => error instanceof LegacyUnitRefusal && error.unitPath === join(executorOnly, 'graphyard-executor@.service') && error.checkout === production);
   // A legacy unit serving this same checkout still resolves to the legacy alias.
-  assert.deepEqual(readInstallUnits(production, unitDirectory, home), { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: 'graphyard-executor@.service', alias: true });
+  assert.deepEqual(readInstallUnits(production, unitDirectory, home), { version: 1, slug: null, master: legacyLoopUnit, alias: true });
   // The host installer reads a remote host's record and legacy units the same way.
   const remote = [{ path: `/home/graphyard/.config/systemd/user/${legacyLoopUnit}`, text: 'WorkingDirectory=/home/graphyard/code/cryptob1-graphyard\n' }, { path: '/home/graphyard/.config/systemd/user/graphyard-executor@.service', text: null }];
   assert.throws(() => parseInstallUnits(null, 'units.json on host', () => unrecordedInstallUnits('/home/graphyard/code/owner-project', remote, '/home/graphyard')), refusal('/home/graphyard/code/cryptob1-graphyard'));

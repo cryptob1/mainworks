@@ -12,7 +12,7 @@ export const masterCommands = defineCommands([
     readsConnection: () => false,
     help: [
       '  master init --token-stdin [--herdr-workspace ID]',
-      '              [--dispatch-interval SECONDS] [--reviewer-profile NAME] [--producer-timeout MINUTES]',
+      '              [--reviewer-profile NAME] [--producer-timeout MINUTES]',
       '              [--replace-supervisor] Install the operating mode and, in the coordinator',
       "                                checkout, the loop's systemd unit; --replace-supervisor replaces",
       "                                another loop's.",

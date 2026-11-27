@@ -8,13 +8,11 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { type Gate, type Observation, type Principal, type Work } from '../src/model.js';
-import { actionIdleMs } from '../src/model/actions.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { reviewNeed } from '../src/model/dispatch.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import { actionJudgment, refusalAction } from '../src/model/next-action.js';
-import { accountOutcome, stallBoundMs, type AccountOutcome } from '../src/model/action-account.js';
-import { actionlessItems, stalledItems } from '../src/model-boundary/action-account.js';
+import type { ActionAccount } from '../src/model/action-account.js';
 import { actionlessCards, stalledCards } from '../src/model/actionless.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkPage from '../web/pages/work.js';
@@ -25,6 +23,14 @@ import { lifecycle } from './helpers/work-lifecycle.js';
 import { itemObservation } from './helpers/observation-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
+
+// The answers an open item's account may give: an action, a wait on someone named, a person's decision, settled, or `unaccounted` (the defect).
+type AccountOutcome = 'action' | 'waiting-on' | 'human' | 'settled' | 'unaccounted';
+function accountOutcome(account: Pick<ActionAccount, 'action' | 'wait' | 'defect'>): AccountOutcome {
+  if (account.defect || (!account.action && !account.wait)) return 'unaccounted';
+  if (account.action) return 'action';
+  return account.wait!.kind === 'human' ? 'human' : account.wait!.kind === 'settled' ? 'settled' : 'waiting-on';
+}
 
 // Time-bomb allowance (GY-1694): the 2026-09-21 `now` is handed explicitly to nextAction and actionAccount over fixtures built from it; new Date() serves the engine tests and stamps observations.
 
@@ -233,25 +239,9 @@ test('unit:actionless-item-visible — an item with no action and nothing moving
   assert.equal(actionAccount(building, world, now).wait!.on, 'agent-a');
   assert.equal(accountOutcome(actionAccount(backlog, world, now)), 'human');
 
-  // Every open item with no action, and the ones nothing is moving counted apart from them.
-  const actionless = actionlessItems(world, now);
-  assert.deepEqual(actionless.map(entry => entry.key).sort(), ['GY-BUILD', 'GY-DEP', 'GY-MUTE'], 'backlog is not open work');
-  assert.deepEqual(actionless.filter(entry => entry.outcome === 'waiting-on').map(entry => entry.key).sort(), ['GY-BUILD', 'GY-DEP']);
-  assert.deepEqual(stalledItems(world, now).map(entry => entry.key), ['GY-MUTE'], 'only the item nothing is moving is stalled');
-  const stall = stalledItems(world, now)[0];
-  assert.equal(stall.gate, 'review');
-  assert.equal(stall.heldMs, 3 * 3_600_000, 'how long it has held its failing gate');
-  assert.match(stall.detail, /the review gate refuses with no reason recorded/, 'and what is missing');
-  // The bound is the one a queued row nobody claims is judged against, and it is a bound: the
-  // same item a minute into its gate is not yet somebody's problem.
-  assert.equal(stallBoundMs, actionIdleMs);
-  assert.deepEqual(stalledItems(world, new Date(Date.parse(held) + stallBoundMs - 1000)).map(entry => entry.key), []);
-  assert.deepEqual(stalledItems(world, new Date(Date.parse(held) + stallBoundMs + 1000)).map(entry => entry.key), ['GY-MUTE']);
-
   // The dashboard names it too, and reads the same items as stalled as the control plane does.
-  assert.deepEqual(stalledCards(computed, now.getTime()).map(card => card.item.key), stalledItems(world, now, 0).map(entry => entry.key),
-    'the page and the control plane agree on what is stalled');
-  assert.deepEqual(actionlessCards(computed, now.getTime()).map(card => card.item.key).sort(), actionless.map(entry => entry.key).sort());
+  assert.deepEqual(stalledCards(computed, now.getTime()).map(card => card.item.key), ['GY-MUTE'], 'only the item nothing is moving is stalled');
+  assert.deepEqual(actionlessCards(computed, now.getTime()).map(card => card.item.key).sort(), ['GY-BUILD', 'GY-DEP', 'GY-MUTE'], 'backlog is not open work');
   assert.deepEqual(actionlessCards(computed, now.getTime()).filter(card => card.movedBy).map(card => card.item.key).sort(), ['GY-BUILD', 'GY-DEP']);
   // An item the control plane has not evaluated at all is not a stalled item: absent is not null.
   assert.deepEqual(stalledCards(world, now.getTime()), [], 'an unevaluated snapshot reports nothing');

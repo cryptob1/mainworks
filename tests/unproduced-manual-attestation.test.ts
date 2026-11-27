@@ -5,7 +5,6 @@ import { type Work } from '../src/model.js';
 import { actionAccount } from '../src/model-boundary/next-action.js';
 import { humanNeededActions } from '../src/model/next-action.js';
 import { unproducedManualProofs } from '../src/model/unproduced-attestation.js';
-import { stalledItems } from '../src/model-boundary/action-account.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-521, 2026-09-26: GY-374 (manual:fault-class-configuration) and GY-393 sat in acceptance for over
@@ -46,7 +45,6 @@ test('unit:unproduced-manual-proof-owned-by-loop — an unproduced manual proof 
   assert.notEqual(account.action?.kind, 'attention', 'no escalation to a person');
   const stored = { ...current, nextAction: account.action } as Work;
   assert.deepEqual(humanNeededActions([stored], now), []);
-  assert.deepEqual(stalledItems([stored], now, 0), []);
   // What stays a person's: a producer-runnable manual proof, a failed attestation, and anything else still refusing.
   assert.deepEqual(unproducedManualProofs(item(sha, { producerProofs: [proof] } as Partial<Work>), [], now), []);
   const failed = item(sha, { evidence: [{ proof, result: 'fail', executed: 1, skipped: 0, sha, baseSha, policyRevision: 2, trusted: true, producer: 'graphyard-approver', at: iso(-60_000) }] } as unknown as Partial<Work>);

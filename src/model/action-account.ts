@@ -59,39 +59,3 @@ export interface ActionAccount {
   heldSince: string; heldMs: number;
 }
 
-/**
- * The three answers AC-1 allows an open item, plus the two that are not answers about a refusal:
- * `settled` (nothing refuses) and `unaccounted` (the defect). `action` covers both an action an
- * executor runs and one that is a judgment owed — `actionJudgment` on the kind tells them apart,
- * and both are answers, because both name somebody who can complete them.
- */
-const accountOutcomes = ['action', 'waiting-on', 'human', 'settled', 'unaccounted'] as const;
-export type AccountOutcome = typeof accountOutcomes[number];
-export function accountOutcome(account: Pick<ActionAccount, 'action' | 'wait' | 'defect'>): AccountOutcome {
-  if (account.defect) return 'unaccounted';
-  if (account.action) return 'action';
-  if (!account.wait) return 'unaccounted';
-  return account.wait.kind === 'human' ? 'human' : account.wait.kind === 'settled' ? 'settled' : 'waiting-on';
-}
-
-// ---- What is owed and nobody told -----------------------------------------------------------
-
-/**
- * How long an open item may hold a failing gate with nothing named before it is somebody's
- * problem. It is the bound `actionIdleMs` applies to a queued row nobody claims; an item with no
- * row at all was invisible to that measure, and this is the same patience applied to it.
- */
-export const stallBoundMs = 5 * 60_000;
-
-/** One open item with no action, and what the control plane says instead. */
-export interface ActionlessItem {
-  key: string; work: string;
-  gate: string | null; refusal: string | null;
-  heldSince: string; heldMs: number;
-  outcome: AccountOutcome;
-  /** The wait that explains it, when one does; null when nothing explained it. */
-  wait: ActionWait | null;
-  /** Who moves it — another item, a live session, the operator — or null when nobody was named. */
-  waitingOn: string | null;
-  detail: string;
-}

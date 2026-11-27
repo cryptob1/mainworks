@@ -30,10 +30,9 @@ const recordSchema = z.object({
   /** The install slug the names derive from; null for the legacy alias. */
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).max(80).nullable(),
   master: z.string().regex(/^(?:graphyard|mainworks)-master[A-Za-z0-9@._-]*\.service$/),
-  executorTemplate: z.string().regex(/^(?:graphyard|mainworks)-executor[A-Za-z0-9._-]*@\.service$/),
   /** True when the install kept the pre-GY-1441 names because its units already ran this checkout. */
   alias: z.boolean(),
-}).strict();
+}); // not strict: a record written before GY-3964 still names its executorTemplate, which nothing reads
 export type InstallUnits = z.infer<typeof recordSchema>;
 
 /**
@@ -50,12 +49,12 @@ export function installSlug(repository: string) {
   const hash = createHash('sha256').update(repository.toLowerCase()).digest('hex').slice(0, 8);
   return `${plain.slice(0, 71).replace(/-+$/, '')}-${hash}`;
 }
-/** The names a new install of REPOSITORY writes: `PREFIX-master-OWNER-NAME.service` and its executor template; PREFIX is `mainworks` for a fresh install (GY-3711). */
+/** The names a new install of REPOSITORY writes: `PREFIX-master-OWNER-NAME.service`; PREFIX is `mainworks` for a fresh install (GY-3711). */
 export function perInstallUnits(repository: string, prefix: UnitPrefix = 'graphyard'): InstallUnits {
   const slug = installSlug(repository);
-  return { version: 1, slug, master: `${prefix}-master-${slug}.service`, executorTemplate: `${prefix}-executor-${slug}@.service`, alias: false };
+  return { version: 1, slug, master: `${prefix}-master-${slug}.service`, alias: false };
 }
-export const legacyInstallUnits: InstallUnits = { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: legacyExecutorTemplate, alias: true };
+export const legacyInstallUnits: InstallUnits = { version: 1, slug: null, master: legacyLoopUnit, alias: true };
 
 /** The install's deploy unit (GY-2877), named beside its loop unit: `graphyard-deploy.service` for the legacy alias, `graphyard-deploy-OWNER-NAME.service` otherwise. */
 export const deployUnitOf = (units: Pick<InstallUnits, 'master'>) => units.master.replace(/^(graphyard|mainworks)-master/, '$1-deploy');

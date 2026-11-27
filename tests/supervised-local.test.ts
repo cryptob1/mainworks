@@ -25,7 +25,7 @@ const OPERATOR = 'octo-operator';
 const GH_TOKEN = `gho_${'g'.repeat(36)}`;
 
 const baseConfig = (extra: Partial<MasterConfig> = {}): MasterConfig => ({ version: 1, url: SERVER, credentialFile: '/outside/master.token', cliPath: launcher, repository: 'acme/shop', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-shop', workers: [], reviewers: [], producers: [],
-  run: { intervalSeconds: 20, deploymentShaField: 'commit', dispatchIntervalSeconds: 10, producerTimeoutMinutes: 120 } as MasterConfig['run'], ...extra });
+  run: { intervalSeconds: 20, producerTimeoutMinutes: 120 } as MasterConfig['run'], ...extra });
 const identities = {
   operatorAgent: { id: 'graphyard-master-shop-operator', credentialFile: '/outside/operator.token' },
 } as unknown as Pick<MasterConfig, 'operatorAgent'>;

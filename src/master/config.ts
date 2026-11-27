@@ -309,16 +309,16 @@ export async function saveProducerProfile(root: string, profileInput: unknown, v
  * identity paths, the environment inventory — is onboarding's or the operator's: no CLI path
  * writes it, and the master's harness grants no direct edit of master.json, so re-pointing a credential can never be a routine master action.
  */
-export const masterOwnedRunFields = ['intervalSeconds', 'dispatchIntervalSeconds', 'proofWorkflow', 'smokeWorkflow', 'deploymentUrl', 'deploymentShaField', 'productionEnvironment', 'reviewerProfile', 'producerTimeoutMinutes', 'acknowledgementSeconds', 'inactivityMinutes', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'promoteEveryMinutes', 'deploymentReuseMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
-const masterClearableRunFields = ['proofWorkflow', 'smokeWorkflow', 'deploymentUrl', 'productionEnvironment', 'reviewerProfile', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'promoteEveryMinutes', 'deploymentReuseMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
+export const masterOwnedRunFields = ['intervalSeconds', 'proofWorkflow', 'smokeWorkflow', 'productionEnvironment', 'reviewerProfile', 'producerTimeoutMinutes', 'acknowledgementSeconds', 'inactivityMinutes', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
+const masterClearableRunFields = ['proofWorkflow', 'smokeWorkflow', 'productionEnvironment', 'reviewerProfile', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
 /** GY-3446: the temporary limits, each set with `until=TIME`; `hostHeavyJobs` is the host-wide strict cap every install here shares. */
 const temporaryFields = ['trialCap', 'launchHotCelsius', 'hostHeavyJobs'] as const;
 type TemporaryLimit = { value: number; until: string } | null;
 type PlannerSetting = { enabled: false; by: string; at: string } | 'off' | null;
 export interface MasterOwnedSettings {
-  intervalSeconds?: number | null; dispatchIntervalSeconds?: number | null; proofWorkflow?: string | null; smokeWorkflow?: string | null;
-  deploymentUrl?: string | null; deploymentShaField?: string | null; productionEnvironment?: string | null; reviewerProfile?: string | null; producerTimeoutMinutes?: number | null; acknowledgementSeconds?: number | null; inactivityMinutes?: number | null; quotaCeilingPercent?: number | null;
-  masterSessionMinutes?: number | null; masterHeartbeatMinutes?: number | null; promoteEveryMinutes?: number | null; deploymentReuseMinutes?: number | null;
+  intervalSeconds?: number | null; proofWorkflow?: string | null; smokeWorkflow?: string | null;
+  productionEnvironment?: string | null; reviewerProfile?: string | null; producerTimeoutMinutes?: number | null; acknowledgementSeconds?: number | null; inactivityMinutes?: number | null; quotaCeilingPercent?: number | null;
+  masterSessionMinutes?: number | null; masterHeartbeatMinutes?: number | null;
   trialCap?: TemporaryLimit; launchHotCelsius?: TemporaryLimit; hostHeavyJobs?: TemporaryLimit | 'auto';
   planner?: PlannerSetting;
   accounts?: { profile: string; accounts: string[] }[];

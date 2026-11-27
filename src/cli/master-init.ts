@@ -18,7 +18,7 @@ import { chooseInstallLayout, stateDirectory } from '../install/layout.js';
  */
 export async function masterInit(context: CliContext, root: string) {
   const { args, base, connection, print } = context;
-  const { values } = parseArgs({ args, options: { for: { type: 'string' }, url: { type: 'string' }, 'token-stdin': { type: 'boolean' }, 'cli-path': { type: 'string' }, 'host-id': { type: 'string' }, 'herdr-workspace': { type: 'string' }, interval: { type: 'string' }, 'proof-workflow': { type: 'string' }, 'deployment-url': { type: 'string' }, 'deployment-sha-field': { type: 'string' }, 'smoke-workflow': { type: 'string' }, 'dispatch-interval': { type: 'string' }, 'reviewer-profile': { type: 'string' }, 'producer-timeout': { type: 'string' }, 'replace-supervisor': { type: 'boolean' } }, allowPositionals: false });
+  const { values } = parseArgs({ args, options: { for: { type: 'string' }, url: { type: 'string' }, 'token-stdin': { type: 'boolean' }, 'cli-path': { type: 'string' }, 'host-id': { type: 'string' }, 'herdr-workspace': { type: 'string' }, interval: { type: 'string' }, 'proof-workflow': { type: 'string' }, 'smoke-workflow': { type: 'string' }, 'reviewer-profile': { type: 'string' }, 'producer-timeout': { type: 'string' }, 'replace-supervisor': { type: 'boolean' } }, allowPositionals: false });
   if (!values['token-stdin']) throw new Error('Use master init --token-stdin so the coordinator credential is not stored in shell history');
   const masterToken = await readSecretFromStdin(10_000); if (!masterToken) throw new Error('Master coordinator credential is required; setup made no changes');
   if (values.for) {
@@ -31,8 +31,8 @@ export async function masterInit(context: CliContext, root: string) {
     return print({ person: values.for, people: config.people, loop: 'shared' });
   }
   chooseInstallLayout(root); // GY-3711: the one install-time choice of names, before anything is written.
-  const run = { ...(values.interval ? { intervalSeconds: Number(values.interval) } : {}), ...(values['proof-workflow'] ? { proofWorkflow: values['proof-workflow'] } : {}), ...(values['deployment-url'] ? { deploymentUrl: values['deployment-url'] } : {}), ...(values['deployment-sha-field'] ? { deploymentShaField: values['deployment-sha-field'] } : {}), ...(values['smoke-workflow'] ? { smokeWorkflow: values['smoke-workflow'] } : {}),
-    ...(values['dispatch-interval'] ? { dispatchIntervalSeconds: Number(values['dispatch-interval']) } : {}), ...(values['reviewer-profile'] ? { reviewerProfile: values['reviewer-profile'] } : {}), ...(values['producer-timeout'] ? { producerTimeoutMinutes: Number(values['producer-timeout']) } : {}) };
+  const run = { ...(values.interval ? { intervalSeconds: Number(values.interval) } : {}), ...(values['proof-workflow'] ? { proofWorkflow: values['proof-workflow'] } : {}), ...(values['smoke-workflow'] ? { smokeWorkflow: values['smoke-workflow'] } : {}),
+    ...(values['reviewer-profile'] ? { reviewerProfile: values['reviewer-profile'] } : {}), ...(values['producer-timeout'] ? { producerTimeoutMinutes: Number(values['producer-timeout']) } : {}) };
   // GY-1641: with no --url, GRAPHYARD_URL or connection file, the server master.json records (the port the install bound), not the default one.
   const url = values.url ?? (setting('URL') || connection ? base : await recordedMasterUrl(root) ?? base);
   const installed = await setupMaster(root, { url, token: masterToken, cliPath: resolve(values['cli-path'] ?? await context.activeCliPath()), hostId: values['host-id'] ?? context.individualHostId(), herdrWorkspace: values['herdr-workspace'], ...(Object.keys(run).length ? { run } : {}), installSupervisor: true, replaceSupervisor: !!values['replace-supervisor'] });

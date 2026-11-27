@@ -217,11 +217,11 @@ test('integration:master-config-reload — a running loop adopts master.json cha
     const write = async (change: (config: any) => void) => { const config = JSON.parse(await readFile(file, 'utf8')); change(config); await writeFile(file, JSON.stringify(config, null, 2), { mode: 0o600 }); await chmod(file, 0o600); };
     assert.deepEqual((await live.reload()).changed, [], 'an unchanged file changes nothing');
     const credential = await token('producer-b');
-    await write(config => { config.producers = [{ name: 'producer-b', principal: 'proof-runner-b', agentName: 'produce-b', kind: 'claude', credentialFile: credential }]; config.herdrWorkspace = 'wF'; config.autoMerge = false; config.run.dispatchIntervalSeconds = 20; config.run.reviewerProfile = 'claude-reviewer'; });
+    await write(config => { config.producers = [{ name: 'producer-b', principal: 'proof-runner-b', agentName: 'produce-b', kind: 'claude', credentialFile: credential }]; config.herdrWorkspace = 'wF'; config.autoMerge = false; config.run.intervalSeconds = 31; config.run.reviewerProfile = 'claude-reviewer'; });
     const adopted = await live.reload();
     assert.equal(adopted.refused, null);
-    assert.deepEqual(adopted.changed, ['herdrWorkspace', 'producers', 'run.dispatchIntervalSeconds', 'run.reviewerProfile']);
-    assert.deepEqual([live.current.producers.map(profile => profile.name), live.current.herdrWorkspace, live.current.run.dispatchIntervalSeconds], [['producer-b'], 'wF', 20]);
+    assert.deepEqual(adopted.changed, ['herdrWorkspace', 'producers', 'run.intervalSeconds', 'run.reviewerProfile']);
+    assert.deepEqual([live.current.producers.map(profile => profile.name), live.current.herdrWorkspace, live.current.run.intervalSeconds], [['producer-b'], 'wF', 31]);
     // A change to what the loop is bound to is refused by name; every other change in the same write waits with it.
     await write(config => { config.url = 'https://elsewhere.example'; config.baseBranch = 'release'; config.autoMerge = true; });
     const refused = await live.reload();
