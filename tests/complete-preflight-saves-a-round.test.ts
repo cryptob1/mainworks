@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3638 AC-2: a stub Builder submits a head whose proof id is missing from its test title.
 // complete refuses within 10 seconds naming the proof id, the item stays in build with the same
@@ -16,12 +16,6 @@ import { listen } from './helpers/http-server.js';
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const proofId = 'unit:stub-builder-proof';
-
-function git(cwd: string, ...args: string[]) {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-}
 
 async function stubPlane() {
   const item = {
@@ -75,12 +69,8 @@ async function runComplete(url: string, root: string, head: string) {
 }
 
 test('e2e:complete-preflight-saves-a-round — complete refuses a head missing its proof id within 10s without touching lease or requesting review/trial, and accepts once the title is fixed', async () => {
-  const root = await temporaryDirectory('complete-preflight-e2e');
-  git(root, 'init', '--quiet', '-b', 'main');
-  await writeFile(join(root, '.gitignore'), '.graphyard/\n');
-  git(root, 'add', '.gitignore');
-  git(root, 'commit', '--quiet', '-m', 'base');
-  git(root, 'update-ref', 'refs/remotes/origin/main', git(root, 'rev-parse', 'HEAD'));
+  const { root, head } = await gitRepo({ label: 'complete-preflight-e2e', files: { '.gitignore': '.graphyard/\n' } });
+  git(root, 'update-ref', 'refs/remotes/origin/main', head);
 
   git(root, 'checkout', '--quiet', '-b', 'graphyard/gy-1-1');
   await mkdir(join(root, 'tests'), { recursive: true });

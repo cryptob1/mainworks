@@ -1,12 +1,13 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
@@ -217,11 +218,7 @@ test('integration:account-check-writable-home — agy and Pi live checks return 
     const configHome = join(holder, 'config');
     const masterToken = join(configHome, 'install', 'tokens', 'coordinator.token');
     for (const dir of [root, agyHome, piHome, masterHome, bin, dirname(masterToken)]) mkdirSync(dir, { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-    const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
-    git('init', '-q', '-b', 'main');
-    git('add', '.');
-    git('commit', '-qm', 'seed');
+    await gitRepo({ root, files: { '.gitignore': '.graphyard/\n' }, message: 'seed' });
     writeFileSync(masterToken, 'coord-token\n', { mode: 0o600 });
     writeFileSync(join(agyHome, 'antigravity-oauth-token'), 'oauth-token-fixture');
     writeFileSync(join(agyHome, 'settings.json'), JSON.stringify({ theme: 'dark' }));

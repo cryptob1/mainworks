@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CliContext } from '../src/cli/context.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { launchFailureFixture } from './helpers/launch-failure-fixture.js';
 
 // GY-3413: GY-3406's record named a submission epoch no workspace was registered for, so every
@@ -17,17 +16,9 @@ const { createWorktree } = await import('../src/cli/workspace-worktree.js');
 const proof = 'integration:worktree-epoch-fallback';
 const branch = 'graphyard/gy-1-1';
 
-const git = (cwd: string, ...args: string[]) => {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-};
-
 /** A coordinator checkout holding the submitted branch, with no worktree for it. */
 async function repository() {
-  const root = await temporaryDirectory('worktree-epoch-fallback');
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'commit', '-q', '--allow-empty', '-m', 'base');
+  const { root } = await gitRepo({ label: 'worktree-epoch-fallback', files: {} });
   git(root, 'checkout', '-q', '-b', branch);
   await writeFile(join(root, 'feature.txt'), 'the submitted work\n');
   git(root, 'add', 'feature.txt');

@@ -10,7 +10,7 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import { masterConfigSchema } from '../src/master.js';
 import type { Work } from '../src/model.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3120 AC-1: a head whose trial passed lands without another trial when main has moved. Against a
 // real bare origin, main gains a commit while the head's trial runs; the leased push is rejected, the
@@ -19,18 +19,14 @@ import { git } from './helpers/git-repo.js';
 
 
 async function fixture(label: string) {
-  const directory = await temporaryDirectory(label), origin = join(directory, 'origin.git'), checkout = join(directory, 'checkout'), other = join(directory, 'other');
-  git(directory, 'init', '-q', '--bare', '-b', 'main', origin);
-  for (const path of [checkout, other]) git(directory, 'clone', '-q', origin, path);
-  await writeFile(join(checkout, 'shared.txt'), 'base\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
-  const baseTip = git(checkout, 'rev-parse', 'HEAD');
+  const directory = await temporaryDirectory(label), other = join(directory, 'other');
+  const { root: checkout, origin, head: baseTip } = await gitRepo({ root: join(directory, 'checkout'), files: { 'shared.txt': 'base\n' }, origin: true });
+  git(directory, 'clone', '-q', origin, other);
   git(checkout, 'checkout', '-qb', 'graphyard/gy-1-1');
   await writeFile(join(checkout, 'item.txt'), 'the item\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'GY-1 change');
   const head = git(checkout, 'rev-parse', 'HEAD');
   git(checkout, 'checkout', '-q', '--detach', baseTip);
-  git(other, 'pull', '-q', 'origin', 'main');
   /** Another merge lands on main: `path` gains `content`. */
   const moveMain = async (path: string, content: string) => {
     await writeFile(join(other, path), content);

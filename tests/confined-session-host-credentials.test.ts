@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { coordinatorConfinement, credentialMaskFor, masterCredentialMask, sessionMountNamespaceWorks, type MaskProbe } from '../src/master/confinement.js';
 import { masterSessionConfinement, prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3228: a confined session ran with the whole host readable apart from the install's own
 // credential locations, so a worker read the owner's SSH key and gh token and could act as the
@@ -19,17 +20,9 @@ const secret = 'host-credential-secret-'.padEnd(48, 'x');
 const ownToken = 'worker-own-token-'.padEnd(40, 'x');
 const hostProbe: MaskProbe = (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
-function fixture(home: string) {
-  const root = join(home, 'code', 'project');
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  mkdirSync(root, { recursive: true });
+async function fixture(home: string) {
   // The repository declares its own extra mask path, home-relative.
-  writeFileSync(join(root, 'graphyard.json'), JSON.stringify({ confinement: { maskPaths: ['~/.config/huck'] } }));
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  writeFileSync(join(root, 'test.js'), 'console.log(\'the fixture test passes\');\n');
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'add', '.');
-  git(root, 'commit', '-qm', 'seed');
+  const { root } = await gitRepo({ root: join(home, 'code', 'project'), message: 'seed', files: { 'graphyard.json': JSON.stringify({ confinement: { maskPaths: ['~/.config/huck'] } }), '.gitignore': '.graphyard/\n', 'test.js': 'console.log(\'the fixture test passes\');\n' } });
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1');
   mkdirSync(dirname(worktree), { recursive: true });
   git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree, 'main');
@@ -82,7 +75,7 @@ test('e2e:confined-session-host-credentials — under real bwrap a worker and a 
   const savedHome = process.env.HOME;
   process.env.HOME = home;
   try {
-    const f = fixture(home);
+    const f = await fixture(home);
     assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this host');
 
     // The worker: its own token and runtime login kept, everything else of the host user's hidden.

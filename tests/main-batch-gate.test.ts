@@ -16,7 +16,7 @@ import { batchGateCauses } from '../src/daemon/master-stalled-delivery.js';
 import { checkoutRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
 
 // GY-3119: the batch gate on main. Merged work is verified together, one batch at a time, in the
@@ -32,17 +32,12 @@ function item(key: string, proofs: string[]): Work {
 /** An origin whose main holds a verified base and three merges (GY-1, GY-2, GY-3), and the coordinator checkout. */
 async function fixture(label: string, broken: string | null = null, deleteEarlierCase = false) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin, head: verified } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: { 'graphyard.json': JSON.stringify({ gate: { core: ['create-work-item', 'smoke'] } }), 'e2e/cases/create-work-item.json': '{}', 'e2e/cases/smoke.json': '{}', 'e2e/cases/other.json': '{}', 'e2e/cases/case-1.json': '{}', 'e2e/cases/case-2.json': '{}', 'e2e/cases/case-3.json': '{}' } });
   const write = async (files: Record<string, string>) => {
     for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
     git(pusher, 'add', '.');
   };
-  await write({ 'graphyard.json': JSON.stringify({ gate: { core: ['create-work-item', 'smoke'] } }), 'e2e/cases/create-work-item.json': '{}', 'e2e/cases/smoke.json': '{}', 'e2e/cases/other.json': '{}', 'e2e/cases/case-1.json': '{}', 'e2e/cases/case-2.json': '{}', 'e2e/cases/case-3.json': '{}' });
-  git(pusher, 'commit', '-q', '-m', 'base');
-  git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
   const merges: string[] = [];
   for (const n of [1, 2, 3]) {
     git(pusher, 'checkout', '-q', '-b', `item-${n}`);

@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { acquireDaemonLock, actionDetailMax, daemonStatePath, daemonStateSchema, emptyDaemonState, pruneDaemonState, readDaemonState, retainedActions, writeDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { candidateKey, dispatchKey, reconcilePendingActions } from '../src/daemon/reconcile.js';
@@ -16,6 +15,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -68,8 +68,7 @@ test('the daemon cursor lives beside the coordinator credential, stays private, 
   try {
     const master = config(token);
     assert.equal(daemonStatePath(master), join(directory, 'coordinator.daemon.json'));
-    const root = await temporaryDirectory('daemon-root');
-    execFileSync('git', ['init', '-q', root]);
+    const { root } = await gitRepo({ label: 'daemon-root' });
     try {
       assert.equal((await readDaemonState(root, master)).cycle, 0, 'a missing cursor is an empty cursor, not a failure');
       const state = emptyDaemonState(master); state.cycle = 7;
@@ -142,8 +141,7 @@ test('restarting the loop resumes the cursor without dispatching twice', async (
   const { directory, token } = await privateDirectory();
   const workerCredential = join(directory, 'worker.token');
   await writeFile(workerCredential, workerToken, { mode: 0o600 });
-  const root = await temporaryDirectory('daemon-root');
-  execFileSync('git', ['init', '-q', root]);
+  const { root } = await gitRepo({ label: 'daemon-root' });
   try {
     const master = config(token, { workers: [profile('codex', workerCredential)] });
     const ready = work();

@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coordinatorConfinement, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2950, as the class GY-2967 fixed: a worker that cherry-picks a preserved attempt's saved commit
 // could not conclude the pick inside its confinement — removing CHERRY_PICK_HEAD runs a ref
@@ -17,21 +18,12 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // merge every sync runs works on the packed refs too.
 
 /** A coordinator checkout whose every ref is packed, with a linked assignment worktree and a saved commit that conflicts with the assignment branch's own change, exactly as the bug found them. */
-function fixture(base: string) {
-  const root = join(base, 'coordinator');
-  const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  writeFileSync(join(root, 'shared.txt'), 'base\n');
-  run('init', '-b', 'main');
-  run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Mainworks');
-  run('add', '.');
-  run('commit', '-m', 'coordinator');
+async function fixture(base: string) {
+  const { root, git: run } = await gitRepo({ root: join(base, 'coordinator'), files: { 'src/loop.ts': 'export const loop = 1;\n', 'shared.txt': 'base\n' }, message: 'coordinator' });
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2950-1');
   mkdirSync(dirname(worktree), { recursive: true });
   run('worktree', 'add', '-b', 'graphyard/gy-2950-1', worktree, 'main');
-  const inWorktree = (...args: string[]) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const inWorktree = (...args: string[]) => git(worktree, ...args);
   // The preserved attempt's saved work, twice over: each conflicts with what the branch holds.
   inWorktree('checkout', '-q', '-b', 'saved');
   writeFileSync(join(worktree, 'shared.txt'), 'saved work\n');
@@ -64,7 +56,7 @@ function fixture(base: string) {
 test('integration:worker-cherry-pick-cleanup — inside the launched worker confinement a saved commit is cherry-picked, the pick concludes with no CHERRY_PICK_HEAD left on its own, and the supported syncs succeed while the coordinator files and the base branch stay protected', async () => {
   const base = await temporaryDirectory('cherry-pick cleanup');
   try {
-    const { root, worktree, saved, savedTwo, admin } = fixture(base);
+    const { root, worktree, saved, savedTwo, admin } = await fixture(base);
     // The launch the worker runs under: the coordinator checkout read-only in a mount namespace,
     // the assignment worktree and its own git admin re-exposed writable.
     const confinement = await coordinatorConfinement({ kind: 'pi', args: [], coordinatorRoot: root, sessionDirectory: worktree, platform: 'linux', mountNamespaceWorks: true, bwrap: 'bwrap' });
@@ -130,7 +122,7 @@ test('integration:worker-cherry-pick-cleanup — inside the launched worker conf
       assert.ok(!output.includes(marker), marker);
     // The preserved work landed: the pick commit, the merge of the base tip, the resolution kept,
     // and no pick state on disk.
-    const log = execFileSync('git', ['-C', worktree, 'log', '--oneline', '-4'], { encoding: 'utf8' });
+    const log = git(worktree, 'log', '--oneline', '-4');
     assert.match(log, /saved work/, 'the saved commit was picked onto the branch');
     assert.match(log, /Merge/, 'the supported sync committed the merge');
     assert.equal(readFileSync(join(worktree, 'shared.txt'), 'utf8'), 'resolved by the worker\n', 'the worker resolution survived both syncs');

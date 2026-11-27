@@ -11,6 +11,7 @@ import { MERGE_PROTOCOL } from '../src/protocol-version.js';
 import { captureTrackedRoot, linuxProcessRecord, signalTrackedProcesses, supervise, systemdContainment } from '../src/session-watch.js';
 import { isConfirmedCoordinationRefusal } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 // Time-bomb allowance (GY-1694): the 2030-01-01 leases are judged against the snapshot's own 2030 now or a monotonic stub; the 2026 snapshot nows and deadline are stub fixtures; Date.now() builds relative expiries.
 
@@ -289,7 +290,7 @@ test('macOS foreground Herdr supervision refuses before launch without durable c
   });
   const env={...process.env,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_URL:url};
   try {
-    await exec('git',['init','-q'],{cwd});await exec('git',['-c','user.name=Test','-c','user.email=test@localhost','commit','--allow-empty','-m','Initial'],{cwd});
+    await gitRepo({root:cwd,files:{}});
     await assert.rejects(exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env}),/Cannot verify/);
     await exec('git',['remote','add','origin','git@github.com:other/project.git'],{cwd});
     await assert.rejects(exec(process.execPath,[launcher,'worktree','GY-1','1'],{cwd,env}),/different repositories/);
@@ -310,17 +311,13 @@ test('rework worktree reopens the exact observed PR branch while preserving its 
     else if(req.method==='POST'){reservations++;res.end('{}');}
     else{const task={id:'task',key:'GY-1',submission:{epoch:1,pr:1},candidate:{sha:candidate},workspaces:[{epoch:1,branch}],reworkRequested:true};res.end(JSON.stringify(req.url==='/api/work/GY-1'?task:[task]));}
   });
+  const {head:priorHead}=await gitRepo({root:cwd,branch,files:{'feature.txt':'submitted implementation\n'},message:'Submitted implementation'});
   const fakeBin=join(cwd,'fake-bin');await mkdir(fakeBin);const gitBinary=(await exec('which',['git'])).stdout.trim();
   const gitWrapper=join(fakeBin,'git');await writeFile(gitWrapper,`#!/bin/sh\nif [ "$1" = "fetch" ]; then exit 0; fi\nexec "${gitBinary}" "$@"\n`);await chmod(gitWrapper,0o755);
   const env={...process.env,PATH:`${fakeBin}:${process.env.PATH}`,GRAPHYARD_TOKEN:'fixture',GRAPHYARD_URL:url};
   try {
-    await exec('git',['init','-q','--initial-branch',branch],{cwd});
-    await writeFile(join(cwd,'feature.txt'),'submitted implementation\n');
-    await exec('git',['add','feature.txt'],{cwd});await exec('git',['-c','user.name=Test','-c','user.email=test@localhost','commit','-m','Submitted implementation'],{cwd});
-    const priorHead=(await exec('git',['rev-parse','HEAD'],{cwd})).stdout.trim();
-    candidate=(await exec('git',['-c','user.name=Test','-c','user.email=test@localhost','commit-tree',`${priorHead}^{tree}`,'-p',priorHead,'-m','Remote candidate'],{cwd})).stdout.trim();
-    await exec('git',['remote','add','origin','https://github.com/owner/project.git'],{cwd});
-    await exec('git',['update-ref',`refs/remotes/origin/${branch}`,candidate],{cwd});
+    candidate=git(cwd,'commit-tree',`${priorHead}^{tree}`,'-p',priorHead,'-m','Remote candidate');
+    git(cwd,'remote','add','origin','https://github.com/owner/project.git');git(cwd,'update-ref',`refs/remotes/origin/${branch}`,candidate);
     const result=JSON.parse((await exec(process.execPath,[launcher,'worktree','GY-1','2','a'.repeat(40)],{cwd,env})).stdout);
     assert.equal(reservations,1);assert.equal(result.branch,branch);
     assert.equal((await exec('git',['-C',result.path,'rev-parse','HEAD'],{cwd})).stdout.trim(),candidate);
@@ -405,15 +402,11 @@ test('sync merges origin/BASE without rebasing and judges only the merge: in-sco
       : req.url === '/api/work-snapshot' ? { now: new Date().toISOString(), work: [task] } : req.url === '/api/work/GY-1' ? task : [task])); });
   const env = { ...process.env, GRAPHYARD_TOKEN: 'fixture', GRAPHYARD_URL: url };
   const origin = join(cwd, 'origin'), clone = join(cwd, 'clone');
-  const git = async (repo: string, ...args: string[]) => (await exec('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { cwd: repo })).stdout.trim();
   const commit = async (repo: string, message: string) => { await git(repo, 'add', '-A'); await git(repo, 'commit', '-q', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
   const sync = () => exec(process.execPath, [launcher, 'sync', 'GY-1'], { cwd: clone, env });
   const refusal = async () => { try { await sync(); assert.fail('sync must exit non-zero'); } catch (error: any) { assert.equal(error.code, 1); return JSON.parse(error.stdout); } };
   try {
-    await mkdir(origin); await git(origin, 'init', '-q', '--initial-branch', 'main');
-    await mkdir(join(origin, 'src/scoped'), { recursive: true });
-    await writeFile(join(origin, 'src/shipped.ts'), 'export const shipped = 1;\nexport const kept = true;\n'); await writeFile(join(origin, 'src/scoped/feature.ts'), 'feature v0\n');
-    await commit(origin, 'Base');
+    await gitRepo({ root: origin, files: { 'src/shipped.ts': 'export const shipped = 1;\nexport const kept = true;\n', 'src/scoped/feature.ts': 'feature v0\n' }, message: 'Base' });
     await exec('git', ['clone', '-q', origin, clone]);
     // sync runs the worker's own git merge, so the clone carries the identity a worker's checkout has.
     await git(clone, 'config', 'user.name', 'Test'); await git(clone, 'config', 'user.email', 'test@localhost');
@@ -462,13 +455,9 @@ test(`unit:cli — sync runs from a directory inside the registered workspace (a
       : req.url === '/api/work-snapshot' ? { now: new Date().toISOString(), work: [task] } : req.url === '/api/work/GY-4' ? task : [task])); });
   const env = { ...process.env, GRAPHYARD_TOKEN: 'fixture', GRAPHYARD_URL: url };
   const origin = join(cwd, 'origin'), live = join(cwd, 'live');
-  const git = async (repo: string, ...args: string[]) => (await exec('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { cwd: repo })).stdout.trim();
   const commit = async (repo: string, message: string) => { await git(repo, 'add', '-A'); await git(repo, 'commit', '-q', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
   try {
-    await mkdir(origin); await git(origin, 'init', '-q', '--initial-branch', 'main');
-    await mkdir(join(origin, 'src'), { recursive: true });
-    await writeFile(join(origin, 'src/base.ts'), 'export const base = 1;\n');
-    await commit(origin, 'Base');
+    await gitRepo({ root: origin, files: { 'src/base.ts': 'export const base = 1;\n' }, message: 'Base' });
     await exec('git', ['clone', '-q', origin, live]);
     // sync runs the worker's own git merge, so the clone carries the identity a worker's checkout has.
     await git(live, 'config', 'user.name', 'Test'); await git(live, 'config', 'user.email', 'test@localhost');

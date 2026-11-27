@@ -10,8 +10,7 @@ import { bootstrapGate, gateSummary, runDiagnostics, type GateRecord } from '../
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { applicationSuspendedCases } from '../src/e2e/runner.js';
 import { previewCaseRuns, runServedPreviewCases, servedPreviewCases, type PreviewCaseRun } from '../src/merge-writer/served-previews.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { defaultChildRun } from '../src/child-runner.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 const own = 'unit:tests/preview-cases-scheduled.test.ts';
 const commit = 'a'.repeat(40), at = '2026-11-07T00:00:00.000Z';
@@ -67,16 +66,10 @@ test(`${own} — master status shows each case's last run and verdict, and a fai
 });
 
 test(`${own} — the served run checks the commit out and hands each case to its own e2e.serve; a commit it cannot serve is not covered`, async () => {
-  const root = await temporaryDirectory('preview-cases');
-  const git = (...args: string[]) => defaultChildRun('git', ['-C', root, ...args]);
-  await git('init', '-q', '-b', 'main');
-  await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@example.invalid');
-  await writeFile(join(root, 'graphyard.json'), JSON.stringify({ e2e: { serve: { command: 'node serve.mjs', url: 'http://127.0.0.1:4391', readySeconds: 1 } } }));
-  await git('add', '.'); await git('commit', '-q', '-m', 'served');
-  const served = (await git('rev-parse', 'HEAD')).trim();
+  const { root, head: served, git } = await gitRepo({ label: 'preview-cases', files: { 'graphyard.json': JSON.stringify({ e2e: { serve: { command: 'node serve.mjs', url: 'http://127.0.0.1:4391', readySeconds: 1 } } }) }, message: 'served' });
   await writeFile(join(root, 'graphyard.json'), '{}');
-  await git('add', '.'); await git('commit', '-q', '-m', 'no serve');
-  const bare = (await git('rev-parse', 'HEAD')).trim();
+  git('add', '.'); git('commit', '-q', '-m', 'no serve');
+  const bare = git('rev-parse', 'HEAD');
   const handed: string[][] = [];
   const runs = await runServedPreviewCases({ root, commit: served, hostEnvironment: { PATH: process.env.PATH, HOME: root }, runGroup: async (_target, proofs) => { handed.push([...proofs]); return proofs.map(proof => ({ proof, case: proof.slice(4), executed: 1, failed: 0 })); } });
   assert.deepEqual(handed, servedPreviewCases.map(id => [`e2e:${id}`]), 'each case has its own serve, so one failing stops no other');

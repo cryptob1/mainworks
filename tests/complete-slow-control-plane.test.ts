@@ -1,12 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3330: a control plane slower than the CLI's own request bound (`cliRequestTimeoutMs`, 120 s)
 // must not strand a finished head. This case runs the real CLI against a stub plane whose
@@ -22,19 +20,7 @@ const work = { id: 'id-1', key: 'GY-1', stage: 'build', lease: { epoch: 1, owner
 const submitted = { id: 'id-1', key: 'GY-1', stage: 'review', submission: { epoch: 1, pr: 7 }, lease: null };
 
 /** A committed, clean worktree: what `complete --head` submits is its HEAD. */
-async function committedWorktree(label: string) {
-  const root = await temporaryDirectory(label);
-  const git = (...args: string[]) => {
-    const result = spawnSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-    assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-    return result.stdout.trim();
-  };
-  git('init', '--quiet');
-  await writeFile(join(root, '.gitignore'), '.graphyard/\n');
-  git('add', '.gitignore');
-  git('commit', '--quiet', '--allow-empty', '-m', 'the change');
-  return { root, head: git('rev-parse', 'HEAD') };
-}
+const committedWorktree = (label: string) => gitRepo({ label, files: { '.gitignore': '.graphyard/\n' }, message: 'the change' });
 
 /**
  * The control-plane stub for one scenario. `answerAfterMs` answers the first submit — applied and

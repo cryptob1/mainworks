@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer as createHttpServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -12,13 +11,13 @@ import { setupFromZeroChecks, setupLine, type SetupCheck } from '../src/setup-fr
 import type { MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2976, GY-3201: a managed repository whose graphyard.json declares a node application has its
 // main installed at the root, built in the application's directory and started there on a loopback
 // port (PORT) after every merge, and master status, the dashboard and doctor report it. A
 // repository that declares none reports exactly what it reported before.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 /** Waits until the URL answers, so a just-restarted serve process is judged by its answer, not its spawn. */
 const untilAnswers = async (url: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -75,9 +74,7 @@ const packageLock = `${JSON.stringify({ name: 'fixture-game', version: '1.0.0', 
 /** A fixture managed repository: an origin, a pusher that commits to it, and the launcher checkout, with the node application declared on main. */
 async function managedRepository(label: string) {
   const base = await temporaryDirectory(label);
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), root = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true }), root = join(base, 'checkout');
   await push(pusher, { 'package.json': packageJson, 'package-lock.json': packageLock, 'apps/game/build.js': buildJs, 'apps/game/serve.js': serveJs, 'apps/game/fail.txt': 'no' }, 'the build and its serve');
   await push(pusher, { 'graphyard.json': mainworksJson }, 'declare the node application');
   git(base, 'clone', '-q', origin, root);
@@ -216,9 +213,7 @@ test('unit:tests/managed-serve.test.ts — a repository declaring no node applic
   // exactly what it read before this feature — unconfigured, no served commit, no atMain claim, no
   // failure, main's tip named, and the serve fields null when nothing is declared.
   const base = await temporaryDirectory('serve-optional');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), root = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const { root: pusher, origin } = await gitRepo({ root: join(base, 'pusher'), origin: true }), root = join(base, 'checkout');
   await push(pusher, { 'game.txt': 'the game\n', 'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'public', build: null }] } }) }, 'the game, declaring only a static site');
   git(base, 'clone', '-q', origin, root);
   const main = git(root, 'rev-parse', 'refs/remotes/origin/main');
