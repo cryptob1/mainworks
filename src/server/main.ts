@@ -102,6 +102,12 @@ export async function main(options: MainOptions = {}) {
       res.end(JSON.stringify({ error: 'Startup initialization has not completed; retry shortly', retryable: true }));
       return;
     }
+    // GY-4001: the board is not read before startup completes, so no reader takes an unloaded board for a stall.
+    if (!ready && req.method === 'GET' && new URL(req.url ?? '/', 'http://localhost').pathname === '/api/work-snapshot') {
+      res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '5' });
+      res.end(JSON.stringify({ error: 'Startup initialization has not completed; retry shortly', retryable: true, starting: true }));
+      return;
+    }
     handle(req, res);
   });
   let receiptsPrunedAt = 0, ledgerCompactedAt = 0;
