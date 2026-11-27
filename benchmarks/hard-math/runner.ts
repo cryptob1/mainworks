@@ -188,13 +188,15 @@ export async function execute(configInput:unknown,fixture?: (context:RunContext)
       }
       return readSnapshot();
     };
+    // A commit's passing certification is its artifact: walking the same tree again proves nothing new (GY-3950).
+    const certified=new Map<string,NonNullable<Receipt['artifact']>>();
     const certify=async(item:any)=>{
       const head=item.candidate?.sha;if(!head) return false;
       const binding=`${head}-${item.candidate.baseSha}-${item.policyRevision}`;
       const target=join(directory,`certify-${binding}`),scratch=join(directory,`scratch-${binding}`);
       await git(repository.root,'worktree','add','--detach','-q',target,head);
       let passed=false,reason='';
-      try {await verifyArtifact({root:target,sha:head,seed:config.seed,python:config.oraclePython,oracleSource:join(oracleDirectory,'verify.py'),oracleDigest:receipt.oracleDigest,scratch,hidden:[install,repository.root,oracleDirectory,join(config.sourceRoot,'.graphyard')],signal:abort.signal});passed=true;}
+      try {certified.set(head,await verifyArtifact({root:target,sha:head,seed:config.seed,python:config.oraclePython,oracleSource:join(oracleDirectory,'verify.py'),oracleDigest:receipt.oracleDigest,scratch,hidden:[install,repository.root,oracleDirectory,join(config.sourceRoot,'.graphyard')],signal:abort.signal}));passed=true;}
       catch(error){reason=String(error);receipt.failures.push({at:new Date().toISOString(),component:'integration',head,reason,stack:failureStack(error)});}
       await plane!.call(`work/${item.id}/evidence`,producer.token,{proof:'manual:certified-artifact',sha:head,baseSha:item.candidate.baseSha,policyRevision:item.policyRevision,result:passed?'pass':'fail',executed:generate(config.seed).length,skipped:0,exercise:{behaviour:'Empty-root starter solver, independently rejected before implementation',result:'fail',executed:1}});
       await checkpoint();return passed;
@@ -234,8 +236,8 @@ export async function execute(configInput:unknown,fixture?: (context:RunContext)
     const tip=await git(repository.origin,'rev-parse','refs/heads/main');
     if(tip!==final.merge) throw new Error('Final artifact is not origin/main delivery');
     const delivered=join(directory,'delivered');
-    await git(repository.root,'worktree','add','--detach','-q',delivered,tip);
-    receipt.artifact=await verifyArtifact({root:delivered,sha:tip,seed:config.seed,python:config.oraclePython,oracleSource:context.oracleFile,oracleDigest:receipt.oracleDigest,scratch:join(directory,'artifact-scratch'),hidden:[install,repository.root,config.oracleDirectory,join(config.sourceRoot,'.graphyard')],signal:abort.signal});
+    if(!certified.has(tip)) await git(repository.root,'worktree','add','--detach','-q',delivered,tip);
+    receipt.artifact=certified.get(tip)??await verifyArtifact({root:delivered,sha:tip,seed:config.seed,python:config.oraclePython,oracleSource:context.oracleFile,oracleDigest:receipt.oracleDigest,scratch:join(directory,'artifact-scratch'),hidden:[install,repository.root,config.oracleDirectory,join(config.sourceRoot,'.graphyard')],signal:abort.signal});
     enforce();receipt.outcome='PASS';receipt.reason=fixture?'Controlled executor fixture passed isolated delivery and certification; this is not a real-agent rebuild.':'Independently verified CLI/API/UI built from the pushed final merge.';
     receipt.endedAt=new Date().toISOString();
   } catch(error) {

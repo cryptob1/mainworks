@@ -31,16 +31,16 @@
 import { createHash } from 'node:crypto';
 import { trialLauncher } from './merge-writer/trial-container.js';
 import { trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
-import { defaultDiskFloorGb, minimumTrialContainers, trialHotCelsius, trialPressureBoundSeconds, trialStartOrder } from './merge-writer/trial-load.js';
+import { cpuSensorNames, defaultDiskFloorGb, minimumTrialContainers, trialHotCelsius, trialPressureBoundSeconds, trialStartOrder } from './merge-writer/trial-load.js';
 
-/** Read-only: Docker's answer, cores, load, the /proc/stat cpu line, CPU sensors and the trial containers running now. */
+/** Read-only: Docker's answer, cores, load, the /proc/stat cpu line, CPU sensors (with GY-3948 5-sample median over ~2s) and the trial containers running now. */
 export const hostProbeScript = [
   // GY-3697: without Docker, one line says whether its user unit is enabled and active.
   'docker info --format "{{.ID}}" >/dev/null 2>&1 || { echo "docker-unit $(systemctl --user is-enabled docker.service 2>/dev/null) $(systemctl --user is-active docker.service 2>/dev/null)"; echo graphyard-no-docker; exit 0; }',
   'echo "cores $(nproc)"',
   'echo "load $(cut -d " " -f 1 /proc/loadavg)"',
   'head -n 1 /proc/stat',
-  'for d in /sys/class/hwmon/hwmon*; do n=$(cat "$d/name" 2>/dev/null); for t in "$d"/temp*_input; do [ -r "$t" ] && echo "temp $n $(cat "$t")"; done; done',
+  `_s=; _i=0; while [ $_i -lt 5 ]; do _m=; for d in /sys/class/hwmon/hwmon*; do n=$(cat "$d/name" 2>/dev/null); for t in "$d"/temp*_input; do [ -r "$t" ] || continue; v=$(cat "$t" 2>/dev/null); [ $_i -eq 0 ] && echo "temp $n $v"; case "$n" in ${cpuSensorNames.join('|')}) case "$v" in ''|*[!0-9]*) ;; *) v=$((v / 1000)); [ -z "$_m" ] || [ "$v" -gt "$_m" ] && _m=$v ;; esac ;; esac; done; done; [ -n "$_m" ] || break; _s="$_s$_m\\n"; _i=$((_i + 1)); [ $_i -lt 5 ] && sleep "\${GRAPHYARD_PROBE_SAMPLE_SECONDS:-0.5}"; done; [ -n "$_s" ] && echo "temp-median $(printf "$_s" | sort -n | sed -n "$(((_i + 1) / 2))p")"`,
   'echo "runs $(docker ps -q --filter name=^mainworks-trial- | wc -l)"',
 ].join('\n');
 
