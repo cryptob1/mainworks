@@ -486,11 +486,16 @@ export async function recordCouldNotRunReview(config: Pick<MasterConfig, 'url' |
   const response = await fetch(`${config.url}/api/work/${encodeURIComponent(work.id)}/product-review`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `product-could-not-run:${review.sha}:${createHash('sha256').update(review.reason).digest('hex').slice(0, 16)}` }, body: JSON.stringify({ reviewer: review.reviewer, sha: review.sha, baseSha: review.baseSha, verdict: 'could-not-run', findings: review.reason.slice(0, 65_536), screenshots: [] }), signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`The control plane refused the could-not-run record for ${work.key} (${response.status})`);
 }
-/** GY-3999: the last `lines` lines a failed step printed — stdout, then stderr — without npm's notice lines. */
-export function failedStepTail(error: unknown, lines = 40): string {
-  const { stdout = '', stderr = '', message = String(error) } = (error ?? {}) as { stdout?: string; stderr?: string; message?: string };
+/**
+ * GY-3999/GY-4012: why a step failed — its exit code or signal, whether its timeout fired, its elapsed
+ * seconds — then the last `lines` lines it printed (stdout, then stderr, without npm's notice lines),
+ * or 'no output'.
+ */
+export function failedStepTail(error: unknown, elapsedMs: number, lines = 40): string {
+  const { stdout = '', stderr = '', status, code, signal, timedOut, message = String(error) } = (error ?? {}) as { stdout?: string; stderr?: string; status?: number | null; code?: unknown; signal?: string | null; timedOut?: boolean; message?: string };
+  const exit = status ?? code, how = signal ? `killed by ${signal}` : typeof exit === 'number' ? `exit code ${exit}` : message.split('\n')[0];
   const output = `${stdout}\n${stderr}`.split('\n').filter(line => line.trim() && !/^npm notice\b/.test(line));
-  return output.slice(-lines).join('\n') || message;
+  return `${how}; review timeout fired: ${timedOut ? 'yes' : 'no'}; elapsed ${Math.round(elapsedMs / 1000)} s\n${output.slice(-lines).join('\n') || 'no output'}`;
 }
 /** GY-3331: the head's own e2e.serve declaration, read from the graphyard.json its commit holds; null when the head declares none (or its policy does not parse). */
 export async function headServeDeclaration(root: string, sha: string, run: ChildRun = defaultChildRun): Promise<E2eServe | null> {
@@ -1090,8 +1095,8 @@ export async function launchReview(root: string, work: Work, profileName: string
                 const git = dependencies.run ?? defaultChildRun;
                 await git('git', ['-C', root, 'worktree', 'add', '--detach', checkout.worktree, binding.sha]);
                 // GY-3999: a failed step's last lines are recorded on the item, so its reader sees whether the head or the machine failed.
-                const stepFailed = async (argv: string[], error: unknown) => {
-                  const reason = `${argv.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${failedStepTail(error)}`;
+                const stepFailed = async (argv: string[], error: unknown, startedAt: number) => {
+                  const reason = `${argv.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${failedStepTail(error, Date.now() - startedAt)}`;
                   await (dependencies.recordCouldNotRun ?? recordCouldNotRunReview)(config, work, { reviewer: reviewerIdentity, sha: binding.sha, baseSha: binding.baseSha, reason }).catch(() => { /* the launch failure itself is reported */ });
                   return new Error(reason);
                 };
@@ -1102,15 +1107,17 @@ export async function launchReview(root: string, work: Work, profileName: string
                 // GY-3579: a head the shared install cannot answer for (its lockfile differs) installs its own, the frozen contained install a worker's worktree gets.
                 if ((await shareDependencies(root, checkout.worktree)).skipped.length && lockfiles.some(name => existsSync(join(checkout.worktree, name)))) {
                   const argv = installArgv(packageManager(checkout.worktree)), install = containedInstall(checkout.worktree, argv);
+                  const startedAt = Date.now();
                   try { await git(install.command, install.args, { cwd: checkout.worktree, env: npmCiEnvironment(), timeoutMs: 600_000 }); }
-                  catch (error) { throw await stepFailed(argv, error); }
+                  catch (error) { throw await stepFailed(argv, error, startedAt); }
                 }
                 // GY-3581: the repository's own build step runs before the command, as the merge trial's does, so a dashboard served from dist/ answers.
                 const manager = packageManager(checkout.worktree), build = buildArgv(manager, null);
                 const scripts = await readFile(join(checkout.worktree, 'package.json'), 'utf8').then(text => JSON.parse(text)?.scripts, () => undefined);
                 if (build && (scripts?.build || (manager.name === 'pnpm' && manager.workspace))) {
+                  const startedAt = Date.now();
                   try { await git(build[0]!, build.slice(1), { cwd: checkout.worktree, env: buildEnv, timeoutMs: 1_200_000 }); }
-                  catch (error) { throw await stepFailed(build, error); }
+                  catch (error) { throw await stepFailed(build, error, startedAt); }
                 }
                 // GY-3751: each review serves on its own free port; a command that binds the declared port takes turns on it.
                 serving = await serveReviewHead({ root, id, worktree: checkout.worktree, serve: declared, env: buildEnv, refuseTurn: dependencies.refuseServeTurn });
