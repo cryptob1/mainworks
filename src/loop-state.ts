@@ -32,7 +32,7 @@ export async function loopStateClient(rootOrConfig: string | Config): Promise<Lo
   const injected = loopStateContext.getStore();
   if (injected) return injected(typeof rootOrConfig === 'string' ? resolve(rootOrConfig) : scopeOf(rootOrConfig));
   const config: Config = typeof rootOrConfig === 'string'
-    ? await persistLoopStateScope(resolve(stateDirectory(rootOrConfig), 'master.json'), JSON.parse(await readFile(resolve(stateDirectory(rootOrConfig), 'master.json'), 'utf8'))) : rootOrConfig;
+    ? JSON.parse(await readFile(resolve(stateDirectory(rootOrConfig), 'master.json'), 'utf8')) : rootOrConfig;
   const scope = scopeOf(config);
   const request = async (kind: LoopStateKind, body?: unknown, attempt = 1): Promise<any> => {
     const response = await fetch(`${config.url}/api/loop-state/${scope}/${kind}`, {

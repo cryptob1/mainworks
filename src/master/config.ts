@@ -20,7 +20,7 @@ import { migrateHerdr } from '../herdr-migration.js';
 import { controlPlaneAttention } from './attention.js';
 import { defaultMergeWriterParallel } from './merge-writer-settings.js';
 import { trialHotCelsius } from '../merge-writer/trial-load.js';
-import { persistLoopStateScope, scopeOf } from '../loop-state.js';
+import { scopeOf } from '../loop-state.js';
 import { setting } from '../setting.js';
 import { stateDirectory, defaultConfigHome } from '../install/layout.js';
 
@@ -52,7 +52,6 @@ async function readMasterConfig(root: string): Promise<MasterConfig> {
   // trim GY-3292 applied in memory (a file the pre-cap loop grew past the limit, never marking its
   // profiles) is the repair's fallback once the loop's own marked entries are exhausted.
   const config = parsed.success ? parsed.data : await repairGrownWorkers(file, stored, parsed.error);
-  config.loopStateScope = (await persistLoopStateScope(file, parsed.success ? stored : config)).loopStateScope;
   config.url = serverOrigin(config.url);
   const repositoryRoot = resolve(root), credentialFile = resolve(config.credentialFile);
   if (!isAbsolute(config.credentialFile) || credentialFile === repositoryRoot || credentialFile.startsWith(`${repositoryRoot}/`)) throw new Error('Master credential file must be outside the repository and use an absolute path');
@@ -208,7 +207,8 @@ export async function setupMaster(root: string, input: { url: string; token: str
   const instructions = managedInstructions(withoutMasterInstructions(existing));
   const directory = await localDirectory(root);
   await atomicPrivateText(credentialFile, token);
-  config.loopStateScope = scopeOf(config);
+  // A rerun that re-points the credential keeps the scope its ledgers were written under.
+  config.loopStateScope = scopeOf(previous ?? config);
   await atomicPrivateWrite(resolve(directory, 'master.json'), config);
   const temporary = `${instructionsFile}.${randomUUID()}.tmp`;
   const { writeFile, rename } = await import('node:fs/promises');
