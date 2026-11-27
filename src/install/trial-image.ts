@@ -10,7 +10,7 @@ import { timedPull } from './image-pulls.js';
 /** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'mainworks-trial';
 const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
-export const trialImageBuildArgs = (root: string) => ['buildx', 'build', '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
+export const trialImageBuildArgs = (root: string) => ['buildx', 'build', ...(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : []), '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
 /** `published` (GY-3214) is the trial image Mainworks published for the source checkout's commit, null for a tree no published image holds. */
 export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, published: string | null): PlanAction => ({
   id: 'provider.trial-image', target: 'provider', state: 'update',

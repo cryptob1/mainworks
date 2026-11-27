@@ -50,6 +50,7 @@ test(`${proof} — the trial's cases run on two ready hosts, a secret's and an e
 
   // No host under its heat limit: every case runs here, exactly as before.
   const hot = await fixture.trial(['gy-compute@a', 'gy-compute@b'], ['e2e:alpha', 'e2e:beta'], () => ({ celsius: 99 }));
+  assert.deepEqual(hot.heatWaits, [10_000, 10_000], 'both the e2e host read and the test shard read wait their ten seconds on the fake clock');
   assert.deepEqual([hot.where('alpha'), hot.where('beta')], [['here'], ['here']], hot.result.logTail);
   assert.ok(hot.result.e2e?.every(item => item.host === undefined && item.failed === 0), JSON.stringify(hot.result.e2e));
 });
