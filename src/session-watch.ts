@@ -2,7 +2,7 @@
 // signalling, lease renewal through control-plane restarts, the headless run log and surrender.
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { maskSecrets } from './redaction.js';
 import { sessionScopeProperties } from './session-share.js';
@@ -140,6 +140,9 @@ export function assignmentSurrender(epoch: number, argv: string[] = process.argv
     await throughRestart(() => post(url, token, `work/${assignment.key}/release`, body), performance.now() + controlPlaneRestartWindowMs);
   };
 }
+
+/** How long a supervised session may write nothing to its run log before its attempt ends (GY-3961). */
+export const sessionIdleMs = 30 * 60_000;
 
 /** How long before the lease's own expiry a supervisor stops retrying a failed renewal (GY-274). */
 export const renewalSafetyMarginMs = 15_000;
@@ -468,18 +471,26 @@ export async function supervise(command: string, args: string[], epoch: number, 
         }
         child.on('error', error => { console.error(error.message); stop(1); });
         child.on('exit', (code, signal) => { endedOnItsOwn(`the agent process exited (${signal ?? `code ${code}`}) while its lease was live`); stop(code ?? 1); });
+        // GY-3961: a session whose run log has not grown for 30 minutes is hung; its attempt ends.
+        const logSize = () => { try { return statSync(options.log!).size; } catch { return 0; } };
+        let loggedSize = options.log ? logSize() : 0, loggedAt = now();
         timer = scheduleInterval(async () => {
           if (pending || stopping) return;
           pending = true;
           const surrenderOrphaned = async (cause: string) => {
             cancelInterval(timer);
-            console.error(`Mainworks worker supervision has nothing left to supervise: ${cause}. Releasing the lease and stopping.`);
+            console.error(`Mainworks worker supervision is ending the attempt: ${cause}. Releasing the lease and stopping.`);
             await surrenderAssignment(cause);
             stop(1);
           };
           try {
             const cause = orphaned();
             if (cause) { await surrenderOrphaned(cause); return; }
+            if (options.log) {
+              const size = logSize();
+              if (size !== loggedSize) { loggedSize = size; loggedAt = now(); }
+              else if (now() - loggedAt >= sessionIdleMs) { await surrenderOrphaned(`the session wrote no output for ${Math.round(sessionIdleMs / 60_000)} minutes`); return; }
+            }
             const renewal = await renewWithRetry(() => stopping, orphaned, () => { if (!stopping) armDeadline(); });
             if (typeof renewal === 'object') await surrenderOrphaned(renewal.orphaned);
             else if (renewal === 'renewed') { if (!stopping) armDeadline(); }
