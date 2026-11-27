@@ -1,135 +1,132 @@
-// Concern: the stall alarm (GY-3432) — one check per cycle over readings the loop already has. Free
-// worker slots and ready work with no launch for 10 minutes, or an open item nobody has acted on
-// for an hour, raise one line naming the cause: it stands first in `master status`, on the Master
-// page, and wakes the master once (masterCauses). It clears on its own the cycle it no longer holds.
-// GY-3996: a ready item still carrying an open blocker an hour after it last changed is one too, woken hourly.
-import type { Work } from '../model.js';
-import type { AgentRegistry } from '../model/registry.js';
-import { exhaustionEvidence } from '../model/account-quota.js';
+// Concern: one alarm for any open change that has stopped moving (GY-4000) — judged by time since
+// its last moving event against 3x the median of the last 50 finished items in that stage (30m..4h;
+// 30m regardless when nobody owns the next step), plus the empty-board alarm (GY-3778).
+import { isClosed, type Work } from '../model.js';
+import { formatDuration } from '../model/duration.js';
 import { parkedOnHuman } from '../model/human-request.js';
-import { blockerSince } from '../model/work.js';
+import { reworkCapHeld } from '../model/rework-ground.js';
+import { unproducedManualProofs } from '../model/unproduced-attestation.js';
+import type { FlowEvent } from '../flow-numbers.js';
 import { actionDetailMax, storeAction, type DaemonState } from './state.js';
 
 export const stallAlarmKey = 'stall-alarm';
-/** Free capacity and ready work with no launch this long raise the alarm. */
-const stallIdleMs = 10 * 60_000;
 /** GY-3778: at least this many free builder slots with no ready, released or releasable work for 15 minutes raise the empty-board alarm. */
 const emptyBoardMinFreeSlots = 3;
 const emptyBoardIdleMs = 15 * 60_000;
 const emptyBoardCauseMarker = 'the line has no work to build';
 export const isEmptyBoardAlarm = (detail: string) => detail.includes(emptyBoardCauseMarker);
-/** GY-3996: marker for a ready item left with an open blocker and no change for an hour. */
-const staleBlockerMarker = 'is ready with an open blocker (';
-export const isStaleBlockerAlarm = (detail: string) => detail.includes(staleBlockerMarker);
-/** An open item with no change and no actor this long raises it too. */
-const noActorMs = 60 * 60_000;
 
-/** GY-3996: a blocker that waits on an ask already has its own attention line — the owner's answer (a human request), or a stored scope request still open. */
-const waitsOnAsk = (item: Work) => parkedOnHuman(item)
-  || (item.agentRequests ?? []).some(request => request.state === 'open' && ((request.type as string) === 'scope-request' || !!request.humanDecision || request.decider?.kind === 'human'));
+const minStallMs = 30 * 60_000, maxStallMs = 4 * 3_600_000;
+const nonMovingKinds = new Set(['heartbeat', 'github.observed', 'priority', 'message', 'taste', 'sync']);
 
+export type NextStepOwner = 'a builder' | 'a reviewer' | 'the merge step' | 'the Lead' | 'a person' | 'nobody';
+export interface NotMovingItem { key: string; title: string; stage: string; ageMs: number; owner: NextStepOwner; blocker?: string }
 export interface StallReadings {
-  now: number;
-  /** Open items in scope; `ready` are the ones dispatch could launch now; `releasable` are unreleased backlog items eligible for release. */
-  open: readonly Work[]; ready: readonly Work[]; releasable?: readonly Work[];
-  /** GY-3778: every open released item, held, blocked or in flight included; any one means the board is not empty. */
-  released?: number;
-  freeSlots: number;
-  /** GY-3473: what holds every implementation launch this cycle — disk, CPU pressure, an untrusted checkout, a running batch gate — as dispatch itself decided it. */
-  holds?: readonly string[];
-  /** GY-3502: the dispatch gate refusing each ready item this cycle, by key, as `KEY waits: why`. */
-  gates?: ReadonlyMap<string, string>;
-  state: Pick<DaemonState, 'actions' | 'stepFailures' | 'launchBackoff' | 'cpuPressure' | 'release' | 'lock' | 'mergeWriter'>;
-  registry: Pick<AgentRegistry, 'accounts' | 'roles'> | null;
-  /** The commit the deploy unit serves, null when none is recorded. */
-  serving: string | null;
+  now: number; open: readonly Work[]; ready: readonly Work[]; releasable?: readonly Work[];
+  released?: number; freeSlots: number; state: Pick<DaemonState, 'actions' | 'lock'>;
 }
 
 const iso = (at: number) => new Date(at).toISOString();
-const live = (item: Work, now: number) => (!!item.lease && Date.parse(item.lease.expiresAt) > now) || (item.sessions ?? []).some(session => session.state === 'running');
+const median = (values: number[]) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+};
 
-/**
- * The newest worker launch that took: a session still running, a session's recorded worktree
- * progress, or a dispatch the loop recorded done; else the loop's own start. A launch that failed
- * and exited is not one.
- */
-function lastLaunchAt(state: StallReadings['state'], work: readonly Work[]): number | null {
-  const times: number[] = [];
-  for (const item of work) for (const session of item.sessions ?? []) {
-    if (session.kind !== 'implementation') continue;
-    if (session.state === 'running') times.push(Date.parse(session.startedAt ?? ''));
-    if (session.workTree) times.push(Date.parse(session.workTree.at));
+/** Median time spent in each stage over the last 50 finished items. */
+function stageMedians(work: readonly Work[], eventsByWork: ReadonlyMap<string, readonly FlowEvent[]>): Record<string, number> {
+  const finished = work.filter(item => item.stage === 'done' && !isClosed(item))
+    .sort((a, b) => Date.parse(b.delivery?.mergedAt ?? b.observation?.mergedAt ?? b.stageEnteredAt) - Date.parse(a.delivery?.mergedAt ?? a.observation?.mergedAt ?? a.stageEnteredAt))
+    .slice(0, 50);
+  const samples = new Map<string, number[]>();
+  for (const item of finished) {
+    const marks = (eventsByWork.get(item.id) ?? []).filter(e => e.stage && Number.isFinite(Date.parse(e.at))).map(e => ({ at: Date.parse(e.at), stage: e.stage! })).sort((a, b) => a.at - b.at);
+    const perStage = new Map<string, number>();
+    for (let i = 0; i < marks.length; i++) {
+      if (i > 0 && marks[i - 1]!.stage === marks[i]!.stage) continue;
+      const next = marks.slice(i + 1).find(later => later.stage !== marks[i]!.stage);
+      if (next && marks[i]!.stage !== 'done') perStage.set(marks[i]!.stage, (perStage.get(marks[i]!.stage) ?? 0) + Math.max(0, next.at - marks[i]!.at));
+    }
+    for (const [stage, dur] of perStage) samples.set(stage, [...(samples.get(stage) ?? []), dur]);
   }
-  for (const [key, action] of Object.entries(state.actions)) if (key.startsWith('dispatch:') && action.state === 'done') times.push(Date.parse(action.at));
-  const seen = times.filter(Number.isFinite);
-  return seen.length ? Math.max(...seen) : state.lock ? Date.parse(state.lock.startedAt) : null;
+  return Object.fromEntries([...samples].flatMap(([stage, list]) => { const m = median(list); return m === null ? [] : [[stage, m]]; }));
 }
 
-/**
- * Why nothing launches now, from what the loop already read, most direct first: dispatch's own
- * holds this cycle, then a failing dispatch step or a launch refusal still backing off — an expired
- * backoff, or one for a done item, is history, not a cause (GY-3473, GY-3502). Else the dispatch gate
- * refusing each of the first five ready items; an item with no actor only when no gate explains it.
- */
-export function stallCauses({ now, open, ready, holds = [], gates, state, registry, serving }: StallReadings): string[] {
-  const causes = [...holds];
-  // GY-3502: a launch failure counts only while its back-off runs and its item is open.
-  const openIds = new Set(open.map(item => item.id));
-  const launchFailure = Object.entries(state.launchBackoff).filter(([key, entry]) => Date.parse(entry.until) > now && openIds.has(key.slice(key.indexOf(':') + 1))).map(([, entry]) => entry).sort((a, b) => Date.parse(b.until) - Date.parse(a.until))[0];
-  const dispatchError = state.stepFailures.dispatch?.reason ?? (launchFailure && `${launchFailure.reason} (launches back off until ${launchFailure.until})`);
-  if (dispatchError) causes.push(`last dispatch error: ${dispatchError}`);
-  const names = registry?.roles.find(role => role.name === 'worker')?.accounts ?? [];
-  const accounts = (registry?.accounts ?? []).filter(account => account.enabled && names.includes(account.name));
-  const spent = accounts.map(account => [account.name, exhaustionEvidence(account.quota, now)] as const);
-  if (spent.length && spent.every(([, evidence]) => evidence)) causes.push(`every worker account is out of quota: ${spent.map(([name, evidence]) => `${name} (${evidence})`).join(', ')}`);
-  const loaded = state.release?.commit ?? null;
-  if (serving && loaded && serving !== loaded) causes.push(`the loop runs ${loaded.slice(0, 12)}, older than the served ${serving.slice(0, 12)}; restart it with mainworks master restart`);
-  if (!causes.length) causes.push(...ready.slice(0, 5).map(item => gates?.get(item.key) ?? `${item.key} has no actor: ready, with no lease and no session`));
-  return causes;
+/** Last instant that changed an item's stage, head, session, verdict, blocker or hold. */
+function lastMovedAt(item: Work, events: readonly FlowEvent[], now: number): number {
+  const times: number[] = [
+    item.stageEnteredAt, item.blockedAt, item.humanRequest?.at, item.candidate?.createdAt, item.lastRework?.at, item.productReview?.at, item.mergeLedger?.intentAt, item.mergeLedger?.pushedAt,
+    ...(item.sessions ?? []).flatMap(s => [s.startedAt, s.endedAt, s.workTree?.at]),
+    ...(item.observation?.reviews ?? []).map(r => r.submittedAt), ...(item.evidence ?? []).map(e => e.at),
+  ].map(ts => Date.parse(ts ?? ''));
+  let prevStage: string | null = null;
+  for (const event of events) {
+    const at = Date.parse(event.at);
+    if (!Number.isFinite(at)) continue;
+    const stageChanged = !!event.stage && prevStage !== null && event.stage !== prevStage;
+    if (event.stage) prevStage = event.stage;
+    if (stageChanged || !nonMovingKinds.has(event.kind)) times.push(at);
+  }
+  const valid = times.filter(t => Number.isFinite(t) && t <= now);
+  return valid.length ? Math.max(...valid) : Math.min(Date.parse(item.createdAt) || now, now);
 }
+
+/** Who owns the next step on an open item. */
+function nextStepOwner(item: Work, all: readonly Work[], now: number): NextStepOwner {
+  const asks = (item.agentRequests ?? []).filter(request => request.state === 'open');
+  if (parkedOnHuman(item) || asks.some(request => !!request.humanDecision || request.decider?.kind === 'human')) return 'a person';
+  if (asks.some(request => (request.type as string) === 'scope-request')) return 'the Lead';
+  const awaitingSignoff = item.stage === 'acceptance' && Array.isArray(item.gates) && Array.isArray(item.criteria) && Array.isArray(item.violations) && unproducedManualProofs(item, [...all], new Date(now)).length > 0;
+  if (!item.criteria?.length || item.hold || reworkCapHeld(item) || awaitingSignoff) return 'the Lead';
+  const sessions = (item.sessions ?? []).filter(s => s.state === 'running');
+  const backedOff = (item.actionQueue?.actions ?? []).some(a => a.state === 'pending' && !!a.retryAt && Date.parse(a.retryAt) <= now && !(a.claim && Date.parse(a.claim.expiresAt) > now));
+  if ((backedOff || item.blocker) && !sessions.length) return 'nobody';
+  // Ready work with no blocker waits in the queue for a builder slot, judged by the ready stage's usual time.
+  if (sessions.some(s => s.kind === 'implementation') || item.stage === 'ready' || (!!item.lease && Date.parse(item.lease.expiresAt) > now && item.stage === 'build')) return 'a builder';
+  if (item.stage === 'review') return sessions.some(s => s.kind === 'review') ? 'a reviewer' : 'nobody';
+  return item.stage === 'test' || item.stage === 'merge' || item.stage === 'acceptance' ? 'the merge step' : 'nobody';
+}
+
+/** Derive not-moving open items and items waiting on a person (listed separately), oldest first. */
+export function deriveNotMoving(work: readonly Work[], now: number, eventsByWork: ReadonlyMap<string, readonly FlowEvent[]> = new Map()): { notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[] } {
+  const medians = stageMedians(work, eventsByWork), notMoving: NotMovingItem[] = [], waitingOnPerson: NotMovingItem[] = [];
+  for (const item of work) {
+    // Work waiting on an open dependency is not itself stalled: the dependency is, and is reported.
+    if (item.stage === 'done' || isClosed(item) || (!item.ready && item.stage === 'backlog') || item.dependencies?.some(id => work.find(dep => dep.id === id)?.stage !== 'done')) continue;
+    const owner = nextStepOwner(item, work, now), ageMs = Math.max(0, now - lastMovedAt(item, eventsByWork.get(item.id) ?? [], now));
+    const entry: NotMovingItem = { key: item.key, title: item.title, stage: item.stage, ageMs, owner, ...(item.blocker ? { blocker: item.blocker } : {}) };
+    if (owner === 'a person') { waitingOnPerson.push(entry); continue; }
+    const thresholdMs = owner === 'nobody' ? minStallMs : Math.min(maxStallMs, Math.max(minStallMs, 3 * (medians[item.stage] ?? 0)));
+    if (ageMs > thresholdMs) notMoving.push(entry);
+  }
+  const oldestFirst = (a: NotMovingItem, b: NotMovingItem) => b.ageMs - a.ageMs || a.key.localeCompare(b.key);
+  return { notMoving: notMoving.sort(oldestFirst), waitingOnPerson: waitingOnPerson.sort(oldestFirst) };
+}
+
+export const formatNotMovingLine = (item: NotMovingItem) =>
+  `${item.key} ${item.title.length > 50 ? `${item.title.slice(0, 49)}…` : item.title} — ${formatDuration(item.ageMs / 60_000)} in ${item.stage}, next: ${item.owner}`;
+export const formatNotMovingLines = (items: readonly NotMovingItem[]) =>
+  items.length ? [...items.slice(0, 5).map(formatNotMovingLine), ...(items.length > 5 ? [`+${items.length - 5} more not moving`] : [])] : [];
 
 /** GY-3778: the newest builder start (running implementation session or completed dispatch), else the loop's own start. */
 function lastBuilderStartAt(state: StallReadings['state'], work: readonly Work[]): number | null {
   const times: number[] = [];
   for (const item of work) for (const session of item.sessions ?? []) {
-    if (session.kind !== 'implementation') continue;
-    if (session.state === 'running') times.push(Date.parse(session.startedAt ?? ''));
+    if (session.kind === 'implementation' && session.state === 'running') times.push(Date.parse(session.startedAt ?? ''));
   }
   for (const [key, action] of Object.entries(state.actions)) if (key.startsWith('dispatch:') && action.state === 'done') times.push(Date.parse(action.at));
   const seen = times.filter(Number.isFinite);
   return seen.length ? Math.max(...seen) : state.lock ? Date.parse(state.lock.startedAt) : null;
 }
 
-/** The one alarm line, or null while work moves. Stable while the stall lasts, so it wakes the master once. */
+/** GY-3778: the empty-board alarm — free builder slots sitting idle with nothing ready, released or releasable for 15 minutes. */
 export function stallAlarm(readings: StallReadings): string | null {
   const { now, open, ready, freeSlots, state } = readings;
-  const lines: string[] = [];
-  // Idle since the last launch, or since the longest-waiting ready item last changed, whichever is later.
-  const last = lastLaunchAt(state, open), waiting = Math.min(...ready.map(item => Date.parse(item.updatedAt)).filter(Number.isFinite));
-  const since = last === null ? waiting : Math.max(last, waiting);
-  const stalled = ready.length > 0 && freeSlots > 0 && Number.isFinite(since) && now - since >= stallIdleMs;
-  if (stalled)
-    lines.push(`${ready.length} ready item(s) (${ready.slice(0, 5).map(item => item.key).join(', ')}) and ${freeSlots} free worker slot(s), but no launch since ${iso(since)}. Cause: ${stallCauses(readings).join('; ')}`);
-  // GY-3778: free builder slots sitting idle with nothing ready, released or releasable for 15 minutes.
   const hasWork = ready.length > 0 || (readings.released ?? open.filter(item => item.ready && item.stage !== 'done').length) > 0 || (readings.releasable?.length ?? 0) > 0;
   const lastStart = lastBuilderStartAt(state, open);
   if (!hasWork && freeSlots >= emptyBoardMinFreeSlots && lastStart !== null && now - lastStart >= emptyBoardIdleMs)
-    lines.push(`${freeSlots} free builder slot(s) and no ready, released or releasable work since ${iso(lastStart)}. Cause: ${emptyBoardCauseMarker} (${freeSlots} free builder slot(s)).`);
-  const merging = new Set([...state.mergeWriter.queue.map(entry => entry.key), ...(state.mergeWriter.inFlights ?? []).map(entry => entry.key), ...(state.mergeWriter.inFlight ? [state.mergeWriter.inFlight.key] : [])]);
-  const idle = open.filter(item => item.ready && item.stage !== 'done' && !item.blocker && !item.hold && !parkedOnHuman(item) && !item.dependencies.some(id => open.some(other => other.id === id)) && !live(item, now) && !merging.has(item.key)
-    && !(stalled && ready.includes(item)) && now - Date.parse(item.updatedAt) >= noActorMs);
-  // GY-3996: a ready item left with an open blocker for an hour is stalled too, named before the items with no
-  // actor, so a long alarm never cuts these off. Its age is whole hours, so the line holds still between wakes:
-  // the alarm is stored and logged again only when something really changed.
-  const staleBlocked = open.filter(item => item.ready && item.stage !== 'done' && !!item.blocker && !item.hold && !waitsOnAsk(item)
-    && !live(item, now) && now - Date.parse(item.updatedAt) >= noActorMs);
-  for (const item of staleBlocked.slice(0, 5)) {
-    const text = item.blocker!.replace(/\s+/g, ' ').trim().slice(0, 120);
-    const hours = Math.floor((now - (blockerSince(item) ?? Date.parse(item.updatedAt))) / 3_600_000);
-    lines.push(`${item.key} ${staleBlockerMarker}${hours}h): ${text} — clear it with: mainworks master unblock ${item.key} REASON`);
-  }
-  for (const item of idle.slice(0, 5)) lines.push(item.stage === 'ready' && readings.gates?.get(item.key) || `${item.key} has no actor: at ${item.stage} with no lease and no session, unchanged since ${item.updatedAt}`);
-  return lines.length ? `Stall: ${lines.join(' ')}` : null;
+    return `Stall: ${freeSlots} free builder slot(s) and no ready, released or releasable work since ${iso(lastStart)}. Cause: ${emptyBoardCauseMarker} (${freeSlots} free builder slot(s)).`;
+  return null;
 }
 
 /** GY-3835: when the current empty-board alarm first fired, or null when no empty-board alarm stands. */
@@ -140,7 +137,7 @@ export function emptyBoardAlarmSince(state: Pick<DaemonState, 'actions'>): numbe
   return Number.isFinite(at) ? at : null;
 }
 
-/** Raises, updates or clears the alarm's one cursor entry; the master is woken by masterCauses. */
+/** Raises, updates or clears the empty-board alarm's one cursor entry; the master is woken by masterCauses. */
 export function recordStallAlarm(state: DaemonState, text: string | null, now: number) {
   const standing = state.actions[stallAlarmKey];
   if (!text) { if (standing) delete state.actions[stallAlarmKey]; return !!standing; }

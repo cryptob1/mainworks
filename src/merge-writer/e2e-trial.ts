@@ -29,6 +29,8 @@ export interface TrialE2eCase {
   output?: string[];
   /** GY-3180: the case's browser or runner could not start, so the head was never judged: the trial ends with no verdict. */
   hostFailure?: boolean;
+  /** GY-4002: the test machine the case ran on; absent when it ran on the coordinator. */
+  host?: string;
   /**
    * GY-3267: the last screenshot of the case's browser run (base64 PNG), kept for the item page;
    * absent when the run kept none — an item whose cases drove no browser shows no screenshot.

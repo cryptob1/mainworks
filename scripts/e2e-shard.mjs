@@ -1,7 +1,9 @@
 // GY-3874: one shard of the daily e2e catalog on a test machine. The host shim runs it in the trial
 // image over the commit's checkout: it reads the case files the shard holds from LIST, runs them as a
 // trial runs its bound cases, and writes one JSON line per case to RECORDS for the coordinator.
-// Usage: node --import tsx scripts/e2e-shard.mjs LIST RECORDS BUDGET_MS
+// Usage: node --import tsx scripts/e2e-shard.mjs LIST RECORDS BUDGET_MS [screenshots]
+// GY-4002: a merge trial's shard passes `screenshots` to keep each case's last screenshot; a shard that
+// cannot make its worktree or build marks its cases host failures, so a trial runs them on the coordinator.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +11,7 @@ import { join, resolve } from 'node:path';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.ts';
 import { buildArgv, packageManager } from '../src/package-manager.ts';
 
-const [list, records, budget] = process.argv.slice(2), written = resolve(records);
+const [list, records, budget, keep] = process.argv.slice(2), written = resolve(records);
 const proofs = readFileSync(resolve(list), 'utf8').split('\n').map(line => line.match(/^e2e\/cases\/(.+)\.json$/)?.[1]).filter(Boolean).map(id => `e2e:${id}`);
 const mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 writeFileSync(written, '');
@@ -26,7 +28,7 @@ const finish = code => {
 /** Every case of the shard fails with one step when its worktree or build fails, so the day's filing names why. */
 const refuse = (step, error) => {
   const failingStep = `${step} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
-  for (const proof of proofs) appendFileSync(written, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
+  for (const proof of proofs) appendFileSync(written, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep, hostFailure: true })}\n`);
   finish(1);
 };
 try {
@@ -43,5 +45,5 @@ if (build) {
 }
 const cases = await runTrialE2eCases({ worktree, mergeSha, proofs, env: { ...process.env }, scratch,
   budgetMs: Number(budget), holds: async path => existsSync(join(worktree, path)), log: line => console.log(line) });
-for (const entry of cases) appendFileSync(written, `${JSON.stringify({ ...entry, screenshot: undefined })}\n`);
+for (const entry of cases) appendFileSync(written, `${JSON.stringify(keep === 'screenshots' ? entry : { ...entry, screenshot: undefined })}\n`);
 finish(cases.some(entry => entry.failed > 0 || entry.missing || entry.executed === 0) ? 1 : 0);

@@ -10,8 +10,7 @@ import { Store } from '../src/store.js';
 import { daemonStatePath, emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
-import { stallCauses } from '../src/daemon/stall-alarm.js';
-import { cpuCelsius, cpuPressureStep } from '../src/daemon/cpu-pressure.js';
+import { cpuCelsius } from '../src/daemon/cpu-pressure.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { trialHotCelsius, trialStartOrder } from '../src/merge-writer/trial-load.js';
 import { masterGuide } from '../src/master/guide.js';
@@ -204,18 +203,7 @@ test(`${proof} — the trial container guard still waits on its own heat limit u
   }
 });
 
-test(`${proof} — a hot sensor is no stall cause and no guide hold: the alarm names another cause, and the guide names pressure alone`, async () => {
-  const config = makeConfig();
-  const state = emptyDaemonState(config);
-  const sensors = await hwmon(96);
-  await cpuPressureStep({ state, now: () => Date.now(), log: () => {},
-    effects: { cpuPressure: async () => ({ pressure: pressureText(20), stat: statText(1000), celsius: await cpuCelsius(sensors) }) } as unknown as DaemonEffects });
-  const ready: Work = { id: 'id-GY-1', key: 'GY-1', title: 'Ready', stage: 'ready', ready: true, epoch: 0, revision: 1, policyRevision: 1, priority: 1, type: 'bug',
-    criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:fixture'] }], dependencies: [], evidence: [], gates: [], workspaces: [], sessions: [],
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as unknown as Work;
-  const causes = stallCauses({ now: Date.now(), open: [ready], ready: [ready], freeSlots: 1, holds: [], state, registry: null, serving: null });
-  assert.deepEqual(causes, [`${ready.key} has no actor: ready, with no lease and no session`], 'a hot sensor alone names no launch cause');
-  assert.doesNotMatch(causes.join(' '), /heat|85C|Celsius|temperature/i, 'heat is not a stall cause');
+test(`${proof} — the master guide names pressure alone, never a heat launch hold`, async () => {
   assert.doesNotMatch(masterGuide, /launches waiting on heat/, 'the master guide names no heat launch hold');
   assert.match(masterGuide, /launches waiting on pressure/, 'the master guide names the pressure hold');
 });

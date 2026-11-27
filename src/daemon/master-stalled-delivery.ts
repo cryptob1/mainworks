@@ -8,15 +8,15 @@ import { parseBaseFailureReason } from '../merge-writer/executor.js';
 import { gateCauses, type GateRecord } from '../batch-gate.js';
 import { normalizeFailureReason, repeatedFailureCause, repeatingItems } from './repeated-failure.js';
 import { reworkCapCause } from '../model/rework-ground.js';
-import { isEmptyBoardAlarm, isStaleBlockerAlarm, stallAlarmKey } from './stall-alarm.js';
+import { formatNotMovingLine, isEmptyBoardAlarm, stallAlarmKey, type NotMovingItem } from './stall-alarm.js';
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 
 /** GY-3770: repeat a sign-off wait wake every 30 minutes while the item remains unchanged. */
 const signoffWakeRepeatMs = 30 * 60_000;
 /** GY-3778: repeat an empty-board wake at most once per 30 minutes while builders sit idle with no work. */
 const emptyBoardWakeRepeatMs = 30 * 60_000;
-/** GY-3996: repeat a stale-blocker stall wake once per hour while it lasts. */
-const staleBlockerWakeRepeatMs = 60 * 60_000;
+/** GY-4000: repeat a not-moving item wake at most once an hour. */
+const notMovingWakeRepeatMs = 60 * 60_000;
 /** GY-4029: an attention action no one has claimed for this long launches or wakes the master, which answers it. */
 export const unclaimedAttentionMs = 30 * 60_000;
 
@@ -79,9 +79,15 @@ const subject = (kind: string, id: string) => `${kind}:${createHash('sha1').upda
  * item in a run of repeated equal failures (GY-3104) wakes the master by its run's one cause; its
  * per-failure causes are kept quiet.
  */
-export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}, now = Date.now()): MasterCause[] {
+export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}, now = Date.now(), notMoving: readonly NotMovingItem[] = []): MasterCause[] {
   const open = work.filter(item => item.stage !== 'done');
   const causes: MasterCause[] = stalledDelivery(open);
+  for (const item of notMoving.slice(0, 5)) {
+    causes.push({ key: `not-moving:${item.key}`, detail: formatNotMovingLine(item), digest: cause(`not-moving:${item.key}`, `${item.key}:${item.stage}:${item.owner}`).digest, repeatMs: notMovingWakeRepeatMs });
+  }
+  if (notMoving.length > 5) {
+    causes.push({ key: 'not-moving:more', detail: `+${notMoving.length - 5} more not moving`, digest: cause('not-moving:more', notMoving.slice(0, 5).map(i => i.key).join(',')).digest, repeatMs: notMovingWakeRepeatMs });
+  }
   for (const { item, proofs, head } of signoffWaitingItems(open, now)) {
     const entry = cause(subject('signoff', item.id), `${item.key} waits for your sign-off: ${proofs.join(', ')} on ${head.slice(0, 12)} — verify and run mainworks master attest ${item.key} ${proofs[0]} REASON`);
     causes.push({ ...entry, repeatMs: signoffWakeRepeatMs });
@@ -105,14 +111,12 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
   for (const [key, action] of Object.entries(actions)) {
     // GY-3122: a disk shortage the loop could not reclaim names no item, and holds every trial and worker.
     if (key === 'disk-headroom') { if (action.state === 'failed') causes.push(cause('disk-headroom', action.detail)); continue; }
-    // GY-3432: the stall alarm names no single item either; numbers and ids aside (a temperature, a request id), an unchanged alarm wakes once.
     // GY-3778: when the alarm is an empty board, ask the Lead to file work from the brief and repeat at most once per 30 minutes.
-    // GY-3996: a stale-blocker alarm repeats once an hour while it lasts.
     if (key === stallAlarmKey) {
-      const empty = isEmptyBoardAlarm(action.detail);
-      const detail = empty ? `${action.detail} The board is empty: file new work from the product brief and goals so idle builders have work to build.` : action.detail;
-      const repeatMs = empty ? emptyBoardWakeRepeatMs : isStaleBlockerAlarm(action.detail) ? staleBlockerWakeRepeatMs : undefined;
-      causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(action.detail)).digest, ...(repeatMs ? { repeatMs } : {}) });
+      if (isEmptyBoardAlarm(action.detail)) {
+        const detail = `${action.detail} The board is empty: file new work from the product brief and goals so idle builders have work to build.`;
+        causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(action.detail)).digest, repeatMs: emptyBoardWakeRepeatMs });
+      }
       continue;
     }
     // GY-3103: a failed runtime canary names its runtime, not an item the master would see open.

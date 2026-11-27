@@ -4,11 +4,10 @@ import { chmod, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
-import { hostShimScript } from '../src/host-shim.js';
 import { readRemoteShardRuns, readShardHosts } from '../src/merge-writer/remote-shards.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { fixtureShim, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { buildPreGy3914Shim, liveModernVerbs, liveOldestVerbs, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
 // GY-3928 AC-1: a merge trial places test shards on ready compute hosts running both helper
 // versions installed on the live machines today (one with update-shim:2 and receive-image:3,
@@ -19,36 +18,6 @@ import { fixtureShim, shardHosts, shardRepository, type ShardHostsFixture } from
 const proof = 'integration:trial-uses-ready-hosts-of-both-helper-versions';
 const image = 'mainworks-trial:gy-3928-helpers';
 const files = Array.from({ length: 6 }, (_, index) => `tests/case-${index + 1}.test.ts`);
-
-const liveModernVerbs = 'probe:1 receive-pack:1 receive-image:3 prepare-run:2 run-shard:2 fetch-records:1 clean:1 run-session:1 update-shim:2 share:1';
-const liveOldestVerbs = 'probe:1 receive-pack:1 receive-image:1 prepare-run:1 run-shard:2 fetch-records:1 clean:1';
-
-/**
- * Derive a faithful pre-GY-3914 helper script from the current shim:
- * - prints the given pre-GY-3914 verbs line (with run-shard:2) and a non-current digest
- * - enforces pre-GY-3914 strict `set(request) != {'files', 'argv', 'cpus', 'deadline'}` (refusing `nonce`)
- * - optionally enforces pre-GY-3627 2-part warm image tags (oldest helper)
- */
-function buildPreGy3914Shim(root: string, verbs: string, digestChar: string, v1ImageOnly: boolean): string {
-  let script = fixtureShim(hostShimScript, root);
-  script = script.replace(/^    echo "shim [0-9a-f]{64}"$/m, `    echo "shim ${digestChar.repeat(64)}"`);
-  script = script.replace(/^    echo "verbs .*"$/m, `    echo "verbs ${verbs}"`);
-  script = script.replace(
-    /if verb == 'run-shard':\n            if not isinstance\(request, dict\) or not \(\{'files', 'argv', 'cpus', 'deadline'\} <= set\(request\) <= \{'files', 'argv', 'cpus', 'deadline', 'nonce'\}\):\n                refuse\(\)\n        elif not isinstance\(request, dict\) or set\(request\) != \{'file', 'services', 'argv', 'cpus', 'deadline'\}:/,
-    "if not isinstance(request, dict) or set(request) != ({'files', 'argv', 'cpus', 'deadline'} if verb == 'run-shard' else {'file', 'services', 'argv', 'cpus', 'deadline'}):",
-  );
-  if (v1ImageOnly) {
-    script = script.replace(
-      /warm_image = r'\^graphyard-warm:\[0-9a-f\]\{12\}-\(\?:\\?\[0-9a-f\]\{12\}\|none\)\(\?:-\[0-9a-f\]\{12\}\)\?\$'/,
-      "warm_image = r'^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$'",
-    );
-    script = script.replace(
-      /\^graphyard-warm:\[0-9a-f\]\{12\}-\(\?:\[0-9a-f\]\{12\}\|none\)\(\?:-\[0-9a-f\]\{12\}\)\?\$/,
-      '^graphyard-warm:[0-9a-f]{12}-(?:[0-9a-f]{12}|none)$',
-    );
-  }
-  return script;
-}
 
 let hosts: ShardHostsFixture;
 let repository: { root: string; sha: string };

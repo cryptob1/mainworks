@@ -829,8 +829,7 @@ async function dispatchStep(cycle: Cycle) {
     const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
     const releasable = releasableBacklog(snapshot.work, identity).filter(item => (item.owner ?? null) === null);
     const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), releasable,
-      released: open.filter(item => item.ready && item.stage !== 'done').length, freeSlots: allowed - running, holds, gates,
-      state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
+      released: open.filter(item => item.ready && item.stage !== 'done').length, freeSlots: allowed - running, state });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
     // GY-3835, GY-3865: when ready work is at or below the low-water mark with free builder slots
     // (or after 30 minutes of empty-board alarm), launch one headless planner session to draft up to three unreleased items.
@@ -1094,7 +1093,8 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   // GY-3345: and each unanswered message another install's Master sent this one. An unreadable list
   // keeps the messages already delivered, so none is delivered twice.
   const messages = config.forPerson ? [] : await Promise.resolve(effects.masterMessages?.() ?? []).catch(() => null);
-  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
+  const notMoving = config.forPerson ? [] : (await Promise.resolve(effects.flow?.() ?? null).catch(() => null))?.notMoving ?? [];
+  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
   const current = new Set(causes.map(cause => cause.key));
   if (!messages) for (const key of Object.keys(state.master.subjects)) if (key.startsWith('message:')) current.add(key);
   // A retrial temporarily replaces its refusal with an intent. Keep the same base's wake
@@ -1238,7 +1238,8 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
       const exclude = Object.keys(unusable);
       try {
         await endPreviousMasterSessions(cycle, closedPane);
-        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const notMoving = config.forPerson ? [] : (await Promise.resolve(effects.flow?.() ?? null).catch(() => null))?.notMoving ?? [];
+        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving), ...(await sessions.pendingCauses?.(open) ?? [])];
         const { recoveryFailures, ...oldMaster } = state.master;
         const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
         const previous = recoveryError ? null : state.master.continuity;

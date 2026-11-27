@@ -10,7 +10,7 @@ import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.
 import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert, type ServeRevertPorts } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
-import { HostDroppedError, localOnlyTestPattern, realFreeCores, type HostReading } from '../merge-writer/remote-shards.js';
+import { HostDroppedError, localOnlyTestPattern, realFreeCores, remoteableTestFile, type HostReading } from '../merge-writer/remote-shards.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
 import type { Cycle } from './cycle.js';
@@ -215,7 +215,7 @@ async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<Merge
       const tests = await Promise.all(named.map(file => reads.git(['show', `${commit}:${file}`]).catch(() => '')));
       weighs[proof] = 5_000 + named.reduce((sum, file) => sum + (durations[file] ?? median), 0);
       const environment = /"environment"/.test(text);
-      if (compose.has(proof) || environment || localOnlyTestPattern.test([text, ...tests].join('\n'))) here.push(proof);
+      if (compose.has(proof) || environment || localOnlyTestPattern.test(text) || !tests.every(remoteableTestFile)) here.push(proof);
       else roaming.push(proof);
       // GY-3296: a named environment is provisioned around one trial, so its cases share a lane.
       if (environment) provisioned.add(proof);

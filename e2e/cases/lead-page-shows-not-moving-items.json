@@ -1,0 +1,19 @@
+{
+  "id": "lead-page-shows-not-moving-items",
+  "title": "The Lead page shows not-moving items at 390 and 1280 px with no horizontal scroll",
+  "description": "A real browser on the built dashboard over the demo data (scripts/docs-media-demo.mjs) at 390 and 1280 px: the Lead page shows not-moving items oldest first as one plain line each (key, short title, how long, stage, and next-step owner) with no horizontal scroll.",
+  "tags": [
+    "dashboard",
+    "lead"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "Lead page shows not-moving lines at 390 and 1280 px with no horizontal scroll",
+      "run": "npm run test:browser -- browser-tests/lead-page-shows-not-moving-items.spec.ts",
+      "timeoutSeconds": 420
+    }
+  ]
+}
