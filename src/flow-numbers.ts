@@ -71,6 +71,7 @@ function reviewReason(reason: string): string {
   if (/\bplanner\b.*\bmaster\b/i.test(finding)) return 'old planner name';
   if (/weaken|assertion|\bcheck\b.*\b(?:deleted|removed|dropped)\b/i.test(finding)) return 'weakened assertion';
   if (/regress|no longer|used to/i.test(finding)) return 'regression';
+  if (/allows only [`'"]?master|instead of [`'"]?mainworks lead|still says? [`'"]?(?:coordinator|master)|now-hidden command|appears twice|shown twice|backwards compatibility with .* callers|sibling/i.test(finding)) return 'missed sibling';
   if (/criteri|\bAC-\d|not met|unmet|requirement/i.test(finding)) return 'criterion unmet';
   if (/\b(tests?|proofs?)\b/i.test(finding)) return 'missing test';
   if (/\bUI\b|page|screen|layout|overflow|button|scroll|\d+ ?px|render|display|click/i.test(finding)) return 'UI defect';
