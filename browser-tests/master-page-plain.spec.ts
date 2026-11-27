@@ -54,12 +54,11 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
       await expect(page.locator('.terminal-session')).toHaveText('Working');
       await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'master-agent · claude · w1:master');
 
-      // Blockers: 'Blocked (1)', title and age (no key, GY-3962); the blocker one line, its full text in its title.
-      const owes = page.getByRole('region', { name: 'Blockers the Lead owes' });
-      await expect(owes.getByRole('heading')).toHaveText('Blocked (1)', settled);
+      // GY-4000 AC-5: Not moving replaces Blocked; the blocked item appears once with its blocker reason on one line (full text in title).
+      const owes = page.getByRole('region', { name: 'Not moving' });
+      await expect(owes.getByRole('heading')).toHaveText('Not moving (1)', settled);
       await expect(owes).toContainText('Watch a worker');
-      await expect(owes).not.toContainText(item.key);
-      await expect(owes).toContainText(/blocked \S+/);
+      await expect(owes).toContainText(/in \S+, next:/);
       const line = owes.locator(`[title="${blocker}"]`);
       await expect(line).toHaveText(blocker);
       const box = await line.evaluate(element => ({ height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight) || 16,

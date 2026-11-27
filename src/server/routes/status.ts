@@ -32,7 +32,7 @@ import { boundedSnapshot, workDocument } from '../../store/bounded-snapshot.js';
 import { snapshotPage } from '../../store/paged-snapshot.js';
 import { pipelineItems, pipelineTime } from '../../pipeline-speed.js';
 import { releaseCheckSince } from '../../model/incidents.js';
-import { readFlow, sharedFlow } from '../flow.js';
+import { readFlow, sharedFlow, sharedNotMoving } from '../flow.js';
 import { boundedHistoryRead } from '../history-reads.js';
 import { longestLockHold, slowestQuery } from '../../store/slow-queries.js';
 import { publicLinkOff } from './team-access.js';
@@ -51,7 +51,10 @@ export const statusRoutes = defineRoutes('status', [
   } },
   // GY-3624: the flow numbers, for master status and the Work page; /api/status does not carry them (GY-3677).
   // GY-3763: computed at most once a minute and served from memory with its age.
-  { method: 'GET', path: '/api/flow', handle: ({ services, operatorVisible }) => sharedFlow(services.engine.store, Date.now(), async now => {
+  ...((computeFlow) => [
+    { method: 'GET' as const, path: '/api/flow', handle: ({ services, operatorVisible }: any) => sharedFlow(services.engine.store, Date.now(), now => computeFlow(services, now), operatorVisible) },
+    { method: 'GET' as const, path: '/api/not-moving', handle: ({ services, operatorVisible }: any) => sharedNotMoving(services.engine.store, Date.now(), now => computeFlow(services, now), operatorVisible) },
+  ])(async (services: any, now: number) => {
     const { engine, repository } = services;
     const runner = engine.gitRunner === undefined ? engine.gitRunner = gitRunnerFor(setting('REPOSITORY_ROOT') ?? process.cwd()) : engine.gitRunner;
     const servingRoot = setting('REPOSITORY_ROOT')?.trim() ? resolve(setting('REPOSITORY_ROOT')!) : repositoryToplevel(process.cwd());
@@ -59,7 +62,7 @@ export const statusRoutes = defineRoutes('status', [
     const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
     const work = await engine.store.fleet();
     return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { deploys, git: read, releaseFlakes: servingRoot ? readGateRecord(gateRecordPath(servingRoot))?.flakes : [] }) };
-  }, operatorVisible) },
+  }),
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
   // GY-3799: with the longest coordination-lock hold of the last 10 minutes, 1 s or more.
   // GY-4005: the line /healthz shows once the database passes 80% of its bound, for master status.

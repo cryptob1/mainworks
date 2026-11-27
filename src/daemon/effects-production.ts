@@ -78,6 +78,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
   fetcher?: typeof fetch;
   /** GY-3345: the messages to this install's Master. */
   messages?: DaemonEffects['masterMessages'];
+  /** GY-4000: the control plane's flow read carrying not-moving open items. */
+  flow?: DaemonEffects['flow'];
 }): DaemonEffects {
   const current = typeof source === 'function' ? source : () => source;
   const run = deps.run ?? childRunner({ timeoutMs: 90_000 });
@@ -294,6 +296,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
       exhaust: (account, notice) => recordObservedExhaustion(config, account, { at: new Date().toISOString(), reason: notice.reason, resetsAt: notice.resetsAt, role: 'master', profile: masterProfile, work: null }),
     }),
     masterMessages: deps.messages,
+    flow: deps.flow,
     reportCapacity: (work, event) => mutate(`work/${work.id}/capacity`, event, randomUUID()),
     masterSession: {
       ...masterSessionEffects(root, current, run),
