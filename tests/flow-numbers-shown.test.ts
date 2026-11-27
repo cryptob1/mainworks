@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { apiOk } from './helpers/api.js';
 import { Store } from '../src/store.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
@@ -19,12 +20,7 @@ let store: Store, url: string;
 
 useTestStore('flow-numbers-shown', { repository: 'owner/game', credentials: [{ ...operator, token }] }, ctx => { ({ store, url } = ctx); });
 
-const api = async (path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });
-  const json = await response.json() as any;
-  if (!response.ok) throw new Error(`${path}: ${json?.error}`);
-  return json;
-};
+const api = (path: string, body?: unknown) => apiOk(url, token, path, { body });
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 const attempt = (claimed: number, ended: number, end: string) => ({ epoch: 1, owner: 'worker', claimedAt: ago(claimed), endedAt: ago(ended), end });
 

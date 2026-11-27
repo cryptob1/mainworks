@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { apiOk } from './helpers/api.js';
 import { Store } from '../src/store.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes, type AgentRegistry as Registry } from '../src/model/registry.js';
@@ -18,16 +19,7 @@ const credentials = [operator, coordinator, worker].map(principal => ({ ...princ
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
 let store: Store, url: string;
-const ok = async (principal: Principal, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const result = await response.json() as any;
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const ok = (principal: Principal, path: string, body?: unknown) => apiOk(url, token(principal), path, { body });
 
 useTestStore('limit-notice-hold', { leaseSeconds: 7200, repository: 'owner/limit-notice', credentials: credentials }, ctx => { ({ store, url } = ctx); });
 

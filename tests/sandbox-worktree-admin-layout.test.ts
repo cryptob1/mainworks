@@ -12,6 +12,7 @@ import { WorkerSandboxError } from '../src/worker-sandbox.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // Huck's service WorkingDirectory is huck-mainworks while ExecStart loads a CLI release
 // in cryptob1-graphyard/deploy/build: these are separate repositories. The old worker
@@ -19,12 +20,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 for (const layout of ['huck', 'self-hosted', 'relative-pointer', 'symlink', 'linked-coordinator']) {
   test(`integration:sandbox-worktree-admin-layout — ${layout} commits only in its own admin directory`, async () => {
     const base = await temporaryDirectory('sandbox-admin-layout');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     try {
-      const repo = join(base, 'repository');
-      mkdirSync(repo); git(repo, 'init', '-b', 'mainworks-main');
-      git(repo, 'config', 'user.name', 'Fixture'); git(repo, 'config', 'user.email', 'fixture@example.com');
-      git(repo, 'commit', '--allow-empty', '-m', 'base');
+      const { root: repo } = await gitRepo({ root: join(base, 'repository'), branch: 'mainworks-main', files: {} });
       let root = repo;
       if (layout === 'huck') {
         const cli = join(base, 'separate-cli-release'); mkdirSync(cli); git(cli, 'init');
@@ -61,11 +58,7 @@ test('integration:sandbox-worktree-admin-layout — production dispatch confines
   const base = await temporaryDirectory('sandbox-served-repository');
   try {
     const root = join(base, 'huck-mainworks'), cliRoot = join(base, 'cli-release');
-    mkdirSync(root); mkdirSync(cliRoot);
-    const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    git('init', '-b', 'mainworks-main');
-    git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.com');
-    git('commit', '--allow-empty', '-m', 'base');
+    mkdirSync(cliRoot); const { git } = await gitRepo({ root, branch: 'mainworks-main', files: {} });
     git('remote', 'add', 'origin', 'https://github.com/hello-huck/huck.git');
     const own = join(root, '.graphyard/worktrees/GY-1-26');
     git('worktree', 'add', '-b', 'graphyard/gy-1-26', own);

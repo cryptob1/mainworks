@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { trialFloorAttention, trialStartOrder, type TrialLoad } from '../src/merge-writer/trial-load.js';
@@ -89,11 +90,7 @@ test(`${proof} — with a gate start waiting on the load check and every slot fr
 test(`${proof} — a start whose load wait passes its bound fails as a trial-host fault naming the reading, with no verdict on its head`, { timeout: 120_000 }, async () => {
   const host = await machine('starve-bound');
   const root = await host.volume('repository'), short = await host.volume('short', small), durable = await host.volume('durable');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main');
-  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'fixture', private: true, scripts: { test: 'node -e 0' } }));
-  git('add', '-A'); git('commit', '-q', '-m', 'base');
-  const sha = git('rev-parse', 'HEAD');
+  const { head: sha } = await gitRepo({ root, files: { 'package.json': JSON.stringify({ name: 'fixture', private: true, scripts: { test: 'node -e 0' } }) } });
   // The trial's own boundary is swapped for the real launcher on a volume under the floor, bound to two seconds.
   const said: string[] = [];
   const run: ChildRun = (command, args, { wrapper, ...options } = {}) => {
@@ -119,8 +116,7 @@ test(`${proof} — a verification start that must wait prints the reason through
   const store = await withDatabase('starve-complete');
   await store.init(); t.after(() => store.close());
   const root = await host.volume('worktree');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q'); git('commit', '-q', '--allow-empty', '-m', 'fixture'); git('branch', 'graphyard/test');
+  (await gitRepo({ root, files: {}, message: 'fixture' })).git('branch', 'graphyard/test');
   const engine = new Engine(store, 600, 'owner/project'); engine.gitRunner = null;
   const operator = { id: 'operator', role: 'admin' as const, sessionKind: 'human' as const };
   const worker = { id: 'worker', role: 'worker' as const, token: 'worker-' + 'w'.repeat(32) };

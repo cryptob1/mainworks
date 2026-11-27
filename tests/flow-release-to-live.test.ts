@@ -16,6 +16,7 @@ import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/depl
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { apiOk } from './helpers/api.js';
 // The repositories these tests seed carry an e2e proof, so the policy in force says how a head is served
 // for them; it is read once per process, and nothing reads it ahead of this line.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -51,17 +52,7 @@ after(async () => {
   else process.env.GRAPHYARD_REPOSITORY_ROOT = previousRoot;
 });
 
-const call = async (token: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: body ? 'POST' : 'GET',
-    signal: AbortSignal.timeout(30_000),
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  if (!response.ok) throw Object.assign(new Error(text), { status: response.status });
-  return JSON.parse(text);
-};
+const call = (token: string, path: string, body?: unknown) => apiOk(url, token, path, { body, signal: AbortSignal.timeout(30_000) });
 const masterApi = (path: string) => call(coordinatorToken, path);
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 

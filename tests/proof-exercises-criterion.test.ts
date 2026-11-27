@@ -16,6 +16,7 @@ import { neededRework } from '../src/daemon/rework.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-135: a proof that passes against an unchanged tree proves nothing. A pass is trusted only
@@ -42,11 +43,8 @@ const create = () => engine.execute(operator, 'create', null, { type: 'chore',  
 ] }, id()) as Promise<Work>;
 // Submitted over the producer's own HTTP route, exactly as `mainworks evidence KEY FILE` does.
 async function submit(work: Work, body: Record<string, unknown>) {
-  const response = await fetch(`${url}/api/work/${work.id}/evidence`, { method: 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(producer.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() },
-    body: JSON.stringify({ proof: PROOF, sha: head, baseSha: base, policyRevision: work.policyRevision, result: 'pass', executed: 4, skipped: 0, ...body }) });
-  assert.equal(response.status, 200, await response.clone().text());
-  return (await response.json() as Work).evidence.at(-1)!;
+  return (await apiOk(url, tokens.get(producer.id)!, `work/${work.id}/evidence`, { key: id(),
+    body: { proof: PROOF, sha: head, baseSha: base, policyRevision: work.policyRevision, result: 'pass', executed: 4, skipped: 0, ...body } }) as Work).evidence.at(-1)!;
 }
 const refusals = async (work: Work) => (await store.pool.query("SELECT payload FROM events WHERE work_id=$1 AND kind='evidence.exercise.refused' ORDER BY seq", [work.id])).rows.map(row => row.payload.details);
 const binding = { sha: head, baseSha: base, policyRevision: 1 };

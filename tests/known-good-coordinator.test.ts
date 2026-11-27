@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
@@ -13,6 +12,7 @@ import { operationsCommand } from '../src/cli/master/operations.js';
 import type { MasterSession } from '../src/cli/master/session.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { api } from './helpers/api.js';
 
 /** GY-1529: the known-good coordinator — a pinned checkout at the last promoted SHA runs the loop; recover repins it. */
 /** A real repository with three commits; npm is a recorded stub, git is real. */
@@ -107,9 +107,9 @@ test('integration:master-recover-repins-and-records — master recover repins th
     const session = (args: string[], stdin = admin.token) => ({
       id: 'recover', args, root, master, print: (value: unknown) => value, readSecret: stdin,
       masterMutation: async (path: string, body: unknown, _id: unknown, credential: string) => {
-        const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-        if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-        return response.json();
+        const result = await api(url, credential, path, { body });
+        if (result.status >= 300) throw new Error(`${result.status} ${JSON.stringify(result.body)}`);
+        return result.body;
       },
     }) as unknown as MasterSession;
     await assert.rejects(operationsCommand(session([]), effects), /--admin-token-stdin/);
@@ -131,7 +131,7 @@ test('integration:master-recover-repins-and-records — master recover repins th
     assert.equal(explicit.to, w.shas[2]);
     assert.equal((await ledger()).length, 2);
     // Only an admin credential records it.
-    const refused = await fetch(`${url}/api/coordinator/recovered`, { method: 'POST', headers: { Authorization: 'Bearer graphyard-master-token-' + 'y'.repeat(32), 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify({ from: null, to: w.shas[0], reason: 'no' }) });
+    const refused = await api(url, 'graphyard-master-token-' + 'y'.repeat(32), 'coordinator/recovered', { body: { from: null, to: w.shas[0], reason: 'no' } });
     assert.equal(refused.status, 403);
   } finally { if (previousConfig === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previousConfig; }
 });

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -27,6 +28,7 @@ import { endRun } from '../src/runner/registry.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { apiOk } from './helpers/api.js';
 const dropRun = (name: string) => endRun(name, { ok: false, reason: 'exit', detail: 'dropped', startedAt: new Date().toISOString(), endedAt: new Date().toISOString() } as any);
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -40,17 +42,12 @@ before(async () => {
   engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
-  root = await temporaryDirectory('review-skips-spent-root');
+  const { git, ...repo } = await gitRepo({ label: 'review-skips-spent-root', files: { 'README.md': 'Spec.\n' } }); root = repo.root; base = repo.head;
   scratch = await temporaryDirectory('review-skips-spent-scratch');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main');
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'Spec.\n');
-  git('add', 'README.md'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
-  base = git('rev-parse', 'HEAD');
   git('update-ref', 'refs/remotes/origin/main', base);
   await writeFile(join(root, 'feature.ts'), 'export const ok = true;\n');
-  git('add', 'feature.ts'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'head');
+  git('add', 'feature.ts'); git('commit', '-qm', 'head');
   head = git('rev-parse', 'HEAD');
   git('checkout', '-q', base);
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
@@ -152,16 +149,7 @@ test('unit:review-launch-skips-spent-accounts — session never goes live after 
   const fixture = registryFixture(config.hostId!, ['claude', 'codex'], ['reviewer'], 4);
   const item = await insertWork(makeReviewItem('GY-9502', 'req-9502', at()));
   const chosenAccounts: string[] = [];
-  const mutate = async (path: string, body: unknown) => {
-    const res = await fetch(`${url}/api/${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      body: JSON.stringify(body),
-    });
-    const parsed = await res.json();
-    if (!res.ok) throw new Error(JSON.stringify(parsed));
-    return parsed;
-  };
+  const mutate = (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body });
   const loadItem = async () => (await store.pool.query('SELECT document FROM work_items WHERE id = $1', [item.id])).rows[0].document as Work;
   const baseEffects = dispatchEffects(root, () => config, {
     snapshot: async () => ({ work: [await loadItem()], now: at() }),

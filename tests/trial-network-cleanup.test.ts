@@ -4,7 +4,6 @@ import { execFile } from 'node:child_process';
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge, TrialCancelledError, TrialNetworkPoolError, trialNetworkPoolFault } from '../src/merge-writer/trial.js';
 import { mergeOne, type MergePorts } from '../src/merge-writer/executor.js';
@@ -26,6 +25,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3316: trials leaked their preview Docker networks until Docker refused new ones ("all predefined
 // address pools have been fully subnetted") and every later trial failed — returned for rework
@@ -193,8 +193,7 @@ test('e2e:trial-network-cleanup — a trial whose network Docker refuses for spe
       holds: async () => false,
       record: async (item, event) => {
         if (event.kind === 'trial') trials.push(event);
-        const answer = await fetch(`${url}/api/work/${item.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-        assert.equal(answer.status, 200, await answer.text());
+        await apiOk(url, token, `work/${item.id}/merge-record`, { body: event });
       },
     };
     const failed = await mergeOne(ports, work).then(() => null, (error: unknown) => error);

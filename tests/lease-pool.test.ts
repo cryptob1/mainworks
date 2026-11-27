@@ -20,6 +20,7 @@ import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-558: lease renewals timed out waiting for a connection behind slow report and observation
@@ -45,14 +46,8 @@ const ready = (engine: Engine, title: string, criteria: { id: string; text: stri
 const claimed = (engine: Engine, title: string, actor = engineer) => lifecycle(engine, operator, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, { claim: actor, workspace: { host: 'lease-pool-host' } });
 async function listening(engine: Engine) {
   const { url, close: closeHttp } = await listen(server(engine, credentials));
-  const post = async (actor: Principal, path: string, body: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${tokens[actor.id]}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
-    return { status: response.status, body: await response.json() };
-  };
-  const get = async (actor: Principal, path: string) => {
-    const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${tokens[actor.id]}` }, signal: AbortSignal.timeout(15_000) });
-    return { status: response.status, body: await response.json() };
-  };
+  const post = (actor: Principal, path: string, body: unknown) => api(url, tokens[actor.id], path, { method: 'POST', body, signal: AbortSignal.timeout(15_000) });
+  const get = (actor: Principal, path: string) => api(url, tokens[actor.id], path, { signal: AbortSignal.timeout(15_000) });
   const close = async () => { await closeHttp(); };
   return { post, get, close };
 }
@@ -121,10 +116,7 @@ test('integration:minted-worker-heartbeat-uses-the-lease-pool — with the gener
   const engine = engineOn(store);
   const loop = { id: 'lease-pool-loop', role: 'coordinator' as const, sessionKind: 'ai' as const, token: `loop-token-${'l'.repeat(32)}` };
   const { url, close } = await listen(server(engine, [...credentials, loop]));
-  const post = async (token: string, path: string, body: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
-    return { status: response.status, body: await response.json() };
-  };
+  const post = (token: string, path: string, body: unknown) => api(url, token, path, { method: 'POST', body, signal: AbortSignal.timeout(15_000) });
   try {
     const minted = await post(loop.token, 'worker-identities', { id: 'minted-lease-worker' });
     assert.equal(minted.status, 200, JSON.stringify(minted.body));

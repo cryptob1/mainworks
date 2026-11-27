@@ -20,6 +20,7 @@ import { gitRepo } from './helpers/git-repo.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api, apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-2956: the control plane's own reconciliation clears a lapsed lease within one of its ticks,
@@ -42,19 +43,8 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 
 let store: Store, engine: Engine, url: string, install: string;
 
-const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const result = await call(principal, method, path, body);
-  assert.equal(result.status, 200, `${path}: ${JSON.stringify(result.body)}`);
-  return result.body;
-};
+const call = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => api(url, token(principal), path, { method, body });
+const ok = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(principal), path, { method, body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -106,9 +96,7 @@ test('integration:expired-worker-real-snapshot-handoff — a supervisor-ended un
   // The host's CPU and disk read nothing (GY-3373): a hot or full trial host must not hold this redispatch.
   const closed: string[] = [], launched: { key: string; epoch: number; handoff: string }[] = [];
   const snapshot = async () => {
-    const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator)}`, 'X-Graphyard-View': 'coordination' } });
-    assert.equal(response.status, 200);
-    const snap = await response.json() as { work: Work[]; now: string };
+    const snap = await apiOk(url, token(coordinator), 'work-snapshot', { headers: { 'X-Graphyard-View': 'coordination' } }) as { work: Work[]; now: string };
     return { work: snap.work, now: snap.now };
   };
   const mutate = async (path: string, data: unknown, requestId?: string) => {

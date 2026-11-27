@@ -24,6 +24,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 import { verificationQueue } from '../src/server/worker-verification-queue.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-worker-host-verification']) {
@@ -59,10 +60,7 @@ for (const proof of ['integration:drop-worker-host-verification', 'e2e:drop-work
     const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
     t.after(close);
     const url = serverUrl;
-    const api = async (path: string, body?: unknown, token = coordinator.token, requestId: string = randomUUID()) => {
-      const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': requestId }, body: body === undefined ? undefined : JSON.stringify(body) });
-      const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result)); return result;
-    };
+    const api = (path: string, body?: unknown, token = coordinator.token, requestId: string = randomUUID()) => apiOk(url, token, path, { body, key: requestId });
     const config = masterConfigSchema.parse({ version: 1, repository: 'owner/project', baseBranch: 'main', url, credentialFile: '/unused', cliPath: '/unused', githubAppId: 1, hostId: 'test', masterAgentName: 'fixture', workers: [], run: { mergeWriter: { deployKeyFile: join(root, 'unused-key') } } });
     const status = () => masterStatusReport(root, config, path => api(path), async () => { throw new Error('no runtime in fixture'); });
     const previousSlots = process.env[slotsDirectoryVariable], previousHeld = process.env[heldVariable];

@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { join } from 'node:path';
 import { planAsRows, withDatabase } from './helpers/postgres.js';
@@ -16,6 +15,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { workTables } from '../src/store/tables/work.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-3765: on the live install the flow's ledger read took about 9 s every minute: each of the
 // window's whole-document rows was read whole for its stage. The read now takes the stage, kind and
@@ -46,9 +46,7 @@ before(async () => {
   store = await withDatabase('flow-ledger-fast'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  const { id } = await created.json() as { id: string };
+  const { id } = (await api(url, adminToken, 'work', { body: { title: 'Template', why: 'Flow is measured.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } })).body as { id: string };
   fixture = new pg.Client({ connectionString: (store.pool as unknown as { options: { connectionString: string } }).options.connectionString }); // Standalone, the cluster may stop before the last hook ends this client.
   fixture.on('error', () => {}); await fixture.connect();
   const template = (await fixture.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;

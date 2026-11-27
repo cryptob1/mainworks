@@ -29,6 +29,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { api } from './helpers/api.js';
 
 /** A fresh registry per launch: the registry alone grants the reviewer its slot. */
 const reviewProbe = () => registryFixture(hostname(), ['claude'], ['reviewer']).probe;
@@ -335,10 +336,7 @@ const credentials = principals.map(principal => ({ ...principal, token: `${princ
 const tokenOf = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 let store: Store, http: ReturnType<typeof server>, url: string;
 useTestStore('review-verdict', { repository: repository, credentials: credentials }, ctx => { ({ store, http, url } = ctx); });
-async function request(credential: string, path: string, body?: unknown, key: string = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as any };
-}
+const request = (credential: string, path: string, body?: unknown, key: string = randomUUID()) => api(url, credential, path, { method: 'POST', body, key });
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
 const events = async (id: string, kind: string) => (await store.pool.query('SELECT payload FROM events WHERE work_id=$1 AND kind=$2 ORDER BY seq', [id, kind])).rows.map(row => row.payload);

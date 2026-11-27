@@ -8,6 +8,7 @@ import { runWorkerVerification } from '../src/merge-writer/worker-verification.j
 import type { Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 
 // This is deliberately a real trial: a host without Docker cannot satisfy placement.
 test('integration:worker-verification-placement — exact committed head executes in the private trial and a failing proof stays failed', { timeout: 120_000 }, async () => {
@@ -59,11 +60,8 @@ test('integration:worker-verification-placement — confined verify crosses HTTP
   const root = await temporaryDirectory('verification-http', process.cwd());
   const coordinator = await temporaryDirectory('coordinator', root);
   const repository = await temporaryDirectory('worker', root);
-  const coordinatorGit = (...args: string[]) => execFileSync('git', args, { cwd: coordinator, encoding: 'utf8' }).trim();
-  coordinatorGit('init', '-q', '-b', 'main'); coordinatorGit('config', 'user.name', 'Fixture'); coordinatorGit('config', 'user.email', 'fixture@example.invalid');
-  coordinatorGit('commit', '--allow-empty', '-qm', 'base');
-  coordinatorGit('worktree', 'add', '-qb', 'graphyard/verification', repository);
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
+  (await gitRepo({ root: coordinator, files: {} })).git('worktree', 'add', '-qb', 'graphyard/verification', repository);
+  const git = (...args: string[]) => gitIn(repository, ...args);
   await writeFile(join(repository, '.gitignore'), '.graphyard/\nnode_modules/\n');
   await writeFile(join(repository, 'package.json'), '{"type":"module"}');
   await mkdir(join(repository, 'tests'));

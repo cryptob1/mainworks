@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
@@ -49,8 +48,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('submit-head'));
   const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
+  git(fixtureRoot, 'init', '-q', '--bare', '-b', 'main', origin); git(fixtureRoot, 'clone', '-q', origin, checkout);
   const first = await commit(checkout, 'README.md', '# Fixture\n', 'base');
   await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
   git(checkout, 'push', '-q', 'origin', 'main');
@@ -270,15 +268,14 @@ test('unit:sync-control-plane-no-fetch — sync reads mergeWriter from /api/stat
   const cwd = process.cwd();
   try {
     const origin = join(root, 'origin.git'), clone = join(root, 'clone'), other = join(root, 'other');
-    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-    execFileSync('git', ['clone', '-q', origin, clone], { stdio: 'ignore' });
+    git(root, 'init', '-q', '--bare', '-b', 'main', origin); git(root, 'clone', '-q', origin, clone);
     await commit(clone, 'README.md', '# Fixture\n', 'base'); git(clone, 'push', '-q', 'origin', 'main');
     const sharedTip = git(clone, 'rev-parse', 'refs/remotes/origin/main');
     git(clone, 'checkout', '-q', '-b', 'graphyard/gy-9-1');
     await commit(clone, 'src/x.ts', 'export const x = 1;\n', 'work');
     await commit(clone, 'README.md', '# Fixture\n\nOut of scope.\n', 'stray');
     // Origin moves on; the clone's refs/remotes/origin/main (the shared ref) still names the old tip.
-    execFileSync('git', ['clone', '-q', origin, other], { stdio: 'ignore' });
+    git(root, 'clone', '-q', origin, other);
     const moved = await commit(other, 'docs/new.md', 'new\n', 'advance'); git(other, 'push', '-q', 'origin', 'main');
     const work = { id: 'id-9', key: 'GY-9', workspaces: [{ epoch: 1, branch: 'graphyard/gy-9-1', host: 'h', path: clone, owner: 'implementer' }], lease: null };
     const run = async (status: Record<string, unknown>, args: string[] = []) => {

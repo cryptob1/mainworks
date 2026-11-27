@@ -7,7 +7,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
 import { type MergePorts } from '../src/merge-writer/executor.js';
@@ -24,6 +23,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 const proof = 'e2e:trial-overload-timeout-retrial';
 const write = async (root: string, files: Record<string, string>) => {
@@ -103,8 +103,7 @@ for (const mode of ['serve', 'test', 'file', 'web-server', 'deadline'] as const)
           ...(mode === 'serve' ? { e2eProofs: ['e2e:fixture'] } : {}) }), files: ['browser-tests/one.spec.ts'], proofs: {} }),
         push: async () => { throw new Error('never pushes a timeout'); }, holds: async () => false,
         record: async (item, event) => {
-          const answer = await fetch(`${url}/api/work/${item.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-          assert.equal(answer.status, 200, await answer.text());
+          await apiOk(url, token, `work/${item.id}/merge-record`, { body: event });
         },
       };
       const config = masterConfigSchema.parse({ version: 1, url, credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',

@@ -17,6 +17,7 @@ import { dispatchSort } from '../src/model/coordination.js';
 import { mergeQueue } from '../src/model/merge-queue.js';
 import type { Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3102: a yard-repair item takes its own route past a broken pipeline.
 
@@ -58,14 +59,7 @@ const credentials = [operator, coordinator].map(principal => ({ ...principal, to
 const agentToken = `yard-agent-${randomUUID()}`;
 let store: Store, close: (() => Promise<void>) | undefined, url: string;
 
-const call = async (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const parsed = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(parsed));
-  return parsed;
-};
+const call = (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => apiOk(url, bearer, path, { body, headers });
 const file = (title: string, extra: Record<string, unknown> = {}) => call(credentials[0].token, 'work', { why: 'w', simplest: 's',
   title, type: 'chore', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:yard-repair-route', 'e2e:fixture'] }], policy: { checks: ['test'], review: true }, ...extra,
 }) as Promise<Work>;

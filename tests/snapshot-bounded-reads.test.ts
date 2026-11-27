@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
-import { rm, writeFile, readFile, mkdir } from 'node:fs/promises';
+import { rm, writeFile, readFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -12,10 +12,12 @@ import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -56,8 +58,7 @@ test('unit:cli-reads-bounded-snapshot — CLI commands read bounded snapshot or 
     // The worker's sync: the attribution read on a conflict is the trimmed coordination view.
     const cwd = await temporaryDirectory('bounded-reads-sync');
     const originRepo = join(cwd, 'origin'), clone = join(cwd, 'clone');
-    const git = async (repo: string, ...args: string[]) => (await execFile('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', ...args], { cwd: repo })).stdout.trim();
-    const commit = async (repo: string, message: string) => { await execFile('git', ['add', '-A'], { cwd: repo }); await git(repo, 'commit', '-q', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
+    const commit = (repo: string, message: string) => { git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', message); };
     const task = { id: 'task', key: 'GY-1', workspaces: [{ epoch: 1, host: hostname(), path: clone, branch: 'graphyard/gy-1-1' }] };
     const syncServer = createServer((request: IncomingMessage, response: ServerResponse) => {
       const [path] = (request.url ?? '').split('?');
@@ -80,23 +81,19 @@ test('unit:cli-reads-bounded-snapshot — CLI commands read bounded snapshot or 
     await new Promise<void>(resolve => syncServer.listen(0, '127.0.0.1', resolve));
     const syncOrigin = `http://127.0.0.1:${(syncServer.address() as { port: number }).port}`;
     try {
-      await mkdir(originRepo, { recursive: true });
-      await execFile('git', ['init', '-q', '--initial-branch', 'main'], { cwd: originRepo });
-      await writeFile(join(originRepo, 'shared.txt'), 'base\n');
-      await commit(originRepo, 'Base');
-      await execFile('git', ['clone', '-q', originRepo, clone]);
-      // The sync command runs git itself, without this fixture's per-call -c identity flags, so
+      await gitRepo({ root: originRepo, files: { 'shared.txt': 'base\n' }, message: 'Base' });
+      git(cwd, 'clone', '-q', originRepo, clone);
+      // The sync command runs git itself, without the test identity in its environment, so
       // the clone carries its own identity: a runner without a global git config would otherwise
       // fail the merge before the attribution read is ever issued.
-      await execFile('git', ['config', 'user.name', 'Test'], { cwd: clone });
-      await execFile('git', ['config', 'user.email', 'test@localhost'], { cwd: clone });
-      await execFile('git', ['checkout', '-q', '-b', 'graphyard/gy-1-1'], { cwd: clone });
+      git(clone, 'config', 'user.name', 't'); git(clone, 'config', 'user.email', 't@t');
+      git(clone, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
       await writeFile(join(clone, 'shared.txt'), 'mine\n');
-      await commit(clone, 'Mine');
+      commit(clone, 'Mine');
       await writeFile(join(originRepo, 'shared.txt'), 'theirs\n');
-      await commit(originRepo, 'Theirs');
+      commit(originRepo, 'Theirs');
       // The loop fetches the shared object store; sync itself fetches nothing.
-      await new Promise((done, fail) => execFileCallback('git', ['-C', clone, 'fetch', '-q', 'origin'], error => error ? fail(error) : done(null)));
+      git(clone, 'fetch', '-q', 'origin');
       const sync = execFile(process.execPath, [launcher, 'sync', 'GY-1'], { cwd: clone, env: { ...process.env, GRAPHYARD_URL: syncOrigin, GRAPHYARD_TOKEN: 'fixture' } });
       const outcome = await sync.then(() => ({ code: 0, output: '' }), (error: { code?: number | string; stdout?: string; stderr?: string }) =>
         ({ code: error.code, output: `stdout: ${error.stdout ?? ''}\nstderr: ${error.stderr ?? ''}`.trim() }));
@@ -194,8 +191,7 @@ test('unit:work-snapshot-paged — GET /api/work-snapshot supports paging with c
   // disclose nothing of the items outside its scope.
   const scopedKeys = [whole.body.work[4].key, whole.body.work[20].key] as string[];
   const scopedToken = `bounded-scoped-reader-${'s'.repeat(32)}`;
-  const provisioned = await fetch(`${url}/api/operator-agents`, { method: 'POST', headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify({ id: 'scoped-reader', displayName: 'scoped-reader', capabilities: [], scope: { repositories: ['owner/project'], workItems: scopedKeys }, token: scopedToken, reason: 'A scoped reader pages only its own work' }) });
-  assert.equal(provisioned.status, 200, await provisioned.text());
+  await apiOk(url, operatorToken, 'operator-agents', { body: { id: 'scoped-reader', displayName: 'scoped-reader', capabilities: [], scope: { repositories: ['owner/project'], workItems: scopedKeys }, token: scopedToken, reason: 'A scoped reader pages only its own work' } });
   const scopedNumbers = scopedKeys.map(key => Number(/(\d+)$/.exec(key)![1]));
   const firstScoped = await get('work-snapshot?view=full&cursor=0&pageSize=1', scopedToken);
   assert.equal(firstScoped.status, 200, JSON.stringify(firstScoped.body));

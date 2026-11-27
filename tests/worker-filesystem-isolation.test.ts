@@ -16,8 +16,8 @@ import { setupMaster } from '../src/master/config.js';
 import { startMaster } from '../src/master/harness.js';
 import { runtimeLoginHomes } from '../src/master/profiles.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
 async function fixture(maskedCoordinator = false) {
   // Outside /tmp: these protected files remain visible through the read-only host mount.
   // Every destructive probe below names only this disposable fixture, never the real HOME.
@@ -30,14 +30,10 @@ async function fixture(maskedCoordinator = false) {
   writeFileSync(join(config, 'operator.token'), 'operator-secret');
   writeFileSync(join(runtime, 'login'), 'own-login');
   writeFileSync(join(config, 'worker.token'), 'own-token');
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: {
+  await gitRepo({ root, files: { '.gitignore': '.graphyard/\n', 'package.json': JSON.stringify({ scripts: {
     build: `node -e "require('fs').writeFileSync('built', 'built')"`,
     test: `node -e "if(require('fs').readFileSync('built','utf8') !== 'built') process.exit(1)"`,
-  } }));
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'config', 'user.email', 'fixture@example.invalid'); git(root, 'config', 'user.name', 'Fixture');
-  git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+  } }) } });
   const worktree = join(root, '.graphyard', 'worktrees', 'worker');
   git(root, 'worktree', 'add', '-qb', 'graphyard/gy-3045-1', worktree);
   prepareConfinedGitPaths(root);

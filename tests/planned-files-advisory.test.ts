@@ -20,6 +20,7 @@ import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -36,18 +37,8 @@ const token = (id: string) => credentials.find(credential => credential.id === i
 let agentToken: string;
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, cursorDirectory: string;
 
-const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const result = await call(bearer, method, path, body);
-  assert.equal(result.status, 200, JSON.stringify(result.body));
-  return result.body;
-};
+const call = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => api(url, bearer, path, { method, body, headers });
+const ok = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, bearer, path, { method, body });
 const file = (title: string, fields: { plannedFiles?: string[]; exclusiveResources?: string[] }) => ok(token(operator.id), 'POST', 'work', { why: 'w', simplest: 's',
   title, type: 'chore', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['integration:planned-files-advisory', 'e2e:fixture'] }],
   policy: { checks: ['test'], review: true }, ...fields,

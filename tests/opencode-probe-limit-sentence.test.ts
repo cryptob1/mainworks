@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +19,7 @@ import { smokeRegistryAccount } from '../src/runner/roles.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -91,14 +91,7 @@ test('e2e:opencode-probe-limit-sentence — caretaker registry account probe rec
   await store.init();
   const { url, close } = await listen(server(new Engine(store, 7200, 'owner/opencode-probe'), credentials));
   servers.push(close);
-  const ok = async (bearer: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined
-      ? { headers: { Authorization: `Bearer ${bearer}` } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const parsed = await response.json() as any;
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(parsed)}`);
-    return parsed;
-  };
+  const ok = (bearer: string, path: string, body?: unknown) => apiOk(url, bearer, path, { body });
 
   const credDir = await temporaryDirectory('opencode-caretaker-creds');
   const credentialFile = join(credDir, 'coordinator.token');

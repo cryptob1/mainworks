@@ -1,6 +1,5 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +27,7 @@ import WorkPage from '../web/pages/work.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -105,12 +105,8 @@ test('e2e:caretaker-report-on-home — a caretaker pass makes a held account tha
   store = await withDatabase('caretaker-report-on-home');
   await store.init();
   const { url, close: stop } = await listen(server(new Engine(store, 7200, 'owner/caretaker'), credentials)); close = stop;
-  const call = async (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined ? { headers: { Authorization: `Bearer ${bearer}`, ...headers } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    return { status: response.status, body: await response.json() as any };
-  };
-  const ok = async (bearer: string, path: string, body?: unknown, headers?: Record<string, string>) => { const result = await call(bearer, path, body, headers); assert.equal(result.status, 200, `${path}: ${JSON.stringify(result.body)}`); return result.body; };
+  const call = (bearer: string, path: string, body?: unknown, headers: Record<string, string> = {}) => api(url, bearer, path, { body, headers });
+  const ok = (bearer: string, path: string, body?: unknown, headers?: Record<string, string>) => apiOk(url, bearer, path, { body, headers });
 
   // A held account, and a compute host that is away as the loop reads it.
   const home = join(await temporaryDirectory('caretaker-home'), 'claude-a'); await mkdir(home, { recursive: true });

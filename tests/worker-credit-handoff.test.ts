@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,6 +15,7 @@ import { proposedRuntimes } from '../src/model/registry.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { apiOk } from './helpers/api.js';
 
 // Exercise the real limit-stop preservation, capacity transaction and successor handoff with real Git,
 // through the headless worker dispatch (GY-3259): the run stops on its limit and the same dispatch moves on.
@@ -29,19 +29,7 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 
 let store: Store, url: string;
 
-const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const result = await call(principal, method, path, body);
-  assert.equal(result.status, 200, `${path}: ${JSON.stringify(result.body)}`);
-  return result.body;
-};
+const ok = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(principal), path, { method, body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 
 useTestStore('worker-credit-handoff', { leaseSeconds: 7200, repository: 'owner/credit-work', credentials: credentials }, ctx => { ({ store, url } = ctx); });

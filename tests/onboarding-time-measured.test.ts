@@ -12,6 +12,7 @@ import { measureOnboarding } from '../src/onboarding-scratch.js';
 import { onboardingCase, runOnboardingTime, type OnboardingRun } from '../src/onboarding-time.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 const own = 'integration:onboarding-time-measured';
 const commit = 'a'.repeat(40), at = '2026-11-23T00:00:00.000Z';
@@ -66,17 +67,11 @@ test(`${own} — the daily diagnostics of a repository holding the case run it o
 });
 
 test(`${own} — the host run checks the commit out and reads its scratch install's result; a commit without the measurement is a failed run naming why`, async () => {
-  const root = await temporaryDirectory('onboarding-time-repo');
-  const git = (...args: string[]) => defaultChildRun('git', ['-C', root, ...args]);
-  await git('init', '-q', '-b', 'main');
-  await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@example.invalid');
-  await writeFile(join(root, 'README.md'), '# bare\n');
-  await git('add', '.'); await git('commit', '-q', '-m', 'bare');
-  const bare = (await git('rev-parse', 'HEAD')).trim();
+  const { root, git, head: bare } = await gitRepo({ label: 'onboarding-time-repo', files: { 'README.md': '# bare\n' }, message: 'bare' });
   await mkdir(join(root, 'scripts'));
   await writeFile(join(root, 'scripts', 'onboarding-time.ts'), `console.log('noise');\nconsole.log(JSON.stringify({ at: '${at}', commit: process.argv[2], minutes: 1.5, result: 'passed', handFixes: [] }));\n`);
-  await git('add', '.'); await git('commit', '-q', '-m', 'measured');
-  const measured = (await git('rev-parse', 'HEAD')).trim();
+  git('add', '.'); git('commit', '-q', '-m', 'measured');
+  const measured = git('rev-parse', 'HEAD');
   assert.deepEqual(await runOnboardingTime({ root, commit: measured }), { at, commit: measured, minutes: 1.5, result: 'passed', handFixes: [] });
   const missing = await runOnboardingTime({ root, commit: bare });
   assert.equal(missing.result, 'failed');

@@ -11,6 +11,7 @@ import { masterConfigSchema } from '../src/master/profiles.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Principal, Work } from '../src/model.js';
 import { mainworksRepository } from '../src/scenarios.js';
+import { api } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -49,14 +50,9 @@ test('e2e:no-duplicate-repairs — a stub loop through a control-plane upgrade s
   });
 
   const post = async (token: string, path: string, body: unknown, key: string) => {
-    const response = await fetch(`${url}/api/${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-      body: JSON.stringify(body),
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`${path} refused (${response.status}): ${text.slice(0, 200)}`);
-    return JSON.parse(text);
+    const result = await api(url, token, path, { body, key });
+    if (result.status >= 300) throw new Error(`${path} refused (${result.status}): ${JSON.stringify(result.body).slice(0, 200)}`);
+    return result.body;
   };
 
   const effects: DaemonEffects = {

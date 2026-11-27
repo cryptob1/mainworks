@@ -25,6 +25,7 @@ import { server } from '../src/server.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3293: the loop never writes a config it cannot read, and repairs one it cannot load instead
 // of failing every cycle. The real control plane, agent registry, loop cycle, config load and
@@ -64,18 +65,13 @@ before(async () => {
 
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.ok(response.ok, `${method} ${path}: ${JSON.stringify(result)}`);
-  return result;
-};
-const snapshot = () => api('GET', 'work-snapshot', undefined, { [coordinationViewHeader]: 'coordination' }) as Promise<{ work: Work[]; now: string }>;
+const call = (method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => apiOk(url, token(coordinator), path, { method, body, headers });
+const snapshot = () => call('GET', 'work-snapshot', undefined, { [coordinationViewHeader]: 'coordination' }) as Promise<{ work: Work[]; now: string }>;
 
 /** One loop cycle over the real config load (repair included), registry read, worker-pool growth, credentials and session records. */
 async function cycle(state: ReturnType<typeof emptyDaemonState>, options: { failCloseStep?: boolean } = {}) {
   const config = await loadMasterConfig(root);
-  const mutate = (path: string, data: unknown) => api('POST', path, data);
+  const mutate = (path: string, data: unknown) => call('POST', path, data);
   const production = daemonEffects(root, () => config, { snapshot, mutate, headless: spawnHeadless });
   const effects: DaemonEffects = {
     snapshot, agents: () => [], herdr: production.herdr,
@@ -96,7 +92,7 @@ test('a worker role allowing 128 grows the pool only to the schema maximum, and 
   assert.equal(config.workers.length, MAX_WORKER_PROFILES, JSON.stringify(Object.values(state.actions).map(action => action.detail)));
   assert.ok(config.workers.slice(1).every(profile => profile.minted === true), 'every added profile is marked as the loop\'s own');
   // The registry still allows 128; the pool — what the install can actually run — never passes the schema's bound.
-  const fleet = await api('GET', 'agent-registry');
+  const fleet = await call('GET', 'agent-registry');
   assert.equal(fleet.roles.find((role: any) => role.role === 'worker').limit, 128);
 });
 
@@ -162,8 +158,8 @@ test(`a step failing identically for ${stepFailureThreshold} cycles shows a Need
   // Needs you item while it stands — no master session involved.
   const line = standingStepFailures(state)[0]!;
   assert.equal(line, row!.detail);
-  await api('GET', 'work-snapshot', undefined, { [loopPresenceHeader]: '20', [loopStepFailureHeader]: encodeURIComponent(line) });
-  const status = await api('GET', 'status');
+  await call('GET', 'work-snapshot', undefined, { [loopPresenceHeader]: '20', [loopStepFailureHeader]: encodeURIComponent(line) });
+  const status = await call('GET', 'status');
   assert.equal(status.setup.stepFailure, line);
   const item = setupChecklist(status).find(entry => entry.id === 'step-failure')!;
   assert.equal(item.human, true);
@@ -171,10 +167,10 @@ test(`a step failing identically for ${stepFailureThreshold} cycles shows a Need
   assert.ok(item.line.includes('cannot read the volumes: fixture'));
 
   // The attention line names the error, and the alert clears on the first cycle the step succeeds.
-  const report = await masterStatusReport(root, await loadMasterConfig(root), path => api('GET', path), async () => { throw new Error('no git in the fixture'); });
+  const report = await masterStatusReport(root, await loadMasterConfig(root), path => call('GET', path), async () => { throw new Error('no git in the fixture'); });
   assert.ok(report.attention.some(entry => entry.text === row!.detail), JSON.stringify(report.attention));
   await cycle(state);
   assert.equal(state.actions[stepFailureKey('close')], undefined, 'the standing line clears with the step');
-  await api('GET', 'work-snapshot', undefined, { [loopPresenceHeader]: '20', [loopStepFailureHeader]: 'off' });
-  assert.equal((await api('GET', 'status')).setup.stepFailure, null);
+  await call('GET', 'work-snapshot', undefined, { [loopPresenceHeader]: '20', [loopStepFailureHeader]: 'off' });
+  assert.equal((await call('GET', 'status')).setup.stepFailure, null);
 });

@@ -1,12 +1,12 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
@@ -22,6 +22,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterCredentialMask, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { masterSessionConfinement } from '../src/master/launch.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3806: live checks of agy and Pi accounts get a writable account home and a scratch home they
 // can create, returning a login verdict (available, exhausted or not logged in) instead of a check
@@ -217,11 +218,7 @@ test('integration:account-check-writable-home — agy and Pi live checks return 
     const configHome = join(holder, 'config');
     const masterToken = join(configHome, 'install', 'tokens', 'coordinator.token');
     for (const dir of [root, agyHome, piHome, masterHome, bin, dirname(masterToken)]) mkdirSync(dir, { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-    const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
-    git('init', '-q', '-b', 'main');
-    git('add', '.');
-    git('commit', '-qm', 'seed');
+    await gitRepo({ root, files: { '.gitignore': '.graphyard/\n' }, message: 'seed' });
     writeFileSync(masterToken, 'coord-token\n', { mode: 0o600 });
     writeFileSync(join(agyHome, 'antigravity-oauth-token'), 'oauth-token-fixture');
     writeFileSync(join(agyHome, 'settings.json'), JSON.stringify({ theme: 'dark' }));
@@ -314,14 +311,7 @@ test('e2e:account-check-writable-home — on a running test install an agy accou
   const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-agy-check'), credentials));
   servers.push(close);
 
-  const apiCall = async (bearer: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined
-      ? { headers: { Authorization: `Bearer ${bearer}` } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const parsed = await response.json() as any;
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(parsed)}`);
-    return parsed;
-  };
+  const apiCall = (bearer: string, path: string, body?: unknown) => apiOk(url, bearer, path, { body });
 
   const agyRuntime = structuredClone(proposedRuntimes.find(entry => entry.name === 'agy') ?? {
     name: 'agy',

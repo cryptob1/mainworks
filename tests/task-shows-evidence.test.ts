@@ -14,6 +14,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { apiOk } from './helpers/api.js';
 
 // The item this test files carries an e2e proof, so the policy in force says how a head is served for
 // it; the policy is read once per process, and nothing reads it ahead of this line.
@@ -44,12 +45,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     { id: 'operator', role: 'admin', sessionKind: 'human', token: 'operator' }, { id: 'claude-builder-7', role: 'worker', token: 'builder' },
     { id: 'graphyard-merge-writer', role: 'coordinator', token: 'coordinator' }] as never));
   let calls = 0;
-  const call = async (token: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `evidence-${++calls}` }, body: body === undefined ? undefined : JSON.stringify(body) });
-    const text = await response.text();
-    assert.ok(response.ok, `${path} answered ${response.status}: ${text}`);
-    return JSON.parse(text);
-  };
+  const call = (token: string, path: string, body?: unknown) => apiOk(url, token, path, { body, key: `evidence-${++calls}` });
   try {
     const filed = await call('operator', 'work', { title: 'Trials keep their shards when hot', why: 'Trials were slow.', simplest: 'Keep the local host.', type: 'feature', priority: 2, criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['e2e:sign-in'] }] });
     const item = `work/${filed.id}`;

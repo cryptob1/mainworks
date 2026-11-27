@@ -159,8 +159,6 @@ export interface Cycle {
   checkoutTrustRefused?: ReadonlySet<string>;
   /** The loop's journal line writer: steps that settle beside the cycle log through it (GY-3141). */
   log: (line: string) => void;
-  /** GY-3437: settles once this cycle's reviews and trials have had their launches; a worker launch waits for it, so they take free capacity first. */
-  reviewsAndTrials?: Promise<void>;
 }
 
 /**
@@ -235,9 +233,7 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
   for (const [key] of inFlight) delete state.actions[key];
   performed.push(...reconcilePendingActions(state, read.snapshot.work, clock));
   for (const [key, action] of inFlight) state.actions[key] = action;
-  let reviewedAndTrialled!: () => void;
-  const cycle: Cycle = { config, state, effects, now, ...read, clock, performed, launcher: launches, reservedProfiles: launches.held(), log,
-    reviewsAndTrials: new Promise<void>(resolve => { reviewedAndTrialled = resolve; }) };
+  const cycle: Cycle = { config, state, effects, now, ...read, clock, performed, launcher: launches, reservedProfiles: launches.held(), log };
 
   if (!config.forPerson) await step('close', () => closeStep(cycle));
   caretakerStep(cycle);
@@ -254,7 +250,6 @@ export async function runCycle(config: MasterConfig, state: DaemonState, effects
   // GY-3119: the batch gate on main starts beside the cycle once the merge writer's step ran.
   // GY-3634: the trial benchmark runs beside the cycle after new builds and every 6h when no trial is queued.
   if (!config.forPerson) await step('merge writer', () => mergeWriterStep(cycle).then(() => batchGateStep(cycle)).then(() => { benchStep(cycle); }));
-  reviewedAndTrialled();
   if (own) { await launches.idle(); performed.push(...launches.drain()); }
   await step('persist', async () => {
     // GY-3274: the lessons and product brief the master session recorded straight to the file are
@@ -682,6 +677,17 @@ async function dispatchStep(cycle: Cycle) {
   if (effects.release) await releaseBacklog(cycle, allowed);
   advanceFailureRuns(state, snapshot.work, accountNames(config.workers));
   const open = snapshot.work.filter(item => item.stage !== 'done' && (item.owner ?? null) === (config.forPerson ?? null));
+  // GY-3965: reworks apply before launches are chosen, so a returned item takes a free builder this cycle.
+  if (effects.rework) for (const item of open) {
+    const rework = neededRework(item);
+    if (!rework) continue;
+    const key = reworkKey(item, rework.binding);
+    if (state.actions[key]?.state === 'done') continue;
+    const lastRework = { reason: rework.reason, binding: rework.binding ?? null, at: new Date(clock).toISOString() };
+    try { await effects.rework(item, rework.reason, rework.binding); await note(cycle, key, 'judgement', item.key, 'done', `Returned ${item.key} to a worker: ${rework.reason}`);
+      Object.assign(item, { reworkRequested: true, lease: null, lastRework, reworkHistory: [...item.reworkHistory ?? [], { attempt: item.submission?.epoch ?? item.epoch, ...lastRework }] });
+    } catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not return ${item.key} to a worker: ${message(error)}`); }
+  }
   const health = profileHealth(config.workers, credentials, herdr.agents, state, clock, snapshot.work);
   const taken = cycle.reservedProfiles;
   const hot = new Set(hotspots(open, clock).map(entry => entry.file));
@@ -770,21 +776,11 @@ async function dispatchStep(cycle: Cycle) {
     let settled!: () => void;
     ahead.push({ key, priority: item.priority, done: new Promise<void>(resolve => { settled = resolve; }) });
     launcher.submit(key, [free.profile.name], async sink => {
-      try {
-        await Promise.all([...before.map(entry => entry.done), cycle.reviewsAndTrials]);
-        if (before.some(entry => state.actions[entry.key]?.state === 'waiting')) return;
-        await launchWorker(cycle, item, key, free.profile, sink, canaries, held.exclude);
+      try { await Promise.all(before.map(entry => entry.done));
+        if (!before.some(entry => state.actions[entry.key]?.state === 'waiting')) await launchWorker(cycle, item, key, free.profile, sink, canaries, held.exclude);
       } finally { settled(); }
     });
     launched.push(item);
-  }
-  if (effects.rework) for (const item of open) {
-    const rework = neededRework(item);
-    if (!rework) continue;
-    const key = reworkKey(item, rework.binding);
-    if (state.actions[key]?.state === 'done') continue;
-    try { await effects.rework(item, rework.reason, rework.binding); await note(cycle, key, 'judgement', item.key, 'done', `Returned ${item.key} to a worker: ${rework.reason}`); }
-    catch (error) { await note(cycle, key, 'judgement', item.key, 'failed', `Could not return ${item.key} to a worker: ${message(error)}`); }
   }
   if (effects.askHumanProof) for (const item of open) for (const proof of dueHumanProofs(item)) {
     const key = `human-proof:${item.id}:${proof}:${item.candidate!.sha}:${item.policyRevision}`;
@@ -815,14 +811,16 @@ async function dispatchStep(cycle: Cycle) {
     // (or after 30 minutes of empty-board alarm), launch one headless planner session to draft up to three unreleased items.
     plannerStep(cycle, { freeSlots: allowed - running });
   }
-  // A dispatch tick that fails (its state cannot be saved) still wakes the master.
-  // GY-3605: the tick's session launches each have the launch bound — minutes, when a product review
-  // builds and serves its head first — so a tick still running after tickWaitMs runs on beside the
-  // cycle. The effect starts no second tick, and the next cycle's step joins the one running.
+  // A dispatch tick that fails (its state cannot be saved) still wakes the master. GY-3605: a tick
+  // still running after tickWaitMs runs on beside the cycle; GY-3965: a cycle that finds one running
+  // starts no second and never waits on it, so the merge step goes on.
   let timer: NodeJS.Timeout | undefined;
-  try { await Promise.race([effects.dispatchTick?.(snapshot, cpuWaitingLine), new Promise(resolve => { timer = setTimeout(resolve, tickWaitMs); })]); }
+  const tick = ticking.has(state) ? undefined : effects.dispatchTick?.(snapshot, cpuWaitingLine)?.finally(() => ticking.delete(state));
+  if (tick) ticking.add(state);
+  try { if (tick) await Promise.race([tick, new Promise(resolve => { timer = setTimeout(resolve, tickWaitMs); })]); }
   finally { clearTimeout(timer); await masterSession(cycle, open); }
 }
+const ticking = new WeakSet<DaemonState>();
 
 /**
  * GY-3694: available merge-trial slots — the host's local heavy-job limit plus ready remote hosts.

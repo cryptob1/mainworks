@@ -21,6 +21,7 @@ import { TestsView } from '../web/pages/tests.js';
 
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api } from './helpers/api.js';
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -38,19 +39,12 @@ let store: Store, engine: Engine, url: string;
 useTestStore('e2e-cases', { credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ store, engine, url } = ctx); });
 
 /** The CLI's authenticated request helper, as one principal. */
-const apiAs = (actor: Principal) => async (path: string, data?: unknown, key: string = randomUUID()) => {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data) });
-  const body = await response.json() as any;
-  if (!response.ok) throw Object.assign(new Error(body?.error ?? `HTTP ${response.status}`), { status: response.status });
+const apiAs = (actor: Principal) => async (path: string, data?: unknown, key?: string) => {
+  const { status, body } = await api(url, tokens.get(actor.id)!, path, { body: data, key });
+  if (status < 200 || status > 299) throw Object.assign(new Error(body?.error ?? `HTTP ${status}`), { status });
   return body;
 };
-const call = async (path: string, actor: Principal, data?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-};
+const call = (path: string, actor: Principal, data?: unknown) => api(url, tokens.get(actor.id)!, path, { body: data });
 /** A scratch repository holding the given case files under e2e/cases/. */
 async function repository(files: Record<string, unknown>) {
   const dir = await temporaryDirectory('e2e-repo');

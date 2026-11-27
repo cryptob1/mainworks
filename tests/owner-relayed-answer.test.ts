@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
@@ -11,6 +10,7 @@ import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 // Real CLI, control plane, Postgres and dashboard; no mocked answer or browser routes.
 test('e2e:owner-relayed-answer — owner direction relayed by the master is recorded and reversible', async () => {
@@ -21,10 +21,7 @@ test('e2e:owner-relayed-answer — owner direction relayed by the master is reco
   const token = (actor: Principal) => `${actor.id}-${'x'.repeat(32)}`;
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   const { url, close } = await listen(server(engine, [owner, master, worker].map(actor => ({ ...actor, token: token(actor) }))));
-  const post = async (actor: Principal, path: string, body: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token(actor)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const data = await response.json(); assert.equal(response.status, 200, JSON.stringify(data)); return data;
-  };
+  const post = (actor: Principal, path: string, body: unknown) => apiOk(url, token(actor), path, { body });
   const read = async (path: string) => (await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${token(owner)}` } })).json();
   const cli = (...args: string[]) => promisify(execFile)(process.execPath, [resolve('bin/graphyard.mjs'), ...args], { env: { ...process.env, GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(master), GRAPHYARD_TOKEN_FILE: undefined } });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;

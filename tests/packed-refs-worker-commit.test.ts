@@ -1,27 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { coordinatorConfinement, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { moveBranchToHead } from '../src/daemon/worker-verification.js';
 import { preservedWorkNote, removeAttemptWorktree, worktreesDirectory } from '../src/master/worktrees.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3279 (hwd-backend GY-7): once git packed the graphyard/* refs and removed the emptied
 // refs/heads/graphyard directory, no worker could commit; a finished detached head could not be
 // submitted; and closing the attempt deleted the only name its commits had.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const run = (command: string, args: string[]) => execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe' });
 
 test('e2e:packed-refs-worker-commit — with graphyard/* refs packed and refs/heads/graphyard absent a confined worker commits and completes, a detached descendant head moves the branch, and a closed attempt\'s commits on no branch are kept and named to the next attempt', async () => {
-  const root = join(await temporaryDirectory('packed-refs-worker'), 'coordinator');
-  mkdirSync(root, { recursive: true });
-  git(root, 'init', '-q', '-b', 'main');
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  git(root, 'add', '.'); git(root, 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ root: join(await temporaryDirectory('packed-refs-worker'), 'coordinator'), files: { '.gitignore': '.graphyard/\n' } });
   mkdirSync(worktreesDirectory(root), { recursive: true });
   const [first, second] = ['GY-7-1', 'GY-7-2'].map(name => join(worktreesDirectory(root), name));
   git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-7-1', first!);

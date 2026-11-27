@@ -3,7 +3,6 @@
 // while it was not serving, provided the item's epoch is unchanged and no other session claimed it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -11,6 +10,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
@@ -49,11 +49,7 @@ async function postJson(url: string, token: string, body: unknown) {
 }
 
 test('unit:lease-survives-control-plane-restart — stops a stub server past lease expiry mid-session and asserts the session ends submitted on the same epoch', { timeout: 60_000 }, async () => {
-  const dir = await temporaryDirectory('lease-survives-restart');
-  const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@t' };
-  const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: gitEnv, encoding: 'utf8' }).trim();
-  git('init', '--quiet');
-  git('commit', '--allow-empty', '--quiet', '-m', 'base');
+  const { root: dir, git } = await gitRepo({ label: 'lease-survives-restart', files: {} });
   git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   git('commit', '--allow-empty', '--quiet', '-m', 'builder work');
   const head = git('rev-parse', 'HEAD');

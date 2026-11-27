@@ -20,6 +20,7 @@ import { freePort } from '../src/serve-app.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { api } from './helpers/api.js';
 
 const H = 'a'.repeat(40), B = 'b'.repeat(40);
 const hashOf = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
@@ -37,14 +38,7 @@ const tokenOf = (principal: Principal) => credentials.find(credential => credent
 let store: Store, http: ReturnType<typeof server>, url: string;
 useTestStore('code-and-product-review-run-together', { repository, credentials }, ctx => { ({ store, http, url } = ctx); });
 
-async function post(credential: string, path: string, body?: unknown, key: string = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: JSON.stringify(body),
-  });
-  return { status: response.status, body: await response.json() as any };
-}
+const post = (credential: string, path: string, body?: unknown, key?: string) => api(url, credential, path, { method: 'POST', body, key });
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
 const launchBody = (token: string, fields: Record<string, unknown> = {}) => ({

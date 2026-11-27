@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { databaseUrl, planAsRows } from './helpers/postgres.js';
 import { explainAnalyzeBuffers } from './helpers/query-plan.js';
@@ -10,6 +9,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { eventHistorySql, parseEventHistoryQuery, readEventHistory, routineSummarySql } from '../src/events-history.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-3761: the history page resolved every candidate row's payload (graphyard_event_work) before
 // it applied its limit, so on a real ledger it ran for minutes and loaded the database while
@@ -31,9 +31,7 @@ before(async () => {
   counted = new pg.Pool({ connectionString: connection, max: 1, options: '-c track_functions=pl' }); counted.on('error', () => {});
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Watched item', why: 'Its history is long.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  ({ id } = await created.json() as { id: string });
+  ({ id } = (await api(url, adminToken, 'work', { body: { title: 'Watched item', why: 'Its history is long.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } })).body as { id: string });
   const template = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;
   await store.pool.query(`INSERT INTO work_items(id, document) SELECT g.id, $1::jsonb || jsonb_build_object('id', g.id::text, 'key', 'GY-' || (g.n + 100))
     FROM (SELECT gen_random_uuid() AS id, n FROM generate_series(1, ${ITEMS - 1}) n) g`, [template]);

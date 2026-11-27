@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { serveGitHttp } from './helpers/git-http-remote.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { defaultChildRun } from '../src/child-runner.js';
@@ -18,13 +17,10 @@ import { writeMergeToken } from '../src/install/merge-token.js';
 const TOKEN = 'github_pat_fixture_token_value';
 
 async function fixture(label: string) {
-  const directory = await temporaryDirectory(label), origin = join(directory, 'repo.git'), checkout = join(directory, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  git(origin, 'config', 'http.receivepack', 'true');
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await writeFile(join(checkout, 'a.txt'), 'base\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
-  const baseTip = git(checkout, 'rev-parse', 'HEAD');
+  const directory = await temporaryDirectory(label), origin = join(directory, 'repo.git');
+  const { root: checkout, head: baseTip } = await gitRepo({ root: join(directory, 'checkout'), files: { 'a.txt': 'base\n' } });
+  git(directory, 'init', '-q', '--bare', '-b', 'main', origin); git(origin, 'config', 'http.receivepack', 'true');
+  git(checkout, 'remote', 'add', 'origin', origin); git(checkout, 'push', '-q', '-u', 'origin', 'main');
   await writeFile(join(checkout, 'b.txt'), 'merge\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'merge');
   const mergeSha = git(checkout, 'rev-parse', 'HEAD');

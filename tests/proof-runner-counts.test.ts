@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { freePort } from '../src/cli/test-isolation.js';
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
@@ -24,6 +23,7 @@ import { runProof } from '../src/cli/verify.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 const own = 'unit:tests/proof-runner-counts.test.ts';
 const operator: Principal = { id: 'operator', role: 'admin' };
@@ -106,8 +106,7 @@ test(`${own} — a vitest repository's passing proof records executed >= 1 and t
         trial: input => runMergeTrial({ ...input, retries: 0, attribute: false }),
         record: async (_, event) => {
           if (event.kind === 'trial') trials.push(event);
-          const answer = await fetch(`${url}/api/work/${work.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-          assert.equal(answer.status, 200, await answer.text());
+          await apiOk(url, token, `work/${work.id}/merge-record`, { body: event });
         },
       });
       const outcome = await mergeOne(reads, work);

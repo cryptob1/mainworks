@@ -10,6 +10,7 @@ import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api } from './helpers/api.js';
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -276,7 +277,7 @@ test('rollback HTTP routes derive authority from the credential and appear in de
   finally { if (configuredReviewers === undefined) delete process.env.GRAPHYARD_MAX_REVIEWERS; else process.env.GRAPHYARD_MAX_REVIEWERS = configuredReviewers; }
   await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${(http.address() as any).port}`;
-  const call = async (actor: Principal, path: string, body?: unknown) => { const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${actor.id}-token-${'x'.repeat(32)}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: body ? JSON.stringify(body) : undefined }); return { status: response.status, body: await response.json() as any }; };
+  const call = (actor: Principal, path: string, body?: unknown) => api(url, `${actor.id}-token-${'x'.repeat(32)}`, path, { body, key: id() });
   try {
     assert.equal((await call(worker, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);
     assert.equal((await call(executor, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);

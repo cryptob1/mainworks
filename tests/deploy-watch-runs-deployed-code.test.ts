@@ -5,7 +5,7 @@
 // pass, and the deploy the handover follows neither rolls back nor runs again in the successor.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { cp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -17,11 +17,10 @@ import { controlPlaneRecordPath, deployRecordPath, readControlPlaneRecord, readD
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
 import { until } from './helpers/until.js';
+import { git } from './helpers/git-repo.js';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const modules = resolve(createRequire(import.meta.url).resolve('tsx'), '../../..');
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }).trim();
 const repository = 'owner/project';
 const watchIntervalMs = 200;
 

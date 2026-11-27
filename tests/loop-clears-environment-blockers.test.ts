@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
@@ -15,6 +14,7 @@ import { cliReleasePath, currentCliPath, repairCliStamp } from '../src/install/c
 import { recordedCommit, releaseIdentityPath } from '../src/release.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
+import { api, apiOk } from './helpers/api.js';
 
 // GY-3553: the loop clears an environment blocker itself once its cause is gone. A worker blocked
 // on a host heavy-job slot, heat, a host verification timeout, a CLI/server commit mismatch or an
@@ -30,16 +30,8 @@ const credentials = [operator, coordinator, workerA].map(principal => ({ ...prin
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
 let store: Store, url: string;
-const ok = async (bearer: string, path: string, body: unknown = {}) => {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-  const result = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(result));
-  return result;
-};
-const snapshot = async () => {
-  const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator.id)}`, 'X-Graphyard-View': 'coordination' } });
-  return response.json() as Promise<{ work: Work[]; now: string }>;
-};
+const ok = (bearer: string, path: string, body: unknown = {}) => apiOk(url, bearer, path, { body });
+const snapshot = () => api(url, token(coordinator.id), 'work-snapshot', { headers: { 'X-Graphyard-View': 'coordination' } }).then(result => result.body as { work: Work[]; now: string });
 const reload = async (id: string) => (await snapshot()).work.find(item => item.id === id)!;
 const unblockLines = async (id: string) => (await store.pool.query("SELECT payload FROM events WHERE work_id=$1 AND kind='unblock' ORDER BY seq", [id])).rows.map(row => String(row.payload?.reason ?? JSON.stringify(row.payload)));
 

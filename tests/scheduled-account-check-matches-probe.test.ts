@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +20,7 @@ import { proposedRuntimes } from '../src/model/registry.js';
 import { smokeRegistryAccount } from '../src/runner/roles.js';
 import { shellQuote } from '../src/shell-quote.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -135,14 +135,7 @@ test('e2e:scheduled-account-check-matches-probe — scheduled check matches care
   const { url, close } = await listen(server(new Engine(store, 7200, 'owner/sched-probe'), credentials));
   servers.push(close);
 
-  const apiCall = async (bearer: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined
-      ? { headers: { Authorization: `Bearer ${bearer}` } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const parsed = await response.json() as any;
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(parsed)}`);
-    return parsed;
-  };
+  const apiCall = (bearer: string, path: string, body?: unknown) => apiOk(url, bearer, path, { body });
 
   const claudeRuntime = structuredClone(proposedRuntimes.find(r => r.name === 'claude')!);
   const piRuntime = structuredClone(proposedRuntimes.find(r => r.name === 'pi')!);

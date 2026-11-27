@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
@@ -19,6 +19,7 @@ import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { MergePorts } from '../src/merge-writer/executor.js';
 import type { Principal, Work } from '../src/model.js';
+import { apiOk } from './helpers/api.js';
 
 // Every filed fixture owes an E2E proof (its criterion names this change's own case) and the serve
 // declaration its trial needs.
@@ -26,10 +27,10 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 
 // GY-3437 filed the heat tiers (reviews and trials first from 80C, nothing new at 85C); GY-3501
 // deleted them: a hot sensor holds no launch at all, because holding workers for heat they do not
-// cause left ready work idle for hours while the hot work ran on. What stays is the ordering
-// within a cycle: with free capacity and both kinds ready, the reviews and trials that finish work
-// launch before its workers — the fixture is GY-3373's hot host (a sensor at 86C with CPU
-// pressure near 20 percent), read through the production reader against a temporary control plane.
+// cause left ready work idle for hours while the hot work ran on. GY-3965: nor does a worker launch
+// wait for the cycle's reviews and trials; all three launch in the one cycle — the fixture is GY-3373's
+// hot host (a sensor at 86C with CPU pressure near 20 percent), read through the production reader
+// against a temporary control plane.
 
 const proof = 'integration:hot-reviews-first';
 const repository = 'owner/hot-reviews-first';
@@ -40,20 +41,8 @@ const credentials = [operator, coordinator, workerA].map(principal => ({ ...prin
 const token = (id: string) => credentials.find(credential => credential.id === id)!.token;
 
 let store: Store, url: string;
-const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const result = await call(bearer, method, path, body);
-  assert.equal(result.status, 200, JSON.stringify(result.body));
-  return result.body;
-};
-const coordinationSnapshot = async () => {
-  const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator.id)}`, 'X-Graphyard-View': 'coordination' } });
-  assert.equal(response.status, 200);
-  return response.json() as Promise<{ work: Work[]; now: string }>;
-};
+const ok = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, bearer, path, { method, body });
+const coordinationSnapshot = () => apiOk(url, token(coordinator.id), 'work-snapshot', { headers: { 'X-Graphyard-View': 'coordination' } }) as Promise<{ work: Work[]; now: string }>;
 const file = async (title: string) => ok(token(operator.id), 'POST', 'work', {
   title, why: 'w', simplest: 's', type: 'chore', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: [proof, 'e2e:hot-reviews-first'] }], policy: { checks: ['test'], review: true },
 }) as Promise<Work>;
@@ -151,7 +140,7 @@ test(`${proof} — at 86C the worker, the review and the queued trial all launch
   await mergeWriterIdle(state);
   assert.deepEqual(seen.dispatched, [readyItem.key], 'at 86C the implementation session starts: heat holds no worker');
   assert.equal(seen.trials, 1, 'at 86C the queued trial starts');
-  assert.deepEqual(seen.order, ['review', 'trial', 'implementation'], 'the review and the trial launch before the worker, hot or not');
+  assert.deepEqual([...seen.order].sort(), ['implementation', 'review', 'trial'], 'the review, the trial and the worker launch in the one cycle, hot or not');
   assert.deepEqual(seen.ticks, [undefined], 'no launch waits at 86C');
   assert.equal(state.cpuPressure?.celsius, 86);
   assert.equal((await status(config, state)).cpuPressure?.waiting, null, 'master status shows no waiting line');
@@ -165,14 +154,4 @@ test(`${proof} — at 86C the worker, the review and the queued trial all launch
   assert.deepEqual(seen.dispatched, [readyItem.key, readyLater.key], 'below 80C implementation launches again, exactly the same');
   assert.deepEqual(seen.ticks, [undefined, undefined]);
   assert.equal((await status(config, state)).cpuPressure?.waiting, null);
-});
-
-test(`${proof} — with free slots and both kinds ready, the review and the trial launch before the implementation session`, async () => {
-  const { config, state, readyItem } = await fixture();
-  const sensors = await hwmon(60);
-  const { daemon, seen } = effects(config, { agents: [] }, async () => ({ ...calm(1000), celsius: await cpuCelsius(sensors) }));
-  await runCycle(config, state, daemon);
-  await mergeWriterIdle(state);
-  assert.deepEqual(seen.dispatched, [readyItem.key]);
-  assert.deepEqual(seen.order, ['review', 'trial', 'implementation'], 'reviews and trials take free capacity first');
 });

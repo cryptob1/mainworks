@@ -29,6 +29,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { loopRunAdoption } from '../src/daemon/run-adoption.js';
 import { existsSync, readdirSync } from 'node:fs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { listen } from './helpers/http-server.js';
 import { until } from './helpers/until.js';
@@ -50,16 +51,12 @@ before(async () => {
   engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
   // A master over a real repository: the base, and a head that changes one file.
-  root = await temporaryDirectory('headless-review-root'); credentials = await temporaryDirectory('headless-review-credentials');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main');
+  const repo = await gitRepo({ label: 'headless-review-root', files: { 'README.md': 'Named spec file.\n' } }), git = repo.git;
+  root = repo.root; base = repo.head; credentials = await temporaryDirectory('headless-review-credentials');
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'Named spec file.\n');
-  git('add', 'README.md'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
-  base = git('rev-parse', 'HEAD');
   git('update-ref', 'refs/remotes/origin/main', base);
   await writeFile(join(root, 'feature.ts'), 'export const flag = "headless-diff-marker";\n');
-  git('add', 'feature.ts'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'head');
+  git('add', 'feature.ts'); git('commit', '-qm', 'head');
   head = git('rev-parse', 'HEAD');
   git('checkout', '-q', base);
   // A fresh checkout (the private trial's) has no .graphyard directory yet.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
@@ -21,6 +21,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { expandTypedCommand } from './helpers/launch-shell.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 
 // GY-3237: after a GY-3212 migration moved an install from its private Herdr to the host's main
@@ -60,7 +61,6 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('herdr-home', checkout);
   const root = await temporaryDirectory('herdr-checkout', checkout);
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], { encoding: 'utf8' }).trim();
   const operator: Principal = { id: 'operator', role: 'admin' }, coordinator: Principal = { id: 'master', role: 'coordinator' };
   const tokens = new Map([[operator.id, `operator-${'t'.repeat(32)}`], [coordinator.id, `coordinator-${'t'.repeat(32)}`]]);
 
@@ -91,11 +91,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
     const installId = 'owner-project', installDirectory = join(home, '.config', 'graphyard', installId);
     const instance = { configHome: join(installDirectory, 'herdr'), session: 'gy-fixture' };
     mkdirSync(join(instance.configHome, 'herdr', 'sessions', instance.session), { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-    git(root, 'init', '-q', '-b', 'main');
-    git(root, 'add', '.');
-    git(root, 'commit', '-qm', 'base');
-    git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git');
+    (await gitRepo({ root, files: { '.gitignore': '.graphyard/\n' } })).git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
     await setupMaster(root, { url, token: tokens.get(coordinator.id)!, cliPath: cli, hostId: 'fixture-host', herdrWorkspace: 'wPrivate',
       credentialDirectory: installDirectory });
     await saveReviewerProfile(root, { name: 'claude-reviewer', agentName: 'review-claude-1', kind: 'claude', agentArgs: ['--setting-sources', 'user'] });

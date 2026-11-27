@@ -1,6 +1,5 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -9,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -25,20 +25,13 @@ import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { linkedCases } from '../src/model/test-cases.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { api } from './helpers/api.js';
 
 // GY-2965 AC-2: the merge trial serves the head and runs its bound case. A head carrying
 // e2e:home-shows-change is refused when e2e/cases/home-shows-change.json is absent, naming the
 // path; when the case passes against the head served by the repository's e2e.serve, the item is
 // landable and the run is a trusted run of the case on /api/tests; a failing step refuses the
 // head naming the case and the step.
-
-const identity = {
-  GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',
-  GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
-const gitIn = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 const servePort = 20000 + (process.pid % 20_000);
 const serveUrl = `http://127.0.0.1:${servePort}`;
@@ -61,11 +54,11 @@ let fixtureRoot: string, root: string, base: string, baseTip: string, head: stri
 const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
 /** Commits `files` on the worker branch and answers the new head. */
 async function commitFiles(files: Record<string, string>) {
-  gitIn(root, 'checkout', '-q', '--detach', head);
-  for (const [path, content] of Object.entries(files)) { write(path, content); gitIn(root, 'add', '-A'); }
-  gitIn(root, 'commit', '-q', '-m', 'case');
-  const next = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'checkout', '-q', 'main');
+  git(root, 'checkout', '-q', '--detach', head);
+  for (const [path, content] of Object.entries(files)) { write(path, content); git(root, 'add', '-A'); }
+  git(root, 'commit', '-q', '-m', 'case');
+  const next = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', 'main');
   head = next;
   return next;
 }
@@ -78,22 +71,16 @@ before(async () => {
 
   fixtureRoot = await temporaryDirectory('trial-e2e-fixture', tmpdir());
   root = join(fixtureRoot, 'repo');
-  mkdirSync(root, { recursive: true });
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { test: 'node --eval 0' } }));
-  write('graphyard.json', JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: serveUrl, readySeconds: 10 } } }));
-  write('serve.js', serveScript);
-  gitIn(root, 'add', '-A');
-  gitIn(root, 'commit', '-q', '-m', 'base');
-  baseTip = gitIn(root, 'rev-parse', 'HEAD');
+  baseTip = (await gitRepo({ root, files: { 'package.json': JSON.stringify({ name: 'fixture', scripts: { test: 'node --eval 0' } }),
+    'graphyard.json': JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: serveUrl, readySeconds: 10 } } }), 'serve.js': serveScript } })).head;
   // The worker head: a branch holding the change; the serve declaration is the base's own.
   const worktree = join(root, 'head');
-  gitIn(root, 'worktree', 'add', '-q', '-b', branch = 'graphyard/gy-2965-1', worktree, baseTip);
+  git(root, 'worktree', 'add', '-q', '-b', branch = 'graphyard/gy-2965-1', worktree, baseTip);
   write('src/change.ts', 'export const change = 1;\n');
-  gitIn(root, 'add', '-A');
-  gitIn(root, 'commit', '-q', '-m', 'change');
-  head = gitIn(root, 'rev-parse', 'HEAD');
-  gitIn(root, 'worktree', 'remove', '--force', worktree);
+  git(root, 'add', '-A');
+  git(root, 'commit', '-q', '-m', 'change');
+  head = git(root, 'rev-parse', 'HEAD');
+  git(root, 'worktree', 'remove', '--force', worktree);
   base = join(fixtureRoot, 'managed');
 
   engine.gitRunner = gitRunnerFor(root);
@@ -109,12 +96,7 @@ const trial = async (mergeSha: string, changed: string[]) => runMergeTrial({
   timeoutMs: 120_000, key: 'GY-2965', environment: { PATH: process.env.PATH!, HOME: process.env.HOME! }, retries: 0,
 });
 
-async function call(path: string, actor: Principal, data?: unknown, key = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
+const call = (path: string, actor: Principal, data?: unknown, key = randomUUID()) => api(url, tokens.get(actor.id)!, path, { body: data, key });
 
 describe('unit:trial-e2e-cases — declared serving and case verdicts survive the trial phases', () => {
 test('unit:trial-serves-head-and-runs-bound-cases — a head whose bound case is absent is refused naming the missing path', async () => {

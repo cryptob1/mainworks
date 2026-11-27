@@ -1,26 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3434: master status lists where the app runs — graphyard.json's app.url as main holds it, with
 // the machine, the serving commit and its deploy time — refuses a loopback address with a plain
 // reason, and names the setting to add while none is declared.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
-
 test('integration:app-url-declared — master status lists main\'s app.url with machine, serving commit and deploy time; loopback is refused; none names the setting', async () => {
-  const root = await temporaryDirectory('app-url-declared');
-  git(root, 'init', '-q', '-b', 'main');
-  await writeFile(join(root, 'graphyard.json'), JSON.stringify({}));
-  git(root, 'add', '.');
-  git(root, 'commit', '-q', '-m', 'onboarded');
-  const served = git(root, 'rev-parse', 'HEAD');
+  const { root, head: served } = await gitRepo({ label: 'app-url-declared', files: { 'graphyard.json': JSON.stringify({}) }, message: 'onboarded' });
   await mkdir(join(root, '.graphyard'), { recursive: true });
   await writeFile(join(root, '.graphyard', 'served.json'), JSON.stringify({ commit: served, url: 'http://127.0.0.1:8088/', failed: null, reason: null, started: '2026-11-16T09:00:00.000Z', at: '2026-11-16T09:05:00.000Z' }));
   const credentials = await temporaryDirectory('app-url-declared-credentials');

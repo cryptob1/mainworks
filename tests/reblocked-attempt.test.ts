@@ -9,6 +9,7 @@ import { useTestStore } from './helpers/test-store.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import type { Principal, Work } from '../src/model.js';
+import { api } from './helpers/api.js';
 
 /**
  * GY-867. An interrupted worker end may carry endsBlocker: the control plane then ends the blocker
@@ -22,10 +23,7 @@ const credentials = [operator, implementer, coordinator].map(principal => ({ ...
 const master = { id: 'master-operator', token: `master-operator-${'m'.repeat(32)}`, capabilities: ['policy:requirements'] };
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 let store: Store, engine: Engine, url: string;
-const call = async (credential: string, path: string, body: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as any };
-};
+const call = (credential: string, path: string, body: unknown) => api(url, credential, path, { method: 'POST', body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const interrupted = (epoch: number, endsBlocker: boolean) => ({ event: 'exhausted', cause: 'interrupted', role: 'worker', epoch, profile: 'alpha', account: null, runtime: 'claude',
   reason: `attempt ${epoch} blocked again after its blocker was cleared`, resetsAt: null, partialWork: { state: 'committed', commit: 'a'.repeat(40), branch: 'graphyard/x', detail: 'kept' }, ...(endsBlocker ? { endsBlocker: true } : {}) });

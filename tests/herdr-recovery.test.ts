@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
@@ -10,6 +9,7 @@ import type { Principal } from '../src/model.js';
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // Cross-machine lease recovery, exercised inline against the real HTTP server and Postgres
@@ -56,10 +56,8 @@ async function exercise(url: string, principals: unknown[], inventory = createIn
   assert.ok(operator && workers.length >= 2);
   const machines = workers.slice(0, 2).map((actor, index) => ({ actor, host: `acceptance-machine-${index + 1}` }));
   async function request(path: string, actor: any, data?: unknown, status = 200) {
-    const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-      headers: { ...(actor ? { Authorization: `Bearer ${actor.token}` } : {}), 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      body: data === undefined ? undefined : JSON.stringify(data), signal: AbortSignal.timeout(10_000) });
-    assert.equal(response.status, status, `Unexpected status for ${path}`); return response.json();
+    const response = await api(url, actor.token, path, { body: data, signal: AbortSignal.timeout(10_000) });
+    assert.equal(response.status, status, `Unexpected status for ${path}`); return response.body;
   }
   async function create(title: string) {
     const work = await request('work', operator, { title, why: 'w', simplest: 's', type: 'chore', criteria: [{ id: 'AC-1', text: 'A replacement machine recovers expired work', proofs: ['integration:herdr-recovery', 'e2e:fixture'] }] });
@@ -97,8 +95,8 @@ async function exercise(url: string, principals: unknown[], inventory = createIn
   inventory.begin('exclusive-claim');
   const beforeRace = await candidateNow(), raceStarted = Date.now();
   const contested = await Promise.all(machines.flatMap(machine => Array.from({ length: 8 }, async () => {
-    const response = await fetch(`${url}/api/work/${unsupervised.id}/claim`, { method: 'POST', headers: { Authorization: `Bearer ${machine.actor.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: '{}', signal: AbortSignal.timeout(10_000) });
-    assert.ok([200, 409].includes(response.status)); return { machine, status: response.status, work: await response.json() };
+    const response = await api(url, machine.actor.token, `work/${unsupervised.id}/claim`, { body: {}, signal: AbortSignal.timeout(10_000) });
+    assert.ok([200, 409].includes(response.status)); return { machine, status: response.status, work: response.body };
   })));
   const afterRace = await candidateNow();
   const winners = contested.filter(c => c.status === 200);

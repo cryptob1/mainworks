@@ -10,6 +10,7 @@ import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Principal } from '../src/model.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3699: master status reads the flow numbers from GET /api/flow with the master's coordinator
 // credential; a failed flow read names its reason and the rest of the report still answers.
@@ -20,13 +21,7 @@ let store: Store, url: string;
 
 useTestStore('master-status-shows-flow', { repository: 'owner/game', credentials: [{ ...admin, token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }] }, ctx => { ({ store, url } = ctx); });
 
-const call = async (token: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', signal: AbortSignal.timeout(30_000),
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });
-  const text = await response.text();
-  if (!response.ok) throw Object.assign(new Error(text), { status: response.status });
-  return JSON.parse(text);
-};
+const call = (token: string, path: string, body?: unknown) => apiOk(url, token, path, { body, signal: AbortSignal.timeout(30_000) });
 // The master's own read: its coordinator credential and the 30 s timeout every status read uses (src/cli/master/session.ts).
 const masterApi = (path: string) => call(coordinatorToken, path);
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();

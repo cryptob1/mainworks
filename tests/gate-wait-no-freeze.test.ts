@@ -15,7 +15,7 @@ import { acquireVerificationSlot, slotsDirectoryVariable } from '../src/master/v
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { until } from './helpers/until.js';
 
@@ -39,12 +39,8 @@ async function world(label: string) {
   await mkdir(slots, { recursive: true });
   await writeFile(join(slots, 'limit'), '1\n');
   process.env[slotsDirectoryVariable] = slots;
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'base'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
+  const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
+  const { origin, head: verified } = await gitRepo({ root: pusher, label: 'pusher', files: { 'graphyard.json': '{}' }, origin: true });
   await writeFile(join(pusher, 'f1.ts'), 'ok\n');
   git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'change 1'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
   const tip = git(pusher, 'rev-parse', 'HEAD');

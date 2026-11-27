@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -20,6 +19,7 @@ import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3506: a failing confined verification step must preserve its exit status/signal and masked
@@ -77,12 +77,8 @@ test('integration:worker-verification-error-details — a failing verification s
 test('e2e:worker-verification-error-details — forced runner failure surfaces exit status and masked output in the verification response and durable history; successful verification still enforces required proofs', { timeout: 120_000 }, async t => {
   const base = await realpath(await temporaryDirectory('verification-error-e2e', process.cwd()));
   const allocations = await temporaryDirectory('trials', base);
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
-  const origin = join(base, 'origin.git'), checkout = join(base, 'checkout'), worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', 'README.md'); git(checkout, 'commit', '-q', '-m', 'base');
-  git(checkout, 'push', '-q', 'origin', 'HEAD:main'); git(checkout, 'fetch', '-q', 'origin');
+  const { root: checkout } = await gitRepo({ root: join(base, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true }), worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
+  git(checkout, 'fetch', '-q', 'origin');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
   await writeFile(join(checkout, '.git', 'info', 'exclude'), '.graphyard/\n');
   await mkdir(join(worktree, 'src'), { recursive: true });
@@ -103,7 +99,7 @@ test('e2e:worker-verification-error-details — forced runner failure surfaces e
   const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
   t.after(close);
   const url = serverUrl;
-  const mutate = async (path: string, body: unknown) => (await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinator.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) })).json();
+  const mutate = async (path: string, body: unknown) => (await api(url, coordinator.token, path, { body })).body;
 
   let mode: 'crash' | 'proof-fail' | 'proof-pass' = 'crash';
   const verify = async (_root: string, item: Work, input: WorkerVerificationInput, _base: string, _parent?: string, progress: (line: string) => void = () => {}): Promise<WorkerVerificationResult> => {

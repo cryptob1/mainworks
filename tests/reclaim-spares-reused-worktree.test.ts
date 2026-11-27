@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
@@ -10,7 +10,7 @@ import { masterConfigSchema } from '../src/master/profiles.js';
 import { removeAttemptWorktree, worktreesDirectory } from '../src/master/worktrees.js';
 import { reworkWorktreePath } from '../src/cli/workspace-worktree.js';
 import type { Work } from '../src/model.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3689: a rework's next epoch reuses its Builder's worktree path (GY-3632). The close step that
 // reclaims ended attempts' worktrees runs before, and beside, that launch, so it must leave the path
@@ -18,15 +18,10 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
   repository: 'owner/project', baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
 const run = (command: string, args: string[]) => execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe' });
 
 async function yard(name: string) {
-  const root = await temporaryDirectory(name);
-  git(root, 'init', '-q', '-b', 'main');
-  writeFileSync(join(root, 'file.txt'), 'base\n');
-  git(root, 'add', 'file.txt');
-  git(root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base');
+  const { root } = await gitRepo({ label: name, files: { 'file.txt': 'base\n' } });
   mkdirSync(worktreesDirectory(root), { recursive: true });
   const now = Date.now();
   // An item whose epoch-1 attempt just ended: submitted (a rework will reuse its path) or not.

@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { fleetCommand } from '../src/cli/master/fleet.js';
 import { heavyJobBudget, slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
 
@@ -20,8 +20,7 @@ test('unit:lead-lifts-fixed-heavy-limit — hostHeavyJobs=auto removes the limit
     { name: 'host-a', away: false, cores: 24, busy: 0, celsius: null }, { name: 'host-b', away: false, cores: 32, busy: 0, celsius: null }]);
   assert.equal(heavyJobBudget(directory).slots, 3);
   const root = join(scratch, 'repo'), credentialFile = join(scratch, 'operator.token');
-  mkdirSync(root); execFileSync('git', ['init', '-q', root]);
-  writeFileSync(credentialFile, 'operator-agent-token-'.padEnd(40, 'x')); chmodSync(credentialFile, 0o600);
+  await gitRepo({ root }); writeFileSync(credentialFile, 'operator-agent-token-'.padEnd(40, 'x')); chmodSync(credentialFile, 0o600);
   const printed: unknown[] = [];
   const config = (master: Record<string, unknown>) => fleetCommand({ id: 'config', args: ['hostHeavyJobs=auto'], root, master,
     print: (value: unknown) => { printed.push(value); return value; }, coordinator: { actor: { id: 'graphyard-master-app' } } } as never);
@@ -41,8 +40,7 @@ test('unit:lead-lifts-fixed-heavy-limit — hostHeavyJobs=auto removes the limit
 });
 
 test('e2e:verification-uses-remote-hosts — master status names a fixed limit file while a host is ready, with the budget it hides and the command that lifts it', async () => {
-  const root = await temporaryDirectory('fixed-limit-status'), directory = join(await temporaryDirectory('fixed-limit-data'), 'heavy-jobs'), previous = process.env[slotsDirectoryVariable];
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  const { root } = await gitRepo({ label: 'fixed-limit-status' }), directory = join(await temporaryDirectory('fixed-limit-data'), 'heavy-jobs'), previous = process.env[slotsDirectoryVariable];
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, 'limit'), '3\n');
   const machines = (hostAway: boolean) => writeMachines(directory, [{ name: 'this machine', local: true, away: false, cores: 24, busy: 2, celsius: null },

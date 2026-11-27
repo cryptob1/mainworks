@@ -21,6 +21,7 @@ import { launchProducer, readProducerLedger } from '../src/producer.js';
 import { launchReview, saveReviewerProfile } from '../src/reviewer.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
@@ -47,18 +48,14 @@ const ready = () => work({ stage: 'ready', submission: null, candidate: null, ob
  * pointed at its own temporary directory. The repository holds one commit.
  */
 async function installed() {
-  const directory = await temporaryDirectory('session-cwd');
+  const { root: directory, git } = await gitRepo({ label: 'session-cwd' });
   const credentials = await temporaryDirectory('session-cwd-credentials');
-  execFileSync('git', ['init', '-q', '-b', 'main', directory]);
   await writeFile(join(directory, '.gitignore'), '.graphyard/\n');
   await mkdir(join(directory, 'src'), { recursive: true });
   await mkdir(join(directory, 'tests'), { recursive: true });
   await mkdir(join(directory, 'bin'), { recursive: true });
   await writeFile(join(directory, 'src', 'loop.ts'), 'export const loop = 1;\n');
   await writeFile(join(directory, 'bin', 'graphyard.mjs'), '#!/usr/bin/env node\n');
-  const git = (...args: string[]) => execFileSync('git', ['-C', directory, ...args], { stdio: 'ignore' });
-  git('config', 'user.email', 't@example.com');
-  git('config', 'user.name', 'T');
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(directory, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: join(directory, 'bin', 'graphyard.mjs'), credentialDirectory: credentials, herdrWorkspace: 'wC' }, coordinatorStatus as typeof fetch);
   const token = async (name: string) => { const file = join(credentials, `${name}.token`); await writeFile(file, `${name}-token-`.padEnd(40, 'x'), { mode: 0o600 }); return file; };
@@ -68,9 +65,8 @@ async function installed() {
   await mkdir(join(dataDirectory(), 'session-cwd'), { recursive: true });
   const managed = await temporaryDirectory('root', join(dataDirectory(), 'session-cwd'));
   await atomicPrivateWrite(join(directory, '.graphyard/master.json'), { ...config, approver: { id: 'graphyard-approver-project', credentialFile: await token('approver') }, operatorAgent: { id: 'graphyard-operator-project', credentialFile: await token('operator') }, run: { ...config.run, worktreeRoot: managed } });
-  git('add', '.');
-  git('commit', '-q', '-m', 'base');
-  const head = execFileSync('git', ['-C', directory, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  git('add', '.'); git('commit', '-q', '-m', 'base');
+  const head = git('rev-parse', 'HEAD');
   const fullConfig = await loadMasterConfig(directory);
   return { root: directory, head, token, config: fullConfig, cleanup: async () => {
     await rm(managed, { recursive: true, force: true });

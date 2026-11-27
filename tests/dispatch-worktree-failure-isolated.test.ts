@@ -23,6 +23,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3475: one item whose worktree git cannot build must not strand the ready items behind it.
 // The real control plane, agent registry, loop cycle, CLI claim/worktree/watch and headless
@@ -79,12 +80,7 @@ const [, key, epoch] = /complete (GY-\\d+) (\\d+) --head/.exec(process.argv.slic
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.ok(response.ok, `${method} ${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const api = (method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(coordinator), path, { method, body });
 const snapshot = async () => { const read = await api('GET', 'work-snapshot') as { work: Work[]; now: string }; return { ...read, now: new Date(Date.parse(read.now) + skew).toISOString() }; };
 async function readyItem(key: string, priority: number) {
   const work = workFixture({ id: randomUUID(), key, title: `Item ${key}`, description: 'Write change.txt.', type: 'bug', priority,

@@ -5,7 +5,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
 import { remoteShardSession, warmCommitOnHosts, warmImageTag, warmLockHash, type ShardSshSession } from '../src/merge-writer/remote-shards.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3936 AC-1: a new warm image whose test database fails `postgres --version` is never tagged
 // and never sent; the next trial runs on the previous good image.
@@ -13,17 +13,11 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const cleanups: (() => Promise<void>)[] = [];
 after(async () => { for (const cleanup of cleanups) await cleanup().catch(() => {}); });
 
-const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com' };
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 
 test('unit:failed-warm-image-self-check-keeps-previous-image — a warm image failing its database check is discarded untagged and unsent; the trial uses the previous image', async () => {
-  const root = await temporaryDirectory('warm-self-check');
+  const { root, head: previous } = await gitRepo({ label: 'warm-self-check', message: 'previous',
+    files: { 'package.json': '{"name":"fixture","version":"1.0.0"}\n', 'package-lock.json': '{"name":"fixture","lockfileVersion":3,"packages":{}}\n' } });
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  git(root, 'init', '-q', '-b', 'main');
-  await writeFile(join(root, 'package.json'), '{"name":"fixture","version":"1.0.0"}\n');
-  await writeFile(join(root, 'package-lock.json'), '{"name":"fixture","lockfileVersion":3,"packages":{}}\n');
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'previous');
-  const previous = git(root, 'rev-parse', 'HEAD');
   await writeFile(join(root, 'README'), 'next\n');
   git(root, 'add', '-A'); git(root, 'commit', '-qm', 'next');
   const next = git(root, 'rev-parse', 'HEAD');

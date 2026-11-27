@@ -9,7 +9,7 @@ import { availableRuntimes, buildProposal, collectScanInput, detectDeploy, detec
 import * as onboarding from '../src/onboarding.js';
 import { applyProposal, loadAppliedSetup, loadProposal, proposalDigest, readSetupStatus, saveProposal, scanProposal, setupDrift } from '../src/repository-setup.js';
 import { workerProfileSchema } from '../src/master/profiles.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // Read through the namespace, with the shipped values as the fallback, so the proofs also load (and judge their cases) on a base that does not export the bound.
 const scanLimits: { files: number; depth: number; bytes: number } = (onboarding as { scanLimits?: { files: number; depth: number; bytes: number } }).scanLimits ?? { files: 5000, depth: 6, bytes: 262_144 };
@@ -119,9 +119,8 @@ async function addBulkFiles(root: string, directory: string, count: number) {
 }
 
 async function fixtureRepo(files: Record<string, string>, remote = 'git@github.com:owner/repo.git') {
-  const root = await temporaryDirectory('scan');
-  execFileSync('git', ['init', '-q', root]);
-  if (remote) execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
+  const { root } = await gitRepo({ label: 'scan' });
+  if (remote) git(root, 'remote', 'add', 'origin', remote);
   for (const [path, content] of Object.entries(files)) await addFile(root, path, content);
   return root;
 }

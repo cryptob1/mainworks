@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -12,6 +11,7 @@ import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { emptyRegistry, fleetView, foldObservation, proposedRuntimes, utcClock, type AgentRegistry, type FleetView } from '../src/model/registry.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import type { Principal } from '../src/model.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3497: Claude's own limit list — the answer's limits[] (session, weekly, each model-scoped
 // weekly) and spend — is read as the account's windows and its extra-usage line. A window of that
@@ -120,14 +120,7 @@ const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 
 const coordinator: Principal = { id: 'master-loop', role: 'coordinator', sessionKind: 'ai' };
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 let url: string;
-const call = async (principal: Principal, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(entry => entry.id === principal.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const call = (principal: Principal, path: string, body?: unknown) => apiOk(url, credentials.find(entry => entry.id === principal.id)!.token, path, { body });
 
 useTestStore('claude-limit-list', { leaseSeconds: 7200, repository: 'owner/claude-limit-list', credentials: credentials }, ctx => { ({ url } = ctx); });
 

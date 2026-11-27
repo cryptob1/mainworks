@@ -117,8 +117,7 @@ test('integration:red-base-only-fix-trials — while main fails, only the base r
 
   // Main now carries the change to what failed: the waiting head starts again.
   run.tip.at = green;
-  await run.step();
-  assert.deepEqual(run.trialled, ['GY-2'], 'the cycle after a merge settles its flight');
+  // GY-3965: the cycle that settles the landing starts the waiting head's trial.
   await run.step();
   assert.deepEqual(run.trialled, ['GY-2', 'GY-1'], 'once main changes what failed, the waiting head is trialled');
   assert.deepEqual(run.waiting(), []);

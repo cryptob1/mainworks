@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
@@ -10,6 +9,7 @@ import { hostAccountsVariable } from '../src/host-accounts.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { proposedRuntimes, type AgentRegistry, type FleetView } from '../src/model/registry.js';
 import type { Principal } from '../src/model.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3495 e2e: three Z.AI keys read through a stub quota endpoint, the real control plane and `master registry`.
 const HOST = 'zai-host';
@@ -17,14 +17,7 @@ const operator: Principal = { id: 'human-operator', role: 'admin', sessionKind: 
 const coordinator: Principal = { id: 'master-loop', role: 'coordinator', sessionKind: 'ai' };
 const credentials = [operator, coordinator].map(principal => ({ ...principal, token: `${principal.id}-${'x'.repeat(32)}` }));
 let url: string;
-const call = async (principal: Principal, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(entry => entry.id === principal.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const call = (principal: Principal, path: string, body?: unknown) => apiOk(url, credentials.find(entry => entry.id === principal.id)!.token, path, { body });
 
 useTestStore('zai-usage-read', { leaseSeconds: 7200, repository: 'owner/zai-usage-read', credentials: credentials }, ctx => { ({ url } = ctx); });
 

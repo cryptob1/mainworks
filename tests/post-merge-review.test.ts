@@ -18,6 +18,7 @@ import { controlPlaneRefusal, controlPlaneVerdict, staleReviewReason, type Revie
 import { readProjectMemory } from '../src/project-memory.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { api } from './helpers/api.js';
 // Time-bomb allowance (GY-1694): the 2026-10-08 `at` fixtures are already past, so a delivery, launch or expiry stamped with them reads the same on any later day; Date.now()/new Date() only stamp the live-API launch and its filing.
 
 // GY-1525 AC-4: a normal-risk delta the merge writer delivered owes one post-merge review of its
@@ -223,10 +224,7 @@ const credentials = principals.map(principal => ({ ...principal, token: `${princ
 const tokenOf = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 let store: Store, url: string;
 useTestStore('post-merge-review', { repository: repository, credentials: credentials }, ctx => { ({ store, url } = ctx); });
-async function request(credential: string, path: string, body?: unknown, key: string = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as any };
-}
+const request = (credential: string, path: string, body?: unknown, key?: string) => api(url, credential, path, { method: 'POST', body, key });
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 
 test('integration:post-merge-review-files-follow-ups — a delivered normal-risk item takes one post-merge launch on its merge commit; the verdict marks it reviewed without reopening it, and each BLOCKING finding becomes one priority-1 bug item whose origin names the delivered item, merge commit and the finding\'s file', async () => {

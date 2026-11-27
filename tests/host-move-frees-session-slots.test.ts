@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { useTestStore } from './helpers/test-store.js';
@@ -18,6 +17,7 @@ import { liveMasterSessions } from '../src/master/registry-slot.js';
 import { httpFleetClient, selectFleetSession } from '../src/fleet.js';
 import { proposedRuntimes, type AgentRegistry, type FleetSession } from '../src/model/registry.js';
 import type { Principal } from '../src/model.js';
+import { api as request, apiOk } from './helpers/api.js';
 
 // GY-3346: after core moved between hosts (the rexera-remote episode, 2026-11-15), registry sessions
 // recorded on the old host kept their role slots: the master role refused to launch ('role master is
@@ -35,16 +35,11 @@ const token = (id: string) => credentials.find(credential => credential.id === i
 
 let url: string;
 const api = async (bearer: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const json = await response.json() as any;
-  if (!response.ok) throw Object.assign(new Error(`${path} answered ${response.status}: ${JSON.stringify(json)}`), { status: response.status });
+  const { status, body: json } = await request(url, bearer, path, { body });
+  if (status >= 300) throw Object.assign(new Error(`${path} answered ${status}: ${JSON.stringify(json)}`), { status });
   return json;
 };
-const coordinationSnapshot = async () => {
-  const response = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${token(coordinator.id)}`, 'X-Graphyard-View': 'coordination' } });
-  assert.equal(response.status, 200);
-  return response.json() as Promise<{ work: never[]; now: string }>;
-};
+const coordinationSnapshot = () => apiOk(url, token(coordinator.id), 'work-snapshot', { headers: { 'X-Graphyard-View': 'coordination' } }) as Promise<{ work: never[]; now: string }>;
 /** The registry with its one account placed on `host`: master (one slot), worker (three) and reviewer roles. */
 const placeOn = (host: string) => api(token(operator.id), 'agent-registry/apply', {
   runtimes: proposedRuntimes.filter(runtime => runtime.name === 'claude'), models: [{ name: 'default', id: null }],

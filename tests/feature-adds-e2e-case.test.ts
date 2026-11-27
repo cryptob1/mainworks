@@ -11,7 +11,7 @@ import { masterGuide } from '../src/master/guide.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3168: a feature's head adds or changes an e2e case its criteria name, read from real git
 // merges through the production merge port; the trial itself is stood in for as passing.
@@ -25,10 +25,8 @@ const delivered = 'e2e/cases/delivered.json', other = 'e2e/cases/other.json';
 async function merge(type: Work['type'], proofs: string[], change: (root: string, write: (path: string) => void) => void) {
   const root = await temporaryDirectory('feature-case-repo', tmpdir());
   const write = (path: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), `${path}\n${Math.random()}\n`); };
-  git(root, 'init', '-q', '-b', 'main');
   [delivered, other].forEach(write);
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root, files: {} });
   git(root, 'checkout', '-q', '--detach');
   write('src/app.ts');
   change(root, write);

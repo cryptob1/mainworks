@@ -11,6 +11,7 @@ import { sourceCapacity } from '../benchmarks/hard-math/capacity.js';
 import { receiptSession } from '../benchmarks/hard-math/snapshot.js';
 import { emptyRegistry } from '../src/model/registry.js';
 import { overlappingWorkers, comparison, receiptSchema, validateReceipt, reviewedDeliveries } from '../benchmarks/hard-math/receipt-schema.js';
+import { api } from './helpers/api.js';
 
 test('hard math cleanup stops only run-owned master, item and headless sessions and releases leases',async()=>{
   const root=await temporaryDirectory('hard-math-cleanup'),directory=join(runsDirectory(root),'proof');
@@ -158,7 +159,6 @@ test('hard math real API creates/releases the frozen plan with revisions, binds 
     import('./helpers/postgres.js'),import('../src/store.js'),import('../src/engine.js'),import('../src/server.js'),
     import('../benchmarks/hard-math/runner.js'),import('../benchmarks/hard-math/isolation.js'),import('../src/model-boundary/repository-policy.js'),
   ]);
-  const {randomUUID}=await import('node:crypto');
   const root=await temporaryDirectory('hard-math-api');
   const previousPolicy=policy.repositoryPolicy();
   policy.setRepositoryPolicy({...previousPolicy,e2e:{pendingOutcomes:'non-blocking',serve:{command:'true',url:'http://127.0.0.1:9',readySeconds:1}}});
@@ -171,8 +171,7 @@ test('hard math real API creates/releases the frozen plan with revisions, binds 
     await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
     const url=`http://127.0.0.1:${(http.address() as {port:number}).port}`;
     const call=async(path:string,token:string,body?:unknown)=>{
-      const response=await fetch(`${url}/api/${path}`,{method:body===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:body===undefined?undefined:JSON.stringify(body)});
-      const result=await response.json();if(!response.ok) throw new Error(`${response.status}: ${JSON.stringify(result)}`);return result as any;
+      const result=await api(url,token,path,{body});if(result.status>=300) throw new Error(`${result.status}: ${JSON.stringify(result.body)}`);return result.body;
     };
     const plane={call},master=await operator(plane as any,admin.token);
     const c={root,plane,coordinator:coordinator.token,operator:master,signal:new AbortController().signal,config:{id:'api-contract',mode:'team',seed:1},receipt:{work:[]}} as any;

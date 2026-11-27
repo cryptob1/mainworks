@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -18,6 +17,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api, apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-2953: a supervisor's time bound or a worker's silence ends an attempt by its lapsed lease with
@@ -38,19 +38,7 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 
 let store: Store, url: string, install: string;
 
-const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const result = await call(principal, method, path, body);
-  assert.equal(result.status, 200, `${path}: ${JSON.stringify(result.body)}`);
-  return result.body;
-};
+const ok = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(principal), path, { method, body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 
 useTestStore('expired-worker-partial-work-handoff', { leaseSeconds: 5, repository: 'owner/expired-work', credentials: credentials }, async ctx => {
@@ -104,10 +92,9 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
     return { work: snap.work, now: snap.now };
   };
   const mutate = async (path: string, data: unknown, requestId?: string) => {
-    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': requestId ?? randomUUID() }, body: JSON.stringify(data) });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`${path} refused (${response.status}): ${text.slice(0, 200)}`);
-    try { return JSON.parse(text); } catch { return undefined; }
+    const result = await api(url, token(coordinator), path, { body: data, key: requestId });
+    if (result.status >= 300) throw new Error(`${path} refused (${result.status}): ${JSON.stringify(result.body).slice(0, 200)}`);
+    return result.body ?? undefined;
   };
   const real = daemonEffects(install, config, { snapshot, mutate });
   const effects: DaemonEffects = {

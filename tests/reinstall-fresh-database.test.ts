@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { UpDependencies, UpEvent, UpRequest } from '../src/up.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 /**
  * GY-1851: a repository reinstalled onto a fresh control-plane database, its install directory kept.
@@ -47,8 +47,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
   const [{ loadStoredMasterConfig, setupMaster }, { runAutonomyCommand }] = await Promise.all([import('../src/master/config.js'), import('../src/master/autonomy.js')]);
   const { daemonStatePath } = await import('../src/daemon/state.js');
   const root = await temporaryDirectory('reinstall-fresh'), credentials = await temporaryDirectory('reinstall-fresh-credentials');
-  execFileSync('git', ['init', '-q', root]);
-  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/shop.git'], { cwd: root });
+  (await gitRepo({ root })).git('remote', 'add', 'origin', 'https://github.com/acme/shop.git');
 
   let plane: Plane = { agents: [] };
   const calls: string[][] = [];

@@ -2,7 +2,6 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -21,6 +20,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // Fixture filings obey the same E2E contract as real work.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1708 AC-2: mid-attempt exhaustion hold never launches a second session on the spent account,
@@ -35,19 +35,7 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, home: string;
 
-const call = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const result = await call(principal, method, path, body);
-  assert.equal(result.status, 200, JSON.stringify(result.body));
-  return result.body;
-};
+const ok = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(principal), path, { method, body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 /** One epoch's worker exhaustion and attempt counts: a double count shows as two rows. */
 const workerAttemptLedger = (work: Work, epoch: number) => {

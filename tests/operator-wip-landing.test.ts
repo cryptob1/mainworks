@@ -3,21 +3,13 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // The code under test is imported inside each test, so a base without it fails as test cases.
-const git = (cwd: string, ...args: string[]) => {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-};
 async function repository(branch: string) {
-  const base = await temporaryDirectory('operator-wip');
-  const origin = join(base, 'origin.git'), work = join(base, 'work');
-  assert.equal(spawnSync('git', ['init', '--bare', '--quiet', origin]).status, 0);
-  assert.equal(spawnSync('git', ['init', '--quiet', work]).status, 0);
-  git(work, 'checkout', '-q', '-b', branch);
-  git(work, 'commit', '-q', '--allow-empty', '-m', 'one');
-  git(work, 'remote', 'add', 'origin', origin);
+  const base = await temporaryDirectory('operator-wip'), origin = join(base, 'origin.git');
+  const { root: work } = await gitRepo({ root: join(base, 'work'), branch, files: {}, message: 'one' });
+  git(base, 'init', '--bare', '--quiet', origin); git(work, 'remote', 'add', 'origin', origin);
   return { origin, work };
 }
 const remoteHeads = (origin: string) => spawnSync('git', ['-C', origin, 'branch', '--list'], { encoding: 'utf8' }).stdout;

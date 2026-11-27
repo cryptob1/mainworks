@@ -23,6 +23,7 @@ import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js'
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
@@ -103,8 +104,7 @@ test('unit:declared', () => assert.ok(!(fs.existsSync('change-0.txt') && fs.exis
           },
           record: async (work, event) => {
             records.push({ key: work.key, event });
-            const answer = await fetch(`${url}/api/work/${work.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-            assert.equal(answer.status, 200, await answer.text());
+            await apiOk(url, token, `work/${work.id}/merge-record`, { body: event });
           },
         });
       if (mode === 'review-held') {

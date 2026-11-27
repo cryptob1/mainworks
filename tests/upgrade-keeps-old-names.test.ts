@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { apiOk } from './helpers/api.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -89,13 +90,8 @@ const [, key, epoch] = /complete (GY-\\d+) (\\d+) --head/.exec(process.argv.slic
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.ok(response.ok, `${method} ${path}: ${JSON.stringify(result)}`);
-  return result;
-};
-const snapshot = async () => { const read = await api('GET', 'work-snapshot') as { work: Work[]; now: string }; return { ...read, now: new Date(Date.parse(read.now) + skew).toISOString() }; };
+const call = (method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(coordinator), path, { method, body });
+const snapshot = async () => { const read = await call('GET', 'work-snapshot') as { work: Work[]; now: string }; return { ...read, now: new Date(Date.parse(read.now) + skew).toISOString() }; };
 async function readyItem(key: string, priority: number) {
   const work = workFixture({ id: randomUUID(), key, title: `Item ${key}`, description: 'Write change.txt.', type: 'bug', priority,
     criteria: [{ id: 'AC-1', text: 'change.txt exists', proofs: ['unit:works'] }] });
@@ -104,7 +100,7 @@ async function readyItem(key: string, priority: number) {
 }
 async function cycle(state: ReturnType<typeof emptyDaemonState>) {
   const config = await loadMasterConfig(root);
-  const mutate = (path: string, data: unknown) => api('POST', path, data);
+  const mutate = (path: string, data: unknown) => call('POST', path, data);
   const production = daemonEffects(root, () => config, { snapshot, mutate, headless: spawnHeadless });
   const effects: DaemonEffects = {
     snapshot, agents: () => [], herdr: production.herdr, credentials: production.credentials, closeSession: () => {}, recordSession: production.recordSession,
