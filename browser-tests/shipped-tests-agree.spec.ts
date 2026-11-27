@@ -76,7 +76,7 @@ for (const width of [390, 1280]) {
     await goTo(page, 'shipped');
     const rows = page.locator('main [data-row]');
     await expect(rows).toHaveCount(50);
-    await expect(page.locator('[data-work-header]')).toContainText(`${merged} merged today`);
+    await expect(page.locator('[data-filter="shipped-today"]')).toHaveText(`Shipped today ${merged}`);
     const texts = await rows.allInnerTexts();
     expect(texts.filter(text => /\b[0-9a-f]{7}\b/.test(text)), 'no row shows a 7-character SHA').toEqual([]);
     // AC-4: no sideways scroll, and the page at 390 px stays short.

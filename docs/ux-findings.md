@@ -1,7 +1,7 @@
 # UX findings: the dashboard as a newcomer sees it
 
 Captured with `npm run ux:captures` (every page and state below, 390 and 1280 px, from the README's demo data).
-Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962 (Lead/Settings wording rows in GY-3994); the rest are for follow-up items.
+Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, the Lead/Settings wording rows in GY-3994; the rest are for follow-up items.
 Rules: *plain* (one plain sentence per idea, owner first), *next* (state, numbers and the one next action),
 *internal* (no ids, hashes, model ids, jargon or agent chatter outside Details), *error* (says what to do, never false),
 *twice* (show nothing twice), *fit* (390 and 1280 px, no sideways scroll).
@@ -21,10 +21,10 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 
 | Where | What a newcomer sees | Rule | Sev | Status |
 |---|---|---|---|---|
-| Header strip and filters | "18 merged today" in the strip and "Shipped today 18" on the filter chip (kept: other cases pin both) | twice | 2 | Open |
-| Header line and filters | "3 in flight" opens the header line and the "In flight 3" chip repeats it (kept: pinned as matching) | twice | 2 | Open |
-| Header strip | "18 shipped · 0 going live" counts the week, "18 merged today" counts today, with no word on which is which | plain | 2 | Open |
-| Now column | "Running merge trial on latest main", "checking diff and proofs" | internal | 2 | Open |
+| Header strip and filters | "18 merged today" in the strip and "Shipped today 18" on the filter chip; now the chip alone counts it on Work | twice | 2 | Fixed |
+| Header line and filters | "3 in flight" opens the header line and the "In flight 3" chip repeats it; now the line opens with merges an hour | twice | 2 | Fixed |
+| Header strip | "18 shipped · 0 going live" counts the week, "18 merged today" counts today; now "18 shipped this week · 0 going live" | plain | 2 | Fixed |
+| Now column | "Running merge trial on latest main", "checking diff and proofs"; now "Being tested before it merges", "Waiting for the reviewer" | internal | 2 | Fixed |
 | Flow line | "3.4 attempts an hour · 74% first pass": builder metrics before the owner's question "is it moving" | plain | 3 | Open |
 | Under the heading | A rotating quote ("Real artists ship.") takes a line above the work | plain | 3 | Open |
 | Rotating line | "Fresh worktree, fresh start." or "Agents drift through the worktree like rain down a window." on some loads (found by the rules case, not the captures) | internal | 3 | Fixed |
@@ -39,8 +39,8 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 | Under every tab | "From your terminal: git fetch origin demo/pr-86 && git checkout FETCH_HEAD" | internal | 2 | Fixed |
 | Product review | "Head e4f8a2c9 · the current head", "Reviewer reviewer-codex", proof ids in the notes | internal | 1 | Fixed |
 | Checks list | Step "e2e:smoke" named by its proof id | internal | 3 | Fixed |
-| State and Now | "Testing · 11m" and "Now: Testing · Mainworks is merging it." say Testing twice | twice | 2 | Open |
-| Next line | "Next: Mainworks (automatic)" names no action or time | next | 2 | Open |
+| State and Now | "Testing · 11m" and "Now: Testing · Mainworks is merging it." say Testing twice; now "Now: Mainworks is merging it." | twice | 2 | Fixed |
+| Next line | "Next: Mainworks (automatic)" names no action; now "Next: Mainworks tests and merges it, then it goes live" | next | 2 | Fixed |
 | Hold task button | "Hold task" sits beside the PR link with no hint of what holding does | plain | 3 | Open |
 | Pipeline row | "Queued", "Test merge", "Ship" stages with no word on which one is now | plain | 3 | Open |
 
@@ -50,7 +50,7 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 |---|---|---|---|---|
 | Live session | "No Builder has started a session on this task yet." on a task a Builder already built: false | error | 1 | Fixed |
 | Lead tab | A decision filed for another task listed on this one (demo history was unfiltered) | twice | 3 | Fixed |
-| Details | A bare priority picker "P0 P1 P2 P3" with no label | plain | 2 | Open |
+| Details | A bare priority picker "P0 P1 P2 P3" with no label; now labelled "Priority" | plain | 2 | Fixed |
 | Details | Raw id "00000000-0000-4000-8000-000000000103" in the first row | internal | 3 | Open |
 | Details | "History (2 events; routine GitHub checks and heartbeats left out)" | plain | 3 | Open |
 

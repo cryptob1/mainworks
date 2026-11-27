@@ -124,13 +124,13 @@ export default function WorkPage({ work, board, status, query, setQuery, setSele
     ? rows.filter(({ item }) => `${item.key} ${item.title}`.toLowerCase().includes(needle) || String(pr(item) ?? '') === needle)
     : rows.filter(row => filter ? inFilter[filter](row.group, row.today) : row.group !== 'shipped' || row.today);
 
-  // The header line: how much is in flight, merges an hour over the last 6 hours, and the median review-to-live time of the last day's releases.
+  // The header line: merges an hour over the last 6 hours and the median review-to-live time of the last day's releases; the filter chips carry the counts, shown once (GY-3987).
   const merges = delivered.filter(item => now - mergedAt(item) <= 6 * 3_600_000).length / 6;
   const reviewToLive = median(delivered.flatMap(item => {
     const live = releasedAt(item, release), started = Date.parse(item.pipeline?.submittedAt ?? item.candidate?.createdAt ?? '');
     return live !== null && now - live <= 24 * 3_600_000 && Number.isFinite(started) && live >= started ? [live - started] : [];
   }));
-  const header = `${filter === 'shipped-today' ? `${counts['shipped-today']} merged today` : `${counts['in-flight']} in flight`} · ${merges.toFixed(1)} merges/hour (6h) · ${reviewToLive === null ? 'nothing live (24h)' : `${formatDuration(reviewToLive / 60000)} median review to live`}`;
+  const header = `${merges.toFixed(1)} merges/hour (6h) · ${reviewToLive === null ? 'nothing live (24h)' : `${formatDuration(reviewToLive / 60000)} median review to live`}`;
 
   const needs = board?.groups['needs-you'] ?? [];
   // GY-3593: the caretaker's newest lines that need the owner, in one notice under the Needs you strip.

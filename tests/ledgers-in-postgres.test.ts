@@ -89,7 +89,8 @@ test('ledgers-in-postgres: first cycle migrates legacy files, resumes attempts a
     assert.equal(migratedReviews.reviews.length, 202); assert.equal(migratedProducers.producers.length, 202);
     assert.equal(migratedReviews.reviews.at(-1)!.attempt, 2);
     assert.equal((await readDispatchCursor(host.root, config)).ticks, 18);
-    assert.equal(Number((await store.pool.query('SELECT count(*) FROM loop_state')).rows[0].count), 405);
+    assert.equal(Number((await store.pool.query("SELECT count(*) FROM loop_state WHERE kind <> 'review-slot'")).rows[0].count), 405);
+    assert.equal(Number((await store.pool.query("SELECT count(*) FROM loop_state WHERE kind = 'review-slot'")).rows[0].count), 1, 'the new launch holds its head-and-kind reservation');
 
     await runCycle(config, emptyDaemonState(config), daemon);
     assert.deepEqual(launched.sort(), ['producer', 'review'], 'a restarted loop does not duplicate pending launches');
