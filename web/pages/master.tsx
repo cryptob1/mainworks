@@ -62,7 +62,7 @@ const ageSince = (since: string | null | undefined, now: number) => since && Num
 
 /** The Waiting on you line: each open request named by what it is, in the owner's words. */
 export function waitingLine(requests: readonly HumanRequestRow[]): string {
-  if (requests.length === 0) return 'Nothing waits on you.';
+  if (requests.length === 0) return 'Nothing waits on you; a decision only you can make shows here.';
   const noun = new Map([['goals-and-priorities', 'priority call'], ['money-or-accounts', 'spend approval'], ['credentials-for-people', 'credential']]);
   const names = requests.map(row => noun.get(row.request.kind) ?? row.request.kind);
   return `${requests.length} ${requests.length === 1 ? 'thing' : 'things'}: ${names.join(', ')}`;
@@ -186,7 +186,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
     {owes.length > 0 && <section className="panel" aria-label="Blockers the Lead owes"><h2>Blocked ({owes.length})</h2>
       <ul className="master-owes">{owes.map(entry => <li key={entry.id}>
-        <button className="text-button" onClick={() => setSelected(entry.id)}>{entry.key} <span data-title>{entry.title}</span></button>
+        <button className="text-button" onClick={() => setSelected(entry.id)}><span data-title>{entry.title}</span></button>
         <span className="muted">{entry.since !== null ? `blocked ${formatAge(entry.since, now)}` : 'blocked'}</span>
         <span className="muted master-owes-blocker" title={entry.blocker}>{entry.blocker}</span>
       </li>)}</ul>
@@ -272,7 +272,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
           <aside className="lead-rail" aria-label="Lead context">
             <div>
               <h3>Goal order</h3>
-              {goalOrder(work).length ? <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}>{goal.key} <span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals.</p>}
+              {goalOrder(work).length ? <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}><span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals; file one on Work and it shows here.</p>}
             </div>
             <div>
               <h3>Waiting on you</h3>
@@ -289,7 +289,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
       {activeTab === 'history' && <section className="panel typed-input" aria-label="Typed into the Lead"><h2>Typed into the Lead</h2>
         {typed.length > 0
           ? <ol>{typed.map((entry, index) => <li key={index}><b>{entry.who}</b> <time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time> <code>{entry.text}</code></li>)}</ol>
-          : <p className="muted">Nothing typed into the Lead yet.</p>}
+          : <p className="muted">Nothing typed into the Lead yet; what you send shows here.</p>}
       </section>}
       {activeTab === 'messages' && threads.length > 0 && <section className="panel master-messages" aria-label="Messages with other installs">
         {threads.map(thread => <article key={thread.entries[0]!.id} className="master-thread" aria-label={`Thread with ${thread.peer}`}>

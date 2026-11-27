@@ -156,7 +156,7 @@ test('unit:item-page-technical-collapsed — gate internals, sessions with attac
   assert.equal(html.match(/<details[^>]*aria-label="Technical details"/g)?.length, 1);
   assert.match(html, /<details class="more-details" aria-label="Technical details"><summary>Technical details<\/summary>/);
   const technical = html.indexOf('<details class="more-details" aria-label="Technical details">');
-  // GY-3599: the footer's two terminal commands follow it.
+  // GY-3599: the footer's two terminal commands close it (GY-3962: inside the fold, off the primary view).
   const above = html.slice(0, technical), inside = html.slice(technical, html.indexOf('<div class="task-commands'));
   assert.doesNotMatch(inside.slice(0, inside.indexOf('>') + 1), /\sopen/, 'collapsed');
   // Everything technical is inside it, and none of it is above it.
@@ -170,7 +170,7 @@ test('unit:item-page-technical-collapsed — gate internals, sessions with attac
   const visible = visibleWords(inside).join(' ');
   assert.equal(visible, 'Technical details');
   // It is the last thing on the page: nothing technical follows it outside a collapsed section.
-  assert.ok(html.slice(technical).replace(/<div class="task-commands[\s\S]*$/, '').endsWith('</details></div>'));
+  assert.ok(html.slice(technical).endsWith('</div></details></div></article>'));
 
   // Overlaps on observed files: four overlapping items make one line naming each of them and the shared paths.
   const peers = ['GY-166', 'GY-167', 'GY-168', 'GY-169'].map((key, i) => ({ ...item, id: `peer-${i}`, key, observation: { ...item.observation!, files: i < 2 ? ['tests/b.test.ts'] : ['web/a.tsx'] }, sessions: [], agentRequests: [] }) as unknown as Work);

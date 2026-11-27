@@ -68,8 +68,9 @@ async function redeemClaim(code: string, fetcher: typeof fetch): Promise<string 
 }
 
 /** What the sign-in page shows: the token form, the first status read in flight, or that read gone unanswered. */
-export type LoginState = { kind: 'form' } | { kind: 'verifying' } | { kind: 'unreachable'; host: string };
-export type VerifyOutcome = { kind: 'accepted'; status: unknown } | { kind: 'rejected'; refusal?: string } | { kind: 'unreachable' };
+export type LoginState = { kind: 'form' } | { kind: 'verifying' } | { kind: 'unreachable'; host: string; problem?: string };
+/** `problem`: the server answered, but with an error, in its own words (GY-3962: never called unreachable). */
+export type VerifyOutcome = { kind: 'accepted'; status: unknown } | { kind: 'rejected'; refusal?: string } | { kind: 'unreachable'; problem?: string };
 export interface VerifyClock { setTimeout(run: () => void, ms: number): unknown; clearTimeout(timer: unknown): void }
 
 /**
@@ -89,11 +90,18 @@ export function verifyToken(token: string, fetcher: typeof fetch, clock: VerifyC
       // GY-3486: with no token, a Tailscale login this install has not invited is told who to ask.
       if (response.status === 403 && !token) return { kind: 'rejected', refusal: (await response.json().catch(() => null))?.error };
       if (response.status === 401 || response.status === 403) return { kind: 'rejected' };
-      if (!response.ok) return { kind: 'unreachable' };
+      if (!response.ok) {
+        // A gateway's 502 or 504 means the control plane behind it did not answer.
+        const problem = (await response.json().catch(() => null))?.error ?? ([502, 504].includes(response.status) ? null : `it answered ${response.status}`);
+        return problem ? { kind: 'unreachable', problem } : { kind: 'unreachable' };
+      }
       const status = await response.json();
       // The server answered: the reachability deadline is met, and the dashboard's first read runs without it.
       clock.clearTimeout(timer);
-      await load(status, controller.signal);
+      try { await load(status, controller.signal); } catch (error) {
+        if ((error as { unauthorized?: boolean })?.unauthorized) return { kind: 'rejected' };
+        return { kind: 'unreachable', problem: error instanceof Error && error.message ? error.message : 'the dashboard did not load' };
+      }
       return { kind: 'accepted', status };
     } catch (error) { return (error as { unauthorized?: boolean })?.unauthorized ? { kind: 'rejected' } : { kind: 'unreachable' }; }
   })();
@@ -129,7 +137,7 @@ export function LoginView({ state, error, draftToken, setDraftToken, submit, ret
       {escape}
     </div>}
     {state.kind === 'unreachable' && <div className="login-status">
-      <p role="alert" className="notice danger">Can't reach the control plane at {state.host}</p>
+      <p role="alert" className="notice danger">{state.problem ? `The control plane at ${state.host} answered with an error (${state.problem.replace(/\.$/, '')}); retry in a minute.` : `Can't reach the control plane at ${state.host}; check it is running, then retry.`}</p>
       <div className="login-actions"><button type="button" onClick={retry}>Retry</button>{escape}</div>
     </div>}
     <p className="login-help">{HELPER_TEXT}</p>
@@ -138,7 +146,7 @@ export function LoginView({ state, error, draftToken, setDraftToken, submit, ret
 
 /** The token prompt, and the verifying state while the first status read is in flight. */
 export default function LoginPage({ token, error, signOut, setError, sessionEpoch, setToken, draftToken, setDraftToken, host, onVerified, signingIn, setSigningIn }: Pick<Dashboard, 'token' | 'error' | 'signOut' | 'setError' | 'sessionEpoch'> & { setToken(token: string): void; draftToken: string; setDraftToken(value: string): void; host: string; onVerified(status: unknown, signal: AbortSignal): Promise<void>; signingIn: boolean; setSigningIn(value: boolean): void }) {
-  const [unreachable, setUnreachable] = useState(false);
+  const [unreachable, setUnreachable] = useState<false | { problem?: string }>(false);
   const [attempt, setAttempt] = useState(0);
   // A sign-in link opens here: its code is taken out of the address bar at once, redeemed, and the
   // human session token it returns is verified exactly as a typed token is.
@@ -173,11 +181,11 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
       if (!active || epoch !== sessionEpoch.current) return;
       if (outcome.kind === 'accepted') { if (token) offerToSavePassword(token); return; }
       if (outcome.kind === 'rejected') { if (!token) { setSigningIn(true); if (outcome.refusal) setError(outcome.refusal); return; } signOut(); setError(REJECTED_NOTICE); }
-      else setUnreachable(true);
+      else setUnreachable({ problem: outcome.problem });
     });
     return () => { active = false; check.cancel(); };
   }, [token, attempt, signingIn]);
-  const state: LoginState = !token && signingIn ? { kind: 'form' } : unreachable ? { kind: 'unreachable', host } : { kind: 'verifying' };
+  const state: LoginState = !token && signingIn ? { kind: 'form' } : unreachable ? { kind: 'unreachable', host, problem: unreachable.problem } : { kind: 'verifying' };
   const submit = () => { const value = draftToken.trim(); if (!value) { setError('Enter an access token.'); return; } sessionEpoch.current++; setError(''); sessionStorage.setItem('graphyard-token', value); setToken(value); };
   return <LoginView state={state} error={error} draftToken={draftToken} setDraftToken={setDraftToken} submit={submit} retry={() => setAttempt(n => n + 1)} useAnotherToken={signOut}/>;
 }
