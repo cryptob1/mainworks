@@ -291,14 +291,16 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
   }
 }
 
-/** A ready, cool added host open to sessions with room for one more of `kind`; null keeps the session on this machine. */
+/** A ready, cool added host open to sessions with room for one more of `kind` and shard room left; null keeps the session on this machine. */
 export async function remoteSessionHost(kind: string, live: () => readonly string[], run: ChildRun = defaultChildRun, file?: string): Promise<string | null> {
   if (!remoteRuntimes.includes(kind)) return null;
   for (const host of await readHosts(file).catch(() => [])) {
     if (!host.sessions || live().filter(target => target === host.target).length >= host.sessions) continue;
     // A helper older than sessions takes shards only, until `host add` updates it; `host list` names why.
     const probe = await probeHost(host.target, run);
-    if (probe.ok && probe.verbs?.includes('run-session:1') && (probe.celsius === null || probe.celsius < trialHotCelsius)) return host.target;
+    // GY-4004: a host whose load leaves its trials no shard room (cores less two, as shards are placed) takes no builder.
+    const shardRoom = probe.ok && probe.cores ? probe.cores - 2 - (probe.load ?? 0) : 0;
+    if (probe.ok && probe.verbs?.includes('run-session:1') && (probe.celsius === null || probe.celsius < trialHotCelsius) && shardRoom > 0) return host.target;
   }
   return null;
 }
