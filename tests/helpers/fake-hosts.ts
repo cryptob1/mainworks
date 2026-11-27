@@ -415,10 +415,13 @@ if [ "$user" = ${ownerLogin} ] && [ -d "$dir/standins" ]; then
 fi
 exec sh -c "$last"
 `);
-  // GY-4009: each host answers with its own host key (from its fixture name), whatever name or port reaches it.
+  // GY-4009: each host answers with its own host key (from its fixture name), whatever name reaches it, on a port it listens on.
   await executable(join(bin, 'ssh-keyscan'), `#!/bin/sh
-for host in "$@"; do :; done
-[ -d "${root}/hosts/$host" ] && printf '%s ssh-ed25519 %s\\n' "$host" "$(printf %s "$host" | base64)"
+port=22
+while [ $# -gt 0 ]; do case "$1" in -p) port="$2"; shift ;; -T) shift ;; *) host="$1" ;; esac; shift; done
+dir="${root}/hosts/$host"
+[ "$port" = 22 ] || /usr/bin/grep -qx "Port $port" "$dir/etc/ssh/sshd_graphyard_config" 2>/dev/null || exit 0
+[ -d "$dir" ] && printf '%s ssh-ed25519 %s\\n' "$host" "$(printf %s "$host" | base64)"
 exit 0
 `);
   return { root, bin, publicKey: fixturePublicKey, host: (name: string) => join(root, 'hosts', name), home: (name: string, user = hostUser) => join(root, 'hosts', name, 'home', user), prepareOutput: (name: string) => outputs.get(name) ?? '',
