@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -80,7 +81,7 @@ const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const token = (install: number) => `${coordinator.id}-token-${install}-${'x'.repeat(24)}`;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const hostId = 'shared-host';
-interface Install { config: MasterConfig; registry: AgentRegistry; server: ReturnType<typeof server>; store: Store }
+interface Install { config: MasterConfig; registry: AgentRegistry; close: () => Promise<void>; store: Store }
 const installs: Install[] = [];
 let home: string;
 
@@ -92,9 +93,7 @@ before(async () => {
   for (const [index, repository] of ['owner/one', 'owner/two'].entries()) {
     const store = stores[index]!;
     await store.init();
-    const http = server(new Engine(store, 120, repository), [{ ...coordinator, token: token(index + 1) }]);
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close } = await listen(server(new Engine(store, 120, repository), [{ ...coordinator, token: token(index + 1) }]));
     const root = await temporaryDirectory(index === 0 ? 'one' : 'two', scratch);
     (await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } })).git('remote', 'add', 'origin', `https://github.com/${repository}.git`);
     await setupMaster(root, { url, token: token(index + 1), cliPath: launcher, hostId, credentialDirectory: await temporaryDirectory(`credentials-${index}`, scratch), run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
@@ -104,13 +103,13 @@ before(async () => {
       accounts: [{ name: `claude-${index + 1}`, runtime: 'claude', model: 'fixture', credential: { host: hostId, home }, enabled: true }],
       roles: [{ name: 'worker', accounts: [`claude-${index + 1}`], concurrency: 4 }], reason: 'GY-3500 fixture',
     }, randomUUID());
-    installs.push({ config: await loadMasterConfig(root), registry, server: http, store });
+    installs.push({ config: await loadMasterConfig(root), registry, close, store });
   }
 });
 
 after(async () => {
   for (const install of installs) {
-    await new Promise<void>(resolve => { install.server.closeAllConnections?.(); install.server.close(() => resolve()); });
+    await install.close();
     await install.store.close();
   }
 });

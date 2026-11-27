@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer as createHttpServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildPlan, prepareInstall } from '../src/install/index.js';
@@ -47,10 +46,10 @@ test('unit:deploy-unit-watches-main — install --plan lists graphyard-deploy.se
   const { checkout, commit, a } = await repositories();
   const b = await commit('B');
   let served = a, healthy = (sha: string) => sha !== 'never';
-  const { url, close } = await listen(createHttpServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     const ok = request.url === '/healthz' && healthy(served);
     response.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok, commit: served }));
-  }));
+  });
   const steps: string[] = [];
   let schema: number | null = 7;
   const migrates: Record<string, number> = {};

@@ -39,3 +39,13 @@ test('unit:knip-clean — no test file spells a DeployWatchPorts object inline',
   const inline = readdirSync(join(root, 'tests'), { recursive: true, encoding: 'utf8' }).filter(path => /\.test\.ts$/.test(path) && object.test(readFileSync(join(root, 'tests', path), 'utf8')));
   assert.deepEqual(inline, [], 'test files that still spell their deploy-watch ports inline');
 });
+
+// GY-4060: in-process HTTP fixtures share loopback binding and teardown setup.
+test('unit:knip-clean — HTTP test servers use the shared listen helper', () => {
+  const inline = readdirSync(join(root, 'tests'), { encoding: 'utf8' }).filter(path => {
+    if (!path.endsWith('.test.ts')) return false;
+    const source = readFileSync(join(root, 'tests', path), 'utf8');
+    return /^import .* from 'node:http';/m.test(source) && /new Promise<void>\([^\n]*\.listen\(/.test(source);
+  });
+  assert.deepEqual(inline, [], 'HTTP test servers with inline listen setup');
+});

@@ -1,6 +1,6 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { createContext } from '../src/cli/context.js';
 import { requestWorkerVerification } from '../src/cli/worker-verification.js';
 import { verificationRequestTimeoutMs } from '../src/cli/verification-request.js';
@@ -18,7 +18,7 @@ test('unit:worker-verification-long-wait — verify survives six minutes before 
     setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms);
     return controller.signal;
   });
-  const http = createServer(async (req, res) => {
+  const { url, close } = await listen(async (req, res) => {
     if (req.url === '/healthz') { res.end('{}'); return; }
     let body = ''; for await (const chunk of req) body += chunk;
     if (req.url?.endsWith('/worker-verification')) {
@@ -38,8 +38,7 @@ test('unit:worker-verification-long-wait — verify survives six minutes before 
     assert.deepEqual(JSON.parse(body), { epoch: 1, head });
     submitted = true; res.end('{"submitted":true}');
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  process.env.GRAPHYARD_URL = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  process.env.GRAPHYARD_URL = url;
   process.env.GRAPHYARD_TOKEN = 'test-token'; delete process.env.GRAPHYARD_TOKEN_FILE;
   const complete = async () => {
     const context = await createContext('complete', 'GY-1', ['1', '--head', head], false);
@@ -60,14 +59,13 @@ test('unit:worker-verification-long-wait — verify survives six minutes before 
       assert.equal(verificationCalls, before + 1, 'no replay of timeout or HTTP refusal');
     }
     // A closed listener is an actual connection failure, not a verification timeout.
-    http.closeAllConnections();
-    await new Promise<void>(resolve => http.close(() => resolve()));
+    await close();
     const context = await createContext('complete', 'GY-1', [], false);
     t.mock.method(globalThis, 'fetch', async () => new Response('{}'));
     t.mock.method(Date, 'now', (() => { let now = 0; return () => now += 60_000; })());
     await assert.rejects(context.api('work/id-1/worker-verification', {}), /Control plane unreachable.*after 60 seconds/);
   } finally {
-    http.closeAllConnections(); http.close();
+    await close();
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }

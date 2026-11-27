@@ -1,8 +1,7 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +38,7 @@ test('unit:review-self-prints-standard — review self prints the reviewer stand
   // The fake control plane answers exactly what the command reads and records every request, so the
   // test can hold it to reads only.
   const requests: { method: string; path: string }[] = [];
-  const server = createServer((request, response) => {
+  const { port } = await listen((request, response) => {
     requests.push({ method: request.method ?? 'GET', path: request.url ?? '/' });
     const body = request.url === '/api/status' ? { baseBranch: 'main' }
       : request.url === '/api/work/GY-1' ? {
@@ -47,10 +46,7 @@ test('unit:review-self-prints-standard — review self prints the reviewer stand
       } : {};
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify(body));
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => server.close());
-  const port = (server.address() as AddressInfo).port;
+  }, t);
 
   // The command runs as a spawned child while this process's event loop keeps serving the fake
   // control plane — a synchronous spawn would block the very server the child waits on.

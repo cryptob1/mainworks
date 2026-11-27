@@ -2,7 +2,6 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -119,13 +118,12 @@ test('integration:product-reviews-share-serve-address — two product reviews on
 });
 
 test('a serve URL another application holds still fails the launch with the existing message', async () => {
-  const other = createServer((_request, response) => { response.end('someone else'); });
-  await new Promise<void>(resolve => other.listen(servePort, '127.0.0.1', resolve));
+  const { close: closeOther } = await listen((_request, response) => { response.end('someone else'); }, servePort);
   try {
     const work = await productItem('GY-9592', first);
     await assert.rejects(launchReview(root, work, 'product-claude', [], now(), { run, headless: async () => '', product: true }),
       /already answers before the serve command starts; another application holds it/);
-  } finally { await new Promise<void>(resolve => other.close(() => resolve())); }
+  } finally { await closeOther(); }
 });
 
 test('unit:product-reviews-share-serve-address-pinned — this file never goes to a remote shard, whose tmpfs refuses the review checkouts', async () => {

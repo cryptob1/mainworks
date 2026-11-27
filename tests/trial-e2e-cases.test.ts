@@ -1,7 +1,6 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -175,13 +174,12 @@ test('unit:trial-serves-head-and-runs-bound-cases — a host loopback listener c
   assert.ok('mergeSha' in merged);
   // The host port remains occupied, while the trial serves its own private port.
   let reached = 0;
-  const other = createServer((_request, response) => { reached++; response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ message: 'served' })); });
-  await new Promise<void>(resolve => other.listen(servePort, '127.0.0.1', resolve));
+  const { close: closeOther } = await listen((_request, response) => { reached++; response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ message: 'served' })); }, servePort);
   try {
     const run = await trial(merged.mergeSha, ['src/change.ts', 'e2e/cases/home-shows-change.json']);
     assert.deepEqual(run.proofs['e2e:home-shows-change'], { executed: 1, failed: 0 });
     assert.equal(reached, 0, 'neither readiness nor the case reached the host application');
-  } finally { await new Promise<void>(resolve => other.close(() => resolve())); }
+  } finally { await closeOther(); }
 });
 
 test('unit:trial-serves-head-and-runs-bound-cases — a trial record carries every e2e result a valid item can owe', () => {

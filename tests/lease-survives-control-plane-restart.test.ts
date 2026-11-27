@@ -1,9 +1,10 @@
+import { listen } from './helpers/http-server.js';
 // GY-3785 AC-1: a builder session whose lease renewal fails with a connection error or 5xx keeps
 // working and retries for up to 5 minutes; the server accepts a renewal for a lease that lapsed
 // while it was not serving, provided the item's epoch is unchanged and no other session claimed it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
+import { type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,9 +26,6 @@ const operator: Credential = { id: 'human-operator', role: 'admin', sessionKind:
 const workerA: Credential = { id: 'builder-a', role: 'worker', sessionKind: 'ai', token: 'wa-token-'.padEnd(40, 'x') };
 const workerB: Credential = { id: 'builder-b', role: 'worker', sessionKind: 'ai', token: 'wb-token-'.padEnd(40, 'x') };
 
-const listen = (http: Server, port = 0) => new Promise<void>(resolve => http.listen(port, '127.0.0.1', resolve));
-const close = (http: Server) => new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); });
-const portOf = (http: Server) => (http.address() as { port: number }).port;
 
 async function postJson(url: string, token: string, body: unknown) {
   const response = await fetch(url, {
@@ -63,8 +61,7 @@ test('unit:lease-survives-control-plane-restart — stops a stub server past lea
   engine.gitRunner = gitRunnerFor(dir);
   let stopBeat = await engine.startPlaneBeat(500);
   let http: Server | undefined = server(engine, [operator, workerA, workerB]);
-  await listen(http);
-  const port = portOf(http);
+  let { port, close } = await listen(http);
   const base = `http://127.0.0.1:${port}`;
 
   try {
@@ -120,7 +117,7 @@ test('unit:lease-survives-control-plane-restart — stops a stub server past lea
 
     // Stop the stub server for 6 seconds mid-session (3x the 2s lease, well past expiry).
     stopBeat();
-    await close(http);
+    await close();
     http = undefined;
     await delay(6_000);
     assert.equal(settled, false, 'builder kept working through server downtime past lease expiry');
@@ -131,7 +128,7 @@ test('unit:lease-survives-control-plane-restart — stops a stub server past lea
     engine.gitRunner = gitRunnerFor(dir);
     stopBeat = await engine.startPlaneBeat(500);
     http = server(engine, [operator, workerA, workerB]);
-    await listen(http, port);
+    ({ close } = await listen(http, port));
 
     // Wait for a renewal to succeed after restart.
     const beforeRecovery = renewals;
@@ -152,7 +149,7 @@ test('unit:lease-survives-control-plane-restart — stops a stub server past lea
     assert.equal(finalWork.pipeline?.attempts[0]?.end, 'submitted', 'attempt ended as submitted');
   } finally {
     stopBeat();
-    if (http) await close(http);
+    if (http) await close();
     await store.close();
   }
 });
@@ -197,7 +194,7 @@ test('unit:lease-survives-control-plane-restart — renewal is still refused whe
   const marker = join(dir, 'done');
   let mode: 'ok' | '503' = 'ok';
   let recovered = false;
-  const stub = createServer((req, res) => {
+  const { url, close } = await listen((req, res) => {
     if (mode === '503') {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Service unavailable during restart' }));
@@ -211,8 +208,6 @@ test('unit:lease-survives-control-plane-restart — renewal is still refused whe
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ updatedAt: new Date().toISOString(), lease: { epoch: 1, expiresAt: new Date(Date.now() + 1_000).toISOString() } }));
   });
-  await listen(stub);
-  const url = `http://127.0.0.1:${portOf(stub)}`;
   try {
     let calls = 0;
     const supervising = supervise(
@@ -238,7 +233,7 @@ test('unit:lease-survives-control-plane-restart — renewal is still refused whe
     await writeFile(marker, 'done');
     assert.equal(await supervising, 0, 'builder survived 503 past lease expiry and exited cleanly');
   } finally {
-    await close(stub);
+    await close();
   }
 });
 

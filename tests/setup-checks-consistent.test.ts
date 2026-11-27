@@ -1,9 +1,8 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { stat } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import * as install from '../src/install/index.js';
@@ -80,25 +79,22 @@ test('unit:setup-checks-consistent — a reachable plane with no credential is r
   assert.equal(setupNext(readiness('repository'), checks), 'Set GRAPHYARD_URL and GRAPHYARD_TOKEN …', 'an earlier step keeps its own recovery');
 });
 
-test('unit:setup-checks-consistent — mainworks doctor against a live plane without a credential says reachable and names step 3', async () => {
+test('unit:setup-checks-consistent — mainworks doctor against a live plane without a credential says reachable and names step 3', async (t) => {
   const root = await repository({ 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) });
-  const server = createServer((request, response) => {
+  const { url } = await listen((request, response) => {
     response.writeHead(request.url === '/healthz' ? 200 : 401, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify(request.url === '/healthz' ? { ok: true } : { error: 'unauthenticated' }));
-  });
-  await new Promise<void>(accept => server.listen(0, '127.0.0.1', accept));
-  try {
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    for (const key of Object.keys(env)) if (key.startsWith('GRAPHYARD_')) delete env[key];
-    env.GRAPHYARD_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    env.GRAPHYARD_AGENT_ENVIRONMENTS = await temporaryDirectory('setup-checks-agents');
-    const { stdout } = await promisify(execFile)(process.execPath, [launcher, 'doctor'], { cwd: root, env });
-    const doctor = JSON.parse(stdout);
-    const line = doctor.setupFromZero.lines.find((entry: string) => entry.includes(' control-plane: '));
-    assert.match(line, /^FAIL control-plane: reachable, credential missing/);
-    assert.equal(doctor.next, line, 'next names the step that connects the plane, not init --url SERVER --token-stdin');
-    assert.deepEqual(doctor.discovered.frameworks, ['node:test'], 'doctor reports the framework init --scan detects');
-  } finally { await new Promise(accept => server.close(accept)); }
+  }, t);
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(env)) if (key.startsWith('GRAPHYARD_')) delete env[key];
+  env.GRAPHYARD_URL = url;
+  env.GRAPHYARD_AGENT_ENVIRONMENTS = await temporaryDirectory('setup-checks-agents');
+  const { stdout } = await promisify(execFile)(process.execPath, [launcher, 'doctor'], { cwd: root, env });
+  const doctor = JSON.parse(stdout);
+  const line = doctor.setupFromZero.lines.find((entry: string) => entry.includes(' control-plane: '));
+  assert.match(line, /^FAIL control-plane: reachable, credential missing/);
+  assert.equal(doctor.next, line, 'next names the step that connects the plane, not init --url SERVER --token-stdin');
+  assert.deepEqual(doctor.discovered.frameworks, ['node:test'], 'doctor reports the framework init --scan detects');
 });
 
 test('unit:setup-checks-consistent — doctor and init --scan share one framework detector', async () => {

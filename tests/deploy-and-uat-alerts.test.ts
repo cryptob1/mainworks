@@ -1,6 +1,6 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { Launcher, type Cycle } from '../src/daemon/cycle.js';
 import { readDaemonState, writeDaemonState, type DaemonState } from '../src/daemon/state.js';
@@ -97,26 +97,22 @@ test('integration:deploy-and-uat-alerts — a Slack incoming webhook gets {"text
   assert.equal((sent[1].init.headers as Record<string, string>)['Content-Type'], 'text/plain');
 });
 
-test('e2e:deploy-and-uat-alerts — a fake webhook receives the deployed message after a promotion and the UAT-failed message after a failing release candidate', async () => {
+test('e2e:deploy-and-uat-alerts — a fake webhook receives the deployed message after a promotion and the UAT-failed message after a failing release candidate', async (t) => {
   const received: string[] = [];
-  const server = createServer((request, response) => { let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => { received.push(body); response.end('ok'); }); });
-  await new Promise<void>(accept => server.listen(0, '127.0.0.1', accept));
-  try {
-    const { port } = server.address() as { port: number };
-    const url = `http://127.0.0.1:${port}/alerts`;
-    const { root, config } = await world(url);
-    const webhook = (text: string) => postAlert(fetch, url, text);
-    const base = commit(root, 'base');
-    await step(root, config, base, [], webhook);
-    const merged = commit(root, 'GY-7');
-    const work = [done('GY-7', 'Faster search', merged)];
-    // The promotion: the delivery watch now serves the merged commit.
-    await step(root, config, merged, work, webhook);
-    assert.deepEqual(received, [`Mainworks owner/project: deployed ${merged.slice(0, 12)}\nGY-7 Faster search (${merged.slice(0, 12)})`]);
-    const candidate = commit(root, 'GY-8');
-    await failedGate(root, merged, candidate);
-    await step(root, config, merged, work, webhook);
-    assert.equal(received.length, 2);
-    assert.match(received[1], new RegExp(`UAT failed on candidate ${candidate.slice(0, 12)}; ${merged.slice(0, 12)} stays served\\. Failed: e2e:login, e2e:checkout$`));
-  } finally { server.close(); }
+  const { port } = await listen((request, response) => { let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', () => { received.push(body); response.end('ok'); }); }, t);
+  const url = `http://127.0.0.1:${port}/alerts`;
+  const { root, config } = await world(url);
+  const webhook = (text: string) => postAlert(fetch, url, text);
+  const base = commit(root, 'base');
+  await step(root, config, base, [], webhook);
+  const merged = commit(root, 'GY-7');
+  const work = [done('GY-7', 'Faster search', merged)];
+  // The promotion: the delivery watch now serves the merged commit.
+  await step(root, config, merged, work, webhook);
+  assert.deepEqual(received, [`Mainworks owner/project: deployed ${merged.slice(0, 12)}\nGY-7 Faster search (${merged.slice(0, 12)})`]);
+  const candidate = commit(root, 'GY-8');
+  await failedGate(root, merged, candidate);
+  await step(root, config, merged, work, webhook);
+  assert.equal(received.length, 2);
+  assert.match(received[1], new RegExp(`UAT failed on candidate ${candidate.slice(0, 12)}; ${merged.slice(0, 12)} stays served\\. Failed: e2e:login, e2e:checkout$`));
 });

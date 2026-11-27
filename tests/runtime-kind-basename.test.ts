@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -51,15 +52,14 @@ test('e2e:runtime-kind-basename — on a running test install a session launched
   const coordinator: Principal = { id: 'master', role: 'coordinator' };
   const token = `coordinator-${'t'.repeat(32)}`;
   let store: Store | null = null;
-  let http: ReturnType<typeof server> | null = null;
+  let close: (() => Promise<void>) | undefined;
 
   try {
     store = await withDatabase('runtime-kind-basename');
     await store.init();
     const engine = new Engine(store, 120, 'owner/project');
-    http = server(engine, [{ ...coordinator, token }]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const endpoint = await listen(server(engine, [{ ...coordinator, token }]));
+    const { url } = endpoint; close = endpoint.close;
 
     const { git } = await gitRepo({ root, files: { '.gitignore': '.mainworks/\n' } });
     git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
@@ -114,10 +114,7 @@ test('e2e:runtime-kind-basename — on a running test install a session launched
 
     assert.equal(launched.started.state, 'started', launched.started.detail);
   } finally {
-    if (http) {
-      (http as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
-      await new Promise<void>(resolve => http!.close(() => resolve()));
-    }
+    await close?.();
     rmSync(root, { recursive: true, force: true });
     rmSync(installDir, { recursive: true, force: true });
   }

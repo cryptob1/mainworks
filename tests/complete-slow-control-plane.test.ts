@@ -1,6 +1,6 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +40,7 @@ async function slowPlane(head: string, first: { answerAfterMs: number } | { appl
     return receipts.get(key);
   };
   let late: NodeJS.Timeout | undefined;
-  const server: Server = createServer(async (req, res) => {
+  const { url, close } = await listen(async (req, res) => {
     res.on('error', () => {});
     const send = (body: unknown) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     if (req.url === '/healthz') return send({});
@@ -57,11 +57,10 @@ async function slowPlane(head: string, first: { answerAfterMs: number } | { appl
     }
     res.writeHead(404, { 'Content-Type': 'application/json' }); res.end('{}');
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+    url,
     submissions, applied,
-    close: () => { if (late) clearTimeout(late); return new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); },
+    close: () => { if (late) clearTimeout(late); return close(); },
   };
 }
 

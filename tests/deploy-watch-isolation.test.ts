@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer as createHttpServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
@@ -23,7 +22,7 @@ async function repositories() {
   return { checkout, commit, a };
 }
 
-test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD another install moves between restart and health still has its health step expect the deployed commit\'s release, never the HEAD\'s', async () => {
+test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD another install moves between restart and health still has its health step expect the deployed commit\'s release, never the HEAD\'s', async (t) => {
   // Imported here so the test fails as a case, not at load, against code without the export.
   const { deployHealth } = await import('../src/cli/upgrade.js') as { deployHealth?: (cliRoot: string, url: string, attempts?: number, pauseMs?: number) => (commit: string) => Promise<void> };
   // Short refusal: a long assert message against the base fills spawnSync's pipe and deadlocks verify's exercise.
@@ -31,7 +30,7 @@ test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD anoth
   const { checkout, commit, a } = await repositories();
   const b = await commit('B');
   let version = '';
-  const { url, close } = await listen(createHttpServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, healthy: true, version })); }));
+  const { url } = await listen((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, healthy: true, version })); }, t);
   const moveTo = a;
   const ports = gitDeployPorts(checkout, {
     // The other install's rollback moves the shared HEAD once the restart has stamped the image.
@@ -39,18 +38,16 @@ test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD anoth
     health: deployHealth(checkout, url, 1, 0),
   });
   const file = deployRecordPath(await temporaryDirectory('deploy-health-commit'));
-  try {
-    await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
-    assert.equal(git(checkout, 'rev-parse', 'HEAD'), b, 'the pass leaves the checkout on the tip the server serves (GY-2978: it moves only after health)');
-    assert.deepEqual([readDeployRecord(file)?.tip, readDeployRecord(file)?.failed], [b, null], '/healthz reporting the deployed commit\'s release passes');
+  await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
+  assert.equal(git(checkout, 'rev-parse', 'HEAD'), b, 'the pass leaves the checkout on the tip the server serves (GY-2978: it moves only after health)');
+  assert.deepEqual([readDeployRecord(file)?.tip, readDeployRecord(file)?.failed], [b, null], '/healthz reporting the deployed commit\'s release passes');
 
-    // A server answering the moved HEAD's release fails, against the deployed commit's release.
-    const c = await commit('C');
-    ports.restart = async () => { version = `unreleased ${b.slice(0, 12)}`; git(checkout, 'checkout', '-q', '--detach', b); };
-    await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
-    assert.equal(readDeployRecord(file)?.failed, c);
-    assert.match(readDeployRecord(file)?.reason ?? '', new RegExp(`health failed: /healthz reports unreleased ${b.slice(0, 12)}, not unreleased ${c.slice(0, 12)}`));
-  } finally { await close(); }
+  // A server answering the moved HEAD's release fails, against the deployed commit's release.
+  const c = await commit('C');
+  ports.restart = async () => { version = `unreleased ${b.slice(0, 12)}`; git(checkout, 'checkout', '-q', '--detach', b); };
+  await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
+  assert.equal(readDeployRecord(file)?.failed, c);
+  assert.match(readDeployRecord(file)?.reason ?? '', new RegExp(`health failed: /healthz reports unreleased ${b.slice(0, 12)}, not unreleased ${c.slice(0, 12)}`));
 });
 
 test('unit:deploy-unit-has-own-checkout — the deploy unit names a checkout under its install\'s own directory, never the operator\'s source checkout, and two installs on one host get two', async () => {

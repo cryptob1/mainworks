@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
@@ -78,8 +79,7 @@ test('unit:cli-reads-bounded-snapshot — CLI commands read bounded snapshot or 
     // node's 5 s idle close, so the fixture holds connections as long as the test runs.
     syncServer.keepAliveTimeout = 120_000;
     control.state.reads.length = 0; control.state.violations.length = 0;
-    await new Promise<void>(resolve => syncServer.listen(0, '127.0.0.1', resolve));
-    const syncOrigin = `http://127.0.0.1:${(syncServer.address() as { port: number }).port}`;
+    const { url: syncOrigin, close } = await listen(syncServer);
     try {
       await gitRepo({ root: originRepo, files: { 'shared.txt': 'base\n' }, message: 'Base' });
       git(cwd, 'clone', '-q', originRepo, clone);
@@ -100,7 +100,7 @@ test('unit:cli-reads-bounded-snapshot — CLI commands read bounded snapshot or 
       assert.equal(outcome.code, 1, `sync reports the conflict and exits non-zero\n${outcome.output}`);
       assert.deepEqual(control.state.violations, [], `the sync attribution read is not a full work-snapshot read\n${outcome.output}`);
       assert.deepEqual(control.state.reads.filter(read => read.path === 'work-snapshot').map(read => read.coordination), [true], `the sync attribution read is the coordination view\n${outcome.output}`);
-    } finally { syncServer.closeAllConnections(); await new Promise<void>(resolve => { syncServer.close(() => resolve()); setTimeout(resolve, 2_000).unref(); }); await rm(cwd, { recursive: true, force: true }); }
+    } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 
     // The source carries the one workspace read.
     const workspaceSource = await readFile(new URL('../src/cli/workspace.ts', import.meta.url), 'utf8');

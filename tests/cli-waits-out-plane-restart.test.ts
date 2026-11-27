@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
@@ -15,7 +16,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const exec = promisify(execFile);
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const listen = (http: Server, port = 0) => new Promise<void>(resolve => http.listen(port, '127.0.0.1', resolve));
 const close = (http: Server) => new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); });
 const portOf = (http: Server) => (http.address() as { port: number }).port;
 
@@ -40,7 +40,7 @@ test('integration:cli-waits-out-plane-restart — CLI survives refusal during re
           const port = portOf(proxy!);
           // The probe succeeds just as deployment takes the listener down. The API sees ECONNREFUSED.
           restart = new Promise<void>(resolve => proxy!.close(() => {
-            setTimeout(() => { void listen(proxy!, port).then(resolve); }, 250);
+            setTimeout(() => { void listen(proxy!, port).then(() => resolve()); }, 250);
           }));
           proxy!.closeIdleConnections();
         }

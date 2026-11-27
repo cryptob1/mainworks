@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -162,14 +163,13 @@ test('hard math real API creates/releases the frozen plan with revisions, binds 
   const root=await temporaryDirectory('hard-math-api');
   const previousPolicy=policy.repositoryPolicy();
   policy.setRepositoryPolicy({...previousPolicy,e2e:{pendingOutcomes:'non-blocking',serve:{command:'true',url:'http://127.0.0.1:9',readySeconds:1}}});
-  let store:InstanceType<typeof Store>|undefined,http:ReturnType<typeof server>|undefined;
+  let store:InstanceType<typeof Store>|undefined,close:(() => Promise<void>)|undefined;
   try {
     store=await withDatabase('hard-math-api');await store.init();
     const admin=credential('api-admin','admin'),coordinator=credential('api-coordinator','coordinator'),producer=credential('api-proof','producer',['unit:workbench-contract','manual:certified-artifact']);
     const workers=[0,1,2].map(i=>credential(`api-worker-${i}`,'worker'));
-    http=server(new Engine(store,120,'scratch/hard-math'),[admin,coordinator,producer,...workers]);
-    await new Promise<void>(resolve => http!.listen(0, '127.0.0.1', resolve));
-    const url=`http://127.0.0.1:${(http.address() as {port:number}).port}`;
+    const endpoint = await listen(server(new Engine(store,120,'scratch/hard-math'),[admin,coordinator,producer,...workers]));
+    const { url } = endpoint; close = endpoint.close;
     const call=async(path:string,token:string,body?:unknown)=>{
       const result=await api(url,token,path,{body});if(result.status>=300) throw new Error(`${result.status}: ${JSON.stringify(result.body)}`);return result.body;
     };
@@ -200,7 +200,7 @@ test('hard math real API creates/releases the frozen plan with revisions, binds 
       assert.equal(item.pipeline.attempts[0].epoch,claimedItem.epoch);
     }
   } finally {
-    await new Promise<void>(resolve=>http?http.close(()=>resolve()):resolve());
+    await close?.();
     await store?.close();policy.setRepositoryPolicy(previousPolicy);
   }
 });

@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -29,9 +30,7 @@ test('unit:server-keeps-long-verification-open — a simulated verification past
       return original.call(this, ms / 1000, callback);
     };
   });
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  t.after(() => { http.closeAllConnections(); return new Promise<void>(resolve => http.close(() => resolve())); });
-  const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const { url } = await listen(http, t);
   const api = async (path: string, body: unknown, token = host.token) => {
     const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: {
       Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
