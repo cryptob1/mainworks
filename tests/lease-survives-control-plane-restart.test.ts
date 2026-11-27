@@ -251,7 +251,7 @@ test('unit:lease-survives-control-plane-restart — renewal is still refused whe
 async function restartFixture(label: string) {
   const store = await withDatabase(label);
   await store.init();
-  const engine = new Engine(store, 1, 'owner/project');
+  const engine = new Engine(store, 60, 'owner/project');
   engine.principals = [operator, workerA, workerB];
   const head = 'c'.repeat(40);
   engine.gitRunner = async args => ({ status: 0, stdout: args[0] === 'diff' ? '' : head, stderr: '' });
@@ -270,11 +270,12 @@ async function restartFixture(label: string) {
   return { store, engine, ready, claim, submit, heartbeat };
 }
 
-test('integration:rework-lease-restores-after-restart — a rework builder keeps its attempt across a restart longer than the lease; hold, not ready, another epoch and a submitted epoch are refused', { timeout: 60_000 }, async () => {
-  const { store, engine, ready, claim, submit, heartbeat } = await restartFixture('rework-lease-restores');
+// GY-3956: the outage is laid on the database's clock, the one that stamps every lease, and the leases are
+// lapsed by moving their expiry, not by sleeping. Before, the stall's end came from this process's clock after a
+// 2.5 s sleep on a 1 s lease, so the restore window held by 0.5 s and a database clock that far ahead refused it.
+async function reworkRestoresAfterRestart(label: string) {
+  const { store, engine, ready, claim, submit, heartbeat } = await restartFixture(label);
   try {
-    // The plane's last tick before the outage.
-    await engine.recordPlaneLiveness(new Date(Date.now() - 120_000));
     // A rework attempt: the first attempt submitted, the master asked for rework, a builder claimed again.
     let rework = await claim((await ready('Rework survives restart')).id);
     await submit(rework);
@@ -288,10 +289,12 @@ test('integration:rework-lease-restores-after-restart — a rework builder keeps
     const submitted = await claim((await ready('Submitted under this epoch')).id);
     await submit(submitted);
 
-    // Every lease lapses while the plane is down; the plane came back 31 s ago, so the stall's
-    // 30 s renewal grace has passed and only the downtime restore can keep a lease.
-    await delay(2_500);
-    await engine.recordPlaneLiveness(new Date(Date.now() - 31_000));
+    // The plane was down from 120 s to 31 s ago and every lease ran out 2 s ago, inside the 30 s a stall
+    // leaves for renewals; that grace has passed, so only the downtime restore can keep a lease.
+    const now = ((await store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now as Date).getTime();
+    await engine.recordPlaneLiveness(new Date(now - 120_000));
+    await engine.recordPlaneLiveness(new Date(now - 31_000));
+    await store.pool.query(`UPDATE work_items SET document = jsonb_set(document, '{lease,expiresAt}', to_jsonb($1::text)) WHERE jsonb_typeof(document->'lease') = 'object'`, [new Date(now - 2_000).toISOString()]);
 
     const restored = await heartbeat(rework);
     assert.equal(restored.lease?.owner, workerA.id, 'the rework lease is restored');
@@ -313,6 +316,15 @@ test('integration:rework-lease-restores-after-restart — a rework builder keeps
   } finally {
     await store.close();
   }
+}
+
+test('integration:rework-lease-restores-after-restart — a rework builder keeps its attempt across a restart longer than the lease; hold, not ready, another epoch and a submitted epoch are refused', { timeout: 60_000 }, () => reworkRestoresAfterRestart('rework-lease-restores'));
+
+// GY-3956 seam: this process's clock runs 1 s behind the database's, the condition that refused the restore.
+test('unit:lease-survives-control-plane-restart-pinned — the rework lease is restored when this process clock runs 1 s behind the database clock that stamps leases', { timeout: 60_000 }, async () => {
+  const realNow = Date.now;
+  Date.now = () => realNow() - 1_000;
+  try { await reworkRestoresAfterRestart('rework-lease-pinned'); } finally { Date.now = realNow; }
 });
 
 test('integration:released-epoch-is-never-reused — a release, with or without a workspace failure, ends the attempt; the next claim takes a new number and the released epoch is refused', async () => {
