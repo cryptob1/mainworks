@@ -9,9 +9,12 @@
     "src/dispatch/worker-pull.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}"],
-  // An export its own file uses is live code; knip reports an export no file besides its own uses.
+  // An export its own file uses is live code; knip reports only an export no file besides its own
+  // uses. Without this it would also list several hundred exports production calls in their own
+  // file that tests import as well, and those cannot be deleted.
   "ignoreExportsUsedInFile": true,
-  // The 13 exports kept for tests alone, each with its reason. knip ignores these files' exports and nothing else.
+  // The 13 exports kept for tests alone, each with its reason. knip's ignore is per file: these
+  // files carry exactly these unused exports today, so nothing else is hidden.
   "ignoreIssues": {
     "src/daemon/cycle-merge-writer.ts": ["exports"], // mergeWriterIdle: the idle writer state about 48 test files start from.
     "src/install/transport.ts": ["exports"], // fakeTransport: the install tests' stand-in for SSH to a host.
