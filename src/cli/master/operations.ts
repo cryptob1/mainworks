@@ -6,7 +6,7 @@ import { dispatchWork } from '../../master/dispatch.js';
 import { readWorkerCredential } from '../../master/config.js';
 import { atomicPrivateWrite } from '../../private-file.js';
 import { loopRestartRequestPath } from '../../daemon/state.js';
-import { masterStatusReport } from '../master-status.js';
+import { masterStatus } from '../master-status.js';
 import { unhandled, type MasterSession } from './session.js';
 import { readSecretFromStdin } from '../context.js';
 import { defaultChildRun } from '../../child-runner.js';
@@ -35,7 +35,7 @@ const recoverEffects: RecoverEffects = { run: defaultChildRun, host: {}, restart
 /** Reading status and acting on one item: dispatch. */
 export async function operationsCommand(session: MasterSession, effects: RecoverEffects = recoverEffects): Promise<unknown> {
   const { id, args, print, root, master, masterApi, masterMutation, coordinator } = session;
-  if (id === 'status') return print(await masterStatusReport(root, master, masterApi));
+  if (id === 'status') return print(await masterStatus(root, master, masterApi));
   // The confined master session sees no host systemd (GY-1658), so its restart is a request the loop serves through its own unit.
   if (id === 'restart' && confinedMaster()) {
     await atomicPrivateWrite(loopRestartRequestPath(master), { requestedAt: new Date().toISOString(), requestedBy: String(coordinator?.actor?.id ?? 'master'), reason: args.join(' ') || 'master restart from the confined master session' });
