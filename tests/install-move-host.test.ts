@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { promisify } from 'node:util';
+import { shellQuote } from '../src/install/transport.js';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -39,7 +42,7 @@ async function controlPlane(data: string, port: number) {
   return { url, ok, stop };
 }
 
-test('e2e:install-move-host — install move copies the database, files and credentials, sets hostId, re-points every account, re-creates worktree registrations and provisions the trial image', async () => {
+async function moveHost(startTarget: boolean) {
   const scratch = await temporaryDirectory('move-host'), ports = await reserveTestPorts();
   const configHome = join(scratch, 'config'), root = join(scratch, 'checkout'), repo = join(scratch, 'repo'), masters = join(configHome, 'masters'), units = join(scratch, 'units'), target = join(scratch, 'target');
   const directory = installDirectory(installIdFor('owner/project'), configHome), data = join(directory, 'postgres', 'data');
@@ -51,7 +54,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     running = await controlPlane(data, ports.base);
     const source = running;
     // The checkout is a linked worktree of a main clone, and holds a CLI release copy that is a linked worktree too — the layout a hand move left with dangling registrations.
-    const { head: commit, git } = await gitRepo({ root: repo, files: { 'README.md': 'owner/project\n' }, message: 'root' });
+    const { head: commit, git } = await gitRepo({ root: repo, files: { 'README.md': 'owner/project\n', 'Dockerfile': 'FROM scratch AS trial\nCOPY README.md /README.md\n' }, message: 'root' });
     git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
     git('worktree', 'add', '--detach', '--quiet', root, commit);
     const bound = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
@@ -106,12 +109,69 @@ test('e2e:install-move-host — install move copies the database, files and cred
     for (const name of [basename(root), commit]) assert.ok(existsSync(join(movedGit, 'worktrees', name, 'gitdir')), `the ${name} registration is on the target`);
     assert.equal(execFileSync('git', ['--git-dir', movedGit, 'rev-parse', `${commit}^{commit}`], { encoding: 'utf8' }).trim(), commit, 'the moved .git holds the objects');
     assert.equal(execFileSync('git', ['--git-dir', movedGit, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim(), 'https://github.com/owner/project.git', 'the moved .git holds the config');
-    const commands = docker.commands.map(recorded => [recorded.program, ...recorded.args].join(' '));
-    assert.ok(commands.some(line => line.startsWith('docker buildx build ') && line.includes('--tag mainworks-trial:local ') && line.endsWith(join(target, root))), `the trial image is built from the copied checkout:\n${commands.join('\n')}`);
+    assert.deepEqual(docker.commands, [], '--into never invokes Docker on the source');
+    const script = await readFile(join(target, 'start.sh'), 'utf8');
+    assert.equal(script, `#!/bin/sh\nset -e\n${moved.start.join('\n')}\n`, 'saved and printed start commands agree');
+    assert.match(moved.start[0]!, /docker.*image inspect/);
+    assert.match(moved.start[0]!, /buildx.*build/);
+    assert.ok(moved.next.includes(moved.start.join(' && ')));
 
-    // The target's control plane has the database contents, every account on the target host, and none refused for it.
-    running = await controlPlane(join(target, data), ports.base);
-    const moving = running;
+    if (startTarget) {
+      // Stand in for Docker and systemd; execute the printed shell and serve the copied database.
+      const bin = join(scratch, 'bin'), built = join(scratch, 'image-built'), calls = join(scratch, 'docker-calls');
+      await mkdir(bin);
+      const bridge = await listen(createServer(async (request, response) => {
+        try {
+          if (request.url === '/start') running = await controlPlane(join(target, data), ports.base);
+          else assert.ok((await running!.ok('work-snapshot', undefined, tokens.master)).work.some((entry: { key: string }) => entry.key === item.key));
+          response.end('ok');
+        } catch (error) { response.statusCode = 500; response.end(String(error)); }
+      }));
+      const fetchCommand = (path: string) => `${shellQuote(process.execPath)} -e ${shellQuote(`fetch('${bridge.url}/${path}').then(async r => { if (!r.ok) throw new Error(await r.text()); })`)}`;
+      await writeFile(join(bin, 'systemctl'), `#!/bin/sh\ncase "$*" in\n  "--user daemon-reload") exit 0;;\n  "--user enable --now "*) ${fetchCommand('start')};;\n  *) exit 1;;\nesac\n`, { mode: 0o755 });
+      await writeFile(join(bin, 'mainworks'), `#!/bin/sh\n[ "$*" = "master status" ] || exit 1\n${fetchCommand('status')}\n`, { mode: 0o755 });
+      await writeFile(join(bin, 'docker'), `#!/usr/bin/env node
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
+const built = ${JSON.stringify(built)}, builder = built + '-builder';
+switch (args.slice(0, 2).join(' ')) {
+  case 'image inspect':
+    assert.deepEqual(args, ['image', 'inspect', 'mainworks-trial:local']);
+    process.exit(fs.existsSync(built) ? 0 : 1);
+  case 'buildx inspect':
+    assert.deepEqual(args, ['buildx', 'inspect', 'mainworks-trial']);
+    process.exit(fs.existsSync(builder) ? 0 : 1);
+  case 'buildx create':
+    assert.deepEqual(args, ['buildx', 'create', '--name', 'mainworks-trial', '--driver', 'docker-container']);
+    fs.writeFileSync(builder, '');
+    break;
+  case 'buildx build':
+    assert.deepEqual(args, ['buildx', 'build', ...${JSON.stringify(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : [])}, '--builder', 'mainworks-trial', '--load', '--target', 'trial', '--tag', 'mainworks-trial:local', ${JSON.stringify(join(target, root))}]);
+    assert.ok(fs.existsSync(builder));
+    assert.equal(fs.readFileSync(${JSON.stringify(join(target, root, 'Dockerfile'))}, 'utf8'), 'FROM scratch AS trial\\nCOPY README.md /README.md\\n');
+    fs.writeFileSync(built, '');
+    break;
+  default: throw new Error('Unexpected Docker command: ' + args.join(' '));
+}
+`, { mode: 0o755 });
+      const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+      assert.throws(() => execFileSync(join(bin, 'docker'), ['image', 'inspect', 'mainworks-trial:local'], { env, stdio: 'pipe' }), { status: 1 }, 'the target starts without a trial image');
+      try {
+        // Paths on the new machine keep their absolute names; prefix them only in this stand-in.
+        const commands = moved.start.join(' && ').replaceAll(root, join(target, root));
+        await promisify(execFile)('sh', ['-ec', commands], { env });
+        assert.ok(running, 'the printed start commands start the copied install');
+        execFileSync(join(bin, 'docker'), ['image', 'inspect', 'mainworks-trial:local'], { env, stdio: 'pipe' });
+        await promisify(execFile)('sh', ['-ec', moved.start[0]!.replaceAll(root, join(target, root))], { env });
+        const invocations = (await readFile(calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as string[]);
+        assert.equal(invocations.filter(args => args[0] === 'buildx' && args[1] === 'build').length, 1, 'first start builds the image; an existing image is reused');
+      } finally {
+        await bridge.close();
+      }
+    } else running = await controlPlane(join(target, data), ports.base);
+    const moving = running!;
     assert.ok((await moving.ok('work-snapshot', undefined, tokens.master)).work.some((entry: { key: string }) => entry.key === item.key), 'the item moved with the database');
     assert.deepEqual((await moving.ok('agent-registry/document', undefined, tokens.master)).accounts.map((account: any) => account.credential.host), ['target-host']);
     const fleet = await moving.ok('agent-registry?host=target-host', undefined, tokens.master);
@@ -121,4 +181,7 @@ test('e2e:install-move-host — install move copies the database, files and cred
     ports.release();
     await rm(scratch, { recursive: true, force: true });
   }
-});
+}
+
+test('e2e:install-move-host — copies the database, credentials and Git registrations and re-points accounts', () => moveHost(false));
+test('integration:install-move-into-a-directory-then-start-from-it — moves without Docker and starts the copied install with the printed commands, building the missing trial image', () => moveHost(true));

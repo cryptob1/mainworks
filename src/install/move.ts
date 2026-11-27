@@ -25,7 +25,7 @@ import { installDirectory } from './secrets.js';
 import { installIdFor } from './types.js';
 import { deployUnitOf, readInstallUnits, userUnitDirectory } from './units.js';
 import { localUnit } from './local.js';
-import { provisionTrialImage, trialImagePlan } from './trial-image.js';
+import { provisionTrialImage, trialImagePlan, trialImageStartCommand } from './trial-image.js';
 import { commandFailure, shellQuote, type CommandResult, type RunOptions, type Transport } from './transport.js';
 import { persistLoopStateScope } from '../loop-state.js';
 import { stateDirectory } from './layout.js';
@@ -43,7 +43,7 @@ export interface MoveDependencies {
   start?: (commands: string[][]) => Promise<void>;
   /** Runs one program; default spawns it and fails on a nonzero exit. */
   run?: (program: string, args: string[]) => Promise<void>;
-  /** Docker for the trial image; default runs it on the target — over SSH, or directly for a stand-in directory. */
+  /** Docker for the trial image; default runs it on the target — over SSH, deferred to first start for a stand-in directory. */
   transport?: Transport;
 }
 
@@ -132,17 +132,16 @@ function scanFiles(paths: string[], skip: string[]) {
   return { unreadable: [...new Set(unreadable)], skipped: [...new Set(skipped)] };
 }
 
-/** Docker commands of the move run on the target: through SSH for a real move, directly for a stand-in directory. */
-function targetTransport(to: string, into: string | undefined, exec: (program: string, args: string[]) => Promise<void>): Transport {
+/** Docker commands of a direct move run on the target through SSH. */
+function targetTransport(to: string, exec: (program: string, args: string[]) => Promise<void>): Transport {
   return {
-    description: into ? resolve(into) : `${to} over SSH`,
+    description: `${to} over SSH`,
     async exec(program, args, options = {}) {
-      const result = into ? await capture(program, args, options) : await capture('ssh', [to, [program, ...args].map(shellQuote).join(' ')], options);
+      const result = await capture('ssh', [to, [program, ...args].map(shellQuote).join(' ')], options);
       if (result.code !== 0 && !options.allowFailure) throw commandFailure(program, result);
       return result;
     },
     async putFile(path, content, mode) {
-      if (into) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await writeFile(path, content, { mode }); return; }
       const scratch = await mkdtemp(join(tmpdir(), 'mainworks-move-'));
       try {
         const staged = join(scratch, basename(path));
@@ -202,6 +201,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   const { unreadable, skipped: specials } = scanFiles([...directories, ...unitFiles, ...credentials], rootSkipped.map(entry => join(root, entry)));
   const skipped = specials.length ? `Left behind ${specials.length} socket, FIFO or device file${specials.length === 1 ? '' : 's'}, which nothing can copy: ${specials.join(', ')}` : null;
   const start = [
+    ...(options.into ? [trialImageStartCommand(root)] : []),
     ...(local ? [] : [`docker volume create ${volume}`, `docker run --rm -v ${volume}:/data -v ${directory}:/in postgres:17-alpine tar -C /data -xf /in/graphyard-data.tar`, `docker compose --project-directory ${join(directory, 'compose')} up -d`]),
     ...(unitNames.length ? ['systemctl --user daemon-reload', `systemctl --user enable --now ${unitNames.join(' ')}`] : []),
     `cd ${root} && mainworks master status`,
@@ -250,8 +250,8 @@ export async function moveInstall(root: string, options: { to: string; into?: st
         } finally { await rm(scratch, { recursive: true, force: true }); }
       }
     }
-    // The target's complete submissions and merge trials run in the trial image, so the move leaves it provisioned there (GY-3318).
-    await provisionTrialImage({ transport: dependencies.transport ?? targetTransport(to, options.into, exec), sourceRoot: options.into ? destination(root) : root }, published);
+    // A direct move provisions on the target; a stand-in move leaves this to its saved start commands.
+    if (!options.into) await provisionTrialImage({ transport: dependencies.transport ?? targetTransport(to, exec), sourceRoot: root }, published);
     for (const name of accounts) { await registryCommand(config, ['account', 'set', name, '--host', to, '--reason', reason], api); repointed.push(name); }
     await stopNow(planeStop);
     if (local) await copy(postgres, { contents: true });
@@ -259,6 +259,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
       await exec('docker', ['run', '--rm', '-v', `${volume}:/data`, '-v', `${directory}:/out`, 'postgres:17-alpine', 'tar', '-C', '/data', '-cf', '/out/graphyard-data.tar', '.']);
       await copy(volumeArchive);
     }
+    if (options.into) await writeFile(join(resolve(options.into), 'start.sh'), `#!/bin/sh\nset -e\n${start.join('\n')}\n`, { mode: 0o700 });
   } catch (error) {
     const undone: string[] = [];
     try {
