@@ -42,7 +42,7 @@ async function controlPlane(data: string, port: number) {
   return { url, ok, stop };
 }
 
-for (const proof of ['e2e:install-move-host', 'integration:install-move-into-a-directory-then-start-from-it']) test(`${proof} — install move copies the database, files and credentials, sets hostId, re-points every account, re-creates worktree registrations and defers the trial image to target start`, async () => {
+async function moveHost(startTarget: boolean) {
   const scratch = await temporaryDirectory('move-host'), ports = await reserveTestPorts();
   const configHome = join(scratch, 'config'), root = join(scratch, 'checkout'), repo = join(scratch, 'repo'), masters = join(configHome, 'masters'), units = join(scratch, 'units'), target = join(scratch, 'target');
   const directory = installDirectory(installIdFor('owner/project'), configHome), data = join(directory, 'postgres', 'data');
@@ -116,7 +116,7 @@ for (const proof of ['e2e:install-move-host', 'integration:install-move-into-a-d
     assert.match(moved.start[0]!, /buildx.*build/);
     assert.ok(moved.next.includes(moved.start.join(' && ')));
 
-    if (proof.startsWith('integration:')) {
+    if (startTarget) {
       // Stand in for the target's filesystem and systemd, but run the printed shell, real Docker
       // build and copied database. A private tag keeps the test away from the host's trial image.
       const bin = join(scratch, 'bin'), tag = `mainworks-move-test:${ports.base}`;
@@ -162,4 +162,7 @@ process.exit(result.status ?? 1);
     ports.release();
     await rm(scratch, { recursive: true, force: true });
   }
-});
+}
+
+test('e2e:install-move-host — copies the database, credentials and Git registrations and re-points accounts', () => moveHost(false));
+test('integration:install-move-into-a-directory-then-start-from-it — moves without Docker and starts the copied install with the printed commands, building the missing trial image', () => moveHost(true));

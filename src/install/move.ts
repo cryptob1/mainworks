@@ -132,17 +132,16 @@ function scanFiles(paths: string[], skip: string[]) {
   return { unreadable: [...new Set(unreadable)], skipped: [...new Set(skipped)] };
 }
 
-/** Docker commands of the move run on the target: through SSH for a real move, directly for a stand-in directory. */
-function targetTransport(to: string, into: string | undefined, exec: (program: string, args: string[]) => Promise<void>): Transport {
+/** Docker commands of a direct move run on the target through SSH. */
+function targetTransport(to: string, exec: (program: string, args: string[]) => Promise<void>): Transport {
   return {
-    description: into ? resolve(into) : `${to} over SSH`,
+    description: `${to} over SSH`,
     async exec(program, args, options = {}) {
-      const result = into ? await capture(program, args, options) : await capture('ssh', [to, [program, ...args].map(shellQuote).join(' ')], options);
+      const result = await capture('ssh', [to, [program, ...args].map(shellQuote).join(' ')], options);
       if (result.code !== 0 && !options.allowFailure) throw commandFailure(program, result);
       return result;
     },
     async putFile(path, content, mode) {
-      if (into) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await writeFile(path, content, { mode }); return; }
       const scratch = await mkdtemp(join(tmpdir(), 'mainworks-move-'));
       try {
         const staged = join(scratch, basename(path));
@@ -251,8 +250,8 @@ export async function moveInstall(root: string, options: { to: string; into?: st
         } finally { await rm(scratch, { recursive: true, force: true }); }
       }
     }
-    // The target's complete submissions and merge trials run in the trial image, so the move leaves it provisioned there (GY-3318).
-    if (!options.into) await provisionTrialImage({ transport: dependencies.transport ?? targetTransport(to, undefined, exec), sourceRoot: root }, published);
+    // A direct move provisions on the target; a stand-in move leaves this to its saved start commands.
+    if (!options.into) await provisionTrialImage({ transport: dependencies.transport ?? targetTransport(to, exec), sourceRoot: root }, published);
     for (const name of accounts) { await registryCommand(config, ['account', 'set', name, '--host', to, '--reason', reason], api); repointed.push(name); }
     await stopNow(planeStop);
     if (local) await copy(postgres, { contents: true });
