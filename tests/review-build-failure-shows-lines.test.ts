@@ -16,13 +16,10 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Principal, Work } from '../src/model.js';
-import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
-import { liveRun } from '../src/runner/registry.js';
+import { launchReview, saveReviewerProfile } from '../src/reviewer.js';
 import { freePort } from '../src/serve-app.js';
-import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
-import { until } from './helpers/until.js';
 
 // GY-3999: a product review whose build fails records the last 40 lines of the build's output,
 // stderr included, on the item — not npm's notice lines.
@@ -33,7 +30,7 @@ const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 let servePort: number;
 let store: Store, close: (() => Promise<void>) | undefined, url: string;
-let root: string, credentials: string, base: string, built: string, broken: string;
+let root: string, credentials: string, base: string, broken: string;
 
 before(async () => {
   servePort = await freePort();
@@ -67,11 +64,6 @@ writeFileSync('dist/index.html', '<h1>dashboard-marker: built</h1>');
 `);
   base = commit('base');
   git('update-ref', 'refs/remotes/origin/main', base);
-  await writeFile(join(root, 'build.mjs'), `import { mkdirSync, writeFileSync } from 'node:fs';
-mkdirSync('dist', { recursive: true });
-writeFileSync('dist/index.html', '<h1>dashboard-marker: built by the head</h1>');
-`);
-  built = commit('a UI change');
   // 50 compile errors on stderr, then the 20 notice lines npm prints after a failed script.
   await writeFile(join(root, 'build.mjs'), `for (let n = 1; n <= 50; n++) console.error('compile-error-' + n + ': src/app.ts does not compile');
 for (let n = 1; n <= 20; n++) console.error('npm notice ' + n + ': a new version of npm is available');

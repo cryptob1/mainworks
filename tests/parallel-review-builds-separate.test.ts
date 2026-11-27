@@ -18,7 +18,6 @@ import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Principal, Work } from '../src/model.js';
 import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { liveRun } from '../src/runner/registry.js';
-import { freePort } from '../src/serve-app.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';

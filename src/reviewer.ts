@@ -1091,7 +1091,7 @@ export async function launchReview(root: string, work: Work, profileName: string
                 await git('git', ['-C', root, 'worktree', 'add', '--detach', checkout.worktree, binding.sha]);
                 // GY-3999: a failed step's last lines are recorded on the item, so its reader sees whether the head or the machine failed.
                 const stepFailed = async (argv: string[], error: unknown) => {
-                  const reason = `${argv.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}:\n${failedStepTail(error)}`;
+                  const reason = `${argv.join(' ')} failed in the review checkout of ${binding.sha.slice(0, 12)}: ${failedStepTail(error)}`;
                   await (dependencies.recordCouldNotRun ?? recordCouldNotRunReview)(config, work, { reviewer: reviewerIdentity, sha: binding.sha, baseSha: binding.baseSha, reason }).catch(() => { /* the launch failure itself is reported */ });
                   return new Error(reason);
                 };
