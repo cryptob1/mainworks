@@ -92,7 +92,8 @@ test('unit:landability-github-snapshot — a github-observed candidate keeps the
   assert.deepEqual(landabilityRefusals(evaluateLandability(tried, [tried], new Date(start)), 'acceptance'), reasons);
 });
 
-test('unit:merge-writer-waits-out-upgrade — the cycle in which a merge lands starts no new trial, so the loop\'s upgrade between cycles kills none; the next cycle starts it', async () => {
+// GY-3965: trials run detached and survive the loop's upgrade, so the cycle in which a merge lands starts the next trial.
+test('unit:merge-writer-waits-out-upgrade — the cycle in which a merge lands starts the next trial', async () => {
   const passed = ['ready', 'build', 'review', 'test', 'merge'].map(name => ({ name, passed: true, reasons: [] }));
   const head2 = sha('head2'), candidate2 = { sha: head2, baseSha: base, pr: 8, branch: 'graphyard/gy-2-1', author: 'worker' };
   const work = [item('control-plane', ['src/app.ts'], { gates: passed, stageEnteredAt: iso(start - 120_000) }),
@@ -109,10 +110,9 @@ test('unit:merge-writer-waits-out-upgrade — the cycle in which a merge lands s
   const landed = cycle();
   await mergeWriterStep(landed);
   assert.ok(landed.performed.some(action => /^Merged GY-1 head/.test(action.detail)));
-  assert.equal(state.mergeWriter.inFlight, null, 'nothing is in flight when the cycle that merged ends');
-  work[0] = { ...work[0]!, stage: 'done', observation: { ...work[0]!.observation!, merged: true, mergeSha: sha(`merge:${head}`) } } as Work;
-  await mergeWriterStep(cycle());
-  assert.equal((state.mergeWriter.inFlight as { key: string } | null)?.key, 'GY-2', 'the next cycle starts the next trial');
+  assert.equal((state.mergeWriter.inFlight as { key: string } | null)?.key, 'GY-2', 'the cycle that merged starts the next trial');
+  await mergeWriterIdle(state);
+  assert.deepEqual(trialled, ['GY-1', 'GY-2']);
 });
 
 test('unit:upgrade-waits-for-trial — the merge writer reports a trial in flight until it settles, which the loop\'s self-upgrade waits for', async () => {
