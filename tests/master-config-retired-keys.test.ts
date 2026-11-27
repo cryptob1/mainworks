@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -61,9 +62,13 @@ test('unit:config-with-removed-settings-still-loads — a master.json and a unit
     const file = join(root, '.graphyard/master.json');
     await writeFile(file, JSON.stringify(stored, null, 2), { mode: 0o600 });
 
-    // It loads, a load rewrites nothing, and every other field is as stored.
+    // The first load pins the legacy ledger scope; every existing field stays as stored.
     const loaded = await loadMasterConfig(root);
-    assert.equal(await readFile(file, 'utf8'), JSON.stringify(stored, null, 2), 'a load rewrites nothing');
+    const loopStateScope = createHash('sha256').update(`${stored.repository}\n${stored.hostId}\n${credentialFile}`).digest('hex');
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { ...stored, loopStateScope }, 'the migration adds only the legacy scope, retaining even retired settings');
+    const pinned = await readFile(file, 'utf8');
+    await loadMasterConfig(root);
+    assert.equal(await readFile(file, 'utf8'), pinned, 'later loads rewrite nothing');
     for (const [key, value] of Object.entries(stored)) if (key !== 'run') assert.deepEqual((loaded as unknown as Record<string, unknown>)[key], value, key);
     const run = loaded.run as unknown as Record<string, unknown>;
     assert.deepEqual([run.intervalSeconds, run.smokeWorkflow, run.acknowledgementSeconds], [25, 'deploy-smoke.yml', 120]);
