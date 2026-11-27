@@ -16,7 +16,9 @@ const proof = 'unit:status-shows-heat-fallback-count';
 test(`${proof} — status shows smoothed per-host heat and counts checks and shards placed elsewhere for heat in the last hour`, async () => {
   const root = await temporaryDirectory('gy-3948-status-root');
   const heavy = join(root, 'heavy-jobs');
-  const now = Date.parse('2026-11-26T12:00:00.000Z');
+  // GY-4021: recordHeatFallback prunes by the real clock (24h retention), so the fixture's times
+  // must be relative to it; a fixed date expired every record a day after GY-3948 landed.
+  const now = Date.now();
 
   // Probe output with a 96C instantaneous spike but a 78C smoothed median.
   const probed = parseHostProbe([
