@@ -11,6 +11,5 @@ export async function run({ db, actor, work }: Ctx) {
   if (actor.role !== 'operator-agent' && actor.role !== 'caretaker') admin(actor);
   work.blocker = null;
   work.blockedAt = null;
-  work.blockedBy = null;
   await adoptFollowUpWindow(db, work);
 }

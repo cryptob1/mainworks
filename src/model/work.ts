@@ -232,8 +232,6 @@ export interface Work extends Create {
    * back to the end of the attempt that recorded the blocker.
    */
   blockedAt?: string | null;
-  /** GY-3996: who recorded the standing blocker; set and cleared beside `blockedAt`. */
-  blockedBy?: string | null;
   /**
    * GY-3335: the finished head a worker named in a blocker its own `complete` failed on — a fault
    * of the host, never the change (a trial-host fault, the control plane unreachable, a timeout).
@@ -285,22 +283,19 @@ export function blockerSince(work: Pick<Work, 'blocker'> & { blockedAt?: string 
 }
 
 /**
- * GY-3996: who recorded the standing blocker — its own `blockedBy` field, else the open blocker
- * request's requester, the latest capacity exhaustion's recorder/owner, or the last ended attempt's
- * owner. Null when no blocker stands or no author was recorded.
+ * GY-3996: who recorded the standing blocker. Its own write leaves the author on the item beside
+ * its instant — the blocker request it asked, the capacity exhaustion a worker's `blocked` report
+ * ends its attempt with, or the human request it filed or declined — so the record carrying
+ * `blockedAt` names the author; a record with another instant belongs to an earlier blocker. Null
+ * with no blocker, with none stamped (a record older than `blockedAt`), or when the loop wrote it.
  */
-export function blockerAuthor(work: Pick<Work, 'blocker'> & {
-  blockedBy?: string | null;
-  agentRequests?: readonly { type: string; state: string; requestedBy: string }[];
-  capacity?: { exhaustions?: readonly { recordedBy?: string | null; owner?: string | null }[] } | null;
-  pipeline?: { attempts?: readonly { owner?: string | null; endedAt: string | null }[] } | null;
-}): string | null {
-  if (!work.blocker) return null;
-  if (work.blockedBy) return work.blockedBy;
-  const request = [...(work.agentRequests ?? [])].reverse().find(entry => entry.type === 'blocker' && entry.state === 'open');
-  if (request?.requestedBy) return request.requestedBy;
-  const exhaustion = [...(work.capacity?.exhaustions ?? [])].reverse().find(entry => entry.recordedBy || entry.owner);
-  if (exhaustion?.recordedBy ?? exhaustion?.owner) return (exhaustion!.recordedBy ?? exhaustion!.owner)!;
-  const attempt = [...(work.pipeline?.attempts ?? [])].reverse().find(entry => entry.endedAt && entry.owner);
-  return attempt?.owner ?? null;
+export function blockerAuthor(work: Pick<Work, 'blocker' | 'blockedAt' | 'agentRequests' | 'capacity' | 'humanRequest' | 'humanRequests'>): string | null {
+  if (!work.blocker || !work.blockedAt) return null;
+  const stamped = (at: string | undefined, who: string | null | undefined): string | null => who && at === work.blockedAt ? who : null;
+  const humans = [...(work.humanRequests ?? []), ...(work.humanRequest ? [work.humanRequest] : [])];
+  return [
+    ...(work.agentRequests ?? []).map(request => stamped(request.at, request.requestedBy)),
+    ...(work.capacity?.exhaustions ?? []).map(entry => stamped(entry.at, entry.recordedBy)),
+    ...humans.flatMap(request => [stamped(request.at, request.requestedBy), stamped(request.answer?.at, request.answer?.by)]),
+  ].find((who): who is string => !!who) ?? null;
 }

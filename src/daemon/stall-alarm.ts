@@ -24,14 +24,9 @@ export const isStaleBlockerAlarm = (detail: string) => detail.includes(staleBloc
 /** An open item with no change and no actor this long raises it too. */
 const noActorMs = 60 * 60_000;
 
-const hasOpenHumanRequest = (item: Work) =>
-  parkedOnHuman(item)
-  || (item.agentRequests ?? []).some(request => request.state === 'open' && (!!request.humanDecision || request.decider?.kind === 'human'));
-const hasOpenScopeRequest = (item: Work) => {
-  const legacy = (item as { scopeRequest?: { state?: string } | null }).scopeRequest;
-  return Boolean(legacy && (!legacy.state || legacy.state === 'open'))
-    || (item.agentRequests ?? []).some(request => request.state === 'open' && (request.type as string) === 'scope-request');
-};
+/** GY-3996: a blocker that waits on an ask already has its own attention line — the owner's answer (a human request), or a stored scope request still open. */
+const waitsOnAsk = (item: Work) => parkedOnHuman(item)
+  || (item.agentRequests ?? []).some(request => request.state === 'open' && ((request.type as string) === 'scope-request' || !!request.humanDecision || request.decider?.kind === 'human'));
 
 export interface StallReadings {
   now: number;
@@ -124,13 +119,12 @@ export function stallAlarm(readings: StallReadings): string | null {
   const idle = open.filter(item => item.ready && item.stage !== 'done' && !item.blocker && !item.hold && !parkedOnHuman(item) && !item.dependencies.some(id => open.some(other => other.id === id)) && !live(item, now) && !merging.has(item.key)
     && !(stalled && ready.includes(item)) && now - Date.parse(item.updatedAt) >= noActorMs);
   for (const item of idle.slice(0, 5)) lines.push(item.stage === 'ready' && readings.gates?.get(item.key) || `${item.key} has no actor: at ${item.stage} with no lease and no session, unchanged since ${item.updatedAt}`);
-  const staleBlocked = open.filter(item => item.ready && item.stage !== 'done' && !!item.blocker && !item.hold && !hasOpenHumanRequest(item) && !hasOpenScopeRequest(item)
+  // GY-3996: a ready item left with an open blocker for an hour is stalled too, with how long the blocker has stood.
+  const staleBlocked = open.filter(item => item.ready && item.stage !== 'done' && !!item.blocker && !item.hold && !waitsOnAsk(item)
     && !live(item, now) && now - Date.parse(item.updatedAt) >= noActorMs);
   for (const item of staleBlocked.slice(0, 5)) {
-    const since = blockerSince(item) ?? Date.parse(item.updatedAt);
-    const age = Number.isFinite(since) ? formatAge(since, now) : '1h+';
     const text = item.blocker!.replace(/\s+/g, ' ').trim().slice(0, 120);
-    lines.push(`${item.key} ${staleBlockerMarker}${age}): ${text} — clear with mainworks master unblock ${item.key} REASON`);
+    lines.push(`${item.key} ${staleBlockerMarker}${formatAge(blockerSince(item) ?? item.updatedAt, now)}): ${text} — clear it with: mainworks master unblock ${item.key} REASON`);
   }
   return lines.length ? `Stall: ${lines.join(' ')}` : null;
 }

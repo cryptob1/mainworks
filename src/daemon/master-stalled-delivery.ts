@@ -96,6 +96,7 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
     if (key === 'disk-headroom') { if (action.state === 'failed') causes.push(cause('disk-headroom', action.detail)); continue; }
     // GY-3432: the stall alarm names no single item either; numbers and ids aside (a temperature, a request id), an unchanged alarm wakes once.
     // GY-3778: when the alarm is an empty board, ask the Lead to file work from the brief and repeat at most once per 30 minutes.
+    // GY-3996: a stale-blocker alarm repeats once an hour; its ages read as one, so an older age wakes nobody.
     if (key === stallAlarmKey) {
       const empty = isEmptyBoardAlarm(action.detail);
       const staleBlocker = isStaleBlockerAlarm(action.detail);
