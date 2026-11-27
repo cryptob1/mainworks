@@ -8,6 +8,7 @@ import { masterSessionConfinement, sessionConfinement, type MasterConfinementPro
 import { sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { heavyDrainFile, hostHeavyJobsDirectory, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3445: since GY-3290 the drain lives in the host-wide heavy-jobs folder, which the master
 // session mounted read-only, so `master drain` failed with EROFS. The master session's confinement
@@ -16,12 +17,10 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const checkout = join(import.meta.dirname, '..');
 
-function coordinator(base: string) {
+async function coordinator(base: string) {
   const root = join(base, 'coordinator');
-  mkdirSync(root, { recursive: true });
+  await gitRepo({ root, message: 'coordinator', files: {} });
   writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
-  execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'coordinator']);
   return root;
 }
 
@@ -64,7 +63,7 @@ test('unit:master-drain-writable-pinned — a confined master session resolves t
 test('integration:master-drain-writable — a confined master session runs master drain and master resume against the host-wide heavy-jobs folder, and a worker session still cannot write the drain record', { timeout: 120_000 }, async () => {
   assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this host');
   const base = await temporaryDirectory('master-drain');
-  const root = coordinator(base);
+  const root = await coordinator(base);
   const saved = { data: process.env.GRAPHYARD_DATA_HOME, slots: process.env[slotsDirectoryVariable] };
   process.env.GRAPHYARD_DATA_HOME = join(base, 'data');
   delete process.env[slotsDirectoryVariable];
@@ -107,7 +106,7 @@ test('e2e:master-drain-from-session — master drain from one install\'s confine
   try {
     const record = heavyDrainFile(hostHeavyJobsDirectory()), script = masterCommandScript(base);
     // Two installs on one host: each its own checkout and confined master session, one data home.
-    const [core, huck] = await Promise.all(['core', 'huck'].map(name => masterSession(coordinator(join(base, name)), base)));
+    const [core, huck] = await Promise.all(['core', 'huck'].map(async name => masterSession(await coordinator(join(base, name)), base)));
     const inside = (session: typeof core, ...args: string[]) => spawnSync(session.wrapper[0], [...session.wrapper.slice(1), ...args], { cwd: checkout, encoding: 'utf8' });
     const drained = inside(core!, process.execPath, '--import', 'tsx', script, 'drain', 'huck UAT window');
     assert.equal(drained.status, 0, drained.stderr);

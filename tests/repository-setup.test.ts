@@ -1,19 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, execFile } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, rm, stat, writeFile, symlink, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handoff, loadConnection, managedInstructions, setupRepository } from '../src/repository-setup.js';
 import { guideText } from '../src/guide.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const secret = 'fixture-worker-token-'.padEnd(40, 'x');
 const connection = { url: 'https://example.com', token: secret, cliPath: launcher, hostId: 'machine-a' };
 const fetcher = async () => new Response(JSON.stringify({ actor: { id: 'worker-a', role: 'worker' } }));
-async function repo() { const root = await temporaryDirectory('init'); execFileSync('git', ['init', '-q', root]); return root; }
+const repo = async (files?: Record<string, string>) => (await gitRepo({ label: 'init', files })).root;
 
 test('managed instructions refresh one section and preserve all surrounding operator content', () => {
   const bootstrap = "The initial MVP is a single-agent bootstrap under the operator's supervision. Do not launch other agents for bootstrap work.";
@@ -36,7 +36,7 @@ test('managed instructions refresh one section and preserve all surrounding oper
 });
 
 test('Herdr setup validates identity, privately saves configuration, updates instructions, and enables last', async () => {
-  const root = await repo(); execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root }); const config = join(root, 'herdr-private'); const calls: string[][] = [];
+  const root = await repo(); git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git'); const config = join(root, 'herdr-private'); const calls: string[][] = [];
   const runHerdr = (args: string[]) => { calls.push(args); return args[1] === 'config-dir' ? config : ''; };
   try {
     await writeFile(join(root, 'AGENTS.md'), '# Original instructions\n', { mode: 0o600 });
@@ -76,11 +76,10 @@ test('setup does not follow an AGENTS.md symlink and refuses insecure credential
 });
 
 test('linked worktrees inherit their primary checkout connection without copying credentials into Git', async () => {
-  const root = await repo();
+  const root = await repo({});
   try {
-    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '--allow-empty', '-m', 'Initial'], { cwd: root, stdio: 'ignore' });
     await setupRepository(root, connection, { fetcher });
-    const worktree = join(root, 'isolated'); execFileSync('git', ['worktree', 'add', '-b', 'assignment', worktree], { cwd: root, stdio: 'ignore' });
+    const worktree = join(root, 'isolated'); git(root, 'worktree', 'add', '-b', 'assignment', worktree);
     assert.equal((await loadConnection(worktree))?.token, secret);
     await assert.rejects(stat(join(worktree, '.graphyard/connection.json')));
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -112,7 +111,7 @@ test('init accepts a token over stdin, and a server override never forwards a sa
 });
 
  test('padded host IDs normalize before saving and match registered workspace handoffs', async () => {
-  const root = await repo(); execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root }); const config = join(root, 'herdr-private');
+  const root = await repo(); git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git'); const config = join(root, 'herdr-private');
   try {
     await setupRepository(root, { ...connection, hostId: '  machine-a  ' }, { herdr: true, workspace: 'wA', pluginHome: join(root, 'plugin'), fetcher, runHerdr: args => args[1] === 'config-dir' ? config : '' });
     const saved = (await loadConnection(root))!;
@@ -130,11 +129,11 @@ test('setup binds the checkout identity before saving credentials or changing He
   const runHerdr = () => { calls++; return ''; };
   try {
     await assert.rejects(setupRepository(root,connection,{fetcher,herdr:true,runHerdr}),/Cannot verify/);
-    execFileSync('git',['remote','add','origin','git@github.com:other/project.git'],{cwd:root});
+    git(root,'remote','add','origin','git@github.com:other/project.git');
     await assert.rejects(setupRepository(root,connection,{fetcher,herdr:true,runHerdr}),/different repositories/);
     assert.equal(calls,0); await assert.rejects(stat(join(root,'.graphyard/connection.json'))); await assert.rejects(stat(join(root,'AGENTS.md')));
     for (const remote of ['https://github.com/owner/project.git','ssh://git@github.com/owner/project.git','ssh://git@ssh.github.com:443/owner/project.git']) {
-      execFileSync('git',['remote','set-url','origin',remote],{cwd:root});
+      git(root,'remote','set-url','origin',remote);
       assert.equal((await setupRepository(root,connection,{fetcher})).connected,true);
     }
   } finally { await rm(root,{recursive:true,force:true}); }
@@ -146,11 +145,11 @@ test('setup binds the checkout identity before saving credentials or changing He
     await writeFile(join(root,'.gitignore'),'.graphyard/\n!.graphyard/\n.graphyard/*\n!.graphyard/connection.json\n');
     await setupRepository(root,connection,{fetcher});
     for(const path of ['.graphyard/connection.json','.graphyard/connection.json.pending.tmp']) {
-      execFileSync('git',['check-ignore','--quiet','--',path],{cwd:root});
+      git(root,'check-ignore','--quiet','--',path);
     }
     const ignored=await readFile(join(root,'.gitignore'),'utf8');
     assert.ok(ignored.endsWith('.graphyard/\n'));
-    assert.doesNotMatch(execFileSync('git',['ls-files','--others','--exclude-standard'],{cwd:root,encoding:'utf8'}),/connection/);
+    assert.doesNotMatch(git(root,'ls-files','--others','--exclude-standard'),/connection/);
     await setupRepository(root,connection,{fetcher});
     assert.equal(await readFile(join(root,'.gitignore'),'utf8'),ignored);
   } finally { await rm(root,{recursive:true,force:true}); }
@@ -164,14 +163,13 @@ function runCli(cwd: string, args: string[], input: string, env: NodeJS.ProcessE
 }
 
 test('CLI init from a linked worktree shares credentials with siblings and replaces legacy defaults', async () => {
-  const root=await repo();let authorization='';
+  const root=await repo({});let authorization='';
   // Doctor also reads the agent registry (GY-3351); this server holds none, so that read is a 404, not a second whoami.
   const { url, close } = await listen((req,res)=>{authorization=String(req.headers.authorization??'');res.setHeader('Content-Type','application/json');if(req.url?.includes('agent-registry')){res.statusCode=404;res.end(JSON.stringify({error:'not found'}));return;}res.end(JSON.stringify({actor:{id:'worker-a',role:'worker'}}));});
   const env={...process.env};delete env.GRAPHYARD_TOKEN;delete env.GRAPHYARD_URL;delete env.GRAPHYARD_TOKEN_FILE;delete env.GRAPHYARD_HOST_ID;
   try {
-    execFileSync('git',['-c','user.name=Test','-c','user.email=test@localhost','commit','--allow-empty','-m','Initial'],{cwd:root,stdio:'ignore'});
     const first=join(root,'first'),sibling=join(root,'sibling');
-    for(const [branch,path] of [['first',first],['sibling',sibling]])execFileSync('git',['worktree','add','-b',branch,path],{cwd:root,stdio:'ignore'});
+    for(const [branch,path] of [['first',first],['sibling',sibling]])git(root,'worktree','add','-b',branch,path);
     await mkdir(join(first,'.graphyard'));
     await writeFile(join(first,'.graphyard/connection.json'),JSON.stringify({...connection,url,hostId:'legacy-host'}),{mode:0o600});
     const result=JSON.parse(await runCli(first,['init','--url',url,'--host-id','shared-host','--token-stdin'],secret,{...env,GRAPHYARD_TOKEN:''}));
@@ -179,7 +177,7 @@ test('CLI init from a linked worktree shares credentials with siblings and repla
     assert.equal((await loadConnection(first))?.hostId,'shared-host');
     assert.equal((await loadConnection(sibling))?.token,secret);
     assert.equal((await stat(join(root,'.graphyard/connection.json'))).mode&0o777,0o600);
-    execFileSync('git',['check-ignore','--quiet','.graphyard/connection.json'],{cwd:root});
+    git(root,'check-ignore','--quiet','.graphyard/connection.json');
     await assert.rejects(stat(join(sibling,'.graphyard/connection.json')));
     assert.match(await readFile(join(first,'AGENTS.md'),'utf8'),/Mainworks coordination/);
     assert.equal(JSON.parse(await runCli(sibling,['doctor'],'',env)).connected,true);

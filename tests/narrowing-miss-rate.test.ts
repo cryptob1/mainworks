@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord } from '../src/batch-gate.js';
@@ -13,18 +13,16 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { recordTestSelection } from '../src/merge-writer/test-selection.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3840: master status counts the failing test files the release checks caught that no item trial of their batch selected.
 
 const repository = 'owner/narrowing-miss-rate';
 const unreachable = async () => { throw new TypeError('fetch failed'); };
-const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } as NodeJS.ProcessEnv;
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv }).trim();
 
-async function makeInstall(label: string) {
-  const root = await temporaryDirectory(`${label}-root`);
-  git(root, 'init', '-q', '-b', 'main');
+async function makeInstall(label: string, files?: Record<string, string>) {
+  const { root, head } = await gitRepo({ label: `${label}-root`, files });
   const credentials = await temporaryDirectory(`${label}-credentials`);
   const credentialFile = join(credentials, 'coordinator.token');
   writeFileSync(credentialFile, 'coordinator-token-'.padEnd(40, 'x'), { mode: 0o600 });
@@ -33,7 +31,7 @@ async function makeInstall(label: string) {
     repository, baseBranch: 'main', hostId: 'coord-a', masterAgentName: 'graphyard-master-narrowing', workers: [],
     run: { worktreeRoot: await temporaryDirectory(`${label}-wt-root`) },
   }) as MasterConfig;
-  return { root, config };
+  return { root, head, config };
 }
 
 test('integration:narrowing-miss-rate — a release check whose failing file no trial of its batch selected counts as missed by narrowing', async () => {
@@ -61,12 +59,7 @@ test('integration:narrowing-miss-rate — a release check whose failing file no 
 });
 
 test('e2e:narrowing-miss-rate — on a running test install master status shows missedByNarrowing after a release check', { timeout: 120_000 }, async () => {
-  const { root, config } = await makeInstall('narrowing-e2e');
-  mkdirSync(join(root, 'tests'), { recursive: true });
-  writeFileSync(join(root, 'tests', 'a.test.ts'), 'export {};\n');
-  writeFileSync(join(root, 'tests', 'b.test.ts'), 'export {};\n');
-  git(root, 'add', '.'); git(root, 'commit', '-q', '-m', 'base');
-  const verified = git(root, 'rev-parse', 'HEAD');
+  const { root, head: verified, config } = await makeInstall('narrowing-e2e', { 'tests/a.test.ts': 'export {};\n', 'tests/b.test.ts': 'export {};\n' });
   await writeGateRecord(gateRecordPath(root), bootstrapGate(repository, verified));
 
   // GY-1 lands as a merge commit; its item trial selected only tests/a.test.ts, and its change breaks tests/b.test.ts.
@@ -83,7 +76,7 @@ test('e2e:narrowing-miss-rate — on a running test install master status shows 
   const state = emptyDaemonState(config);
   const reads: MergeWriterReads = {
     baseBranch: 'main', now: () => clock, fetch: async () => tip, cores: 2, parallel: 1,
-    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...gitEnv, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...extra } }),
     gate: { root, repository },
     merge: async head => ({ mergeSha: head, files: [] }),
     // The release check's sweep fails tests/b.test.ts on the batch tip only.

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { databaseUrl } from './helpers/postgres.js';
 import { listen as startServer } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3214: a host that holds no Mainworks checkout goes from `npx @cryptob1/graphyard up` to a working
 // install. The npm registry and the image registry are local ones standing in for npm and GHCR,
@@ -159,12 +159,13 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   // Beside the checkout, not under the temporary directory: setup refuses a repository checked out where a reboot removes it.
   const base = realpathSync(await temporaryDirectory('.npx-up', source));
   const upstream = join(base, 'upstream'), home = join(base, 'home'), stubs = join(base, 'bin'), repository = join(base, 'scratch'), origin = join(base, 'origin.git');
-  for (const directory of [upstream, home, stubs, repository]) await mkdir(directory);
+  for (const directory of [home, stubs]) await mkdir(directory);
+  await gitRepo({ root: upstream });
 
   // Mainworks's upstream: this checkout's tracked files as one commit, which is the commit the gate verified.
   const files = execFileSync('git', ['-C', source, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(file => file && existsSync(join(source, file)));
   execFileSync('cp', ['-P', '--parents', '--', ...files, upstream], { cwd: source });
-  git(upstream, 'init', '-q', '-b', 'main'); git(upstream, 'add', '-A'); git(upstream, 'commit', '-q', '-m', 'verified');
+  git(upstream, 'add', '-A'); git(upstream, 'commit', '-q', '-m', 'verified');
   const commit = git(upstream, 'rev-parse', 'HEAD');
   // What the image build adds to that tree: the built dashboard and server (ignored by Git, so the tree stays the commit's).
   const vite = join(dirname(createRequire(join(source, 'package.json')).resolve('vite/package.json')), 'bin', 'vite.js');
@@ -187,9 +188,8 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   // A fresh account: an empty home, Git pointed at the local upstream, and a scratch repository.
   await writeFile(join(home, '.gitconfig'), `[url "${upstream}"]\n\tinsteadOf = https://github.com/cryptob1/graphyard\n[user]\n\tname = Fresh\n\temail = fresh@example.com\n`);
   git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(repository, 'init', '-q', '-b', 'main');
-  await writeFile(join(repository, 'package.json'), JSON.stringify({ name: 'scratch', scripts: { test: 'node --eval 0' } }));
-  git(repository, 'add', '.'); git(repository, 'commit', '-q', '-m', 'first'); git(repository, 'push', '-q', origin, 'main'); git(repository, 'remote', 'add', 'origin', 'git@github.com:owner/scratch.git');
+  await gitRepo({ root: repository, message: 'first', files: { 'package.json': JSON.stringify({ name: 'scratch', scripts: { test: 'node --eval 0' } }) } });
+  git(repository, 'push', '-q', origin, 'main'); git(repository, 'remote', 'add', 'origin', 'git@github.com:owner/scratch.git');
   // GY-3857: nobody signs in here, so `up` need not sit out its minute. In its process alone a poll sleep is
   // short, and once it has asked for the sign-in its clock reads past the wait it was given.
   const clock = join(base, 'up-clock.cjs');

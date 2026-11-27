@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 
 // GY-3317: a CLI release is a Git worktree whose .git names the source checkout of the host that
@@ -22,8 +22,7 @@ async function hostA(root: string, url: string) {
   const source = join(root, 'graphyard');
   await mkdir(source, { recursive: true });
   for (const entry of ['src', 'bin', 'package.json']) await cp(join(repository, entry), join(source, entry), { recursive: true });
-  git(source, 'init', '-q', '-b', 'main'); git(source, 'add', '-A'); git(source, 'commit', '-q', '-m', 'release');
-  const commit = git(source, 'rev-parse', 'HEAD');
+  const { head: commit } = await gitRepo({ root: source, message: 'release', files: {} });
   const release = join(root, 'install', 'deploy', 'build', '.graphyard', 'cli-releases', commit);
   await mkdir(join(release, '..'), { recursive: true });
   git(source, 'worktree', 'add', '-q', '--detach', release, commit);
@@ -32,7 +31,7 @@ async function hostA(root: string, url: string) {
   await writeFile(join(release, '.graphyard', 'cli-ready'), commit);
   const checkout = join(root, 'project');
   await mkdir(join(checkout, '.graphyard'), { recursive: true });
-  git(checkout, 'init', '-q', '-b', 'main');
+  await gitRepo({ root: checkout });
   await writeFile(join(checkout, '.graphyard', 'connection.json'), JSON.stringify({ url, cliPath: join(release, 'bin', 'graphyard.mjs'), hostId: 'host-a', token: 't'.repeat(40) }), { mode: 0o600 });
   return { commit, releaseFrom: (base: string) => join(base, 'install', 'deploy', 'build', '.graphyard', 'cli-releases', commit) };
 }

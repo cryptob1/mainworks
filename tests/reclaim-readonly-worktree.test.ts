@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { chmod, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -10,6 +9,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { apiOk } from './helpers/api.js';
 
@@ -26,7 +26,6 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 
 let url: string, install: string;
 const ok = (principal: Principal, path: string, body: unknown) => apiOk(url, token(principal), path, { method: 'POST', body });
-const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 useTestStore('reclaim-readonly-worktree', { leaseSeconds: 1, repository: 'owner/reclaim-readonly', credentials: credentials }, async ctx => {
   ({ url } = ctx);
@@ -39,14 +38,11 @@ test('e2e:reclaim-readonly-worktree — the loop removes an ended attempt\'s wor
     criteria: [{ id: 'AC-1', text: 'Works', proofs: ['e2e:reclaim-readonly-worktree'] }] }) as Work;
   await ok(operator, `work/${filed.id}/ready`, {});
 
-  git(['init', '-q', '-b', 'main']);
-  await writeFile(join(install, '.gitignore'), 'scratch/\n');
-  git(['add', '.gitignore']);
-  git(['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base']);
+  const { git } = await gitRepo({ root: install, files: { '.gitignore': 'scratch/\n' } });
   const branch = `graphyard/${filed.key.toLowerCase()}-1`;
   const worktree = join(install, '.graphyard', 'worktrees', `${filed.key}-1`);
   await mkdir(dirname(worktree), { recursive: true });
-  git(['worktree', 'add', '-q', '-b', branch, worktree]);
+  git('worktree', 'add', '-q', '-b', branch, worktree);
   // An npm install the attempt left under its ignored scratch: nested directories at 0555, with files.
   const leaf = join(worktree, 'scratch', 'node_modules', 'pkg', 'lib');
   await mkdir(leaf, { recursive: true });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { batchGateStep } from '../../src/daemon/cycle-batch-gate.js';
 import { mergeWriterReads, type MergeWriterReads } from '../../src/daemon/cycle-merge-writer.js';
@@ -10,6 +10,7 @@ import type { MergeTrialRun } from '../../src/merge-writer/executor.js';
 import type { Work } from '../../src/model.js';
 import { mainworksRepository } from '../../src/scenarios.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { gitRepo } from './git-repo.js';
 
 const gitIdentity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 export const runGit = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', env: gitIdentity, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -17,13 +18,8 @@ export const runGit = (cwd: string, args: string[]) => execFileSync('git', args,
 /** Mainworks's own coordinator checkout over a scratch origin, a trial that always passes, and `merge()` to land one more item on main. */
 export async function gateFixture(repository = mainworksRepository, pushReleaseTag?: MergeWriterReads['pushReleaseTag']) {
   const base = await temporaryDirectory('publish-verified-gate');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  runGit(base, ['init', '-q', '--bare', '-b', 'main', origin]);
-  runGit(base, ['clone', '-q', origin, pusher]);
-  await mkdir(join(pusher, 'e2e', 'cases'), { recursive: true });
-  await writeFile(join(pusher, 'graphyard.json'), JSON.stringify({ gate: { core: ['smoke'] } }));
-  await writeFile(join(pusher, 'e2e', 'cases', 'smoke.json'), '{}');
-  runGit(pusher, ['add', '.']); runGit(pusher, ['commit', '-q', '-m', 'base']); runGit(pusher, ['push', '-q', 'origin', 'HEAD:main']);
+  const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
+  const { origin } = await gitRepo({ root: pusher, origin: true, files: { 'graphyard.json': JSON.stringify({ gate: { core: ['smoke'] } }), 'e2e/cases/smoke.json': '{}' } });
   runGit(base, ['clone', '-q', origin, coordinator]);
   const work: Work[] = [];
   const merge = async () => {

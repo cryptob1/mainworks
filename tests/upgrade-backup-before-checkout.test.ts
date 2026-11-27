@@ -13,6 +13,7 @@ import { checkoutRelease } from '../src/release.js';
 import { Store, advisoryLocks } from '../src/store.js';
 import { startPostgres } from './helpers/postgres.js';
 import { releaseBeforeNewestGeneration } from './helpers/release-before-newest-generation.js';
+import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3538: `mainworks upgrade` backs up the database with the running release's CLI before it moves
@@ -21,15 +22,12 @@ const repositoryRoot = new URL('..', import.meta.url).pathname;
 const now = new Date(0).toISOString();
 const localRecord = { version: 1, installId: 'acme-app', repository: 'acme/app', provider: 'local', baseBranch: 'main', reviewPolicy: 'agent', principals: [], noGithubApp: true,
   deployment: { local: true, port: 4999, image: null }, createdAt: now, updatedAt: now } as unknown as InstallRecord;
-const own = (...args: string[]) => execFileSync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' }).trim();
 
 /** A CLI checkout at the release just before the newest schema generation, and the tip one generation newer. */
 async function cliCheckout() {
-  const root = await temporaryDirectory('upgrade-backup-cli');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, '-c', 'advice.detachedHead=false', ...args], { encoding: 'utf8' }).trim();
-  git('init', '--quiet');
-  await writeFile(join(root, '.git/objects/info/alternates'), `${join(own('rev-parse', '--path-format=absolute', '--git-common-dir'), 'objects')}\n`);
-  const newer = own('rev-parse', 'HEAD');
+  const { root, git } = await gitRepo({ label: 'upgrade-backup-cli' });
+  await writeFile(join(root, '.git/objects/info/alternates'), `${join(gitIn(repositoryRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'objects')}\n`);
+  const newer = gitIn(repositoryRoot, 'rev-parse', 'HEAD');
   const previous = releaseBeforeNewestGeneration(repositoryRoot, newer);
   git('checkout', '--quiet', '--detach', previous);
   let modules = repositoryRoot;

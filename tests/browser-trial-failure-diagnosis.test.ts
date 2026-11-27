@@ -12,7 +12,7 @@ import { bootstrapGate, runDiagnostics } from '../src/batch-gate.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3305: a failed browser run kept only its teardown noise - Babel scope-tracker warnings, pool-end
 // errors, ECONNREFUSED - in the records that judge a batch and its revert, so no failing test or error
@@ -78,18 +78,14 @@ test('e2e:browser-trial-failure-diagnosis — a browser run failing beside passi
   assert.match((await defaultChildRun(binaries.postgres, ['--version'])).trim(), /^postgres \(PostgreSQL\)/, 'the resolved binaries load their bundled libraries');
 
   // A repository whose browser check fails beside passing cases, with noisy teardown after the summary.
-  const root = await temporaryDirectory('browser-diagnosis-repo', tmpdir());
-  const author = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-  git(root, 'init', '-q', '-b', 'main');
-  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', 'test:browser': 'playwright test' } }));
-  write('graphyard.json', JSON.stringify({ delivery: { mode: 'local', mergeGate: { preMerge: [{ check: 'browser-tests/', command: 'npm run test:browser', source: 'script', reason: 'The browser suite runs beside the build' }], perCandidate: [] }, candidateSchedule: null, deploy: { adapter: 'command', project: null, uat: null, production: null } } }));
-  write('web/app.tsx', 'one\n');
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
-  git(root, 'checkout', '-q', '--detach', base); write('web/app.tsx', 'two\n'); git(root, 'commit', '-q', '-am', 'edit web');
+  const { root, head: base } = await gitRepo({ label: 'browser-diagnosis-repo', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true', 'test:browser': 'playwright test' } }),
+    'graphyard.json': JSON.stringify({ delivery: { mode: 'local', mergeGate: { preMerge: [{ check: 'browser-tests/', command: 'npm run test:browser', source: 'script', reason: 'The browser suite runs beside the build' }], perCandidate: [] }, candidateSchedule: null, deploy: { adapter: 'command', project: null, uat: null, production: null } } }),
+    'web/app.tsx': 'one\n',
+  } });
+  git(root, 'checkout', '-q', '--detach', base); writeFileSync(join(root, 'web/app.tsx'), 'two\n'); git(root, 'commit', '-q', '-am', 'edit web');
   const head = git(root, 'rev-parse', 'HEAD'); git(root, 'checkout', '-q', 'main');
-  const merged = await trialMerge(async args => String(await defaultChildRun('git', ['-C', root, ...args], { env: { ...process.env, ...author } })), { head, baseTip: base });
+  const merged = await trialMerge(async args => git(root, ...args), { head, baseTip: base });
   assert.ok('mergeSha' in merged);
 
   const session = await temporaryDirectory('browser-diagnosis-root', tmpdir());

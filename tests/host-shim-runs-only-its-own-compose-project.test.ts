@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { hostPrepareScript } from '../src/hosts.js';
 import { dockerCalls, dockerEveryCall, git, shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
 import { fakeHosts } from './helpers/fake-hosts.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3645 AC-2: the shim's run-check starts a Compose project only for a run directory it created,
 // only from the Compose file that run's commit holds, and only with binds inside the run directory.
@@ -49,7 +50,7 @@ before(async () => {
   state.images['graphyard-warm:000000000000-none'] = 'sha256:warm';
   mkdirSync(hosts.state('box'), { recursive: true });
   writeFileSync(stateFile, JSON.stringify(state));
-  git(repo, 'init', '-q', '-b', 'main');
+  await gitRepo({ root: repo });
   writeFileSync(join(repo, 'compose.json'), JSON.stringify(service));
   writeFileSync(join(repo, 'changed.json'), JSON.stringify(service));
   writeFileSync(join(repo, 'binds.json'), JSON.stringify({ services: { db: { image: 'postgres:16', expose: [5432], volumes: [{ type: 'bind', source: '/etc', target: '/host-etc' }] } } }));
