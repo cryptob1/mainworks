@@ -720,8 +720,11 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
 /** GY-3779: how the last diagnostics run ended: passed, failed checks (named in the reason) or threw (its error). */
 interface DiagnosticsRun { at: string; outcome: 'passed' | 'failed' | 'threw'; reason: string | null; /** GY-3874: where the catalog's shards ran and how many cases each held. */ shards?: CatalogShard[] }
 
-/** GY-3874: one shard of the daily catalog: the machine it ran on (`local` for this one) and its case count. */
-export interface CatalogShard { host: string; cases: number }
+/**
+ * GY-3874: one shard of the daily catalog: the machine it ran on (`local` for this one) and its case count.
+ * GY-3974: how long it ran, so a slow run names its longest shard.
+ */
+export interface CatalogShard { host: string; cases: number; ms?: number }
 
 /** One diagnostic failure as the record keeps it (GY-3264). */
 interface DiagnosticFailure { commit: string; detail: string | null; at: string }

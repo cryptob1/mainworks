@@ -19,7 +19,8 @@ test('integration:catalog-sharded-in-bound — the diagnostics split the catalog
   let deadline = 0;
   const reads = {
     baseBranch: 'main', now: Date.now, fetch: async () => 'a'.repeat(40),
-    git: async (args: string[]) => args[0] === 'ls-tree' ? ids.map(id => `${id}.json`).join('\n') : '',
+    // case-1 needs Docker, so only this machine can run it; the other eight may run anywhere.
+    git: async (args: string[]) => args[0] === 'ls-tree' ? ids.map(id => `${id}.json`).join('\n') : args[1] === 'b'.repeat(40) + ':e2e/cases/case-1.json' ? '{"steps":[{"kind":"command","run":"docker run"}]}' : '',
     trial: async (_commit: string, files: readonly string[], item: { criteria: { proofs: string[] }[] }, ...rest: unknown[]) => {
       const proofs = item.criteria.flatMap(criterion => criterion.proofs);
       if (proofs.length) local.push({ cases: proofs, timeout: rest[6] as number | undefined });
@@ -42,11 +43,12 @@ test('integration:catalog-sharded-in-bound — the diagnostics split the catalog
   const ports = batchGatePorts({ ...reads, git: reads.git! }, []);
   const result = await ports.diagnose('b'.repeat(40));
 
-  assert.equal(local.length, 1, 'this machine runs one shard of the catalog');
+  assert.equal(local.length, 1, 'this machine runs one lane of the catalog: its own case');
   assert.equal(local[0]!.timeout, gateLimitMs, 'the catalog is bounded by the 45-minute limit');
   assert.equal(gateLimitMs, 45 * 60_000);
   assert.ok(deadline - started <= gateLimitMs + 1_000 && deadline - started >= gateLimitMs - 1_000, 'the remote shards share the 45-minute deadline');
-  assert.ok(remote['host-a']?.length && remote['host-b']?.length && local[0]!.cases.length, 'each host and this machine run cases');
+  assert.deepEqual(local[0]!.cases, ['e2e:case-1'], 'the case needing Docker runs on this machine and nowhere else');
+  assert.ok(remote['host-a']?.length && remote['host-b']?.length, 'each host runs cases');
   const all = [...local[0]!.cases, ...remote['host-a']!, ...remote['host-b']!];
   assert.deepEqual([...all].sort(), ids.map(id => `e2e:${id}`).sort(), 'every case runs exactly once');
   assert.deepEqual(result.failed, ['e2e:case-2'], 'a remote shard’s failing case is the diagnostics’ failure');

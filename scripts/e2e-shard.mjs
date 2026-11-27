@@ -14,10 +14,12 @@ const proofs = readFileSync(list, 'utf8').split('\n').map(line => line.match(/^e
 const worktree = process.cwd(), mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 writeFileSync(records, '');
 // GY-3968: the shard's checkout is a fresh clone, so build it first as a trial does: a served dashboard needs dist/.
+// GY-3974: a host's several catalog shards share this checkout, so the first builds it under a lock and the rest wait for it.
 const scripts = existsSync('package.json') ? JSON.parse(readFileSync('package.json', 'utf8')).scripts : undefined;
 const build = scripts?.build ? buildArgv(packageManager(worktree), null) : null;
 if (build) {
-  try { execFileSync(build[0], build.slice(1), { stdio: 'pipe', maxBuffer: 64 << 20 }); }
+  const [lock, built] = ['catalog-build.lock', 'catalog-built'].map(name => execFileSync('git', ['rev-parse', '--git-path', name], { encoding: 'utf8' }).trim());
+  try { execFileSync('flock', [lock, 'sh', '-c', 'test -f "$0" || { "$@" && : > "$0"; }', built, ...build], { stdio: 'pipe', maxBuffer: 64 << 20 }); }
   catch (error) {
     const failingStep = `the build step ${build.join(' ')} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
     for (const proof of proofs) appendFileSync(records, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
