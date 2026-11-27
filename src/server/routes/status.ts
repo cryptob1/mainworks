@@ -209,6 +209,7 @@ export const statusRoutes = defineRoutes('status', [
       // silently. The coordination view, the loop's own bounded poll, is not paged.
       const cursorParam = url.searchParams.get('cursor'), pageSizeParam = url.searchParams.get('pageSize');
       const maxPageSize = 1000, defaultPageSize = 100;
+      if (view === 'full') demand(cursorParam !== null && pageSizeParam !== null, `Pass both cursor (0 to start) and pageSize (1 to ${maxPageSize}) with view=full`, 400);
       if (cursorParam !== null || pageSizeParam !== null) {
         const cursor = cursorParam === null ? undefined : Number(cursorParam);
         const pageSize = pageSizeParam === null ? defaultPageSize : Number(pageSizeParam);
@@ -222,7 +223,6 @@ export const statusRoutes = defineRoutes('status', [
         return view === 'bounded' ? { ...page, view } : page;
       }
       if (view === 'bounded') return { ...scope(await boundedSnapshot(services.engine.store.pool, url.searchParams.get('since'))), view };
-      if (view === 'full') return scope(await services.engine.store.workSnapshot());
       // The coordination view is trimmed in the database (GY-185): the histories it bounds never
       // leave it whole, and what the SQL cut is added to what the view says it left out. The live
       // loop's own poll (GY-3341, the read that names its presence) reads it open-only: a cycle

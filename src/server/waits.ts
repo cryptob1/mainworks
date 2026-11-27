@@ -197,9 +197,10 @@ export async function humanOnlySubjects(services: Services, work: readonly Work[
  * may make, and every approval the server will take from the operator's own credential alone.
  */
 export async function listHumanRequests(services: Services, actor: Principal) {
-  const snapshot = await services.engine.store.workSnapshot();
-  const visible = snapshot.work.filter(item => operatorScopeIncludes(actor, item));
-  return { now: snapshot.now, requests: openHumanOnly(await humanOnlySubjects(services, visible), Date.parse(snapshot.now)) };
+  const work = await services.engine.store.observationWork();
+  const visible = work.filter(item => operatorScopeIncludes(actor, item));
+  const now = new Date();
+  return { now: now.toISOString(), requests: openHumanOnly(await humanOnlySubjects(services, visible), now.getTime()) };
 }
 
 // A document recorded before GY-2874 named its spent roles `escalations`: they are dropped, and the loop records them spent again.

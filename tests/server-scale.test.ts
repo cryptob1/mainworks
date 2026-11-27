@@ -124,7 +124,7 @@ function dashboard(work: Work[], now: number, overrides: Partial<Dashboard> = {}
 }
 
 test('unit:snapshot-bounded — the work snapshot sends open items whole and settled deliveries as summaries, under 3 MB and within 3 s over the seeded store; each item\'s history is read on request, and the loop, master status and the dashboard render from the summary', async () => {
-  const whole = await read('work-snapshot?view=full');
+  const whole = await read('work-snapshot?view=full&cursor=0&pageSize=1000');
   assert.ok(whole.bytes > 3_000_000, `the seeded history is heavy: the whole-document export is ${whole.bytes} bytes`);
 
   const snapshot = await read('work-snapshot');

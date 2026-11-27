@@ -315,7 +315,7 @@ test('integration:index-matches-documents — the index equals the documents aft
   const { url: serverUrl, close } = await listen(server(new Engine(board, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token }]));
   try {
     const read = async (headers: Record<string, string> = {}) => {
-      const response = await fetch(`${serverUrl}/api/work-snapshot${Object.keys(headers).length ? '' : '?view=full'}`, { headers: { ...headers, Authorization: `Bearer ${token}` } });
+      const response = await fetch(`${serverUrl}/api/work-snapshot${Object.keys(headers).length ? '' : '?view=full&cursor=0&pageSize=1000'}`, { headers: { ...headers, Authorization: `Bearer ${token}` } });
       const text = await response.text(); assert.equal(response.status, 200, text.slice(0, 300));
       return { body: JSON.parse(text), bytes: Buffer.byteLength(text) };
     };

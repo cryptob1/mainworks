@@ -38,14 +38,19 @@ export const usageRoutes = defineRoutes('usage', [
     },
   },
   {
-    // The project's Costs view, or one item's with `?work=KEY`; `?days=N` bounds the breakdowns.
+    // The project's Costs view, or one item's with `?work=KEY`; `?days=N` bounds the read in SQL.
     method: 'GET', path: '/api/costs',
     async handle({ url, services }) {
-      const pool = services.engine.store.pool, work = url.searchParams.get('work'), days = Number(url.searchParams.get('days')) || null;
-      const read = await pool.query(`SELECT id, work, role, account, runtime, model, reported, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, at, clock_timestamp() AS now FROM session_usage${work ? ' WHERE work = $1' : ''}`, work ? [work] : []);
+      const pool = services.engine.store.pool, work = url.searchParams.get('work');
+      const rawDays = Number(url.searchParams.get('days')), days = Number.isFinite(rawDays) && rawDays > 0 ? rawDays : null;
+      const where: string[] = [], params: unknown[] = [];
+      if (work) { params.push(work); where.push(`work = $${params.length}`); }
+      if (days !== null) { params.push(days); where.push(`at >= now() - ($${params.length}::double precision * interval '1 day')`); }
+      const read = await pool.query(`SELECT id, work, role, account, runtime, model, reported, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, at, now() AS now FROM session_usage${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`, params);
       const rows: UsageRow[] = read.rows.map(row => ({ id: row.id, work: row.work, role: row.role, account: row.account, runtime: row.runtime, model: row.model, reported: row.reported,
         input: Number(row.input_tokens), output: Number(row.output_tokens), cacheRead: Number(row.cache_read_tokens), cacheWrite: Number(row.cache_write_tokens), at: new Date(row.at).toISOString() }));
-      const shipped = new Set<string>((await pool.query(`SELECT key FROM work_index WHERE stage = 'done' AND key = ANY($1::text[])`, [[...new Set(rows.flatMap(row => row.work ?? []))]])).rows.map(row => row.key));
+      const workKeys = [...new Set(rows.flatMap(row => row.work ?? []))];
+      const shipped = workKeys.length ? new Set<string>((await pool.query(`SELECT key FROM work_index WHERE stage = 'done' AND key = ANY($1::text[])`, [workKeys])).rows.map(row => row.key)) : new Set<string>();
       const registry = await readRegistry(pool);
       // GY-3599: one item's costs also name the model its Builder's session reported.
       return { ...costSummary(rows, registry, shipped, read.rows[0] ? new Date(read.rows[0].now).getTime() : Date.now(), days), ...(work ? { builder: builderModel(rows, registry) } : {}) };

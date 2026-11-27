@@ -85,6 +85,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:cefe302b733ea489e9242037aaf602f43c1389eea075783e9ae3b58adcc85c0b',
   // GY-3809: the stage backfill's trigger allowance and partial index are gone.
   'sha256:f6983055b8df13e1bcb3efb196d9cc092064ce109949cddcedbb853c5fd91715',
+  // GY-3945: partial index on open work_index rows and timestamp index on session_usage.
+  'sha256:055746cec2b8073ed1b522b414445a00c875239b32c9cd00fb305d4292e6ac8a',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;

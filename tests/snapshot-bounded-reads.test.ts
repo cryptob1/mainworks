@@ -121,7 +121,10 @@ test('unit:work-snapshot-paged — GET /api/work-snapshot supports paging with c
     if (index % 3 === 0) await engine.execute(operator, 'ready', item.id, {}, randomUUID());
   }
   const keys = (body: any) => (body.work as Work[]).map(item => Number((/(\d+)$/.exec(item.key ?? '') ?? [])[1]));
-  const whole = await get('work-snapshot?view=full');
+  assert.equal((await get('work-snapshot?view=full')).status, 400, 'full view requires cursor and pageSize');
+  assert.equal((await get('work-snapshot?view=full&pageSize=7')).status, 400, 'full view requires cursor');
+  assert.equal((await get('work-snapshot?view=full&cursor=0')).status, 400, 'full view requires pageSize');
+  const whole = await get('work-snapshot?view=full&cursor=0&pageSize=100');
   const defaultWhole = await get('work-snapshot');
   const every = keys(whole.body).sort((a, b) => a - b);
   assert.equal(every.length, 30, 'the ledger holds the items');
@@ -131,9 +134,9 @@ test('unit:work-snapshot-paged — GET /api/work-snapshot supports paging with c
   assert.equal(defaultWhole.body.nextCursor, undefined, 'an unpaged response names no cursor');
 
   // A paged walk of the full view covers every item exactly once, in order.
-  const walked: number[] = []; let cursor: number | undefined; let pages = 0;
+  const walked: number[] = []; let cursor = 0; let pages = 0;
   while (true) {
-    const page = await get(`work-snapshot?view=full&pageSize=7${cursor === undefined ? '' : `&cursor=${cursor}`}`);
+    const page = await get(`work-snapshot?view=full&pageSize=7&cursor=${cursor}`);
     assert.equal(page.status, 200, JSON.stringify(page.body));
     const numbers = keys(page.body);
     assert.ok(numbers.length <= 7 && numbers.length > 0, 'each page carries at most pageSize items');
@@ -175,12 +178,12 @@ test('unit:work-snapshot-paged — GET /api/work-snapshot supports paging with c
     try { const page = await get(path); assert.equal(page.status, 200, JSON.stringify(page.body)); return { documents, items: keys(page.body).length }; }
     finally { pool.query = original.query; pool.connect = original.connect; }
   };
-  await get('work-snapshot?view=full');
+  await get('work-snapshot?view=full&cursor=0&pageSize=100');
   const before = { full: await documentsReadFor('work-snapshot?view=full&pageSize=7&cursor=3'), bounded: await documentsReadFor('work-snapshot?pageSize=7&cursor=3') };
   for (let index = 0; index < 30; index++) {
     await engine.execute(operator, 'create', null, { type: 'chore',  title: `Growth item ${index + 1}`, criteria: [{ id: 'AC-1', text: 'test', proofs: ['unit:test', 'e2e:fixture'] }] }, randomUUID());
   }
-  await get('work-snapshot?view=full');
+  await get('work-snapshot?view=full&cursor=0&pageSize=100');
   const grown = { full: await documentsReadFor('work-snapshot?view=full&pageSize=7&cursor=3'), bounded: await documentsReadFor('work-snapshot?pageSize=7&cursor=3') };
   for (const view of ['full', 'bounded'] as const) {
     assert.deepEqual(before[view], { documents: 7, items: 7 }, `a ${view} page reads only its own seven documents`);
@@ -194,7 +197,7 @@ test('unit:work-snapshot-paged — GET /api/work-snapshot supports paging with c
   const provisioned = await fetch(`${url}/api/operator-agents`, { method: 'POST', headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify({ id: 'scoped-reader', displayName: 'scoped-reader', capabilities: [], scope: { repositories: ['owner/project'], workItems: scopedKeys }, token: scopedToken, reason: 'A scoped reader pages only its own work' }) });
   assert.equal(provisioned.status, 200, await provisioned.text());
   const scopedNumbers = scopedKeys.map(key => Number(/(\d+)$/.exec(key)![1]));
-  const firstScoped = await get('work-snapshot?view=full&pageSize=1', scopedToken);
+  const firstScoped = await get('work-snapshot?view=full&cursor=0&pageSize=1', scopedToken);
   assert.equal(firstScoped.status, 200, JSON.stringify(firstScoped.body));
   assert.deepEqual(keys(firstScoped.body), [scopedNumbers[0]], 'a scoped page holds the first visible item, not an empty page');
   assert.equal(firstScoped.body.nextCursor, scopedNumbers[0], 'the cursor names only visible work');
