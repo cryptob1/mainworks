@@ -22,7 +22,7 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimDigest, hostShimScript, hostShimScriptWithSigner, missingTrialVerbs, trialVerbs } from './host-shim.js';
+import { hostProbeScript, hostShimDigest, hostShimScript, hostShimScriptWithSigner, missingHelperVerbs, missingTrialVerbs, trialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
@@ -470,10 +470,13 @@ export async function setHostSessions(target: string, sessions: number, options:
   await writeHosts(file, hosts.map(host => host.target === target ? { ...host, sessions } : host));
 }
 
+const lacksHelperVerbs = (probe: Awaited<ReturnType<typeof probeHost>>) =>
+  probe.shim !== undefined && missingHelperVerbs({ shim: probe.shim, verbs: probe.verbs ?? null }).length > 0;
+
 /**
  * One cycle's readings: this machine first, then every recorded host; steal is measured from the previous cycle's counters.
- * GY-3780: with `update` (the loop), a host on another release's shim that speaks update-shim takes this release's and is
- * read again; GY-3896: one whose update fails keeps its readiness and carries the reason.
+ * GY-3780: with `update` (the loop), a host whose shim speaks update-shim takes this release's and is read again, GY-3952: only when
+ * it lacks a verb this release speaks, so installs at different releases sharing a coordinator address leave each other's helper alone; GY-3896: one whose update fails keeps its readiness and carries the reason.
  */
 export async function readHostReadings(previous: HostReading[], options: { file?: string; knownHosts?: string; run?: ChildRun; local?: string; update?: boolean } = {}): Promise<HostReading[]> {
   const knownHosts = options.knownHosts ?? (options.file ? join(dirname(options.file), 'known_hosts') : hostKnownHostsFile());
@@ -484,7 +487,7 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     let login = record?.login;
     let probe = await probeHost(target, options.run, knownHosts, login), updateError: string | undefined, updateFailedAt: string | undefined;
     const was = previous.find(reading => reading.host === host);
-    const updateForm = target && 'shim' in probe && probe.shim !== hostShimDigest
+    const updateForm = target && lacksHelperVerbs(probe)
       ? (probe.verbs?.includes('update-shim:2') ? 'v2' : probe.verbs?.includes('update-shim:1') ? 'v1' : null)
       : null;
     // GY-3896: a failed update is retried at most once an hour and never changes whether the host is ready.
@@ -494,7 +497,7 @@ export async function readHostReadings(previous: HostReading[], options: { file?
         updateError = await updateHostShim(target, options.run ?? defaultChildRun, knownHosts, updateForm) ?? undefined;
         if (!updateError) {
           const updated = await probeHost(target, options.run, knownHosts, login);
-          if ('shim' in updated && updated.shim !== hostShimDigest) updateError = 'it took the update but still runs the older helper';
+          if (lacksHelperVerbs(updated)) updateError = 'it took the update but still runs the older helper';
           else probe = updated;
         }
         if (updateError) updateFailedAt = new Date().toISOString();

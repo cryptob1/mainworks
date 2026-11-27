@@ -3,7 +3,8 @@
 // unprivileged gy-compute user with rootless Docker and answers fixed verbs with validated arguments:
 //   probe                          the shim's own digest and verbs (GY-3517), then cores, load, CPU steal, sensors and running trial containers
 //   receive-pack REPO SHA          a git pack on stdin into the per-repo mirror ~/.graphyard/mirrors/REPO.git
-//   receive-image IMAGE            `docker save` output on stdin, loaded once per warm image; older warm images go
+//   receive-image IMAGE            `docker save` output on stdin, loaded once per warm image; GY-3952: an older one of its family goes
+//                                  only when this install alone loaded it and no run named it for an hour
 //   receive-image RUN FILE IMAGE ID [check]  GY-3825: check or load a Compose service image named by RUN's committed FILE
 //   prepare-run REPO SHA IMAGE     a checkout of SHA cloned from the mirror under ~/.graphyard/runs,
 //                                  or `need-pack LAST` / `need-image` when the host lacks either
@@ -54,7 +55,7 @@ const sessionHours = 8;
  * changes what it does in a way a trial relies on, and add a new verb here; any other change to the
  * shim (its launcher, limits, wording) leaves this list alone, so hosts on the older shim keep taking shards.
  */
-export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'prepare-run:2', 'run-shard:3', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1'];
+export const hostShimVerbs = ['probe:1', 'receive-pack:1', 'receive-image:3', 'receive-image:4', 'prepare-run:2', 'run-shard:3', 'fetch-records:1', 'clean:1', 'run-session:1', 'update-shim:2', 'share:1'];
 /** GY-3645: `run-check` is no trial verb: a host takes a whole check once its probe names a Compose plugin, which only a shim with the verb prints. */
 /** The verbs a merge trial uses: a host whose shim lacks any of them (and every older form the coordinator still speaks) takes no shards until prepare runs again there. */
 export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-shim|share):/.test(verb));
@@ -66,6 +67,7 @@ export const trialVerbs = hostShimVerbs.filter(verb => !/^(?:run-session|update-
  */
 const olderTrialVerbs: Readonly<Record<string, readonly string[]>> = {
   'receive-image:3': ['receive-image:2', 'receive-image:1'],
+  'receive-image:4': ['receive-image:3', 'receive-image:2', 'receive-image:1'],
   'prepare-run:2': ['prepare-run:1'],
   'run-shard:3': ['run-shard:2'],
 };
@@ -85,6 +87,11 @@ export const supportsCheckImages = (verbs?: readonly string[] | null) =>
 /** GY-3928: whether a host's probed verbs accept the GY-3914 per-run nonce on run-shard and return its nonce-authenticated verdict (absent verbs default to current). */
 export const supportsRunShardNonce = (verbs?: readonly string[] | null) =>
   !verbs || verbs.includes('run-shard:3');
+/** GY-3952: the verbs this release speaks that a probed helper lacks; a coordinator updates a helper only for one of these, never for its digest alone. */
+export const missingHelperVerbs = (probe: { shim: string | null; verbs: string[] | null }) => {
+  const speaks = probeShimVerbs(probe);
+  return hostShimVerbs.filter(verb => !speaks.includes(verb));
+};
 /** The trial verbs a shim lacks, by what its probe printed: its verbs line, else what its digest is known to speak. */
 export const missingTrialVerbs = (probe: { shim: string | null; verbs: string[] | null }, required: readonly string[] = trialVerbs) => {
   const speaks = probeShimVerbs(probe);
@@ -119,7 +126,7 @@ ${hostProbeScript.split('\n').map(line => `    ${line}`).join('\n')}
   receive-pack\\ *|receive-image\\ *|prepare-run\\ *|run-shard\\ *|run-check\\ *|fetch-records\\ *|clean\\ *|run-session\\ *|update-shim\\ *|share|unshare)
     # The verbs that take arguments, validated and run in Python.
     exec python3 -I -c "$(cat <<'GRAPHYARD_VERBS'
-import hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
+import glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
 LAUNCHER = ${JSON.stringify(trialLauncher)}
 asked = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 def refuse():
@@ -149,6 +156,11 @@ def quiet(*command, **options):
     return subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **options) == 0
 def has_image(image):
     return quiet('docker', 'image', 'inspect', image)
+# GY-3952: when a run of this install last named each warm image; no upload on this host removes one any install named within the hour.
+named = os.path.join(home, '.graphyard', 'warm-named')
+def name_image(image):
+    os.makedirs(named, exist_ok=True)
+    open(os.path.join(named, image.replace(':', '_')), 'w').close()
 def image_id(image):
     result = subprocess.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else ''
@@ -262,18 +274,19 @@ elif verb == 'receive-image':
     owned = os.path.join(home, '.graphyard', 'images')
     os.makedirs(owned, exist_ok=True)
     open(os.path.join(owned, args[0].replace(':', '_')), 'w').close()
-    # A shared key removes only warm images it loaded; the host's own key never removes one a shared install loaded.
-    others = set() if shared else {name for root, _, names in os.walk(os.path.join(home, '.graphyard', 'installs')) if root.endswith(os.sep + 'images') for name in names}
-    # The two newest warm images of this trial image and lockfile are kept (a trial on the older base may
-    # still be starting); the others go unless a running shard still uses one. Docker lists newest first.
-    family, kept = (args[0].rsplit('-', 1)[0] + '-' if args[0].split(':', 1)[1].count('-') == 2 else args[0]), [args[0]]
+    name_image(args[0])
+    # GY-3952: an older warm image of this trial image and lockfile goes only when this install alone loaded it and no run named it for an hour.
+    family = args[0].rsplit('-', 1)[0] + '-'
+    states = {os.path.realpath(state) for state in [os.path.join(home, '.graphyard'), os.path.join(os.path.expanduser('~'), '.graphyard')] + glob.glob(os.path.join(os.path.expanduser('~'), '.graphyard', 'installs', '*', '.graphyard'))}
+    others = [os.path.join(state, 'images') for state in states if state != os.path.realpath(os.path.join(home, '.graphyard'))]
     for image in subprocess.run(['docker', 'images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}'], capture_output=True, text=True).stdout.split():
-        if image in kept:
+        marker = image.replace(':', '_')
+        if image == args[0] or not image.startswith(family) or not os.path.exists(os.path.join(owned, marker)) or any(os.path.exists(os.path.join(store, marker)) for store in others):
             continue
-        if len(kept) < 2 and image.startswith(family):
-            kept.append(image)
-        elif (os.path.exists(os.path.join(owned, image.replace(':', '_'))) if shared else image.replace(':', '_') not in others):
-            quiet('docker', 'image', 'rm', image)
+        if time.time() - max(os.path.getmtime(path) for path in [os.path.join(owned, marker)] + [os.path.join(state, 'warm-named', marker) for state in states] if os.path.exists(path)) < 3600:
+            continue
+        if quiet('docker', 'image', 'rm', image):
+            os.remove(os.path.join(owned, marker))
 elif verb == 'prepare-run':
     if not has_commit(args[1]):
         last = subprocess.run(['git', '--git-dir=' + mirror, 'rev-parse', '-q', '--verify', 'refs/graphyard/last'], capture_output=True, text=True).stdout.strip()
@@ -282,6 +295,7 @@ elif verb == 'prepare-run':
     if not has_image(args[2]):
         print('need-image')
         sys.exit(0)
+    name_image(args[2])
     os.makedirs(runs, exist_ok=True)
     # Run directories a killed trial left behind over a day ago go first.
     for name in os.listdir(runs):
@@ -437,6 +451,8 @@ else:
             refuse()
     if not os.path.isdir(run):
         sys.exit('graphyard-host-shim: no run ' + args[0])
+    if verb in ('run-shard', 'run-check'):
+        name_image(open(os.path.join(run, 'image')).read().strip())
     def launch(network, command, variables={}, **options):
         cores = os.cpu_count() or 1
         cap = max(2, max(${minimumTrialContainers}, cores // 2))

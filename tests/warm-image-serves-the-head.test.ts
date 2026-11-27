@@ -175,7 +175,7 @@ test('integration:warm-image-serves-the-head — warm image is keyed to lockfile
     await headSession.close();
   }
 
-  // AC-3(a): three successive verified commits leave the two newest warm images of this trial image and lockfile, here and on the host.
+  // AC-3(a): three successive verified commits leave the two newest warm images of this trial image and lockfile here; the host keeps those named within the hour.
   const family = warmImageTag(digest, lockHash);
   const warmImages = async (state: string) => Object.keys(JSON.parse(await readFile(join(state, 'state.json'), 'utf8')).images).filter(name => name.startsWith(`${family}-`)).sort();
   const verified = [base];
@@ -190,7 +190,8 @@ test('integration:warm-image-serves-the-head — warm image is keyed to lockfile
   }
   const newest = verified.slice(-2).map(commit => warmImageTag(digest, lockHash, commit)).sort();
   assert.deepEqual(await warmImages(hosts.localState), newest, 'this machine keeps the two newest warm images');
-  assert.deepEqual(await warmImages(hosts.state('box')), newest, 'the compute host keeps the two newest warm images');
+  // GY-3952: the host keeps every warm image a run named within the hour, so all three stay there.
+  assert.deepEqual(await warmImages(hosts.state('box')), verified.map(commit => warmImageTag(digest, lockHash, commit)).sort(), 'the compute host keeps every warm image a run named within the hour');
 
   // AC-3(c): on the launcher's in-process path (a built CLI and NODE_COMPILE_CACHE set), SIGINT and SIGTERM still end the command.
   const launcher = await temporaryDirectory('warm-image-signals');

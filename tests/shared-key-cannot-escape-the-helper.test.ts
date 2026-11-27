@@ -80,7 +80,7 @@ test(`${proof} — the owner's key takes only a signed helper update: a caller-c
   }
   assert.equal(existsSync(shims()), false, 'nothing was written');
   // An older helper on the host: the loop sends this release's, signed, and the host runs it.
-  await writeFile(hosts.shim, fixtureShim(hostShimScript.replace(hostShimDigest, 'a'.repeat(64)), hosts.root));
+  await writeFile(hosts.shim, fixtureShim(hostShimScript.replace(hostShimDigest, 'a'.repeat(64)).replace(' receive-image:4', ''), hosts.root));
   await writeFile(join(hosts.root, 'hosts.json'), JSON.stringify([{ target, addedAt: 'x' }]));
   const reading = (await readHostReadings([], { file: join(hosts.root, 'hosts.json'), run, local: 'here', update: true })).find(entry => entry.host === target)!;
   assert.equal(reading.away, false, reading.reason);

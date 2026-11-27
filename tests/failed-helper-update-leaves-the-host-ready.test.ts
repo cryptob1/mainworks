@@ -15,7 +15,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const proof = 'unit:failed-helper-update-leaves-the-host-ready';
 const target = 'gy-compute@msi';
-const probeText = (digest: string) => [`shim ${digest}`, `verbs ${hostShimVerbs.join(' ')}`, 'user 1001 gy-compute', 'compose 2.fixture', 'cores 12', 'load 1.0', 'cpu 100 0 100 800 0 0 0 0 0 0', 'runs 0', ''].join('\n');
+const probeText = (digest: string) => [`shim ${digest}`, `verbs ${hostShimVerbs.filter(verb => verb !== 'receive-image:4').join(' ')}`, 'user 1001 gy-compute', 'compose 2.fixture', 'cores 12', 'load 1.0', 'cpu 100 0 100 800 0 0 0 0 0 0', 'runs 0', ''].join('\n');
 
 let config: string, file: string;
 const saved = process.env.GRAPHYARD_CONFIG_HOME;
@@ -27,7 +27,7 @@ before(async () => {
 });
 after(() => { if (saved === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = saved; });
 
-/** A host on an older helper that speaks every trial verb; its update fails as `failure` says. */
+/** A host on an older helper that speaks every trial verb but lacks receive-image:4 (GY-3952); its update fails as `failure` says. */
 const fakeHost = (failure: 'raises' | 'keeps-old') => {
   const calls = { updates: 0 };
   const run: ChildRun = async (command, args) => {
