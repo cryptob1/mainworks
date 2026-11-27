@@ -43,13 +43,14 @@ The detail the [getting-started guide](setup.md) leaves out.
 - Add one with `mainworks host add you@HOST` in a terminal. It asks for that machine's sudo password once.
 - It creates the unprivileged `gy-compute` user (no sudo, not in the docker group) with rootless Docker.
 - It limits this machine's SSH key there to `graphyard-host-shim`: no shell.
+- On a CPU with turbo or boost, setup asks whether to keep turbo or boost off across reboots. Yes installs a boot unit that turns it off; no changes nothing.
 - Running `host add` again is a no-op. Later installs and releases update the helper without sudo.
 - When `dockerd-rootless-setuptool.sh` or `slirp4netns` are absent, setup fetches static copies into `gy-compute`'s home. The machine needs `curl`, `python3` and `git`.
 - Another install can use a prepared machine without root: run `mainworks host share HOST PUBLIC-KEY` here with its ssh-ed25519 key, then `host add` there.
 - `mainworks host unshare HOST PUBLIC-KEY` removes that key.
 - No SSH login of your own on the machine: `mainworks host prepare` prints the one-time sudo script to run there, then `mainworks host add gy-compute@HOST`.
 - `host add` refuses an unreachable host, one without Docker, a plain-shell key, root or a docker-group user.
-- Settings → Workers lists every host with cores, temperature, CPU steal and active runs; an unreachable host shows Away.
+- Settings → Workers lists every host with cores, temperature, CPU steal, active runs and whether turbo is off; an unreachable host shows Away.
 - Compute-only port: where port 22 is Tailscale SSH (which ignores keys), setup starts OpenSSH for `gy-compute` on port 2222, key-only and shim-only.
 - On such a machine add `gy-compute@HOST:2222` or an alias from `~/.ssh/config`.
 - Agent sessions on a host: `mainworks host sessions gy-compute@HOST 2` lets it run up to two worker sessions at once. 0 turns it back to test shards only.
@@ -62,7 +63,7 @@ The detail the [getting-started guide](setup.md) leaves out.
 - `mainworks master status` lists each session's host under `remoteSessions`.
 - `host sessions` refuses a host whose helper is older than this release; run `mainworks host add you@HOST` again first.
 - Tailnet check rule: Tailscale SSH rules reaching a host must use action `check`, never `accept`. `host add` warns if port 22 lets your account in unattended.
-- `mainworks host remove USER@HOST` removes one; `mainworks host list` lists all.
+- `mainworks host remove USER@HOST` removes one; `mainworks host list` lists all, with whether turbo or boost is off on each.
 - Add only machines you own: a host can forge its own shard results.
 - Tests naming Docker, nested confinement (bwrap, unshare, landlock), npm exec or /var/tmp stay on the coordinator.
 - Every other test, database, browser and loopback servers included, runs on compute machines first.

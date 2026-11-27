@@ -49,7 +49,7 @@ const uid = process.getuid?.() ?? 1000;
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
 const restrictLine = () => `restrict,command="graphyard-host-shim-${hostShimDigest}" ${fixturePublicKey}`;
 /** GY-3688: another install's prepare — its own key, and its own helper release. */
-interface PrepareInstall { publicKey?: string; shim?: { script: string; digest: string } }
+interface PrepareInstall { publicKey?: string; shim?: { script: string; digest: string }; /** GY-4008: what the owner types at the script's questions. */ input?: string }
 
 /** The user's own Docker, as dockerd-rootless-setuptool.sh leaves it: it answers only through its own socket. */
 const rootlessDockerTemplate = (dir: string) => `#!/bin/sh
@@ -307,7 +307,7 @@ async function runPrepareScript(host: FakeHost, dir: string, install: PrepareIns
   const script = fixturePaths(hostPrepareScript(install.publicKey ?? fixturePublicKey, install.shim), dir);
   const file = join(dir, 'prepare.sh');
   await writeFile(file, script);
-  const result = spawnSync('sh', [file], { encoding: 'utf8', env: { ...process.env, PATH: `${join(dir, 'standins')}:${process.env.PATH}` } });
+  const result = spawnSync('sh', [file], { encoding: 'utf8', input: install.input ?? '', env: { ...process.env, PATH: `${join(dir, 'standins')}:${process.env.PATH}` } });
   if (result.status !== 0) throw new Error(`the script host prepare prints failed on the stand-in host ${host.name}: ${result.stderr || result.stdout}`);
   return String(result.stdout);
 }
