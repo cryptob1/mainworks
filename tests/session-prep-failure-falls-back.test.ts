@@ -81,22 +81,27 @@ exit 42
   const run: ChildRun = async (command, args, options) => {
     if (command === 'docker') return args[0] === 'images' ? '' : `sha256:${'ab'.repeat(32)}`;
     if (command === 'ssh' && args.at(-1)?.startsWith('prepare-run')) {
-      if (failure === 'image load') throw new Error('image load failed');
+      if (failure === 'image load') return 'need-image';
       return 'run trial-boundary';
     }
+    if (command === 'sh' && args[1]?.includes('docker save')) throw new Error('image load failed');
     if (command === 'ssh') return '';
     return defaultChildRun(command, args, options);
   };
   const previous = process.env.PATH;
   process.env.PATH = `${bin}:${previous}`;
   let local = false;
+  const localRan = join(directory, 'local-command');
   let printed = '';
   const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
   try {
     const code = await runRemoteSession({ target, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
+      localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local confinement and flags'); process.exit(0)`],
       env: {}, run, hostsFile: file, onLocal: () => { local = true; }, output: sink, errors: sink });
     assert.equal(code, failure === 'agent' ? 42 : 0, printed);
     assert.equal(local, failure !== 'agent');
+    assert.equal(existsSync(localRan), failure !== 'agent', 'fallback uses the launcher-supplied local command');
+    assert.match(printed, failure === 'image load' ? /image load failed/ : /helper Docker launch failed/);
     assert.equal(Boolean(await sessionCooldown(target, file)), failure !== 'agent');
   } finally { process.env.PATH = previous; }
 });

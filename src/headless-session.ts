@@ -400,11 +400,10 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
   const localArgv = [...launch.wrapper, ...await headlessArgv({ ...launch, session: input.session, promptFile }, request, env)];
   if (remote) remote = [...remote.slice(0, -1), '--local', JSON.stringify(localArgv), '--record', join(directory, sessionFile), '--'];
-  const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv({ ...launch, session: input.session, promptFile, ...(remote ? { remote: true } : {}) }, request, env)];
+  const argv = [...input.supervisor, ...(remote ? [...remote, ...await headlessArgv({ ...launch, session: input.session, remote: true }, request, env)] : localArgv)];
   // GY-4018: the supervisor starts this fresh command line, under the same lease, when the resume cannot find its conversation.
   const fresh = input.session && input.freshPrompt ? carriedRequest(input.freshPrompt, input.role) : null;
-  if (fresh && headlessPromptInput(launch.kind, fresh, launch.contract) === undefined && !headlessPromptNeedsFile(launch.kind, fresh, launch.contract))
-  {
+  if (fresh && headlessPromptInput(launch.kind, fresh, launch.contract) === undefined && !headlessPromptNeedsFile(launch.kind, fresh, launch.contract)) {
     const freshLocal = [...launch.wrapper, ...await headlessArgv(launch, fresh, env)];
     const freshRemote = remote ? remote.map((word, index) => remote![index - 1] === '--local' ? JSON.stringify(freshLocal) : word) : undefined;
     writeFileSync(join(directory, 'fresh.json'), JSON.stringify([...freshRemote ?? launch.wrapper, ...await headlessArgv({ ...launch, ...(remote ? { remote: true } : {}) }, fresh, env)]), { mode: 0o600 });

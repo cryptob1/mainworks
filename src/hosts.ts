@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { homedir, hostname, userInfo } from 'node:os';
 import { defaultChildRun, type ChildRun } from './child-runner.js';
+import { atomicPrivateWrite } from './private-file.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
@@ -45,7 +46,7 @@ export async function sessionCooldown(target: string, file?: string): Promise<Se
 export async function coolSessionHost(target: string, reason: string, file?: string): Promise<void> {
   const path = sessionCooldownFile(target, file);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify({ reason: reason.slice(-500), until: new Date(Date.now() + 30 * 60_000).toISOString() }));
+  await atomicPrivateWrite(path, { reason: reason.slice(-500), until: new Date(Date.now() + 30 * 60_000).toISOString() });
 }
 /** SSH options that pin compute host keys to the machine folder with accept-new. */
 const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
