@@ -531,8 +531,8 @@ export async function supervise(command: string, args: string[], epoch: number, 
       try {
         if (prelaunchInterrupted) { finish(null, 1); return; }
         // GY-4006: supervised detached, the agent gets no scope of its own, so it starts under the reserved CPUs' affinity as every launch does.
-        const affinity = containment ? [] : reservedCpuPrefix();
-        child = spawn(containment?.command ?? affinity[0] ?? command, containment?.args ?? [...affinity.slice(1), command, ...args], { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
+        const started = containment ? [containment.command, ...containment.args] : [...reservedCpuPrefix(), command, ...args];
+        child = spawn(started[0]!, started.slice(1), { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
         if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
         // Never learn the fallback root from a later /proc snapshot: after this
         // child exits its numeric PID can identify an unrelated replacement.

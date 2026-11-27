@@ -96,15 +96,27 @@ test(`${proof} — a session and a trial child started with the setting run only
   }
 }));
 
-test(`${proof} — a worker supervised by watch, which gets no scope of its own, runs only on the other CPUs`, async () => withReserved(reserved, async () => {
+/** What a node agent supervised detached, as `mainworks watch` does, says of the CPUs the kernel lets it use: its exit code and that list. */
+async function supervisedAgent(): Promise<{ code: number; kernel: string }> {
   // `mainworks watch` supervises detached (src/cli/workspace.ts): the agent leads its own group inside the run's scope, and the supervisor starts it.
   const base = await temporaryDirectory('reserved-cpus-watch'), log = join(base, 'log.jsonl');
   const agent = "console.log(require('node:fs').readFileSync('/proc/self/status', 'utf8').match(/Cpus_allowed_list.*/)[0])";
   const renewal = () => ({ updatedAt: new Date().toISOString(), lease: { epoch: 1, expiresAt: new Date(Date.now() + 2_000).toISOString() } });
   const code = await supervise(process.execPath, ['-e', agent], 1, async () => renewal(), { intervalMs: 100, graceMs: 75, log });
   const lines = (await readFile(log, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { stream: string; text: string });
-  const kernel = allowedByKernel(lines.find(line => line.stream === 'stdout' && line.text.includes('Cpus_allowed_list'))?.text);
+  return { code, kernel: allowedByKernel(lines.find(line => line.stream === 'stdout' && line.text.includes('Cpus_allowed_list'))?.text) };
+}
+
+test(`${proof} — a worker supervised by watch, which gets no scope of its own, runs only on the other CPUs`, async () => withReserved(reserved, async () => {
+  const { code, kernel } = await supervisedAgent();
   assert.deepEqual([code, cpus(kernel)], [0, others()], `the supervised agent ended with ${code} and the kernel lets it use ${kernel || 'an unreadable CPU list'}`);
+}));
+
+test(`${proof} — a worker supervised by watch starts as before when no CPUs are reserved`, async () => withReserved(undefined, async () => {
+  // With nothing reserved the agent inherits the supervisor's own CPUs, whatever they are on this host or in this container.
+  const inherited = allowedByKernel(readFileSync('/proc/self/status', 'utf8').match(/Cpus_allowed_list.*/)?.[0]);
+  const { code, kernel } = await supervisedAgent();
+  assert.deepEqual([code, cpus(kernel)], [0, cpus(inherited)], `the supervised agent ended with ${code} and the kernel lets it use ${kernel || 'an unreadable CPU list'}`);
 }));
 
 const hostOnly = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore', timeout: 5_000 }); return false; } catch { return 'no systemd user manager answers here'; } })();
