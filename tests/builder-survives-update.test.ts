@@ -20,11 +20,12 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { workerRunsDirectory } from '../src/headless-session.js';
 import { processIdentity, runFiles } from '../src/runner/pi.js';
 import { installInFlight } from '../src/cli/upgrade.js';
-import { controlPlaneRecordPath, controlPlaneSummary, deployOnce, deployRecordPath, readControlPlaneRecord, writeControlPlaneRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { controlPlaneRecordPath, controlPlaneSummary, deployOnce, deployRecordPath, readControlPlaneRecord, writeControlPlaneRecord } from '../src/deploy-watch.js';
 import { loopStateContext } from '../src/loop-state.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -70,13 +71,11 @@ test('e2e:builder-survives-update — quiet-update wait counts running builder s
       checkedAt: null, verified: a, verifiedSeenAt: null, failedStep: null, failedReason: null, failedAt: null,
     });
     const restarts: string[] = [];
-    const ports: DeployWatchPorts = {
-      fetch: async () => a, head: async () => a, verifiedUpstream: async () => b,
+    const ports = deployPorts(a, a, {
+      verifiedUpstream: async () => b,
       busy: () => installInFlight(root, 'owner/consumer', slots), hotfix: async () => false,
-      build: async () => {}, restart: async commit => { restarts.push(commit); },
-      health: async () => {}, checkout: async () => {}, pin: async () => {}, prune: async () => {},
-      schema: async () => 1, database: async () => 1,
-    };
+      restart: async commit => { restarts.push(commit); },
+    });
 
     assert.equal(await deployOnce(file, ports, () => {}, mainworksRepository), 'unchanged');
     assert.deepEqual(restarts, [], 'update waits while builder is running');

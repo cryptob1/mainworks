@@ -5,12 +5,12 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildPlan, prepareInstall } from '../src/install/index.js';
 import type { LocalSupervisor } from '../src/install/local.js';
-import { gitWatchPorts, pruneImages } from '../src/cli/upgrade.js';
-import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { pruneImages } from '../src/cli/upgrade.js';
+import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
 import { cycleSteps } from '../src/daemon/cycle.js';
 import { restartCause } from '../src/daemon/run.js';
-import { defaultChildRun } from '../src/child-runner.js';
 import { harness } from './install-harness.js';
+import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { freePort, listen } from './helpers/http-server.js';
@@ -54,8 +54,7 @@ test('unit:deploy-unit-watches-main — install --plan lists graphyard-deploy.se
   const steps: string[] = [];
   let schema: number | null = 7;
   const migrates: Record<string, number> = {};
-  const ports: DeployWatchPorts = {
-    ...gitWatchPorts(checkout, defaultChildRun),
+  const ports = gitDeployPorts(checkout, {
     build: async sha => { steps.push(`build ${sha.slice(0, 7)}`); },
     restart: async sha => { steps.push(`restart ${sha.slice(0, 7)}`); served = sha; },
     health: async sha => {
@@ -64,10 +63,9 @@ test('unit:deploy-unit-watches-main — install --plan lists graphyard-deploy.se
       if (!response.ok || !body.ok || body.commit !== sha) throw new Error(`/healthz answered ${response.status} for ${body.commit.slice(0, 7)}`);
     },
     pin: async sha => { steps.push(`pin ${sha.slice(0, 7)}`); },
-    prune: async () => {},
     schema: async sha => migrates[sha] ?? 7,
     database: async () => schema,
-  };
+  });
   const root = await temporaryDirectory('deploy-record'), file = deployRecordPath(root);
   try {
     await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
@@ -149,13 +147,10 @@ test('unit:deploy-prunes-old-images — one upgrade --watch pass whose health ch
     removed.push(args[2]); images.delete(args[2]); return '';
   };
   let healthy = true;
-  const ports: DeployWatchPorts = {
-    ...gitWatchPorts(checkout, defaultChildRun),
-    build: async () => {}, restart: async () => {}, pin: async () => {},
+  const ports = gitDeployPorts(checkout, {
     health: async () => { if (!healthy) throw new Error('/healthz answered 503'); },
     prune: keep => pruneImages(docker, keep, () => {}),
-    schema: async () => 7, database: async () => 7,
-  };
+  });
   const file = deployRecordPath(await temporaryDirectory('deploy-prune'));
   await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
   assert.equal(readDeployRecord(file)?.tip, serving);

@@ -7,9 +7,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { deployRecordPath, readDeployRecord, servingReport, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployRecordPath, readDeployRecord, servingReport, watchMain } from '../src/deploy-watch.js';
 import { MERGE_PROTOCOL } from '../src/protocol-version.js';
 import type { ChildRun } from '../src/child-runner.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 
@@ -77,19 +78,14 @@ test('unit:stopped-plane-restarts — with the plane down, no new tip and no dep
 
   let fetched = a;
   const deploySteps: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => fetched,
-    head: async () => a,
+  const ports = deployPorts(() => fetched, a, {
     build: async commit => { deploySteps.push(`build ${commit.slice(0, 7)}`); },
     restart: async commit => { deploySteps.push(`restart ${commit.slice(0, 7)}`); },
     checkout: async commit => { deploySteps.push(`checkout ${commit.slice(0, 7)}`); },
     health: async commit => { deploySteps.push(`health ${commit.slice(0, 7)}`); },
     pin: async commit => { deploySteps.push(`pin ${commit.slice(0, 7)}`); },
-    prune: async () => {},
-    schema: async () => 7,
-    database: async () => 7,
     stoppedPlane: stoppedPlanePorts(url, composeDirectory, run),
-  };
+  });
   const pass = () => watchMain(file, ports, { intervalMs: 1_000, once: true, log: () => {}, repository });
   const probe = async () => (await fetch(`${url}/healthz`)).json() as Promise<{ ok: boolean }>;
 

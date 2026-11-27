@@ -15,12 +15,12 @@ import {
   updateNowPath,
   updateWait,
   type ControlPlaneRecord,
-  type DeployWatchPorts,
 } from '../src/deploy-watch.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 import { mainworksRepository } from '../src/scenarios.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const sha = (hex: string) => hex.repeat(40);
@@ -89,12 +89,11 @@ test('unit:forced-update-counts-from-last-update — with busy work always in fl
   const root = await temporaryDirectory('forced-update-busy'), file = deployRecordPath(root);
   let upstream = sha('1'), busy: string | null = null;
   const restarts: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => upstream, head: async () => sha('0'), verifiedUpstream: async () => upstream,
+  const ports = deployPorts(() => upstream, sha('0'), {
+    verifiedUpstream: async () => upstream,
     busy: async () => busy, hotfix: async () => false,
-    build: async () => {}, restart: async commit => { restarts.push(commit); }, health: async () => {},
-    checkout: async () => {}, pin: async () => {}, prune: async () => {}, schema: async () => 1, database: async () => 1,
-  };
+    restart: async commit => { restarts.push(commit); },
+  });
   const pass = () => deployOnce(file, ports, () => {}, mainworksRepository);
 
   // Initial quiet update sets updatedAt.
@@ -129,10 +128,9 @@ test('unit:forced-update-counts-from-last-update — two failed restarts keep up
   const root = await temporaryDirectory('forced-update-failed-restart'), file = deployRecordPath(root);
   let upstream = sha('1'), running = sha('0'), busy: string | null = null, remainingFailures = 0;
   const restartAttempts: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => upstream, head: async () => sha('0'), verifiedUpstream: async () => upstream,
+  const ports = deployPorts(() => upstream, sha('0'), {
+    verifiedUpstream: async () => upstream,
     busy: async () => busy, hotfix: async () => false,
-    build: async () => {},
     restart: async commit => {
       restartAttempts.push(commit);
       if (commit === upstream && remainingFailures > 0) {
@@ -142,9 +140,7 @@ test('unit:forced-update-counts-from-last-update — two failed restarts keep up
       running = commit;
     },
     health: async commit => { if (running !== commit) throw new Error(`serves ${running.slice(0, 12)}`); },
-    checkout: async () => {}, pin: async () => {}, prune: async () => {},
-    schema: async () => 1, database: async () => 1,
-  };
+  });
   const pass = () => deployOnce(file, ports, () => {}, mainworksRepository);
   const control = () => readControlPlaneRecord(controlPlaneRecordPath(root))!;
   const config = {

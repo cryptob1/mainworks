@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
-import { deployOnce, deployRecordPath, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3137: serving only moves forward; a verified commit older than the served one deploys nothing.
@@ -13,11 +14,10 @@ test('unit:verified-serving-moves-forward-only — a served commit that contains
   const file = deployRecordPath(root);
   const verify = (commit: string) => writeGateRecord(gateRecordPath(root), { ...bootstrapGate('owner/project', commit) });
   const deployed: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => d, head: async () => c, checkout: async () => {}, build: async commit => { deployed.push(commit); }, restart: async () => {}, health: async () => {},
-    pin: async () => {}, prune: async () => {}, schema: async () => 1, database: async () => 1,
+  const ports = deployPorts(d, c, {
+    build: async commit => { deployed.push(commit); },
     contains: async (ancestor, commit) => history.indexOf(ancestor) <= history.indexOf(commit),
-  };
+  });
   await verify(a);
   assert.equal(await deployOnce(file, ports, () => {}, 'owner/project'), 'unchanged', 'the served c contains the verified a');
   await verify(b);

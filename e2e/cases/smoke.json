@@ -6,6 +6,7 @@
   "target": "any",
   "required": false,
   "steps": [
+    { "kind": "command", "name": "install move leaves the sandbox mask file behind, refuses an unreadable file before changing anything and undoes a failed copy (GY-4043)", "run": "node --import tsx tests/helpers/run-tests.ts tests/install-move-skips-mask-and-never-strands-an-install.test.ts tests/move-keeps-loop-ledgers.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "unchanged registry observations write no receipts and real changes replay once (GY-4036)", "run": "node --import tsx tests/helpers/run-tests.ts tests/agent-registry.test.ts", "timeoutSeconds": 120 },
     { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }, { "path": "ok", "equals": true }, { "path": "readiness", "equals": true }] },
     { "kind": "command", "name": "the image-lock tests finish in 30 s on their own lock directory, never the shared host lock (GY-4040)", "run": "node --import tsx tests/helpers/run-tests.ts tests/image-lock-covers-provision.test.ts tests/one-image-build-per-commit.test.ts", "timeoutSeconds": 30 },

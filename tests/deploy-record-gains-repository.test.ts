@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { deployOnce, deployRecordPath, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
 import type { MasterConfig } from '../src/master/profiles.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2957: the watch's first pass names the repository in a deploy record an older watcher left
@@ -14,12 +15,10 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const served = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', owner = 'cryptob1/graphyard-openworld';
 
 /** Ports whose checkout is at the served tip; every deploy step is recorded, none may run. */
-const ports = (calls: string[]): DeployWatchPorts => ({
-  fetch: async () => served, head: async () => served,
+const ports = (calls: string[]) => deployPorts(served, served, {
   checkout: async () => { calls.push('checkout'); }, build: async () => { calls.push('build'); },
   restart: async () => { calls.push('restart'); }, health: async () => { calls.push('health'); },
   pin: async () => { calls.push('pin'); }, prune: async () => { calls.push('prune'); },
-  schema: async () => 7, database: async () => 7,
 });
 
 test('unit:deploy-record-gains-repository-on-first-pass — a watch pass over an unnamed record at the served tip names the repository and runs no deploy step, and master status over that record then reports the commit at main', async () => {

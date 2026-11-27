@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { deployOnce, deployRecordPath, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40);
@@ -14,14 +15,12 @@ test('unit:already-serving-still-pins-cli-and-loop — a watch killed between he
   let serving = a, cli = a, pin = a;
   const calls: string[] = [];
   let killed = false;
-  const ports: DeployWatchPorts = {
-    fetch: async () => b, head: async () => a,
-    build: async () => {}, restart: async commit => { serving = commit; }, health: async commit => { if (serving !== commit) throw new Error('unhealthy'); },
+  const ports = deployPorts(b, a, {
+    restart: async commit => { serving = commit; }, health: async commit => { if (serving !== commit) throw new Error('unhealthy'); },
     serves: async commit => serving === commit,
     checkout: commit => { if (!killed) { killed = true; return new Promise<void>(() => {}); } calls.push('checkout'); cli = commit; return Promise.resolve(); },
     pin: async commit => { calls.push('pin'); pin = commit; },
-    prune: async () => {}, schema: async () => 1, database: async () => 1,
-  };
+  });
   // The first watch dies at checkout: the server already serves b, the CLI and pin are on a.
   void deployOnce(file, ports, () => {}, null);
   for (const start = Date.now(); !killed; await new Promise(done => setTimeout(done, 5))) if (Date.now() - start > 5_000) assert.fail('never reached checkout');

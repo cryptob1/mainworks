@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { gitWatchPorts } from '../src/cli/upgrade.js';
-import { defaultChildRun } from '../src/child-runner.js';
 import { restartCause } from '../src/daemon/run.js';
 import { daemonStatePath } from '../src/daemon/state.js';
-import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
 import type { MasterConfig } from '../src/master/profiles.js';
+import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 
@@ -50,11 +49,7 @@ async function managedGame(label: string) {
 }
 
 /** The ports of one watch pass against `checkout`, scripted past the git half, health always passing. */
-const ports = (checkout: string): DeployWatchPorts => ({
-  ...gitWatchPorts(checkout, defaultChildRun),
-  build: async () => {}, restart: async () => {}, health: async () => {}, pin: async () => {}, prune: async () => {},
-  schema: async () => null, database: async () => null,
-});
+const ports = (checkout: string) => gitDeployPorts(checkout, { schema: async () => null, database: async () => null });
 
 test('integration:managed-install-deploy-record-ownership — an upgrade of the control plane installed for a managed game persists its record there, master status reports no game release health from it, and the loop still restarts onto it', async () => {
   const source = await repository('managed-deploy-plane');

@@ -12,8 +12,9 @@ import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, deployRecordPath } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { listen } from './helpers/http-server.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { apiOk } from './helpers/api.js';
@@ -75,21 +76,6 @@ async function report() {
   return masterStatusReport(repoRoot, config, masterApi, async (command, args) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${git(repoRoot, 'rev-parse', 'HEAD')}\n`);
 }
 
-function fakePorts(tip: string, head: string): DeployWatchPorts {
-  return {
-    fetch: async () => tip,
-    head: async () => head,
-    checkout: async () => {},
-    build: async () => {},
-    restart: async () => {},
-    health: async () => {},
-    pin: async () => {},
-    prune: async () => {},
-    schema: async () => 1,
-    database: async () => 1,
-  };
-}
-
 test('integration:live-station-window — each window counts only its own merges, timed to their first serving deploy', async () => {
   const base = git(repoRoot, 'rev-parse', 'HEAD');
   const old = await commitFile(repoRoot, 'old.txt', 'old\n');
@@ -125,7 +111,7 @@ test('e2e:live-station-window — after a merge deploys, master status shows a 6
   const previous = git(repoRoot, 'rev-parse', 'HEAD');
   const next = await commitFile(repoRoot, 'next.txt', 'next\n');
   await seedMerged('Deployed merge', next, 5);
-  assert.equal(await deployOnce(deployRecordPath(repoRoot), fakePorts(next, previous), () => {}, repository), 'deployed');
+  assert.equal(await deployOnce(deployRecordPath(repoRoot), deployPorts(next, previous), () => {}, repository), 'deployed');
 
   forgetFlow(store);
   const status = await report();
