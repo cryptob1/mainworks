@@ -115,9 +115,10 @@
     },
     {
       "kind": "browser",
-      "name": "the fresh blocker still waits on the Master",
+      "name": "the fresh blocker still waits on the Lead",
       "action": "expectText",
-      "text": "GY-EFRESH Fresh worker blocker",
+      "text": "Fresh worker blocker",
+      "role": "button",
       "exact": false
     }
   ]

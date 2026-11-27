@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { NOW, boardApi } from './ui-board';
 
 // GY-3850: Settings shows who every commit is authored by — the owner's name and email in its
-// Identity section — and, with none named, the one command that names them. Nothing scrolls sideways.
+// Identity section — and, with none named, the form that names them (GY-3995). Nothing scrolls sideways.
 
 async function open(page: Page, owner: { name: string; email: string } | null) {
   await page.clock.setFixedTime(new Date(NOW));
@@ -32,10 +32,14 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
   expect(await sideways(page)).toBe(0);
 });
 
-test('e2e:settings-shows-check-in-owner — with no owner named, Settings names the one command', async ({ page }) => {
+test('e2e:settings-shows-check-in-owner — with no owner named, Settings offers the one form that names them', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 844 });
   const identity = await open(page, null);
-  await expect(identity).toContainText('Commits are authored Mainworks. Run mainworks config owner "NAME" EMAIL to name the owner.');
+  await expect(identity).toContainText('Commits are authored Mainworks: name the owner below.');
+  const form = identity.getByRole('form', { name: 'Name the owner' });
+  await expect(form.getByRole('textbox', { name: 'Name' })).toBeVisible();
+  await expect(form.getByRole('textbox', { name: 'Email' })).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Name the owner' })).toBeVisible();
   expect(await sideways(page)).toBe(0);
 });

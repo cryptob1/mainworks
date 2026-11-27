@@ -9,6 +9,7 @@ import { delegationSnapshot } from '../../delegation.js';
 import { loopAlerts, loopAlertsHeader, loopCheckoutTrust, loopCheckoutTrustHeader, loopCpu, loopCpuHeader, loopHosts, loopHostsHeader, loopSessions, loopSessionsHeader, loopFetchRefusalHeader, loopStallAlarmHeader, loopStepFailureHeader, loopSupervision, loopSupervisionHeader, loopWorkerGrowthHeader, loopPresenceHeader, loopPresenceInterval, loopPanes, loopPanesHeader, loopPanesRegistry, loopRegistry, reportedLoopMerger } from '../../model/loop-presence.js';
 import { loopWhere, loopWhereHeader, loopWhereRegistry } from '../../model/where-things-run.js';
 import { releaseInfo, schemaVersion } from '../../release.js';
+import { databaseBoundWarning, readDatabaseCapacity } from '../plane-health.js';
 import { openHumanOnly } from '../../model/human-request.js';
 import { humanOnlySubjects } from '../waits.js';
 import { defineRoutes } from '../routes.js';
@@ -61,6 +62,8 @@ export const statusRoutes = defineRoutes('status', [
   }, operatorVisible) },
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
   // GY-3799: with the longest coordination-lock hold of the last 10 minutes, 1 s or more.
+  // GY-4005: the line /healthz shows once the database passes 80% of its bound, for master status.
+  { method: 'GET', path: '/api/database-bound', handle: async ({ services }) => ({ warning: databaseBoundWarning(await readDatabaseCapacity(services.engine.store.pool)) }) },
   { method: 'GET', path: '/api/slowest-query', handle: async ({ url }) => ({ slowest: slowestQuery(Date.now(), url.searchParams.get('name') ?? ''), lockHold: longestLockHold() }) },
   {
     method: 'GET', path: '/api/status',

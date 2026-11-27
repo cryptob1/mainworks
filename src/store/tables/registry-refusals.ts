@@ -13,4 +13,14 @@ const registryRefusalRepeats = defineTable({
 );`,
 });
 
-export const registryRefusalTables = [registryRefusalRepeats];
+/**
+ * GY-4005: the agent registry's current document, one row. Its history stays on the ledger as
+ * `agent-registry.*` events that carry only the change and the fields it touched; before this every
+ * event carried the whole document (about 94 KB), and those rows were most of the events table.
+ */
+const agentRegistry = defineTable({
+  name: 'agent_registry', orderBy: 'id',
+  ddl: `CREATE TABLE IF NOT EXISTS agent_registry (id boolean PRIMARY KEY DEFAULT true CHECK (id), document jsonb NOT NULL);`,
+});
+
+export const registryRefusalTables = [registryRefusalRepeats, agentRegistry];

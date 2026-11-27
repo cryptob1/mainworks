@@ -1,12 +1,11 @@
 // Concern: disk headroom (GY-3122) — the close step measures the volumes Mainworks writes; below the
 // floor it reclaims only its own leftovers, and while still below it no new merge trial or worker starts.
 import { existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, statfs } from 'node:fs/promises';
 import type { ChildRun } from '../child-runner.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { freeBytes } from '../master/worktrees.js';
-import { trialContainerImage, trialImage } from '../merge-writer/trial-container.js';
-import { repositoryTrialImageRepository } from '../merge-writer/repository-trial-image.js';
+import { trialImage } from '../merge-writer/trial-container.js';
 import { diskFloorBytes } from '../merge-writer/trial-load.js';
 import { reclaimTrialCheckouts, trialCheckoutPrefix, trialCheckoutRoots, trialTemporaryPrefix, trialTemporaryRoots } from '../merge-writer/trial.js';
 import { dockerBytes, pathsBytes, tallyLeftovers } from './leftovers.js';
@@ -23,7 +22,7 @@ import { defaultMergeWriterParallel } from '../master/merge-writer-settings.js';
 export const diskHeadroomKey = 'disk-headroom';
 export const diskUseIntervalMs = 3_600_000;
 export const diskUseMaxReadings = 48;
-export interface Volume { path: string; freeBytes: number | null }
+export interface Volume { path: string; freeBytes: number | null; totalBytes?: number; docker?: boolean }
 
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 const short = (volumes: Volume[], floor: number) => volumes.filter((volume): volume is Volume & { freeBytes: number } => volume.freeBytes !== null && volume.freeBytes < floor);
@@ -79,10 +78,11 @@ export function diskHeadroomSummary(shortage: DaemonState['diskHeadroom'], use: 
   if (!shortage && !use) return null;
   if (!use) return shortage;
   return {
-    at: use.at,
+    at: use.reclaimed && use.reclaimed.at > use.at ? use.reclaimed.at : use.at,
     freeBytes: use.freeBytes,
     change24hBytes: diskChange24h(use.readings),
     top: use.top,
+    ...(use.reclaimed ? { reclaimed: use.reclaimed } : {}),
     ...(shortage ? { floorBytes: shortage.floorBytes, volumes: shortage.volumes, shortage: shortage.shortage } : {}),
   };
 }
@@ -111,7 +111,8 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
     const save = (kinds: DiskKind[]) => {
       const top = kinds.filter(entry => entry.bytes > 0).sort((a, b) => b.bytes - a.bytes).slice(0, 5);
       const readings = [...(state.diskUse?.readings ?? []), { at, freeBytes }].slice(-diskUseMaxReadings);
-      state.diskUse = { at, freeBytes, readings, top };
+      const reclaimed = state.diskUse?.reclaimed;
+      state.diskUse = { at, freeBytes: reclaimed && reclaimed.at >= at ? reclaimed.freeBytes : freeBytes, readings, top, ...(reclaimed ? { reclaimed } : {}) };
     };
     if (!effects.diskUseByKind) save([]);
     else if (cycle.launcher) cycle.launcher.submit(diskUseKey, [], async () => {
@@ -121,13 +122,22 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
     else save(await effects.diskUseByKind().catch(() => [] as DiskKind[]));
   }
   let low = short(volumes, floor);
-  if (!low.length && !state.diskHeadroom) return;
-  if (low.length && effects.reclaimDisk) {
+  const dockerVolume = volumes.find(volume => volume.docker);
+  const dockerLow = dockerVolume?.freeBytes != null && dockerVolume.totalBytes !== undefined && dockerVolume.freeBytes < dockerVolume.totalBytes * 0.15;
+  if (!low.length && !dockerLow && !state.diskHeadroom) return;
+  if ((low.length || dockerLow) && effects.reclaimDisk) {
     const removed = await effects.reclaimDisk();
     tallyLeftovers(state, 'reclaimed', removed.length);
-    if (removed.length) performed.push(await record(state, `disk-reclaim:${state.cycle}`, { kind: 'reclaim', work: null, principal: null, state: 'done', attempts: 1, cycle: state.cycle,
-      detail: `Free space fell below the ${gb(floor)} floor; reclaimed Mainworks's own leftovers: ${removed.join(', ')}` }, now(), effects.persist));
-    low = short(await effects.diskVolumes(), floor);
+    const after = await effects.diskVolumes();
+    const beforeVolume = dockerVolume ?? low[0];
+    const afterVolume = after.find(volume => volume.path === beforeVolume?.path);
+    if (beforeVolume?.freeBytes != null && afterVolume?.freeBytes != null) {
+      const reclaimed = { at: new Date(now()).toISOString(), bytes: Math.max(0, afterVolume.freeBytes - beforeVolume.freeBytes), freeBytes: afterVolume.freeBytes, removed };
+      state.diskUse = { at: reclaimed.at, readings: [], top: [], ...state.diskUse, freeBytes: afterVolume.freeBytes, reclaimed: removed.length || !state.diskUse?.reclaimed ? reclaimed : state.diskUse.reclaimed };
+      if (removed.length) performed.push(await record(state, `disk-reclaim:${state.cycle}`, { kind: 'reclaim', work: null, principal: null, state: 'done', attempts: 1, cycle: state.cycle,
+        detail: `Freed ${gb(reclaimed.bytes)}; ${gb(reclaimed.freeBytes)} free after removing ${removed.join(', ')}` }, now(), effects.persist));
+    }
+    low = short(after, floor);
   }
   if (!low.length) {
     state.diskHeadroom = null;
@@ -144,13 +154,17 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
 }
 
 /** The durable volumes Mainworks writes: its checkout, data directory, worktree root, trial checkout root and durable temporary root — one path per device. A memory-backed /tmp is never measured: its size is not disk headroom. */
-export async function mainworksVolumes(paths: string[]): Promise<Volume[]> {
+export async function mainworksVolumes(paths: string[], run?: ChildRun): Promise<Volume[]> {
+  // Docker can live on a different device from the checkout and data directory.
+  const dockerRoot = run ? String(await Promise.resolve(run('docker', ['info', '--format', '{{.DockerRootDir}}'], { timeoutMs: 20_000 })).catch(() => '')).trim() : '';
+  if (dockerRoot) paths = [dockerRoot, ...paths];
   const seen = new Set<number>(), volumes: Volume[] = [];
   for (const path of paths) {
     const device = (await stat(path).catch(() => null))?.dev;
     if (device === undefined || seen.has(device)) continue;
     seen.add(device);
-    volumes.push({ path, freeBytes: await freeBytes(path) });
+    const info = await statfs(path).catch(() => null);
+    volumes.push({ path, freeBytes: await freeBytes(path), ...(info ? { totalBytes: Number(info.blocks) * Number(info.bsize) } : {}), ...(path === dockerRoot ? { docker: true } : {}) });
   }
   return volumes;
 }
@@ -165,7 +179,7 @@ const trialNetworkPrefix = `${composeProjectPrefix}trial-`;
  * anonymous volumes, preview and trial Compose projects whose owner is gone, trial networks no container uses, and Mainworks's own
  * trial-image build cache older than a day (its dedicated builder only). What was removed, by name.
  */
-export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[]; warmInUse?: string } = {}): Promise<string[]> {
+export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[]; warmInUse?: string; pruneWarm?: boolean } = {}): Promise<string[]> {
   const removed: string[] = [];
   for (const root of roots.temporary ?? trialTemporaryRoots()) removed.push(...await reclaimTrialCheckouts(root, [trialTemporaryPrefix, 'gy-h']));
   for (const root of roots.checkouts ?? trialCheckoutRoots()) removed.push(...await reclaimTrialCheckouts(root, [trialCheckoutPrefix]));
@@ -187,7 +201,7 @@ export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: st
       try { await docker(['network', 'rm', name]); removed.push(`network ${name}`); } catch { /* attached since, or already gone */ }
     }
   } catch { /* no Docker on this host */ }
-  removed.push(...await pruneWarmImages(run, roots.warmInUse));
+  if (roots.pruneWarm !== false) removed.push(...await pruneWarmImages(run, roots.warmInUse));
   try {
     const pruned = (await docker(['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'])).find(line => /^Total:/i.test(line));
     if (pruned && !/:\s*0\s*B?$/i.test(pruned)) removed.push(`trial build cache older than a day (${pruned.replace(/^Total:\s*/i, '')})`);
@@ -218,22 +232,25 @@ export async function pruneWarmImages(run: ChildRun, inUseDirectory = warmInUseD
 }
 
 /**
- * Below the disk floor: every job leftover, and `mainworks-trial` images other than the one trials
- * run (never forced, so Docker keeps an image a container still uses). Ended attempts' worktrees and
+ * Below the disk floor or 15% Docker headroom: job leftovers and unused warm and trial images.
+ * Keep the current trial image, every container image and warm images marked by in-flight trials. Ended attempts' worktrees and
  * settled managed checkouts are already removed by the close step itself.
  */
-export async function reclaimMainworksLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[] } = {}): Promise<string[]> {
-  const removed = await reclaimJobLeftovers(run, roots);
+export async function reclaimMainworksLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[]; warmInUse?: string } = {}): Promise<string[]> {
+  const removed = await reclaimJobLeftovers(run, { ...roots, pruneWarm: false });
+  const inUse = await warmImagesInUse(roots.warmInUse);
   const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 20_000 })).split('\n').map(line => line.trim()).filter(Boolean);
   try {
-    // The image built here and the published one an install pulled (GY-3214) each have their own repository;
-    // a repository's extended trial images (GY-3275) are cache, rebuilt from their Dockerfile's digest when
-    // pruned, and so are the warm images remote shard hosts are sent (GY-3412), so below the floor every one not
-    // in use goes (never forced: Docker keeps an image a container uses).
     const current = trialImage();
-    for (const repository of new Set([trialContainerImage.split(':')[0]!, current.slice(0, current.lastIndexOf(':')), repositoryTrialImageRepository, 'graphyard-warm'])) {
+    // Resolve every container's image ID: removing a tag can otherwise succeed even when
+    // another tag of that image belongs to a container (including a stopped container).
+    const containers = await docker(['ps', '--all', '--quiet']);
+    const usedIds = new Set(containers.length ? await docker(['inspect', '--format', '{{.Image}}', ...containers]) : []);
+    for (const repository of ['mainworks-trial', 'graphyard-trial', 'graphyard-warm']) {
       for (const image of await docker(['images', repository, '--format', '{{.Repository}}:{{.Tag}}'])) {
-        if (image === current || !image.startsWith(`${repository}:`) || image.endsWith(':<none>')) continue;
+        if (image === current || inUse.has(image) || !image.startsWith(`${repository}:`) || image.endsWith(':<none>')) continue;
+        const id = (await docker(['image', 'inspect', '--format', '{{.Id}}', image]))[0];
+        if (id && (usedIds.has(id) || [...inUse].some(warm => warm.startsWith(`graphyard-warm:${id.replace(/^sha256:/, '').slice(0, 12)}-`)))) continue;
         try { await docker(['image', 'rm', image]); removed.push(`image ${image}`); } catch { /* in use, or already gone */ }
       }
     }

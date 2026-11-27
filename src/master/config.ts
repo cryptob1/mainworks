@@ -20,6 +20,7 @@ import { migrateHerdr } from '../herdr-migration.js';
 import { controlPlaneAttention } from './attention.js';
 import { defaultMergeWriterParallel } from './merge-writer-settings.js';
 import { trialHotCelsius } from '../merge-writer/trial-load.js';
+import { scopeOf } from '../loop-state.js';
 import { setting } from '../setting.js';
 import { stateDirectory, defaultConfigHome } from '../install/layout.js';
 
@@ -206,6 +207,8 @@ export async function setupMaster(root: string, input: { url: string; token: str
   const instructions = managedInstructions(withoutMasterInstructions(existing));
   const directory = await localDirectory(root);
   await atomicPrivateText(credentialFile, token);
+  // A rerun that re-points the credential keeps the scope its ledgers were written under.
+  config.loopStateScope = scopeOf(previous ?? config);
   await atomicPrivateWrite(resolve(directory, 'master.json'), config);
   const temporary = `${instructionsFile}.${randomUUID()}.tmp`;
   const { writeFile, rename } = await import('node:fs/promises');
@@ -453,7 +456,7 @@ export async function producerCommand(root: string, args: string[], verify: (tok
  * master agent — cannot change under it: such a change is refused by name and the loop keeps the
  * settings it loaded until it is restarted.
  */
-const masterBoundSettings = ['version', 'url', 'credentialFile', 'cliPath', 'repository', 'baseBranch', 'githubAppId', 'hostId', 'masterAgentName'] as const;
+const masterBoundSettings = ['version', 'url', 'credentialFile', 'cliPath', 'repository', 'baseBranch', 'githubAppId', 'hostId', 'loopStateScope', 'masterAgentName'] as const;
 export function masterConfigChanges(current: MasterConfig, next: MasterConfig) {
   const flatten = (config: MasterConfig) => {
     const { run, ...rest } = config;

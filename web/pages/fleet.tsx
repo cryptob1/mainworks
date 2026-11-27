@@ -420,7 +420,6 @@ export default function FleetPage({ api, status, observedAt }: Pick<Dashboard, '
   return <><PageHeader title="Agents" fact={!fleet ? (loadError ? 'The agents could not be read.' : 'Reading the agents…') : fleet.roles.length ? `${launchable} of ${fleet.roles.length} roles ready · ${accounts}` : `${accounts}; no role is configured yet.`}
       actions={<>{fleet && canEdit && !wizard.open && <button className="connect-button" data-connect-account onClick={() => setWizard({ ...closedWizard, open: true, host: hosts[0]?.host ?? null })}>Connect an account</button>}</>}/>
     {loadError && <div role="alert" className="notice danger">{loadError} <button onClick={() => void load()}>Retry loading the agents</button></div>}
-    {!fleet && !loadError && <p role="status">Loading the agents…</p>}
     {fleet && canEdit && wizard.open && <PageSection title="Connect an account">
       <ConnectWizard providers={providers} hosts={hosts} wizard={wizard} setWizard={setWizard} onConnect={id => void connect(id, wizard.host ?? hosts[0]?.host ?? '', wizard.key)} onClose={() => setWizard(closedWizard)}/>
     </PageSection>}

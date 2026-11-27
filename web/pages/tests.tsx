@@ -4,7 +4,7 @@ import type { CaseRun, TrackedCase } from '../../src/scenarios';
 import type { JudgedProof } from '../../src/test-runs';
 import { matrixColumns, type MatrixCell, type MatrixColumn } from '../../src/test-matrix';
 import type { EnvironmentRow } from '../../src/app-environments';
-import { EmptyState, PageHeader } from '../components/page-layout';
+import { EmptyState, MoreDetails, PageHeader } from '../components/page-layout';
 
 /** Each result in words and a mark; a skip is its own state and never reads as a pass. */
 const resultLabel: Record<string, { mark: string; word: string; tone: string }> = {
@@ -261,7 +261,7 @@ export function TestsView({ data, error, loading, filter, setFilter, item = '', 
       actions={canEdit && setView && <button type="button" onClick={() => setView('scenarios')}>Define test cases</button>}/>
     {error && <div role="alert" className="notice danger">{error} <button type="button" disabled={loading} onClick={retry}>Retry loading tests</button>{data ? <p>Previously loaded results are shown; they may be stale.</p> : null}</div>}
     {loading && !data && <p role="status">Loading tests…</p>}
-    {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">Add a case as <code>e2e/cases/ID.json</code> in the repository, register it with <code>mainworks e2e sync</code>, and <code>mainworks e2e run</code> records its runs here.</EmptyState>}
+    {data && !cases.length && !manual.length && <EmptyState title="No test cases yet.">{canEdit && setView ? 'Add the first one with Define test cases; its runs show here.' : 'Cases show here once the owner adds the first one.'}<MoreDetails summary="From the repository">Add a case as <code>e2e/cases/ID.json</code>, register it with <code>mainworks e2e sync</code>, and <code>mainworks e2e run</code> records its runs here.</MoreDetails></EmptyState>}
     {view === 'matrix' && (cases.length > 0 || manual.length > 0) && <Matrix cases={matrixCases} filter={matrix} setFilter={setMatrix} openItem={openItem} showHistory={() => setTestsView('cases')} viewChips={viewChips}/>}
     {view === 'cases' && (cases.length > 0 || manual.length > 0) && <>
       <div className="case-filters" role="group" aria-label="Filter test cases">{viewChips}{filters.map(f => <button key={f.id} type="button" className={filter === f.id ? 'chip active' : 'chip'} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} <span className="count">{count(f.id)}</span></button>)}

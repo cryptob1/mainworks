@@ -281,3 +281,21 @@ export function blockerSince(work: Pick<Work, 'blocker'> & { blockedAt?: string 
   const at = recorded === null ? Number.NaN : Date.parse(recorded);
   return Number.isFinite(at) ? at : null;
 }
+
+/**
+ * GY-3996: who recorded the standing blocker. Its own write leaves the author on the item beside
+ * its instant — the blocker request it asked, the capacity exhaustion a worker's `blocked` report
+ * ends its attempt with, or the human request it filed or declined — so the record carrying
+ * `blockedAt` names the author; a record with another instant belongs to an earlier blocker. Null
+ * with no blocker, with none stamped (a record older than `blockedAt`), or when the loop wrote it.
+ */
+export function blockerAuthor(work: Pick<Work, 'blocker' | 'blockedAt' | 'agentRequests' | 'capacity' | 'humanRequest' | 'humanRequests'>): string | null {
+  if (!work.blocker || !work.blockedAt) return null;
+  const stamped = (at: string | undefined, who: string | null | undefined): string | null => who && at === work.blockedAt ? who : null;
+  const humans = [...(work.humanRequests ?? []), ...(work.humanRequest ? [work.humanRequest] : [])];
+  return [
+    ...(work.agentRequests ?? []).map(request => stamped(request.at, request.requestedBy)),
+    ...(work.capacity?.exhaustions ?? []).map(entry => stamped(entry.at, entry.recordedBy)),
+    ...humans.flatMap(request => [stamped(request.at, request.requestedBy), stamped(request.answer?.at, request.answer?.by)]),
+  ].find((who): who is string => !!who) ?? null;
+}

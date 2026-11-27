@@ -66,9 +66,12 @@ test('unit:version-skew — a CLI whose release differs from the server refuses 
     response.statusCode = 404;
     response.end(JSON.stringify({ error: 'Not found' }));
   }, t);
-  const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '1.4.2', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } }).then(() => null, (error: any) => error);
+  const failure = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...process.env, GRAPHYARD_VERSION: '1.4.2', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url, GRAPHYARD_RELEASE_HANDOVER_MS: '3000' } }).then(() => null, (error: any) => error);
   assert.match(failure?.stderr, /CLI 1\.4\.2 and server 2\.0\.0 differ: run mainworks upgrade/);
-  assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
+  assert.match(failure?.stderr, /still serves another commit after 3s; giving up/, 'the bounded handover window ends by name');
+  const retries = (failure?.stderr.match(/release handover: retry/g) ?? []).length;
+  assert.ok(retries >= 1);
+  assert.deepEqual(requests, Array(retries + 1).fill('/healthz'), 'the initial probe and every bounded retry send no API request');
 });
 
 test('unit:version-skew — equal versions behave as today: the release is read once and the request is made', async t => {
@@ -100,9 +103,11 @@ test('unit:version-skew — an unreleased build compares commits: another commit
   }, t);
   const env = { ...process.env, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_URL: url } as Record<string, string | undefined>;
   delete env.GRAPHYARD_VERSION; // an unreleased build: no stamped release, so the commit is what it compares
-  const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
+  const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...env, GRAPHYARD_RELEASE_HANDOVER_MS: '3000' } }).then(() => null, (error: any) => error);
   assert.match(behind?.stderr, new RegExp(`CLI commit ${head} and server commit ${servingCommit} differ: run mainworks upgrade`));
-  assert.deepEqual(requests, Array(4).fill('/healthz'), 'three handover retries still refuse the mismatch before any API request');
+  const retries = (behind?.stderr.match(/release handover: retry/g) ?? []).length;
+  assert.ok(retries >= 1);
+  assert.deepEqual(requests, Array(retries + 1).fill('/healthz'), 'every handover retry still refuses the mismatch before any API request');
   requests.length = 0;
   servingCommit = head;
   const current = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
@@ -136,9 +141,11 @@ test('unit:version-skew — an unstamped CLI on a dated checkout takes its relea
   assert.deepEqual(requests, ['/healthz', '/api/work/GY-1']);
   requests.length = 0;
   servingVersion = '2026.10.18';
-  const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env }).then(() => null, (error: any) => error);
+  const behind = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...env, GRAPHYARD_RELEASE_HANDOVER_MS: '3000' } }).then(() => null, (error: any) => error);
   assert.match(behind?.stderr, /CLI 2026\.10\.17 and server 2026\.10\.18 differ: run mainworks upgrade/);
-  assert.deepEqual(requests, Array(4).fill('/healthz'), 'the initial probe and three bounded retries send no API request');
+  const retries = (behind?.stderr.match(/release handover: retry/g) ?? []).length;
+  assert.ok(retries >= 1);
+  assert.deepEqual(requests, Array(retries + 1).fill('/healthz'), 'the initial probe and every bounded retry send no API request');
 });
 
 test('unit:version-skew — an Invalid input answer from a server at a different version is reported as the skew message, and a same-version one is not', async t => {
