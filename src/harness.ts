@@ -545,7 +545,13 @@ export function bashRuleMatches(rule: string, command: string) {
  * `:*` is the legacy prefix marker and must end the rule (`Bash(git push * :**)` is refused as
  * "The :* pattern must be at the end"), and it needs a prefix before it.
  */
+/** Built-in tools Claude Code accepts in permission rules (removed MultiEdit and legacy Task are excluded; GY-4056). */
+export const claudeKnownTools = ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent'] as const;
+const claudeKnownToolSet = new Set<string>(claudeKnownTools);
+
 export function claudeRuleProblem(rule: string): string | null {
+  const tool = /^([A-Za-z][A-Za-z0-9_]*)(?:\(.*\))?$/s.exec(rule)?.[1];
+  if (tool && !tool.startsWith('mcp__') && !claudeKnownToolSet.has(tool)) return `${rule}: unknown Claude Code tool ${tool}`;
   const body = /^Bash\((.*)\)$/s.exec(rule)?.[1];
   if (body === undefined) return null;
   const marker = body.indexOf(':*');
