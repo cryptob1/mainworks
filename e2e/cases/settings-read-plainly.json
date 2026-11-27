@@ -1,9 +1,12 @@
 {
   "id": "settings-read-plainly",
-  "title": "Settings, Invite and the Product brief read plainly",
-  "description": "At 1280px and 390px: Settings → Delivery shows no delivery.applications text or Mode row and reads 'No app to preview yet.' with no app declared, its Where it runs card still naming the one setting to add; Setup shows no 'Done' badge and no 'Coordinator', its loop step reading 'Mainworks is handing out work'; Agents has one fold named 'Advanced' and no first-run Setup link; the Invite dialog's first field is 'Name or email' with no Funnel or Tailscale text before Invite; a seeded brief renders its headings and list items as such, no line starting with '#' or '- '; nothing scrolls sideways.",
+  "title": "Settings, Invite and the Product brief read plainly, with no stuck loading line, task key or terminal-only step",
+  "description": "At 1280px and 390px: Settings → Delivery shows no delivery.applications text or Mode row and reads 'No app to preview yet.' with no app declared, its Where it runs card still naming the one setting to add; Setup shows no 'Done' badge and no 'Coordinator', its loop step reading 'Mainworks is handing out work'; Agents has one fold named 'Advanced' and no first-run Setup link; the Invite dialog's first field is 'Name or email' with no Funnel or Tailscale text before Invite; a seeded brief renders its headings and list items as such, no line starting with '#' or '- '. Over reads that come back with nothing to show: Agents shows one loading line, not two; Workers rows name no task key; Costs ends 'Reading costs…' with 'Nothing spent yet'; Setup's stall-alert line says when it will know; Delivery keeps no loading line and names the owner with a form, not a command; empty Tests points to Define test cases. Nothing scrolls sideways.",
   "tags": ["dashboard"],
   "target": "any",
   "required": false,
-  "steps": [{ "kind": "command", "name": "Read Settings, Invite and Product", "run": "npm run test:browser -- browser-tests/settings-read-plainly.spec.ts", "timeoutSeconds": 300 }]
+  "steps": [
+    { "kind": "command", "name": "Read Settings, Invite and Product", "run": "npm run test:browser -- browser-tests/settings-read-plainly.spec.ts", "timeoutSeconds": 300 },
+    { "kind": "command", "name": "Settings clears its loading lines and shows no task keys or terminal-only steps", "run": "npm run test:browser -- browser-tests/settings-clear-loading-lines.spec.ts", "timeoutSeconds": 300 }
+  ]
 }
