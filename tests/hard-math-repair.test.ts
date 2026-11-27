@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { validateReceipt, comparison } from '../benchmarks/hard-math/receipt-schema.js';
 import { pinnedPython } from '../benchmarks/hard-math/python.js';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { runFixture } from './helpers/hard-math-fixture.js';
+import { fixtureExecutor } from '../benchmarks/hard-math/fixture.js';
 
 // A file of its own (GY-3206): the runner bounds each test file, so these fixture runs no longer
 // share tests/hard-math-smoke.test.ts's bound with every other one.
@@ -11,7 +13,9 @@ import { runFixture } from './helpers/hard-math-fixture.js';
 const python=await pinnedPython(join(process.cwd(),'.graphyard','hard-math-python'));
 
 test('integration:hard-math-smoke — real scratch Postgres/control plane and Git merge eight normal-risk components before native review dispatch/completion, reject an integration fault, repair and certify pushed CLI/API/UI', {timeout:295_000},async()=>{
-  const receipt=await runFixture(python,'repair',{injectRepair:true,nativePostMerge:true});
+  let run='';
+  const options={injectRepair:true,nativePostMerge:true};
+  const receipt=await runFixture(python,'repair',options,1000,'team',c=>{run=c.directory;return fixtureExecutor(c,options);});
   assert.equal(receipt.outcome,'PASS',`${receipt.reason}\n${JSON.stringify(receipt.failures,null,2)}`);assert.equal(receipt.kind,'controlled-fixture');
   assert.ok(receipt.overlaps.length);assert.equal(receipt.work.at(-1)?.repairs,1);
   assert.ok(receipt.failures.some(f=>f.component==='integration'));assert.equal(receipt.cost,null);assert.equal(receipt.costBudgetProven,false);
@@ -38,4 +42,7 @@ test('integration:hard-math-smoke — real scratch Postgres/control plane and Gi
   const uncertified=structuredClone(receipt);(uncertified.work.at(-1)!.record as any).evidence=[];
   assert.throws(()=>validateReceipt(uncertified),/Missing independent final candidate certification/);
   assert.throws(()=>comparison(receipt,{...receipt,mode:'single'}),/actual team/);
+  // GY-3950: the pushed final merge is the candidate certified moments before; that walk is its artifact, not a second one.
+  assert.equal(receipt.artifact?.sha,receipt.work.at(-1)?.candidate);
+  assert.equal(existsSync(join(run,'delivered')),false,'the final merge was certified once, not walked a second time');
 });
