@@ -95,7 +95,10 @@ export function diskHeadroomSummary(shortage: DaemonState['diskHeadroom'], use: 
  * read) and as the failed `disk-headroom` attention row that wakes the master. The row names the
  * volumes and the floor, never the free bytes, so a shortage that only moves wakes the master once.
  */
-export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'>; state: DaemonState; effects: DaemonEffects; now: () => number; performed: DaemonAction[] }) {
+/** The launcher key under which the hourly disk-use-by-kind reading runs beside the cycle (GY-3980). */
+const diskUseKey = 'disk-headroom:use';
+
+export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'>; state: DaemonState; effects: DaemonEffects; now: () => number; performed: DaemonAction[]; launcher?: { submit: (key: string, holds: string[], body: (sink: DaemonAction[]) => Promise<void>) => boolean } }) {
   const { config, state, effects, now, performed } = cycle;
   if (!effects.diskVolumes) return;
   const floor = diskFloorBytes(config);
@@ -105,10 +108,17 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
   if (measured.length && (!state.diskUse || clock - Date.parse(state.diskUse.at) >= diskUseIntervalMs)) {
     const at = new Date(clock).toISOString();
     const freeBytes = Math.min(...measured);
-    const kinds = effects.diskUseByKind ? await effects.diskUseByKind().catch(() => [] as DiskKind[]) : [];
-    const top = kinds.filter(entry => entry.bytes > 0).sort((a, b) => b.bytes - a.bytes).slice(0, 5);
-    const readings = [...(state.diskUse?.readings ?? []), { at, freeBytes }].slice(-diskUseMaxReadings);
-    state.diskUse = { at, freeBytes, readings, top };
+    const save = (kinds: DiskKind[]) => {
+      const top = kinds.filter(entry => entry.bytes > 0).sort((a, b) => b.bytes - a.bytes).slice(0, 5);
+      const readings = [...(state.diskUse?.readings ?? []), { at, freeBytes }].slice(-diskUseMaxReadings);
+      state.diskUse = { at, freeBytes, readings, top };
+    };
+    if (!effects.diskUseByKind) save([]);
+    else if (cycle.launcher) cycle.launcher.submit(diskUseKey, [], async () => {
+      save(await effects.diskUseByKind!().catch(() => [] as DiskKind[]));
+      await effects.persist(state);
+    });
+    else save(await effects.diskUseByKind().catch(() => [] as DiskKind[]));
   }
   let low = short(volumes, floor);
   if (!low.length && !state.diskHeadroom) return;
