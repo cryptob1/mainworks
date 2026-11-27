@@ -222,11 +222,14 @@ class SessionPreparationError extends Error {}
 
 /** Preparation never ends the attempt: the same supervisor starts its local command instead. */
 export async function runRemoteSession(input: RemoteSession): Promise<number> {
-  try { return await runOnHost(input); }
-  catch (error) {
+  const paused = await sessionCooldown(input.target, input.hostsFile);
+  try {
+    if (paused) throw new SessionPreparationError(paused.reason);
+    return await runOnHost(input);
+  } catch (error) {
     if (!(error instanceof SessionPreparationError)) throw error;
-    await coolSessionHost(input.target, error.message, input.hostsFile);
-    (input.errors ?? process.stderr).write(`Sessions paused on ${input.target} for 30 minutes: ${error.message}. Starting this attempt on this machine.\n`);
+    if (!paused) await coolSessionHost(input.target, error.message, input.hostsFile);
+    (input.errors ?? process.stderr).write(`Sessions paused on ${input.target}: ${error.message}. Starting this attempt on this machine.\n`);
     input.onLocal?.();
     const [command, ...args] = input.localArgv ?? [...input.confine ?? [], ...input.argv];
     return new Promise<number>((resolve, reject) => {

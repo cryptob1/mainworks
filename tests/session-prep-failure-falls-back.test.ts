@@ -50,6 +50,11 @@ test(`${proof} — warm image failure starts the same attempt here and keeps the
   assert.match(cooldown.reason, /Docker CreateDiff/);
   assert.ok(Date.parse(cooldown.until) >= before + 30 * 60_000);
   assert.ok(Date.parse(cooldown.until) <= Date.now() + 30 * 60_000);
+  assert.equal(await runRemoteSession({ target, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
+    env: {}, hostsFile: file, output: sink, errors: sink, run: () => { throw new Error('a paused host must not be prepared again'); } }), 0,
+  'a previously selected command, including a fresh-session retry, also respects the cooldown');
+  assert.deepEqual(await sessionCooldown(target, file), cooldown, 'a skipped placement does not extend the 30-minute cooldown');
+
   const sent = loopHosts(encodeLoopHosts([reading]))!;
   assert.deepEqual(sent[0]!.sessionCooldown, cooldown, 'the status transport keeps the reason and expiry');
   const page = renderToStaticMarkup(createElement(WorkersPage, { work: [], observedAt: Date.now(), setSelected: () => {}, setView: () => {}, token: 'fixture', status: { hosts: sent } } as never));
@@ -155,4 +160,21 @@ process.exitCode = await runRemoteSession({ ...${JSON.stringify(input)}, run: as
     await supervising;
     await store.close();
   }
+});
+
+test(`${proof} — the session CLI uses the local launch command and changes its recorded placement to this machine`, async () => {
+  const directory = await temporaryDirectory('session-prep-cli');
+  const { root } = await gitRepo({ root: join(directory, 'repo'), files: { 'base.txt': 'base' } });
+  const bin = join(directory, 'bin'), record = join(directory, 'session.json'), started = join(directory, 'started');
+  await mkdir(bin);
+  await writeFile(join(bin, 'docker'), '#!/bin/sh\necho "warm image preparation failed" >&2\nexit 1\n');
+  await chmod(join(bin, 'docker'), 0o755);
+  await writeFile(record, JSON.stringify({ host: 'gy-compute@broken', work: 'GY-1', epoch: 3 }));
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  const local = [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(started)}, 'local command ran')`];
+  await defaultChildRun(process.execPath, ['--import', createRequire(import.meta.url).resolve('tsx'), cli, 'host', 'session', 'gy-compute@broken',
+    '--cli', cli, '--local', JSON.stringify(local), '--record', record, '--', 'remote-runtime'],
+  { cwd: root, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MAINWORKS_CONFIG_HOME: join(directory, 'config') } });
+  assert.equal(await readFile(started, 'utf8'), 'local command ran');
+  assert.deepEqual(JSON.parse(await readFile(record, 'utf8')), { work: 'GY-1', epoch: 3 }, 'the same run now counts on the coordinator');
 });
