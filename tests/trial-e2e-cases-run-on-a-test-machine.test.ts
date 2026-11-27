@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { remoteShardSummary } from '../src/merge-writer/remote-shards.js';
+import { join } from 'node:path';
+import { hostableTrialCase, hostSafeMarker, remoteShardSummary } from '../src/merge-writer/remote-shards.js';
 import { trialE2eHosts } from './helpers/trial-e2e-hosts.js';
 
 // GY-4002 AC-1: a merge trial's local-environment e2e cases run on ready test machines through the
@@ -51,4 +52,10 @@ test(`${proof} — the trial's cases run on two ready hosts, a secret's and an e
   const hot = await fixture.trial(['gy-compute@a', 'gy-compute@b'], ['e2e:alpha', 'e2e:beta'], () => ({ celsius: 99 }));
   assert.deepEqual([hot.where('alpha'), hot.where('beta')], [['here'], ['here']], hot.result.logTail);
   assert.ok(hot.result.e2e?.every(item => item.host === undefined && item.failed === 0), JSON.stringify(hot.result.e2e));
+});
+
+test(`${proof} — a case whose tests name Docker only as text, marked so, may run on a test machine; one that uses it stays here`, async () => {
+  assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'smoke'), true, 'smoke\'s tests name Docker only in approved prose');
+  assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'verification-uses-remote-hosts'), false, 'its tests drive Docker');
+  assert.ok(hostSafeMarker.length && !/docker|bwrap/i.test(hostSafeMarker));
 });

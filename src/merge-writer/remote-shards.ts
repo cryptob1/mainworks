@@ -78,8 +78,10 @@ export async function rereadHotHosts(
  * loopback work on a host, so their words do not keep a file local.
  */
 export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|delivery-pipeline|npm exec|\/var\/tmp|npm_config_cache|worktreeRoot/i;
-/** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
-export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
+/** GY-4002: a test file that names local-only words only as text (approved prose, fixtures) says so with this line, and runs on a host. */
+export const hostSafeMarker = '// mainworks: runs on a test machine; its local-only words are text, not use.';
+/** Whether a test file's text may run on a remote shard: it names none of the local-only words, or carries hostSafeMarker. */
+export const remoteableTestFile = (text: string) => text.includes(hostSafeMarker) || !localOnlyTestPattern.test(text);
 
 /** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
 const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
@@ -865,7 +867,7 @@ export async function hostableTrialCase(worktree: string, name: string): Promise
   if (application?.kind === 'compose') return false;
   const named = [...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
   const tests = await Promise.all(named.map(file => readFile(join(worktree, file), 'utf8').catch(() => '')));
-  return !localOnlyTestPattern.test([text, ...tests].join('\n'));
+  return !localOnlyTestPattern.test(text) && tests.every(remoteableTestFile);
 }
 
 /**
