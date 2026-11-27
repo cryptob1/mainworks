@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { defaultChildRun, type ChildRun } from './child-runner.js';
-import { probeHost, readHosts, type HostRecord } from './hosts.js';
+import { coolSessionHost, sessionCooldown, probeHost, readHosts, type HostRecord, type SessionCooldown } from './hosts.js';
 import { remoteShardSession, shardSshSession } from './merge-writer/remote-shards.js';
 import { trialImage } from './merge-writer/trial-container.js';
 import { trialHotCelsius } from './merge-writer/trial-load.js';
@@ -153,6 +153,7 @@ def watch():
         if not pending:
             sync()
 runtime = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, stderr=subprocess.PIPE)
+say('started', '{}')
 errors = threading.Thread(target=said, daemon=True)
 errors.start()
 for task in (calls, answers, watch):
@@ -185,6 +186,10 @@ process.stdout.write(reply.stdout); process.stderr.write(reply.stderr); process.
 
 export interface RemoteSession {
   target: string; worktree: string;
+  hostsFile?: string;
+  /** The launcher's local command, including confinement and local runtime flags. */
+  localArgv?: string[];
+  onLocal?: () => void;
   /** Login homes whose sign-in files are handed over: each becomes an in-memory home at the same path there. */
   homes: string[];
   /** This machine's CLI, which the relayed calls run; the session's `mainworks` at the same path is the relay. */
@@ -213,8 +218,32 @@ function remoteSettingsFiles(argv: readonly string[], worktree: string): string[
   return [...new Set(paths)];
 }
 
-/** Run one agent session on `target` and return its exit code; the commits it made are in the worktree after. */
+class SessionPreparationError extends Error {}
+
+/** Preparation never ends the attempt: the same supervisor starts its local command instead. */
 export async function runRemoteSession(input: RemoteSession): Promise<number> {
+  const paused = await sessionCooldown(input.target, input.hostsFile);
+  try {
+    if (paused) throw new SessionPreparationError(paused.reason);
+    return await runOnHost(input);
+  } catch (error) {
+    if (!(error instanceof SessionPreparationError)) throw error;
+    if (!paused) await coolSessionHost(input.target, error.message, input.hostsFile);
+    (input.errors ?? process.stderr).write(`Sessions paused on ${input.target}: ${error.message}. Starting this attempt on this machine.\n`);
+    input.onLocal?.();
+    const [command, ...args] = input.localArgv ?? [...input.confine ?? [], ...input.argv];
+    return new Promise<number>((resolve, reject) => {
+      const child = spawn(command!, args, { cwd: input.worktree, env: { ...process.env, ...input.env }, stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stdout.on('data', chunk => (input.output ?? process.stdout).write(chunk));
+      child.stderr.on('data', chunk => (input.errors ?? process.stderr).write(chunk));
+      child.on('error', reject);
+      child.on('close', code => resolve(code ?? droppedExit));
+    });
+  }
+}
+
+/** Run one agent session on `target` and return its exit code; the commits it made are in the worktree after. */
+async function runOnHost(input: RemoteSession): Promise<number> {
   const run = input.run ?? defaultChildRun, output = input.output ?? process.stdout, errors = input.errors ?? process.stderr;
   const git = async (...args: string[]) => String(await run('git', ['-C', input.worktree, ...args])).trim();
   const sha = await git('rev-parse', 'HEAD');
@@ -225,7 +254,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
   try {
     let runName: string;
     try { runName = await shards.ready(input.target); }
-    catch (error) { errors.write(`The session could not start on ${input.target}: ${error instanceof Error ? error.message : String(error)}\n`); return droppedExit; }
+    catch (error) { throw new SessionPreparationError(error instanceof Error ? error.message : String(error)); }
     const login = input.homes.flatMap(home => loginFiles.map(name => join(home, name)).filter(path => existsSync(path)));
     const harness = remoteSettingsFiles(input.argv, input.worktree);
     const files = Object.fromEntries([
@@ -266,6 +295,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
         }
       }
     };
+    let agentStarted = false, preparationError = '';
     const code = await transport.session(input.target, words => new Promise<number>(resolve => {
       const child = spawn('ssh', [...words, `run-session ${runName}`], { stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdin.on('error', () => {});
@@ -293,16 +323,19 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
         child.stdin.write(`${JSON.stringify({ id, ...reply })}\n`);
       };
       createInterface({ input: child.stderr }).on('line', line => {
-        if (!line.startsWith(marker)) { errors.write(`${line}\n`); return; }
+        if (!line.startsWith(marker)) { preparationError = (preparationError + line + '\n').slice(-500); errors.write(`${line}\n`); return; }
         const space = line.indexOf(' '), kind = line.slice(marker.length, space), body = line.slice(space + 1);
         queue = queue.then(async () => {
-          if (kind === 'call') await call(body);
+          if (kind === 'started') agentStarted = true;
+          else if (kind === 'call') await call(body);
           else if (kind === 'work') await mirror(body);
           else if (kind === 'login') for (const [path, text] of Object.entries(JSON.parse(body) as Record<string, string>)) if (login.includes(path)) writeFileSync(path, Buffer.from(text, 'base64'), { mode: 0o600 });
         }).catch(error => { errors.write(`mainworks relay: ${error instanceof Error ? error.message : String(error)}\n`); });
       });
+      child.on('error', error => { preparationError = error.message; resolve(droppedExit); });
       child.on('close', status => { void queue.then(() => resolve(status ?? droppedExit)); });
     }));
+    if (code !== 0 && !agentStarted) throw new SessionPreparationError(preparationError.trim() || `helper exited ${code} before the agent started`);
     if (code === droppedExit) errors.write(`The session on ${input.target} ended: the host dropped, so the attempt ends and the item returns to the queue\n`);
     return code;
   } finally {
@@ -315,6 +348,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
 export async function remoteSessionHost(kind: string, live: () => readonly string[], run: ChildRun = defaultChildRun, file?: string): Promise<string | null> {
   if (!remoteRuntimes.includes(kind)) return null;
   for (const host of await readHosts(file).catch(() => [])) {
+    if (await sessionCooldown(host.target, file)) continue;
     if (!host.sessions || live().filter(target => target === host.target).length >= host.sessions) continue;
     // A helper older than sessions takes shards only, until `host add` updates it; `host list` names why.
     const probe = await probeHost(host.target, run);
@@ -326,9 +360,9 @@ export async function remoteSessionHost(kind: string, live: () => readonly strin
 }
 
 /** GY-4004: the builder sessions running now on this machine (null) and on each host open to sessions, beside its room. */
-export function builderSessionCounts(running: readonly (string | null)[], hosts: readonly Pick<HostRecord, 'target' | 'sessions'>[]) {
+export function builderSessionCounts(running: readonly (string | null)[], hosts: readonly (Pick<HostRecord, 'target' | 'sessions'> & { sessionCooldown?: SessionCooldown | null })[]) {
   return {
     coordinator: running.filter(host => !host).length,
-    hosts: hosts.filter(host => host.sessions).map(host => ({ host: host.target, running: running.filter(entry => entry === host.target).length, room: host.sessions! })),
+    hosts: hosts.filter(host => host.sessions).map(host => ({ host: host.target, running: running.filter(entry => entry === host.target).length, room: host.sessions!, ...(host.sessionCooldown ? { sessionCooldown: host.sessionCooldown } : {}) })),
   };
 }

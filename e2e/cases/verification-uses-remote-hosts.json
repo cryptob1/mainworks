@@ -29,6 +29,12 @@
     },
     {
       "kind": "command",
+      "name": "Fail builder preparation on a test machine, start the same attempt here, and pause host sessions for 30 minutes with the reason in status and Workers",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/session-prep-failure-falls-back.test.ts",
+      "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
       "name": "Land one head, start the waiting head's trial in the same cycle, restart the loop and see the trial adopted and run once",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/trial-started-after-a-merge-survives-loop-restart.test.ts",
       "timeoutSeconds": 300

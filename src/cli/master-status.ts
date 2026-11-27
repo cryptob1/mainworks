@@ -56,7 +56,7 @@ import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/pro
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
 import { remoteWorkerRuns, runningWorkerPlaces } from '../headless-session.js';
-import { readHosts } from '../hosts.js';
+import { readHosts, sessionCooldown } from '../hosts.js';
 import { builderSessionCounts } from '../remote-session.js';
 import { readReviewLedger, staleReviewReason, type ReviewRecord } from '../reviewer.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
@@ -398,7 +398,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
     remoteSessions: remoteWorkerRuns(root).slice(0, 10),
     // GY-4004: builder sessions running on each host open to sessions, of its room, and on this machine.
-    builderSessions: builderSessionCounts(runningWorkerPlaces(root), await readHosts().catch(() => [])),
+    builderSessions: builderSessionCounts(runningWorkerPlaces(root), await Promise.all((await readHosts().catch(() => [])).map(async host => ({ ...host, sessionCooldown: await sessionCooldown(host.target) })))),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }
