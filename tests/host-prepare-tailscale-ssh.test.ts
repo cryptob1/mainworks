@@ -62,18 +62,18 @@ test(`${proof} — host add takes USER@HOST:PORT and an alias, refuses Tailscale
   const port = await output(['host', 'add', 'gy-compute@desk:2222']);
   assert.match(port, /^Added gy-compute@desk:2222: \d+ cores, rootless Docker answers through the shim/m);
   assert.match(port, new RegExp(`^Warning: ${me}@desk logs in unattended on port 22, so anything running as you here can open a shell there\\. If it is Tailscale SSH, set every ssh rule reaching that host to action check in your tailnet policy\\.$`, 'm'));
-  const alias = await output(['host', 'add', 'desk-compute']);
-  assert.match(alias, /^Added desk-compute: \d+ cores/m);
-  assert.match(alias, new RegExp(`^Warning: ${me}@desk logs in unattended on port 22`, 'm'), 'the alias resolves to the host it names');
+  assert.equal(await output(['host', 'add', 'desk-compute']), 'desk-compute is the machine already added as gy-compute@desk:2222: kept that one entry.', 'the alias resolves to the host it names (GY-4009)');
   assert.match(await output(['host', 'add', 'gy-compute@box']), new RegExp(`^Tailnet check: ${me}@box does not log in unattended on port 22\\.$`, 'm'));
   await assert.rejects(main(['host', 'add', 'gy-compute@box:2222']), /gy-compute@box:2222 is unreachable over SSH: ssh: connect to host box port 2222: Connection refused/);
-  assert.deepEqual(await recorded(), ['gy-compute@desk:2222', 'desk-compute', 'gy-compute@box']);
+  assert.deepEqual(await recorded(), ['gy-compute@desk:2222', 'gy-compute@box']);
 });
 
 test(`${proof} e2e:host-add-port-alias — host add records a shim-restricted OpenSSH on 127.0.0.1:2222 by USER@HOST:PORT and by alias, and refuses the port that opens a plain shell`, async () => {
   for (const target of ['gy-compute@127.0.0.1:2222', 'local-compute']) {
     assert.match(await output(['host', 'add', target]), new RegExp(`^Added ${target}: \\d+ cores, rootless Docker answers through the shim`, 'm'));
     assert.ok((await recorded()).includes(target));
+    // GY-4009: both name one machine, so each is added on its own.
+    assert.equal(await output(['host', 'remove', target]), `Removed ${target}.`);
   }
   await assert.rejects(main(['host', 'add', 'gy-compute@127.0.0.1:22']), /gy-compute@127\.0\.0\.1:22 was not added: its SSH key opens a plain shell/);
   assert.ok(!(await recorded()).includes('gy-compute@127.0.0.1:22'), 'a refused target is never recorded');

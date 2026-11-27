@@ -10,7 +10,7 @@ import { VERIFY_TIMEOUT_MS } from '../web/pages/login.js';
 // held 6 s fails the base at the first wait. Both waits now allow what the page allows. This fails on the base.
 test('unit:test-browser-tests-real-app-onboarding-spec-ts-pinned — real-app-onboarding waits for the status reply as long as the page allows it', () => {
   const spec = readFileSync(new URL('../browser-tests/real-app-onboarding.spec.ts', import.meta.url), 'utf8');
-  assert.match(spec, /toContainText\('Master fault: owner\/Lumina is not onboarded', \{ timeout: VERIFY_TIMEOUT_MS \}\)/, 'the first status-backed wait allows a full sign-in');
+  assert.match(spec, /toContainText\('owner\/Lumina is not onboarded yet', \{ timeout: VERIFY_TIMEOUT_MS \}\)/, 'the first status-backed wait allows a full sign-in');
   assert.match(spec, /toContainText\('Project onboarded', \{ timeout: VERIFY_TIMEOUT_MS \}\)/, 'the wait after the reload allows a full sign-in');
   const budget = Number(spec.match(/test\.setTimeout\(([\d_]+)\)/)?.[1]?.replaceAll('_', ''));
   assert.ok(budget >= 2 * VERIFY_TIMEOUT_MS, 'the test budget covers both waits');
