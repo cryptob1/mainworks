@@ -925,7 +925,7 @@ export async function mergeWriterStep(cycle: Cycle) {
     ? [{ key: item.key, head: item.mergeLedger.head, reason: item.mergeLedger.refusal.reason, at: item.updatedAt }] : []).slice(-mergeWriterKeptRefusals);
   writer.timeouts ??= []; // GY-2079: the timeouts counted toward the refusal bound, read plainly below and persisted with the rest.
   const at = () => new Date(now()).toISOString();
-  let changed = false, delivered = false;
+  let changed = false;
   // GY-2053: the summary names its own motion bound — the worst case for one flight — so the owed-decision readers hold a held head through the whole live flight.
   const motionBoundMs = mergeWriterFlightBoundMs(cycle.config?.run ?? {});
   if (writer.motionBoundMs !== motionBoundMs) { writer.motionBoundMs = motionBoundMs; changed = true; }
@@ -1016,7 +1016,6 @@ export async function mergeWriterStep(cycle: Cycle) {
           if (outcome.outcome === 'merged' && outcome.untrialled) writer.untrialledLandings = (writer.untrialledLandings ?? 0) + 1;
           // GY-2079: this head's trial passed — the timed-out heads' evidence that the host completes trials.
           for (const counted of writer.timeouts) if (counted.key !== itemKey) counted.othersPassed = true;
-          delivered = true;
           action('done', outcome.outcome === 'merged' ? `Merged ${itemKey} head ${head} as ${outcome.mergeSha} onto ${outcome.baseTip} with ${outcome.pushes} push(es); ${reads.baseBranch} observed at ${outcome.observedTip} and the item delivered`
             : `Reconciled ${itemKey} head ${head}: ${reads.baseBranch} already held ${outcome.mergeSha} (observed at ${outcome.observedTip}), so it was delivered without a second push`);
         } else {
@@ -1085,12 +1084,10 @@ export async function mergeWriterStep(cycle: Cycle) {
   // GY-3159: the merge trials a restart left running are adopted before the reconcile below can
   // settle their open intents as refused: each becomes a flight again whose adopted trial answers
   // in place of a fresh launch, so it reaches its own verdict (merged, or refused for its own
-  // failure) and the restart never discards it. A merge that landed this cycle starts nothing new,
-  // an adoption included: the loop upgrades onto it between cycles, and the next loop adopts then.
-  if (!flying(state) && !writer.inFlight?.revert && !delivered && reads.adoptTrialRun
+  // failure) and the restart never discards it. GY-3965: a merge landing this cycle holds neither
+  // an adoption nor a new trial: trials run detached and the next loop adopts them.
+  if (!flying(state) && !writer.inFlight?.revert && reads.adoptTrialRun
     && await adoptRestartedTrials(cycle, reads, snapshotLedger(snapshot.work), heldByUnconfirmed)) changed = true;
-  // A merge that landed this cycle starts nothing new: the loop upgrades onto it between cycles, and a
-  // trial started now would die in that restart and run again (12 of 17 merges on 2026-10-18 lost one so).
   // GY-3182: a slot free beside running flights starts the next due head now, without waiting for them
   // to settle; the heads they carry are out of the queue and their open intents out of the reconcile.
   // GY-3401: at the CPU temperature limit, half the cap; the figures ride the CPU reading to master status and the Workers page.
@@ -1116,14 +1113,14 @@ export async function mergeWriterStep(cycle: Cycle) {
       writer.queue = writer.queue.filter(entry => entry.key !== item.key);
       performed.push(storeAction(state, mergeWriterActionKey(item.key, item.candidate!.sha), { kind: 'merge', work: item.key, principal: null, state: 'done', attempts: 1, epoch: null, cycle: state.cycle, at: at(),
         detail: `Merged ${item.key} on its completed trial` }));
-      changed = true; delivered = true;
+      changed = true; settledNow.add(item.key);
     }
   }
   // GY-3437, GY-3501: pressure above the ceiling alone stops new trials; heat never does — the cap
   // still reads half, so status shows what returns once it cools, and the trial container guard
   // waits on its own limit once the flight launches.
   if (busySlots < parallel && !cpuPressureHeld(state) && ![...live].some(flight => flight.revert) && !revertWaiting.has(state)
-    && !writer.inFlight?.revert && !delivered) {
+    && !writer.inFlight?.revert) {
     const free = snapshot.work.filter(item => !busy.has(item.key) && !settledNow.has(item.key) && !heldByUnconfirmed(item.key));
     const ledger = snapshotLedger(free);
     // Intents a crash left open are settled against the base before any new merge (AC-5); the next cycle reads the snapshot they changed.
