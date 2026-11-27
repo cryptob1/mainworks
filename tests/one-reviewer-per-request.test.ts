@@ -1,5 +1,5 @@
 import { headlessStartupMs, type HeadlessExec } from '../src/headless-session.js';
-import { loopStateContext } from '../src/loop-state.js';
+import { loopStateClient, loopStateContext } from '../src/loop-state.js';
 import { clearRuns } from '../src/runner/registry.js';
 import { launchReview } from './helpers/pending-review.js';
 
@@ -255,11 +255,14 @@ test('unit:one-reviewer-per-request — the cycle step and the dispatcher launch
       // and a reconciliation never drops a record a launcher reserved while it was running.
       const stale: ReviewRecord = { ...record, id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date(Date.now() - 11 * 60_000).toISOString() };
       const running: ReviewRecord = { ...record, id: randomUUID(), state: 'pending', pane: 'pane-running', agentName: 'review-claude-1' };
-      await updateReviewLedger(master.root, current => { current.reviews = [stale, running]; });
+      // The dead launcher's row predates GY-3990's reservations (written verbatim), so the running session's own reserves the head.
+      await updateReviewLedger(master.root, current => { current.reviews = []; });
+      await (await loopStateClient(master.root)).write('reviews', [stale], [], true);
+      await updateReviewLedger(master.root, current => { current.reviews.push(running); });
       let concurrent: ReviewRecord | null = null;
       const reconciled = await reconcileReviews(master.root, await loadMasterConfig(master.root), { run: master.run, work: [item], agents: [], observe: () => {
-        // While the pass is reading GitHub, another launcher reserves a record.
-        if (!concurrent) { concurrent = { ...record, id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date().toISOString() }; void updateReviewLedger(master.root, current => { current.reviews.push(concurrent!); }); }
+        // While the pass is reading GitHub, another launcher reserves a record for another item.
+        if (!concurrent) { concurrent = { ...record, key: 'GY-115', id: randomUUID(), state: 'pending', launching: true, pane: null, requestedAt: new Date().toISOString() }; void updateReviewLedger(master.root, current => { current.reviews.push(concurrent!); }); }
         return null;
       } });
       await new Promise(done => setTimeout(done, 200));

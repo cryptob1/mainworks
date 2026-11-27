@@ -231,7 +231,7 @@ export function buildDemoState(heroPhase = 'static') {
         observation: makeObservation(88, sha105, -1 * min, { opened: -12 * min }),
         lastAssignment: { owner: 'builder-1', epoch: 1, runtime: 'Claude' },
         sessions: [session('review', 'reviewer-codex', 'codex', -3 * min)],
-        reasons: { review: ['Independent reviewer checking diff and proofs'] },
+        reasons: { review: ['Waiting for the reviewer'] },
       });
     }
     if (phase === 'test') {
@@ -318,13 +318,13 @@ export function buildDemoState(heroPhase = 'static') {
   if (heroPhase === 'static' || heroPhase === 'build') {
     movingEntries.push({ id: work[0].id, key: 'DEMO-105', group: 'moving', who: 'Tilly', does: 'Writing code and tests', since: at(-6 * min) });
   } else if (heroPhase === 'review') {
-    movingEntries.push({ id: work[0].id, key: 'DEMO-105', group: 'moving', who: 'Reviewer', does: 'Independent reviewer checking diff and proofs', since: at(-3 * min) });
+    movingEntries.push({ id: work[0].id, key: 'DEMO-105', group: 'moving', who: 'Reviewer', does: 'In review · waiting for the reviewer', since: at(-3 * min) });
   } else if (heroPhase === 'test') {
-    movingEntries.push({ id: work[0].id, key: 'DEMO-105', group: 'moving', who: 'Merge queue', does: 'Running merge trial on latest main', since: at(-2 * min), queue: true });
+    movingEntries.push({ id: work[0].id, key: 'DEMO-105', group: 'moving', who: 'Merge queue', does: 'Testing · being tested before it merges', since: at(-2 * min), queue: true });
   }
   movingEntries.push(
-    { id: item104.id, key: 'DEMO-104', group: 'moving', who: 'Reviewer', does: 'Independent reviewer checking diff and proofs', since: at(-9 * min) },
-    { id: item103.id, key: 'DEMO-103', group: 'moving', who: 'Merge queue', does: 'Running merge trial on latest main', since: at(-4 * min), queue: true },
+    { id: item104.id, key: 'DEMO-104', group: 'moving', who: 'Reviewer', does: 'In review · waiting for the reviewer', since: at(-9 * min) },
+    { id: item103.id, key: 'DEMO-103', group: 'moving', who: 'Merge queue', does: 'Testing · being tested before it merges', since: at(-4 * min), queue: true },
   );
 
   const board = {

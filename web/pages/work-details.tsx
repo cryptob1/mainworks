@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '../../src/model/product';
 import { useEffect, useState } from 'react';
 import { ItemCostsView } from './costs';
 import type { CostSummary } from '../../src/model/token-costs';
@@ -242,7 +243,8 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   // The state sentence, in plain words and without the pull request: the plate names none (GY-3392).
   // A parked request says what it is about once; its card below carries the ask (GY-1408), so neither line restates it.
   const stateSentence = group === 'needs-you' && item.humanRequest ? `Waiting on your decision about ${humanDecisionLabel[item.humanRequest.kind]}.`
-    : group === 'moving' ? `${steps.label}.`
+    // GY-3987: moving work says what is happening; the state word sits beside the title already.
+    : group === 'moving' ? `${steps.detail.replace(/^./, c => c.toUpperCase())}.`
       // Waiting work is described by what it waits for, never by who last held it.
       : group === 'up-next' || group === 'backlog' ? (actor.who === 'Nobody yet' ? actor.does : group === 'backlog' ? 'Not released for work yet.' : item.reworkRequested ? 'Sent back for changes; waiting for a builder.' : 'Released for work; waiting for a builder.')
         : withoutPr(plain.sentence).replace(/^Stuck: /, '').replace(/^./, c => c.toUpperCase());
@@ -318,7 +320,8 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       {item.reworkRequested && item.lastRework?.reason && <p className="notice" data-rework-reason>Sent back because: {item.lastRework.reason}</p>}
       <p className="page-fact" {...(stuck ? { 'data-stuck-why': true } : {})}><span className="next-label">{stuck ? 'Why:' : 'Now:'}</span> <span className={`status-sentence tone-${plain.tone}`}><Explained sentence={why}/></span></p>
       <p className="next-line" {...(stuck ? { 'data-stuck-next': true } : {})}><span className="next-label">Next:</span> {trialFailed ? 'It goes back to a Builder with this output, or is tried again if the main branch was at fault.'
-        : <><strong>{actor.who}</strong>{actor.does && actor.does !== steps.label && actor.does !== why && !waitingOnYou.length ? <> — {actor.does}</> : null}</>}</p>
+        : actor.does && actor.does !== steps.label && actor.does !== why && !waitingOnYou.length ? <><strong>{actor.who}</strong> — {actor.does}</>
+          : <><strong>{actor.who.replace(' (automatic)', '')}</strong>{nextAction[actor.who] ? ` ${nextAction[actor.who]}` : null}</>}</p>
       {waitingOnYou.map(row => <RequestCard key={row.request.id} row={row} refusal={humanOnlyRefusal(row.rule, status?.actor ?? {})} busy={busy} open={() => {}} signIn={signOut}
         answer={(text, post) => action(row.id, row.answer.post.command, { ...post, [row.answer.post.field]: text })} send={body => action(row.id, row.answer.post.command, body)}/>)}
       {item.violations.map(v => <div className="notice danger" key={v}>{shortShas(v)}</div>)}
@@ -435,5 +438,14 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
   </article>;
 }
 const tabs = ['Checks and diff', 'Live session', 'Lead', 'Details'] as const;
+/** GY-3987: what whoever moves a moving task does next, so the Next line names an action, not only an actor. */
+const nextAction: Record<string, string> = {
+  'Builder agent': 'hands in the change',
+  'Reviewer agent': 'approves it or sends it back',
+  'Prover agent': 'runs the proofs',
+  'Automated checks': 'finish, then it merges',
+  'Master agent': 'clears what holds it',
+  [`${PRODUCT_NAME} (automatic)`]: 'tests and merges it, then it goes live',
+};
 // The document this page renders: a settled delivery's is read when it is opened (GY-422).
 export { useOpenedWork } from '../opened-work';

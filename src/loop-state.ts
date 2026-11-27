@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { readCredentialFile } from './private-file.js';
 import type { MasterConfig } from './master/profiles.js';
 import { stateDirectory } from './install/layout.js';
+import { Refusal } from './model/refusal.js';
 
 export type LoopStateKind = 'reviews' | 'producers' | 'dispatch';
 export interface LoopStateClient {
@@ -30,11 +31,15 @@ export async function loopStateClient(rootOrConfig: string | Config): Promise<Lo
       method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${await readCredentialFile(config.credentialFile)}`, 'Content-Type': 'application/json' },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30_000),
     });
-    // GY-3366: a write that lost a race to another writer of the same record is retried, so it lands after the winner.
-    if (response.status === 409 && body && attempt < loopStateWriteAttempts) {
-      await response.body?.cancel();
-      await new Promise(resolve => setTimeout(resolve, 250 * attempt));
-      return request(kind, body, attempt + 1);
+    if (response.status === 409) {
+      const refused = await response.json().catch(() => ({}));
+      // GY-3366: a write that lost a race to another writer of the same record is retried, so it lands after the winner.
+      if (refused.code === 'loop-state-conflict' && attempt < loopStateWriteAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+        return request(kind, body, attempt + 1);
+      }
+      // GY-3990: a stale revision or a taken review reservation is the caller's to settle.
+      throw new Refusal(`Loop state ${kind}: ${refused.error ?? 'conflict'}`, 409, refused);
     }
     if (!response.ok) throw new Error(`Loop state ${kind}: ${response.status} ${await response.text()}`);
     return response.json();
@@ -63,4 +68,27 @@ export async function saveLedger(client: LoopStateClient, kind: LoopStateKind, l
   const changed = records.filter(record => before.get(record.id) !== JSON.stringify(record));
   const removed = [...before.keys()].filter(id => !ids.has(id));
   if (changed.length || removed.length) await client.write(kind, changed, removed);
+}
+/**
+ * GY-3990: onto a fresher read, reapply only the fields this copy changed since its own read —
+ * never its stale whole records. Returns the fresh ledger, carrying the fresh read's baseline.
+ */
+export function reapplyChanges<T extends RecordWithId, L extends { reviews: T[] }>(mine: L, fresh: L): L {
+  const before: Map<string, string> = (mine as any)[baseline] ?? new Map();
+  const ours = new Map(mine.reviews.map(record => [record.id, record]));
+  const changed = (record: T, base: Record<string, unknown> | undefined) => {
+    if (!base) { const { revision: _revision, ...rest } = record as any; return rest; }
+    const keys = new Set([...Object.keys(base), ...Object.keys(record)]);
+    return Object.fromEntries([...keys].filter(key => key !== 'revision' && JSON.stringify((record as any)[key]) !== JSON.stringify(base[key])).map(key => [key, (record as any)[key]]));
+  };
+  const merged = fresh.reviews.flatMap(record => {
+    const own = ours.get(record.id), base = before.has(record.id) ? JSON.parse(before.get(record.id)!) : undefined;
+    if (!own) return base ? [] : [record];
+    const result: any = { ...record, ...changed(own, base) };
+    for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
+    return [result as T];
+  });
+  const known = new Set(fresh.reviews.map(record => record.id));
+  fresh.reviews = [...merged, ...mine.reviews.filter(record => !known.has(record.id) && !before.has(record.id))];
+  return fresh;
 }
