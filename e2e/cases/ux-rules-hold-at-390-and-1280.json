@@ -16,6 +16,12 @@
     },
     {
       "kind": "command",
+      "name": "Sign-in, Setup and the first-run steps show no terminal command outside a fold and name the next step at 390 and 1280 px",
+      "run": "npm run test:browser -- browser-tests/ux-first-screens.spec.ts",
+      "timeoutSeconds": 420
+    },
+    {
+      "kind": "command",
       "name": "every page and state is captured at 390 and 1280 px from the demo data, attached to the run",
       "run": "node scripts/ux-captures.mjs \"${E2E_SCREENSHOTS_DIR:-.graphyard/ux-captures}\"",
       "timeoutSeconds": 420
