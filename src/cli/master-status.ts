@@ -55,7 +55,9 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
-import { remoteWorkerRuns } from '../headless-session.js';
+import { remoteWorkerRuns, runningWorkerPlaces } from '../headless-session.js';
+import { readHosts } from '../hosts.js';
+import { builderSessionCounts } from '../remote-session.js';
 import { readReviewLedger, staleReviewReason, type ReviewRecord } from '../reviewer.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
@@ -348,7 +350,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     workerVerifications: snapshot.workerVerifications ?? [],
     items: open.map((item, index) => itemLine(item, now, launched[index])),
     ...(personalScopes > 0 ? { personalScopes: `${personalScopes} items in personal scopes` } : {}),
-    mergeWriter: (({ queue, inFlight, inFlights, lastMergeAt, untrialledLandings, refusals, serveRevert, trials, stepMedians }) => ({ queue, inFlight, ...(inFlights ? { inFlights } : {}), lastMergeAt,
+    mergeWriter: (({ queue, inFlight, inFlights, lastMergeAt, untrialledLandings, refusals, serveRevert, trials, stepMedians, pushHold }) => ({ queue, inFlight, ...(inFlights ? { inFlights } : {}), lastMergeAt,
+      // GY-4020: the pushes a pending batch gate revert holds, and why.
+      ...(pushHold ? { pushHold } : {}),
       // GY-3881: landings that went onto a moved tip without a second trial.
       untrialledLandings: untrialledLandings ?? 0, trials: trials ?? [], stepMedians: stepMedians ?? {}, lastRefusal: refusals.at(-1) ?? null,
       // GY-2990: a revert that failed its own trial is held here, with the serve and reason that held it.
@@ -377,6 +381,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     sessions,
     // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
     remoteSessions: remoteWorkerRuns(root).slice(0, 10),
+    // GY-4004: builder sessions running on each host open to sessions, of its room, and on this machine.
+    builderSessions: builderSessionCounts(runningWorkerPlaces(root), await readHosts().catch(() => [])),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }

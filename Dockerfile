@@ -26,7 +26,7 @@ RUN npm run build
 FROM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS trial
 # Reverts require merge-tree --merge-base (Git >= 2.43); trixie supplies it.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/graphyard-browsers
-RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 python3-venv git ripgrep ca-certificates openssh-client openssh-server && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 python3-venv git ripgrep ca-certificates curl openssh-client openssh-server && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/local/bin/node /usr/bin/node && ln -s /usr/local/bin/npm /usr/bin/npm && ln -s /usr/local/bin/npx /usr/bin/npx \
     && touch /etc/graphyard-trial
 # Use the locked Playwright version for both Chromium and its Debian libraries.
@@ -36,6 +36,11 @@ RUN --mount=from=deps,source=/app/node_modules,target=/opt/browser-dependencies/
 # Native workspace-sandbox regression tool; no login or account is copied in.
 RUN npm install --global @openai/codex@0.166.0
 RUN find /usr/local/lib/node_modules/@openai -type f -name codex -exec ln -s '{}' /usr/local/bin/codex-linux-sandbox ';'
+# GY-4004: every runtime a builder on an added host runs (src/remote-session.ts remoteRuntimes); its login is handed over per session, never baked in.
+RUN npm install --global @anthropic-ai/claude-code@2.1.332 opencode-ai@1.19.6
+RUN arch=$(dpkg --print-architecture | sed 's/amd64/x64/') && mkdir -p /opt/cursor-agent \
+    && curl -fsSL "https://downloads.cursor.com/lab/2026.11.22-e9042b2/linux/${arch}/agent-cli-package.tar.gz" | tar --strip-components=1 -xzf - -C /opt/cursor-agent \
+    && ln -s /opt/cursor-agent/cursor-agent /usr/local/bin/cursor-agent && ln -s /opt/cursor-agent/cursor-agent /usr/local/bin/agent
 # Independent exact-math producer dependencies, immutable to the unprivileged trial.
 COPY benchmarks/hard-math/oracle/requirements.txt /opt/hard-math-requirements.txt
 RUN python3 -m venv /opt/graphyard-hard-math-oracle \

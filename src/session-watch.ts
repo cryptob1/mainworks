@@ -4,7 +4,7 @@ import { reservedCpuPrefix, reservedCpuProperties } from './reserved-cpus.js';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { maskSecrets } from './redaction.js';
 import { sessionScopeProperties } from './session-share.js';
@@ -445,7 +445,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
   return new Promise<number>((resolve, reject) => {
     let child: ReturnType<typeof spawn> | undefined;
     let stopping = false, pending = false, prelaunchInterrupted = false, finished = false;
-    let scopeSeen = false;
+    let scopeSeen = false, restarting = false;
     const supervisedPids = new Map<number, string>();
     let expiry: unknown;
     let timer: unknown;
@@ -498,7 +498,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
      * read as a session that has ended.
      */
     const orphaned = (): string | null => {
-      if (!child?.pid) return null;
+      if (!child?.pid || restarting) return null;
       if (!processAlive(child.pid)) return `the agent process (pid ${child.pid}) has exited`;
       if (containment) {
         let empty: boolean | null = null;
@@ -530,19 +530,39 @@ export async function supervise(command: string, args: string[], epoch: number, 
     void (async () => {
       try {
         if (prelaunchInterrupted) { finish(null, 1); return; }
-        // GY-4006: supervised detached, the agent gets no scope of its own, so it starts under the reserved CPUs' affinity as every launch does.
-        const started = containment ? [containment.command, ...containment.args] : [...reservedCpuPrefix(), command, ...args];
-        child = spawn(started[0]!, started.slice(1), { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
-        if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
+        // GY-4018: a resume the runtime cannot find the conversation for starts the same attempt fresh, under this lease.
+        let fresh = options.log ? freshCommand(options.log) : null;
+        const launch = (file: string, words: string[]) => {
+          // GY-4006: a start with no scope of its own begins under the reserved CPUs' affinity, as every launch does; a scope's own launch already carries it.
+          const started = file === containment?.command ? [file, ...words] : [...reservedCpuPrefix(), file, ...words];
+          const logStart = options.log ? fileSize(options.log) : 0;
+          child = spawn(started[0]!, started.slice(1), { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
+          if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
+          child.on('error', error => { console.error(error.message); stop(1); });
+          child.on('exit', async (code, signal) => {
+            if (code && fresh && options.log && !stopping) {
+              const exited = child!;
+              restarting = true;
+              await new Promise(done => { exited.once('close', done); setTimeout(done, 1000).unref(); });
+              restarting = false;
+              if (unresumable(stderrSince(options.log, logStart)) && !stopping) {
+                const [next, ...rest] = fresh; fresh = null;
+                appendRunLogLine(options.log, 'stderr', 'mainworks: the earlier conversation could not be resumed; starting a fresh session with the usual prompt');
+                launch(next!, rest);
+                return;
+              }
+            }
+            endedOnItsOwn(`the agent process exited (${signal ?? `code ${code}`}) while its lease was live`); stop(code ?? 1);
+          });
+        };
+        launch(containment?.command ?? command, containment?.args ?? args);
         // Never learn the fallback root from a later /proc snapshot: after this
         // child exits its numeric PID can identify an unrelated replacement.
         // Cache the kernel identity immediately after spawn, or leave fallback
         // traversal empty when the short-lived launcher is already gone.
-        if (containment && !detached && platform === 'linux' && child.pid) {
+        if (containment && !detached && platform === 'linux' && child?.pid) {
           captureTrackedRoot(child.pid, supervisedPids, processRecord(child.pid));
         }
-        child.on('error', error => { console.error(error.message); stop(1); });
-        child.on('exit', (code, signal) => { endedOnItsOwn(`the agent process exited (${signal ?? `code ${code}`}) while its lease was live`); stop(code ?? 1); });
         // GY-3961, GY-4017: a session with no output, CPU or worktree change for 30 minutes is hung; its attempt ends.
         const active = options.log ? sessionActivity(options.log, options.worktree ?? process.cwd(), () => child?.pid) : undefined;
         let activeAt = now();
@@ -577,10 +597,24 @@ export async function supervise(command: string, args: string[], epoch: number, 
   });
 }
 
+/** GY-4018: whether a run's output says its runtime could not find the conversation it was asked to resume. */
+const unresumable = (output: string) => /no rollout found for thread id|no conversation found/i.test(output);
+/** The fresh command line a resumed run's launcher left beside its run log (`fresh.json`), or null. */
+function freshCommand(log: string): string[] | null {
+  try { const words = JSON.parse(readFileSync(join(dirname(log), 'fresh.json'), 'utf8')); return Array.isArray(words) && words.length && words.every(word => typeof word === 'string') ? words : null; }
+  catch { return null; }
+}
+/** What a run printed on standard error to its run log from byte `from`: the runtime's own errors, not the agent's work on stdout. */
+const stderrSince = (log: string, from: number) => readFileSync(log).subarray(from).toString('utf8').split('\n').flatMap(line => {
+  try { const entry = JSON.parse(line); return entry.stream === 'stderr' ? [String(entry.text)] : []; } catch { return []; }
+}).join('\n');
+const fileSize = (file: string) => { try { return statSync(file).size; } catch { return 0; } };
+const appendRunLogLine = (file: string, stream: 'stdout' | 'stderr', text: string) => { try { appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), stream, text: maskSecrets(text) })}\n`, { mode: 0o600 }); } catch { /* a full disk never stops the agent */ } };
+
 /** Appends each line STREAM prints to the run log FILE as `{at, stream, text}`, credentials masked before anything is written. */
 export function runLogLines(output: Readable, stream: 'stdout' | 'stderr', file: string) {
   let pending = '';
-  const write = (text: string) => { try { appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), stream, text: maskSecrets(text) })}\n`, { mode: 0o600 }); } catch { /* a full disk never stops the agent */ } };
+  const write = (text: string) => appendRunLogLine(file, stream, text);
   output.setEncoding('utf8');
   output.on('data', (chunk: string) => { const lines = (pending + chunk).split('\n'); pending = lines.pop()!; lines.forEach(write); });
   output.on('end', () => { if (pending) write(pending); });
