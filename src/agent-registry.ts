@@ -14,14 +14,12 @@ import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quo
 /**
  * The agent registry as control-plane state.
  *
- * The registry is one aggregate kept on the append-only event ledger: every change — a
- * configuration mutation, a selection, a quota state an executor observed — appends one
- * `agent-registry.*` event that carries the change and the whole resulting document, and the
- * current registry is the document of the newest such event. That makes the ledger both the
- * state and its complete, attributable history, so the registry is carried by every logical
- * backup and needs no table of its own. The document is small (tens of kilobytes at most) and
- * events are appended only when something an eligibility decision reads has changed, never per
- * poll. Every write serializes on the agent registry's own advisory lock (GY-3807), never holding
+ * The current registry is one document in `agent_registry`, and every change — a configuration
+ * mutation, a selection, a quota state an executor observed — appends one `agent-registry.*`
+ * event carrying the change, the top-level fields it touched and the resulting revision, never the
+ * whole document (GY-4005: those whole copies, about 94 KB each, were most of a 10 GB database).
+ * Events are appended only when something an eligibility decision reads has changed, never per
+ * poll, and a read never writes. Every write serializes on the agent registry's own advisory lock (GY-3807), never holding
  * the coordination lock, so a selection, observation or mutation serializes against every other
  * registry write across replicas and executor hosts without stalling coordinated work writes.
  */
@@ -63,22 +61,33 @@ async function lastWorkerRoleSetReason(db: Pick<pg.PoolClient, 'query'>): Promis
 }
 
 export async function readRegistry(db: Pick<pg.PoolClient, 'query'>): Promise<RegistryDocument> {
-  const row = (await db.query(`SELECT payload->'registry' AS registry FROM events WHERE ${unownedFamilySql(registryEventPrefix)} ORDER BY seq DESC LIMIT 1`)).rows[0];
+  // A ledger an older release wrote holds the document on its newest registry event; the first write here moves it to its row.
+  const row = (await db.query('SELECT document AS registry FROM agent_registry')).rows[0]
+    ?? (await db.query(`SELECT payload->'registry' AS registry FROM events WHERE ${unownedFamilySql(registryEventPrefix)} AND payload ? 'registry' ORDER BY seq DESC LIMIT 1`)).rows[0];
   if (!row?.registry) return emptyRegistry();
   const registry = row.registry as RegistryDocument;
   return registry.workerConcurrencyPerAccount === true ? registry : upgradeWorkerConcurrency(registry, await lastWorkerRoleSetReason(db));
 }
 
-const appendRegistry = async (db: Pick<pg.PoolClient, 'query'>, actor: Principal, kind: string, registry: RegistryDocument, change: unknown) => {
+/** The top-level fields of the registry that differ between two documents. */
+const changedFields = (before: Record<string, unknown>, after: Record<string, unknown>) =>
+  [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+
+/** Store the registry's new document and append its change: the change, the fields it touched and the revision, never the document. */
+export const appendRegistry = async (db: Pick<pg.PoolClient, 'query'>, actor: Principal, kind: string, registry: RegistryDocument, change: unknown) => {
   // GY-3293: every registry this code appends means the worker role's concurrency per account
   // (upgradeWorkerConcurrency converts a document an older release wrote on read).
   registry.workerConcurrencyPerAccount = true;
+  const before = (await db.query('SELECT document FROM agent_registry')).rows[0]?.document ?? {};
   const removedRoles = registry.roles.filter(role => !fleetRoles.includes(role.name)).map(role => role.name);
+  const record = (kind: string, change: unknown) => db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)',
+    [actor.id, `${registryEventPrefix}${kind}`, JSON.stringify({ change, fields: changedFields(before, registry as unknown as Record<string, unknown>), revision: registry.revision })]);
   if (removedRoles.length) {
     registry.roles = registry.roles.filter(role => fleetRoles.includes(role.name));
-    await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, `${registryEventPrefix}roles-retired`, JSON.stringify({ change: { removedRoles }, registry })]);
+    await record('roles-retired', { removedRoles });
   }
-  await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [actor.id, `${registryEventPrefix}${kind}`, JSON.stringify({ change, registry })]);
+  await record(kind, change);
+  await db.query('INSERT INTO agent_registry(id,document) VALUES(true,$1) ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document', [JSON.stringify(registry)]);
   return removedRoles.length ? [`Removed retired roles: ${removedRoles.join(', ')}`] : [];
 };
 
@@ -134,32 +143,22 @@ export class AgentRegistry {
     return (await this.settled()).registry;
   }
   /**
-   * The registry with every session whose lease or request has gone ended on the record (GY-974).
-   * Every read the loop and status make goes through here, so a stale session stops counting at once
-   * and its end is appended to registry history with its reason, without waiting for a selection
-   * the role's full count would never let the loop ask for. A read that closes nothing appends
-   * nothing and takes no coordination lock.
+   * The registry with every session whose lease or request has gone read as ended (GY-974), so a
+   * stale session stops counting at once. Every read the loop and status make goes through here,
+   * and a read never writes (GY-4005): the next registry write records each end with its reason.
    */
   private async settled(): Promise<{ registry: RegistryDocument; at: string }> {
     const registry = await readRegistry(this.store.pool);
     const at = new Date((await this.store.pool.query('SELECT clock_timestamp() AS now')).rows[0].now).toISOString();
-    if (!settleSessions(structuredClone(registry), await this.sessionWork(this.store.pool, registry), at).length) return { registry, at };
-    return this.transaction(async (db, now) => {
-      const current = await readRegistry(db), settledAt = now.toISOString();
-      const closed = settleSessions(current, await this.sessionWork(db, current), settledAt);
-      if (closed.length) {
-        current.revision++; current.updatedAt = settledAt;
-        await this.append(db, { id: 'graphyard', role: 'coordinator' }, 'sessions-settled', current, { ended: closed.map(session => ({ session: session.id, role: session.role, account: session.account, work: session.work, reason: session.endReason })) });
-      }
-      return { registry: current, at: settledAt };
-    });
+    settleSessions(registry, await this.sessionWork(this.store.pool, registry), at);
+    return { registry, at };
   }
 
   async history(actor: Principal, limit = 100) {
     demand((readers as readonly string[]).includes(actor.role), 'Registry history is readable by admin, coordinator, slice-lead and reader identities', 403);
     const bounded = z.number().int().min(1).max(500).parse(limit);
     // A refusal carries how often it repeated and when it was last seen (GY-3095).
-    return (await this.store.pool.query(`SELECT e.seq,e.actor,e.kind,e.payload->'change' AS change,(e.payload->'registry'->>'revision')::int AS revision,e.created_at,r.count,r.last_at FROM events e
+    return (await this.store.pool.query(`SELECT e.seq,e.actor,e.kind,e.payload->'change' AS change,COALESCE((e.payload->>'revision')::int, (e.payload->'registry'->>'revision')::int) AS revision,e.created_at,r.count,r.last_at FROM events e
       LEFT JOIN registry_refusal_repeats r ON r.seq = e.seq WHERE ${unownedFamilySql(registryEventPrefix, 'e')} ORDER BY e.seq DESC LIMIT $1`, [bounded]))
       .rows.map(row => {
         const kind = String(row.kind).slice(registryEventPrefix.length), at = row.created_at.toISOString();
@@ -201,7 +200,10 @@ export class AgentRegistry {
     const receiptInput = { kind: 'select', request };
     return this.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
       const registry = await readRegistry(db), at = now.toISOString();
-      let changed = settleSessions(registry, await this.sessionWork(db, registry), at).length > 0;
+      // Sessions whose work moved on end here, and the change this selection appends names them.
+      const closed = settleSessions(registry, await this.sessionWork(db, registry), at);
+      const ended = closed.length ? { ended: closed.map(session => ({ session: session.id, role: session.role, account: session.account, work: session.work, reason: session.endReason })) } : {};
+      let changed = closed.length > 0;
       // Its quotas and the smoke tests it ran (GY-446), for the logins on its own host only.
       if (foldObservations(registry, request, { actor: actor.id, at })) changed = true;
       const choice = chooseSession(registry, request, now.getTime(), await this.reviewDiversity(db, registry, request));
@@ -210,7 +212,7 @@ export class AgentRegistry {
         const session: FleetSession = { id: randomUUID(), role: request.role, account: choice.account.name, runtime: choice.runtime.name, model: choice.model.name, host: request.host, work: request.work, principal: request.principal, group: request.group,
           selectedAt: at, selectedBy: actor.id, reason: choice.reason, skipped: choice.skipped, endedAt: null, endReason: null };
         registry.sessions.push(session); registry.revision++; registry.updatedAt = at;
-        await this.append(db, actor, 'selected', registry, { session });
+        await this.append(db, actor, 'selected', registry, { session, ...ended });
         // A role served past its own accounts says so in the registry history (GY-3092).
         if (choice.failover) await this.append(db, actor, 'failover', registry, { failover: { ...choice.failover, session: session.id, work: request.work } });
         result = { selected: true, reason: choice.reason, skipped: choice.skipped, session, account: choice.account, runtime: choice.runtime, model: choice.model, policy: choice.policy, revision: registry.revision };
@@ -225,7 +227,7 @@ export class AgentRegistry {
           await db.query(`INSERT INTO registry_refusal_repeats(seq,count,last_at) SELECT seq,2,$2 FROM events WHERE kind = '${registryEventPrefix}refused' AND created_at >= $1::timestamptz AND payload->'change'->'refusal'->>'at' = $3
             ORDER BY seq DESC LIMIT 1 ON CONFLICT (seq) DO UPDATE SET count = registry_refusal_repeats.count + 1, last_at = EXCLUDED.last_at`, [last.at, at, last.at]);
         } else registry.refusals = [...registry.refusals, { at, role: request.role, host: request.host, work: request.work, by: actor.id, reason: choice.reason, skipped: choice.skipped }].slice(-refusalHistoryLimit);
-        if (!repeated || changed) { registry.revision++; registry.updatedAt = at; await this.append(db, actor, repeated ? 'observed' : 'refused', registry, repeated ? { host: request.host } : { refusal: registry.refusals.at(-1) }); }
+        if (!repeated || changed) { registry.revision++; registry.updatedAt = at; await this.append(db, actor, repeated ? 'observed' : 'refused', registry, repeated ? { host: request.host, ...ended } : { refusal: registry.refusals.at(-1), ...ended }); }
         result = { selected: false, reason: choice.reason, skipped: choice.skipped, session: null, account: null, runtime: null, model: null, revision: registry.revision };
       }
       return result;
