@@ -47,20 +47,21 @@ export function sessionEnded(session: FleetSession, work: SessionWork | undefine
     if (!lease || Date.parse(lease.expiresAt) <= now) return `${work.key} holds no live lease`;
     return session.principal && lease.owner !== session.principal ? `${work.key} is leased to ${lease.owner}` : null;
   }
-  if (session.role === 'reviewer') return work.autoDispatch?.review?.state === 'requested' && age <= reviewSessionMs ? null : `${work.key} has no standing review request`;
+  if (session.role === 'reviewer') return (session.group === 'product' ? work.autoDispatch?.product : work.autoDispatch?.review)?.state === 'requested' && age <= reviewSessionMs ? null : `${work.key} has no standing review request`;
   return (work.autoDispatch?.producers ?? []).some(request => request.state === 'requested') && age <= producerSessionMs ? null : `${work.key} has no standing producer request`;
 }
 
 /** Close every session whose reason to exist has gone; returns the ones it closed. */
 export function settleSessions(registry: AgentRegistry, work: readonly SessionWork[], at: string) {
   const now = Date.parse(at), byKey = new Map(work.map(item => [item.key, item])), closed: FleetSession[] = [];
-  // A relaunch for the same work supersedes the session it replaces: a reviewer request is answered
-  // by one session, a worker lease held by one, and a producer request group by one each.
+  // A relaunch for the same work supersedes the session it replaces: a reviewer request of one kind
+  // (code, product, post-merge) is answered by one session, a worker lease held by one, and a producer request group by one each.
   const open = registry.sessions.filter(session => !session.endedAt);
   for (const session of open) {
     let ended = sessionEnded(session, session.work ? byKey.get(session.work) : undefined, now);
     if (!ended && session.work && session.role !== 'producer') {
-      const newer = open.find(other => other !== session && other.role === session.role && other.work === session.work && Date.parse(other.selectedAt) > Date.parse(session.selectedAt));
+      const newer = open.find(other => other !== session && other.role === session.role && other.work === session.work
+        && (session.role !== 'reviewer' || (other.group ?? null) === (session.group ?? null)) && Date.parse(other.selectedAt) > Date.parse(session.selectedAt));
       if (newer) ended = `superseded by the ${newer.account} session launched for ${session.work}`;
     }
     if (!ended && session.work && session.role === 'producer') {

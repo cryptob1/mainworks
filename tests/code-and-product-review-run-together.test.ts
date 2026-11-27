@@ -15,6 +15,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { loadMasterConfig, setupMaster } from '../src/master.js';
 import { saveReviewerProfile, controlPlaneVerdict } from '../src/reviewer.js';
 import { serveReviewHead } from '../src/review-serve.js';
+import { emptyRegistry, settleSessions, type FleetSession } from '../src/model/registry.js';
 import { freePort } from '../src/serve-app.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
@@ -149,6 +150,14 @@ test('integration:code-and-product-review-run-together — one head launches cod
   assert.equal(await tokenRegistered(http.services, hashOf(codeToken)), true, 'code review token is active');
   assert.equal(await tokenRegistered(http.services, hashOf(productToken)), true, 'product review token is active at the same time');
 
+  // Both live reviewer sessions of the one item keep their registry slots: neither kind supersedes the other.
+  const registry = emptyRegistry(), selected = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const reviewerSession = (id: string, group: string | null, minutes: number): FleetSession => ({ id, role: 'reviewer', account: id, runtime: 'claude', model: 'm', host: 'h', work: work.key, principal: null, group, selectedAt: selected(minutes), selectedBy: 'loop', reason: 'review', skipped: [], endedAt: null, endReason: null } as FleetSession);
+  registry.sessions.push(reviewerSession('code', null, 5), reviewerSession('product', 'product', 4));
+  assert.deepEqual(settleSessions(registry, [work], now()).map(entry => entry.id), [], 'a product review session never supersedes the code review session of its item');
+  registry.sessions.push(reviewerSession('code-relaunch', null, 3));
+  assert.deepEqual(settleSessions(registry, [work], now()).map(entry => entry.id), ['code'], 'a relaunch of the same kind still supersedes that kind only');
+
   // Code review verdict settles without withdrawing or overwriting the product review launch.
   const codeVerdict = await post(codeToken, `work/${work.id}/review-verdict`, {
     event: 'APPROVE',
@@ -267,19 +276,26 @@ test('unit:product-reviews-share-only-a-fixed-port — two product reviews launc
         persist: async () => {},
       };
 
-      const firstTick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, snapshot: async () => ({ work: [itemA], now: now() }) } as never, Date.now);
-      assert.equal(firstTick.launched.filter(entry => entry.reason === 'product review').length, 1, 'first product review launches on the fixed declared port');
+      // Both owed in one dispatch step: one serves the fixed port, the other takes its turn at once with the wait line, unrefused.
+      const started = Date.now();
+      const firstTick = await runDispatchTick(config, emptyDispatchCursor(config), effects as never, Date.now);
+      assert.ok(Date.now() - started < 60_000, 'the waiting review does not sit out its launch bound');
+      assert.equal(firstTick.launched.filter(entry => entry.reason === 'product review').length, 1, 'one product review launches on the fixed declared port');
+      assert.equal(served.length, 1);
       assert.equal(served[0]!.url, new URL(declared).origin);
+      const waiting = served[0]!.key === itemA.key ? itemB : itemA;
+      assert.equal(firstTick.refused.length, 0, 'the waiting product review is not refused');
+      assert.ok(firstTick.waiting.some(entry => entry.work === waiting.key && entry.reason.includes('takes its turn') && entry.reason.includes(declared)), `wait line names the fixed address: ${JSON.stringify(firstTick.waiting)}`);
 
-      // While the first review is serving on the fixed port, the second item waits its turn with the wait line naming the address.
-      const secondTick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, snapshot: async () => ({ work: [itemB], now: now() }) } as never, Date.now);
+      // A later step while it still serves: the other still waits its turn.
+      const secondTick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, snapshot: async () => ({ work: [waiting], now: now() }) } as never, Date.now);
       assert.equal(secondTick.launched.filter(entry => entry.reason === 'product review').length, 0);
       assert.equal(secondTick.refused.length, 0, 'the waiting product review is not refused');
-      assert.ok(secondTick.waiting.some(entry => entry.work === itemB.key && entry.reason.includes('takes its turn') && entry.reason.includes(declared)), `wait line names the fixed address: ${JSON.stringify(secondTick.waiting)}`);
+      assert.ok(secondTick.waiting.some(entry => entry.work === waiting.key && entry.reason.includes('takes its turn') && entry.reason.includes(declared)), `wait line names the fixed address: ${JSON.stringify(secondTick.waiting)}`);
 
       // Once the first review closes its serve, the second launches on the next tick.
       await served[0]!.close();
-      const thirdTick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, snapshot: async () => ({ work: [itemB], now: now() }) } as never, Date.now);
+      const thirdTick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, snapshot: async () => ({ work: [waiting], now: now() }) } as never, Date.now);
       assert.equal(thirdTick.launched.filter(entry => entry.reason === 'product review').length, 1, 'second product review launches once the fixed port frees');
     } finally {
       await Promise.all(served.map(entry => entry.close()));

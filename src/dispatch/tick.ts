@@ -10,7 +10,7 @@ import { withLaunchedRuntime } from '../master/launch.js';
 import { boundedLaunch, launchBoundMs } from '../master/launch-bound.js';
 import { capacityRefusal } from '../fleet.js';
 import { WorkerSandboxError } from '../worker-sandbox.js';
-import { servedReviewAddresses } from '../review-serve.js';
+import { servedReviewAddresses, ServeTurnTakenError } from '../review-serve.js';
 import { answeredByPendingReview, LauncherUnavailableError, UnknownReviewerProfileError, unpostedVerdict } from '../reviewer.js';
 import { launchRefusalProbeDue, owedPostMergeReviews, postMergeRefusalProbeMs } from '../model/post-merge-review.js';
 import { answeredByPendingSession, independentProducerProfiles, sessionRetry } from '../producer.js';
@@ -424,14 +424,15 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
           }
         } catch (error) {
           const answered = answeredByPendingReview(error, request);
-          if (answered) {
-            // A session on this head met between the guard and the launch (the code review's, usually)
-            // or one that already answered: neither is a refusal — the request settles with that
-            // session's verdict, so the launch waits rather than counting failures against itself.
+          // A fixed declared port another product review serves on (GY-3963): this one takes its turn.
+          if (error instanceof ServeTurnTakenError) { delete cursor.failures[request.id]; wait('review', item, request, `the product review of ${item.key} takes its turn: ${message(error)}`); }
+          else if (answered) {
+            // A product review session on this head met between the guard and the launch, or one that
+            // already answered: neither is a refusal — the request settles with that session's verdict.
             if (answered.answered) wakeSettlement(item, answered.answered.at);
             wait('review', item, request, answered.answered
               ? `product reviewer session ${answered.agentName} already answered with ${answered.answered.state}; ${launchWaitWording.settles}`
-              : `a reviewer session on ${request.sha.slice(0, 12)} is already answering ${item.key} (one session per head); the product review launches once it settles`, answered.answered?.at);
+              : `product reviewer session ${answered.agentName} is already pending on ${request.sha.slice(0, 12)}; ${launchWaitWording.settles}`, answered.answered?.at);
           }
           else if (error instanceof UnknownReviewerProfileError || error instanceof LauncherUnavailableError) { delete cursor.failures[request.id]; wait('review', item, request, message(error)); }
           else if (!outOfCapacity('review', item, request, error)) refuse('review', item, request, error);

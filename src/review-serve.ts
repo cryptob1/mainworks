@@ -102,20 +102,13 @@ export async function startReviewServe(input: {
   }
 }
 
-/** GY-3580: the declared serve addresses product reviews on this host are serving, or waiting their turn on, each with the last turn taken. */
-const serveTurns = new Map<string, Promise<void>>();
-/** The fixed-port addresses a product review is serving a head on now: another product review launches once its address is free. */
-export const servedReviewAddresses = () => [...serveTurns.keys()].filter(url => servePorts.get(url) === 'declared');
-/** Waits until no earlier review serves on `url`, then holds it until the returned release is called. */
-async function serveTurn(url: string): Promise<() => void> {
-  const earlier = serveTurns.get(url) ?? Promise.resolve();
-  let release!: () => void;
-  const turn = earlier.then(() => new Promise<void>(resolve => { release = resolve; }));
-  serveTurns.set(url, turn);
-  void turn.then(() => { if (serveTurns.get(url) === turn) serveTurns.delete(url); });
-  await earlier;
-  return release;
-}
+/** GY-3580, GY-3963: the fixed declared addresses a product review is serving a head on now; another product review waits its turn, never parks in its launch. */
+const fixedServes = new Set<string>();
+export const servedReviewAddresses = () => [...fixedServes];
+/** A product review whose serve would bind a fixed declared port another review is serving on: a wait, never a counted refusal. */
+export class ServeTurnTakenError extends Error {}
+/** Per declared serve URL, the first run finding out whether its command takes its port; later runs wait only for that. */
+const discovering = new Map<string, Promise<unknown>>();
 /** GY-3751: per declared serve URL, whether its command serves on the port it is given (`own`) or binds the declared one (`declared`); unknown until a run finds out. */
 const servePorts = new Map<string, 'own' | 'declared'>();
 
@@ -123,8 +116,9 @@ const servePorts = new Map<string, 'own' | 'declared'>();
  * GY-3751: serves a product review's head without colliding with another run of the same project.
  * The run gets a free port, given to the command as PORT, MAINWORKS_SERVE_PORT and
  * GRAPHYARD_E2E_SERVE_PORT and probed in place of the declared URL's port. A command that binds the
- * declared port anyway is served there, and that project's later runs wait their turn on it.
- * Until a project's first run shows which it is, its runs start one at a time.
+ * declared port anyway is served there, and a later run while it serves is refused with
+ * ServeTurnTakenError so its dispatch waits its turn. Until a project's first run shows which it
+ * is, later runs wait for that run's serve to answer.
  */
 export async function serveReviewHead(input: Parameters<typeof startReviewServe>[0]): Promise<{ url: string; directory: string; close(): Promise<void> }> {
   const declared = input.serve.url;
@@ -133,19 +127,22 @@ export async function serveReviewHead(input: Parameters<typeof startReviewServe>
     target.port = port;
     return startReviewServe({ ...input, serve: { ...input.serve, url: target.href }, env: { ...input.env, PORT: port, MAINWORKS_SERVE_PORT: port, GRAPHYARD_E2E_SERVE_PORT: port }, ...(probeDeclared ? { declared } : {}) });
   };
-  const held = (served: { url: string; directory: string }, release = () => {}) => ({ ...served, close: () => stopReviewServe(served.directory).finally(release) });
+  const held = (served: { url: string; directory: string }, fixed = false) => ({ ...served, close: () => stopReviewServe(served.directory).finally(() => { if (fixed) fixedServes.delete(declared); }) });
+  while (discovering.has(declared)) await discovering.get(declared)!.catch(() => {});
   if (servePorts.get(declared) === 'own') return held(await onOwnPort(false));
-  const release = await serveTurn(declared);
+  if (fixedServes.has(declared)) throw new ServeTurnTakenError(`another product review is serving its head on ${declared}`);
+  if (servePorts.get(declared) === 'declared') {
+    fixedServes.add(declared);
+    try { return held(await startReviewServe(input), true); } catch (error) { fixedServes.delete(declared); throw error; }
+  }
+  const discovery = onOwnPort(true);
+  discovering.set(declared, discovery);
   try {
-    const known = servePorts.get(declared);
-    if (known === 'own') { release(); return held(await onOwnPort(false)); }
-    if (known === 'declared') return held(await startReviewServe(input), release);
-    const served = await onOwnPort(true);
-    const own = served.url !== new URL(declared).origin;
+    const served = await discovery, own = served.url !== new URL(declared).origin;
     servePorts.set(declared, own ? 'own' : 'declared');
-    if (own) { release(); return held(served); }
-    return held(served, release);
-  } catch (error) { release(); throw error; }
+    if (!own) fixedServes.add(declared);
+    return held(served, !own);
+  } finally { discovering.delete(declared); }
 }
 
 /**

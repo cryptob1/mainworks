@@ -28,7 +28,7 @@ export interface ControlPlaneVerdict {
 /**
  * The reviewer launch the control plane registered for the item (server/review-verdict.ts): the
  * reviewer principal, the launch's requester, the head and base the session judges and the sha256
- * of the one-time verdict token. One launch stands per item; a relaunch replaces it. `postMerge`
+ * of the one-time verdict token. One launch stands per item per review kind (code, product, post-merge); a relaunch of a kind replaces that kind's. `postMerge`
  * names a review of the delivered merge commit rather than of the candidate.
  */
 export interface ControlPlaneReviewLaunch {
