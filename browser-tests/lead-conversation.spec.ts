@@ -157,7 +157,7 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
       .find(row => row.kind === 'role.set')?.change?.role, { timeout: 20_000 }).toMatchObject({ name: 'worker', concurrency: 2 });
     await expect(page.locator('.lead-box-note[role="alert"]')).toHaveCount(0);
     // AC-2: a decision that is not a priority change, a hold or a pause shows no Undo.
-    const messageCard = conversation.locator('.lead-card.decision').filter({ hasText: "'s builder" });
+    const messageCard = conversation.locator('.lead-card.decision').filter({ hasText: 'Messaged the builder of' });
     await expect(messageCard.getByRole('button', { name: 'Undo' })).toHaveCount(0);
     await messageCard.getByRole('button', { name: 'Ask why' }).click();
     await expect(page.locator('#lead-message')).toHaveValue(/Why: Messaged/);
