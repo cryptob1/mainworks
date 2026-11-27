@@ -94,7 +94,7 @@ export interface DaemonEffects {
    */
   attemptWorktrees?: () => Promise<{ path: string; changedAt: number }[]>;
   /** The free space of each volume Mainworks writes (GY-3122). Absent, no headroom is kept. */
-  diskVolumes?: () => Promise<{ path: string; freeBytes: number | null }[]>;
+  diskVolumes?: () => Promise<import('./disk-headroom.js').Volume[]>;
   /** GY-3743: Mainworks's disk use by kind (Docker images by repository, build cache, worktrees, trial runs, CLI releases), read at most once an hour. */
   diskUseByKind?: () => Promise<DiskKind[]>;
   /** Reclaims Mainworks's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */

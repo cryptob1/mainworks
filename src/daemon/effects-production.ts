@@ -205,7 +205,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     },
     sweepCheckouts: () => sweepManagedCheckouts(root, current()),
     stopOrphanedProcesses: () => stopOrphansOfRemovedWorktrees(workingCopyRoots()),
-    diskVolumes: () => mainworksVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()]),
+    diskVolumes: () => mainworksVolumes([root, dataDirectory(), worktreeRoot(root, current()), ...trialCheckoutRoots(), durableTemporaryRoot()], run),
     diskUseByKind: () => measureDiskUseByKind({ worktrees: workingCopyRoots(), trialRuns: [trialRunsDirectory(root)], cliReleases: [dirname(cliReleasePath(installDirectory(installIdFor(current().repository)), 'x'))] }, run),
     reclaimDisk: () => reclaimMainworksLeftovers(run),
     // GY-3553: the readings that clear environment blockers, the stamp repair, and the unblock itself.
