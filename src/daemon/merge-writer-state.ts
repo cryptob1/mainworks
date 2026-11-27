@@ -59,6 +59,8 @@ export const mergeWriterStateSchema = z.object({
   motionBoundMs: z.number().int().min(0).optional(),
   /** GY-2079: the heads whose merge trial timed out, kept until they leave the queue; absent until one does. `count` is the timeouts counted toward the refusal bound (only where another head passed since the previous one); `reason` is set while the bound refusal it names is still owed. */
   timeouts: z.array(z.object({ key: z.string().max(100), id: z.string().max(100), head: shaField, at: instant, count: z.number().int().min(1).max(100_000), othersPassed: z.boolean(), reason: z.string().max(2000).nullable() }).strict()).max(mergeWriterKeptTimeouts).optional(),
+  /** GY-4020: while the batch gate lands a revert, the merge pushes it holds and why; absent otherwise. */
+  pushHold: z.object({ reason: z.string().max(500), held: z.array(z.string().max(200)).max(100), since: instant }).strict().optional(),
   /** GY-1852: record writes whose reply was lost, replayed with their exact input before anything new starts; absent until one is. */
   unconfirmed: z.array(unconfirmedRecordSchema).max(mergeWriterKeptUnconfirmed).optional(),
   /**

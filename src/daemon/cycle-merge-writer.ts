@@ -29,6 +29,7 @@ import { slotsDirectoryVariable, testMergeLabel, waitStep, withHeavyJob } from '
 import { adoptTrialRun, finishedTrialRun, launchTrialRun, stopTrialRun, trialRunsDirectory, type TrialRunHandle, type TrialRunRequest } from '../merge-writer/trial-run.js';
 import { loadProjectDelivery } from '../model-boundary/project-applications.js';
 import { standingBaseFailure } from '../merge-writer/base-failure-hold.js';
+import { afterGateRevert, gatePushHold, notePushHeld } from './gate-revert-hold.js';
 import { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, checkProofsOf, criterionProofs, pushPassedTrial, mergeHeads, mergeBatches, type HeadResult, e2eProofsOf, firstParentHolds, keyReusedRefusal, mergeRecordStatus, mergeQueue, previewRecordEvent, proofTestFiles, pushArgs, pushEnvironment, mergeWriterRemote, pushFailureWithStderr, reconcileIntents, runMergeTrial, staleLeaseRejection, trialAheadOfReviewPrefix, trialRefusalHeld, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../merge-writer/executor.js';
 import { mainworksVerifiedRef, publishedVersion } from '../release.js';
 import { message, storeAction, type DaemonState } from './state.js';
@@ -234,7 +235,7 @@ const flightSlots = (state: DaemonState) => [...flights.get(state) ?? []].reduce
 const revertWaiting = new WeakSet<DaemonState>();
 /** GY-3182: the base reads and writes (fetch, merge, push) of every flight take one turn, so two flights never write the checkout's refs at once. */
 const turns = new WeakMap<DaemonState, { turn: Promise<unknown> }>();
-function sharedTurns(state: DaemonState, reads: MergeWriterReads): MergeWriterReads {
+export function sharedTurns(state: DaemonState, reads: MergeWriterReads): MergeWriterReads {
   let holder = turns.get(state);
   if (!holder) turns.set(state, holder = { turn: Promise.resolve() });
   const held = holder;
@@ -243,7 +244,13 @@ function sharedTurns(state: DaemonState, reads: MergeWriterReads): MergeWriterRe
     held.turn = next.catch(() => {});
     return next;
   };
-  return { ...reads, fetch: serial(reads.fetch), merge: serial(reads.merge), push: serial(reads.push), ...(reads.pushVerified ? { pushVerified: serial(reads.pushVerified) } : {}) };
+  // GY-4020: a push waits outside the turn while the batch gate lands a revert, so fetches and merges for trials go on.
+  const push = serial(reads.push);
+  const waiting: MergeWriterReads['push'] = async (sha, baseTip) => {
+    if (gatePushHold(state)) await afterGateRevert(state, (await reads.git?.(['log', '-1', '--format=%s', sha]).catch(() => ''))?.trim() || sha.slice(0, 12));
+    return push(sha, baseTip);
+  };
+  return { ...reads, fetch: serial(reads.fetch), merge: serial(reads.merge), push: waiting, ...(reads.pushVerified ? { pushVerified: serial(reads.pushVerified) } : {}) };
 }
 /** GY-3182: `inFlight` names the first head in flight, with its flight's attempt; nothing in flight clears both. */
 function nameFlight(state: DaemonState) {
@@ -1109,6 +1116,8 @@ export async function mergeWriterStep(cycle: Cycle) {
     const ledger = snapshotLedger(snapshot.work);
     for (const item of snapshot.work) {
       if (busy.has(item.key) || settledNow.has(item.key) || heldByUnconfirmed(item.key) || !awaitsMerge(item, ledger, now())) continue;
+      // GY-4020: while the batch gate lands a revert this push waits for the next cycle, never inside this one.
+      if (gatePushHold(state)) { notePushHeld(state, item.key); continue; }
       const record = attemptRecorder(writer, reads.record, randomUUID(), at);
       try {
         const landed = await pushPassedTrial({ ...reads, record }, item);
@@ -1195,6 +1204,9 @@ export async function mergeWriterStep(cycle: Cycle) {
       if (due?.candidate && heads.length) await startMergeFlight(cycle, reads, heads);
     }
   }
+  // GY-4020: status names the pushes a pending batch gate revert holds, and why.
+  const pushHold = gatePushHold(state) ?? undefined;
+  if (JSON.stringify(pushHold) !== JSON.stringify(writer.pushHold)) { writer.pushHold = pushHold; changed = true; }
   if (changed) await effects.persist(state);
 }
 
@@ -1228,6 +1240,8 @@ export type MergeWriterSummary = {
   serveRevert?: MergeWriterState['serveRevert'];
   /** GY-3981: unconfirmed merge writes still awaiting replay, one line each; absent when none. */
   unconfirmed?: string[];
+  /** GY-4020: the pushes a pending batch gate revert holds, and why; absent when none. */
+  pushHold?: MergeWriterState['pushHold'];
 };
 export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, now?: number): MergeWriterSummary => {
   if (!writer) return { queue: [], inFlight: null, lastMergeAt: null, refusals: [], reworks: [] };
@@ -1236,7 +1250,7 @@ export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, 
     return Number.isFinite(at) && now !== undefined ? { ...entry, stepMs: Math.max(0, now - at), stalled: now - at >= mergeStallMs } : entry;
   };
   const inFlight = writer.inFlight && timed(writer.inFlight);
-  return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, untrialledLandings: writer.untrialledLandings ?? 0, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert, ...(writer.unconfirmed?.length ? { unconfirmed: writer.unconfirmed.map(entry => unconfirmedWriteLine(entry, now ?? Date.now())) } : {}) };
+  return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, untrialledLandings: writer.untrialledLandings ?? 0, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert, ...(writer.pushHold ? { pushHold: writer.pushHold } : {}), ...(writer.unconfirmed?.length ? { unconfirmed: writer.unconfirmed.map(entry => unconfirmedWriteLine(entry, now ?? Date.now())) } : {}) };
 };
 ;
 ;
