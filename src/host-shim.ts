@@ -156,8 +156,8 @@ def quiet(*command, **options):
     return subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **options) == 0
 def has_image(image):
     return quiet('docker', 'image', 'inspect', image)
-# GY-3952: when a run last named each warm image, shared by every install on this host: no upload removes one named within the hour.
-named = os.path.join(os.path.expanduser('~'), '.graphyard', 'warm-named')
+# GY-3952: when a run of this install last named each warm image; no upload on this host removes one any install named within the hour.
+named = os.path.join(home, '.graphyard', 'warm-named')
 def name_image(image):
     os.makedirs(named, exist_ok=True)
     open(os.path.join(named, image.replace(':', '_')), 'w').close()
@@ -277,12 +277,13 @@ elif verb == 'receive-image':
     name_image(args[0])
     # GY-3952: an older warm image of this trial image and lockfile goes only when this install alone loaded it and no run named it for an hour.
     family = args[0].rsplit('-', 1)[0] + '-'
-    others = [store for store in [os.path.join(os.path.expanduser('~'), '.graphyard', 'images')] + glob.glob(os.path.join(os.path.expanduser('~'), '.graphyard', 'installs', '*', '.graphyard', 'images')) if os.path.realpath(store) != os.path.realpath(owned)]
+    states = {os.path.realpath(state) for state in [os.path.join(home, '.graphyard'), os.path.join(os.path.expanduser('~'), '.graphyard')] + glob.glob(os.path.join(os.path.expanduser('~'), '.graphyard', 'installs', '*', '.graphyard'))}
+    others = [os.path.join(state, 'images') for state in states if state != os.path.realpath(os.path.join(home, '.graphyard'))]
     for image in subprocess.run(['docker', 'images', 'graphyard-warm', '--format', '{{.Repository}}:{{.Tag}}'], capture_output=True, text=True).stdout.split():
         marker = image.replace(':', '_')
         if image == args[0] or not image.startswith(family) or not os.path.exists(os.path.join(owned, marker)) or any(os.path.exists(os.path.join(store, marker)) for store in others):
             continue
-        if time.time() - max(os.path.getmtime(path) for path in (os.path.join(owned, marker), os.path.join(named, marker)) if os.path.exists(path)) < 3600:
+        if time.time() - max(os.path.getmtime(path) for path in [os.path.join(owned, marker)] + [os.path.join(state, 'warm-named', marker) for state in states] if os.path.exists(path)) < 3600:
             continue
         if quiet('docker', 'image', 'rm', image):
             os.remove(os.path.join(owned, marker))

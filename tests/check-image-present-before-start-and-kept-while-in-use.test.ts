@@ -1,7 +1,7 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
-import { readdirSync, readFileSync, utimesSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { hostShimVerbs, missingHelperVerbs } from '../src/host-shim.js';
@@ -96,7 +96,8 @@ test(`${proof} — two installs' keys upload in turn and neither loses its image
 
   // Every marker an hour and more old, then a run names the second tag of install A.
   const home = hosts.home('shared'), stale = new Date(Date.now() - 2 * 3_600_000);
-  const markerDirs = [join(home, '.graphyard', 'images'), join(home, '.graphyard', 'warm-named'), ...readdirSync(join(home, '.graphyard', 'installs')).map(name => join(home, '.graphyard', 'installs', name, '.graphyard', 'images'))];
+  const markerDirs = [join(home, '.graphyard'), ...readdirSync(join(home, '.graphyard', 'installs')).map(name => join(home, '.graphyard', 'installs', name, '.graphyard'))]
+    .flatMap(state => ['images', 'warm-named'].map(dir => join(state, dir))).filter(dir => existsSync(dir));
   for (const dir of markerDirs) for (const name of readdirSync(dir)) utimesSync(join(dir, name), stale, stale);
   const named = session('shared', sharedTags.x[1]!, hostShimVerbs);
   try { await named.ready('gy-compute@shared'); } finally { await named.close(); }
