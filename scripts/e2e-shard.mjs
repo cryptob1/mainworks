@@ -3,30 +3,41 @@
 // trial runs its bound cases, and writes one JSON line per case to RECORDS for the coordinator.
 // Usage: node --import tsx scripts/e2e-shard.mjs LIST RECORDS BUDGET_MS
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.ts';
 import { buildArgv, packageManager } from '../src/package-manager.ts';
 
-const [list, records, budget] = process.argv.slice(2);
-const proofs = readFileSync(list, 'utf8').split('\n').map(line => line.match(/^e2e\/cases\/(.+)\.json$/)?.[1]).filter(Boolean).map(id => `e2e:${id}`);
-const worktree = process.cwd(), mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-writeFileSync(records, '');
+const [list, records, budget] = process.argv.slice(2), written = resolve(records);
+const proofs = readFileSync(resolve(list), 'utf8').split('\n').map(line => line.match(/^e2e\/cases\/(.+)\.json$/)?.[1]).filter(Boolean).map(id => `e2e:${id}`);
+const mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+writeFileSync(written, '');
+/** Every case of the shard fails with one step when its checkout or build fails, so the day's filing names why. */
+const refuse = (step, error) => {
+  const failingStep = `${step} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
+  for (const proof of proofs) appendFileSync(written, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
+  process.exit(1);
+};
+// GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
+// where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in a
+// private clone of the commit that shares the clone's objects and packages.
+const checkout = process.cwd(), scratch = mkdtempSync(join(tmpdir(), 'e2e-shard-')), worktree = join(scratch, 'checkout');
+const git = args => execFileSync('git', args, { stdio: 'pipe' });
+try {
+  git(['clone', '-q', '--shared', '--no-checkout', checkout, worktree]);
+  git(['-C', worktree, 'checkout', '-q', '--detach', mergeSha]);
+  if (existsSync(join(checkout, 'node_modules'))) symlinkSync(join(checkout, 'node_modules'), join(worktree, 'node_modules'));
+  process.chdir(worktree);
+} catch (error) { refuse(`the shard's clone of ${mergeSha.slice(0, 12)}`, error); }
 // GY-3968: the shard's checkout is a fresh clone, so build it first as a trial does: a served dashboard needs dist/.
-// GY-3974: a host's several catalog shards share this checkout, so the first builds it under a lock and the rest wait for it.
 const scripts = existsSync('package.json') ? JSON.parse(readFileSync('package.json', 'utf8')).scripts : undefined;
 const build = scripts?.build ? buildArgv(packageManager(worktree), null) : null;
 if (build) {
-  const [lock, built] = ['catalog-build.lock', 'catalog-built'].map(name => execFileSync('git', ['rev-parse', '--git-path', name], { encoding: 'utf8' }).trim());
-  try { execFileSync('flock', [lock, 'sh', '-c', 'test -f "$0" || { "$@" && : > "$0"; }', built, ...build], { stdio: 'pipe', maxBuffer: 64 << 20 }); }
-  catch (error) {
-    const failingStep = `the build step ${build.join(' ')} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
-    for (const proof of proofs) appendFileSync(records, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
-    process.exit(1);
-  }
+  try { execFileSync(build[0], build.slice(1), { stdio: 'pipe', maxBuffer: 64 << 20 }); }
+  catch (error) { refuse(`the build step ${build.join(' ')}`, error); }
 }
-const cases = await runTrialE2eCases({ worktree, mergeSha, proofs, env: { ...process.env }, scratch: mkdtempSync(join(tmpdir(), 'e2e-shard-')),
+const cases = await runTrialE2eCases({ worktree, mergeSha, proofs, env: { ...process.env }, scratch,
   budgetMs: Number(budget), holds: async path => existsSync(join(worktree, path)), log: line => console.log(line) });
-for (const entry of cases) appendFileSync(records, `${JSON.stringify({ ...entry, screenshot: undefined })}\n`);
+for (const entry of cases) appendFileSync(written, `${JSON.stringify({ ...entry, screenshot: undefined })}\n`);
 process.exit(cases.some(entry => entry.failed > 0 || entry.missing || entry.executed === 0) ? 1 : 0);

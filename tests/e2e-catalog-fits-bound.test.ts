@@ -12,10 +12,8 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { localOnlyTestPattern, type HostReading } from '../src/merge-writer/remote-shards.js';
-import { gateTrialKey } from '../src/merge-writer/trial-load.js';
 import { trialRunsDirectory, type TrialRunHandle, type TrialRunRequest } from '../src/merge-writer/trial-run.js';
 import { git, gitRepo } from './helpers/git-repo.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { until } from './helpers/until.js';
 
 // GY-3974: the 04:23Z diagnostics on b325b3da timed out in this machine's shard after 2700 s. It held
@@ -175,23 +173,26 @@ test('integration:e2e-catalog-fits-bound — after a loop restart each of this m
   assert.deepEqual(record.diagnosticsTrials ?? [], [], 'a finished run leaves no runs to collect');
 });
 
-test('integration:e2e-catalog-fits-bound — the shards a test machine runs at once over one checkout build it once', { timeout: 120_000 }, async () => {
-  const { root } = await gitRepo({ label: 'e2e-catalog-builds-once', files: {
-    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'node build.cjs' } }),
-    // A slow build, so a second shard that did not wait would build beside it.
-    'build.cjs': "const fs = require('fs'); fs.appendFileSync('builds.log', 'x\\n'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500); fs.mkdirSync('dist', { recursive: true }); fs.writeFileSync('dist/index.html', 'built');",
-    'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'site' }], cases: { 'needs-build': 'site' } } }),
+test('integration:e2e-catalog-fits-bound — the shards a test machine runs at once each work in their own checkout, so neither overwrites what the other writes', { timeout: 120_000 }, async () => {
+  // A step that writes its served address into its checkout, as the serve writes its seed file (GY-3666), waits for
+  // the other shard to write too, and must still read its own.
+  const step = "const fs = require('fs'); fs.mkdirSync('.graphyard', { recursive: true }); fs.writeFileSync('.graphyard/serve.json', process.env.TARGET_URL); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000); if (fs.readFileSync('.graphyard/serve.json', 'utf8') !== process.env.TARGET_URL) process.exit(1);";
+  const { root } = await gitRepo({ label: 'e2e-catalog-own-checkouts', files: {
+    'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'site' }], cases: { 'own-checkout': 'site' } } }),
     'site/index.html': '<h1>fixture</h1>\n',
-    'e2e/cases/needs-build.json': JSON.stringify({ id: 'needs-build', title: 'The case reads the built dashboard', tags: ['api'], target: 'any', required: false,
-      steps: [{ kind: 'command', name: 'the build ran', run: 'test -f dist/index.html', timeoutSeconds: 30 }] }),
+    'step.cjs': step,
+    'e2e/cases/own-checkout.json': JSON.stringify({ id: 'own-checkout', title: 'What a shard writes into its checkout stays its own', tags: ['api'], target: 'any', required: false,
+      steps: [{ kind: 'command', name: 'its own write is still there once another shard has written', run: 'node step.cjs', timeoutSeconds: 30 }] }),
   } });
-  writeFileSync(join(root, 'list'), 'e2e/cases/needs-build.json\n');
+  writeFileSync(join(root, 'list'), 'e2e/cases/own-checkout.json\n');
   const script = fileURLToPath(new URL('../scripts/e2e-shard.mjs', import.meta.url));
-  const shard = (records: string) => promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script, 'list', records, '60000'], { cwd: root }).catch(() => undefined);
-  await Promise.all([shard('records-1'), shard('records-2')]);
-  for (const records of ['records-1', 'records-2']) {
-    const entries = (await readFile(join(root, records), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    assert.deepEqual(entries.map(entry => [entry.proof, entry.executed, entry.failed, entry.failingStep ?? null]), [['e2e:needs-build', 1, 0, null]], `${records}: ${JSON.stringify(entries)}`);
+  const shard = (name: string) => promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script, 'list', `records-${name}`, '60000'],
+    { cwd: root }).catch(() => undefined);
+  await Promise.all([shard('one'), shard('two')]);
+  for (const name of ['one', 'two']) {
+    const entries = (await readFile(join(root, `records-${name}`), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(entries.map(entry => [entry.proof, entry.executed, entry.failed, entry.failingStep ?? null]), [['e2e:own-checkout', 1, 0, null]], `shard ${name}: ${JSON.stringify(entries)}`);
   }
-  assert.equal((await readFile(join(root, 'builds.log'), 'utf8')).trim().split('\n').length, 1, 'one shard built the checkout and the other waited for it');
+  assert.deepEqual(git(root, 'status', '--porcelain').split('\n').filter(Boolean).sort(), ['?? list', '?? records-one', '?? records-two'],
+    'the checkout the shards were given holds only what the caller put there');
 });
