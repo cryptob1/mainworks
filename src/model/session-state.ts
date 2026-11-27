@@ -85,6 +85,9 @@ export function sessionSummary(work: Work, now: Date) {
  *   producer reconcile fails and relaunches an unanswered request — and the next report records
  *   that end.
  *   From `lostAfterReports` misses on, no reader shows it running;
+ * - a headless product review (no pane) not listed: held by no fact, since its run lives in this
+ *   loop and one a restart left unadopted is gone; `lost` after `lostAfterReports` (GY-4019), which
+ *   ends its registry reviewer session so its request launches a fresh reviewer;
  * - not listed, and ended by no fact (a coordination handle, a review session no request names):
  *   one missed report; absent from `lostAfterReports` consecutive reports, `lost`;
  * - no coordinate to match (its launcher never wrote the pane or name): missed like one not listed.
@@ -201,6 +204,10 @@ function dispatchRequestOf(work: Pick<Work, 'autoDispatch'>, handle: Pick<Sessio
  */
 export const endedByFact = (work: Pick<Work, 'autoDispatch'>, handle: Pick<SessionHandle, 'id' | 'kind' | 'epoch'> & { head?: string | null }) =>
   handle.kind === 'implementation' ? Number.isFinite(handleEpoch(handle)) : !!dispatchRequestOf(work, handle);
+/** GY-4019: a product review run without a pane — a headless run this loop holds, listed by name while it lasts. */
+const headlessProductReview = (handle: Pick<SessionHandle, 'kind' | 'role' | 'pane'>) => handle.kind === 'review' && handle.role === 'review:product' && !handle.pane;
+/** Whether a listed name is the session name `sessionAgentName` derives for request `id`, so a handle registered before its run was named still matches the run. */
+const namesRequest = (name: string | undefined, id: string) => !!name && new RegExp(`-${id.toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 8)}(?:-\\d+)?$`).test(name);
 export function observeSessions(all: Work[], runtime: RuntimeSession[] | null, now: Date, options: ObserveOptions = {}): SessionReport {
   const entries: SessionReportEntry[] = [], missing: Record<string, string> = {};
   // A runtime that could not be read is a gap in the reports, not a report of absence.
@@ -218,7 +225,8 @@ export function observeSessions(all: Work[], runtime: RuntimeSession[] | null, n
     // closed rather than left open, unseen, where no report could ever end it.
     const where = handle.pane ? `pane ${handle.pane}` : handle.agentName ? `session ${handle.agentName}` : `session ${handle.id} (registered with no pane or name to match)`;
     const base = { workId: work.id, key: work.key, id: handle.id, kind: handle.kind, role: sessionRole(handle), runtime: handle.runtime, host: handle.host, subject: handle.subject };
-    const entry = handle.pane || handle.agentName ? runtimeSessionOf(handle, runtime) : undefined;
+    const headless = headlessProductReview(handle);
+    const entry = handle.pane || handle.agentName ? runtimeSessionOf(handle, runtime) : headless ? runtime.find(listed => namesRequest(listed.name, handle.id)) : undefined;
     // A launch registers its handle before it claims (GY-1571), so inside the launch grace the item's
     // facts still describe the attempt before it: no lease is not the attempt's end.
     const over = young && unclaimedLaunch(work, handle) ? null : settledPurpose(work, handle, clock);
@@ -255,12 +263,19 @@ export function observeSessions(all: Work[], runtime: RuntimeSession[] | null, n
     // record could not take the count (a write that failed).
     const missed = Math.max((handle.missedReports ?? 0) + 1, Number.isFinite(first) ? 2 : 1);
     const lastSeen = handle.observedAt ?? handle.updatedAt, lastAt = Date.parse(lastSeen);
-    if (missed < lostAfterReports || endedByFact(work, handle)) {
+    // GY-4019: a headless product review is held for nothing: its run lives in this loop, so one a
+    // restart left unadopted is gone, and only losing it frees the item's slot for a fresh reviewer.
+    if (missed < lostAfterReports || (endedByFact(work, handle) && !headless)) {
       // The last sighting is carried as it was: for a handle nothing has observed yet that is its
       // launcher's record, which the write of this miss would otherwise move to now. A handle the
       // item's facts will end is held here, miss after miss, until they do: the count is written
       // up to `lostAfterReports`, from which no reader shows it running, and not again after.
       entries.push({ ...base, observed: handle.observed ?? null, observedAt: handle.observedAt ?? lastSeen, missedReports: Math.min(missed, missedReportsCeiling), closed: null, outcome: null, changed: missed <= lostAfterReports });
+      continue;
+    }
+    if (headless) {
+      entries.push({ ...base, observed: 'lost', observedAt: handle.observedAt ?? lastSeen, missedReports: missed, closed: 'lost', changed: true,
+        outcome: `vanished: the headless product review run (${handle.agentName ?? 'never named'}) on ${handle.host} is gone, absent from ${missed} consecutive session reports, so the session is lost and its request launches a fresh reviewer` });
       continue;
     }
     // A review session no request names (`master review` by hand) is never "lost" while its head

@@ -1,4 +1,5 @@
 import { once } from 'node:events';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Store } from '../store.js';
@@ -11,7 +12,7 @@ import { ProductionWatch, observationLine, productionProvider, startProductionWa
 import { configuredGeneratedFiles } from '../generated-files.js';
 import { generatedFilesVariable } from '../install/generated-files.js';
 import { pruneReceipts, receiptPruneIntervalMs } from '../store/receipts.js';
-import { compactLedger, configuredLedgerRetentionMs, ledgerCompactionIntervalMs } from '../store/compaction.js';
+import { compactLedger, configuredLedgerRetentionMs, expireEvents, ledgerCompactionIntervalMs } from '../store/compaction.js';
 import { processControlPlaneJob } from './control-plane-observation.js';
 import { setting } from '../setting.js';
 
@@ -110,7 +111,7 @@ export async function main(options: MainOptions = {}) {
     }
     handle(req, res);
   });
-  let receiptsPrunedAt = 0, ledgerCompactedAt = 0;
+  let receiptsPrunedAt = 0, ledgerCompactedAt = 0, eventsExpiredAt = 0;
   const stopPlaneBeat = await engine.startPlaneBeat(); // the gap since the previous process ticked is on the record before the first heartbeat is answered (GY-1791)
   const reconciliation = startReconciliation(async step => {
     if (!ready) { await step('startup', () => runStartup()); if (!ready) return; }
@@ -121,6 +122,8 @@ export async function main(options: MainOptions = {}) {
     if (Date.now() - receiptsPrunedAt >= receiptPruneIntervalMs) { receiptsPrunedAt = Date.now(); await step('pruneReceipts', () => pruneReceipts(store.pool).catch(error => { console.error('receipt pruning failed', error instanceof Error ? error.message : 'unknown'); return 0; })); }
     // Routine ledger rows past the retention window go in bounded, audited batches (store/compaction.ts).
     if (Date.now() - ledgerCompactedAt >= ledgerCompactionIntervalMs) { ledgerCompactedAt = Date.now(); await step('compactLedger', () => compactLedger(store.pool, { retentionMs: configuredLedgerRetentionMs() }).catch(error => { console.error('ledger compaction failed', error instanceof Error ? error.message : 'unknown'); return null; })); }
+    // GY-4005: and rows of the high-volume kinds nothing reads past a day go after a week, in small batches.
+    if (Date.now() - eventsExpiredAt >= ledgerCompactionIntervalMs) { eventsExpiredAt = Date.now(); await step('expireEvents', () => expireEvents(store.pool).catch(error => { console.error('event retention failed', error instanceof Error ? error.message : 'unknown'); return null; })); }
   }, 2000);
   http.listen(options.port ?? Number(process.env.PORT ?? 4310), options.host ?? process.env.HOST ?? '127.0.0.1', () => console.log(`Mainworks listening on port ${(http.address() as AddressInfo).port}`));
   await once(http, 'listening');
@@ -188,8 +191,9 @@ export const observationConcurrency = (poolMax = defaultDatabasePoolSize) => obs
  * Every head is observed from the checkout (the control plane is the only merge writer), and GitHub
  * is not asked.
  */
-export async function observationWorkers(engine: Engine, concurrency: number, stopped: () => boolean = () => false, idleMs = 1000): Promise<void> {
-  const idle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export async function observationWorkers(engine: Engine, concurrency: number, stopped: () => boolean = () => false, idleMs = 1000, signal?: AbortSignal): Promise<void> {
+  // A stop ends the idle wait at once (GY-4015): each server close used to wait out up to a second here.
+  const idle = (ms: number) => sleep(ms, undefined, { signal }).catch(() => {});
   const worker = async () => {
     while (!stopped()) {
       let claimed = false;
@@ -204,9 +208,10 @@ export async function observationWorkers(engine: Engine, concurrency: number, st
 /** Start the observation workers for the process's lifetime; `stop` resolves once each has finished its current job. */
 export function startObservationWorkers(engine: Engine, concurrency = observationConcurrency(engine.store.pool.options.max)) {
   let stopped = false;
-  const done = observationWorkers(engine, concurrency, () => stopped)
+  const stopping = new AbortController();
+  const done = observationWorkers(engine, concurrency, () => stopped, undefined, stopping.signal)
     .catch(error => console.error('observation workers stopped', error instanceof Error ? error.message : 'unknown'));
-  return { concurrency, stop: () => { stopped = true; return done; } };
+  return { concurrency, stop: () => { stopped = true; stopping.abort(); return done; } };
 }
 
 /**

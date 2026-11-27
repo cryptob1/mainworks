@@ -3,6 +3,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { maskSecrets } from './redaction.js';
 import { sessionScopeProperties } from './session-share.js';
@@ -141,8 +142,75 @@ export function assignmentSurrender(epoch: number, argv: string[] = process.argv
   };
 }
 
-/** How long a supervised session may write nothing to its run log before its attempt ends (GY-3961). */
+/** How long a supervised session may show no activity before its attempt ends (GY-3961, GY-4017). */
 export const sessionIdleMs = 30 * 60_000;
+/** CPU a session's processes must use between two looks to count as working; an idle timer uses far less (GY-4017). */
+export const sessionCpuActiveMs = 50;
+
+/** CPU milliseconds used so far by the session rooted at PID: its own systemd scope's cpu.stat less this supervisor's own share, or its process tree's times. */
+export function sessionCpuMs(pid: number | undefined): number {
+  if (!pid || process.platform !== 'linux') return 0;
+  try {
+    const group = readFileSync(`/proc/${pid}/cgroup`, 'utf8').split('\n').find(line => line.startsWith('0::'))?.slice(3);
+    if (group && /^graphyard-.*\.scope$/.test(basename(group))) {
+      const usage = Number(/^usage_usec (\d+)$/m.exec(readFileSync(`/sys/fs/cgroup${group}/cpu.stat`, 'utf8'))?.[1]);
+      const own = readFileSync('/proc/self/cgroup', 'utf8').includes(`0::${group}\n`) ? process.cpuUsage() : { user: 0, system: 0 };
+      if (Number.isFinite(usage)) return (usage - own.user - own.system) / 1000;
+    }
+  } catch { /* no scope to read: count the process tree */ }
+  const rows = new Map<number, { ppid: number; ticks: number }>();
+  try {
+    for (const name of readdirSync('/proc')) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        const stat = readFileSync(`/proc/${name}/stat`, 'utf8'), fields = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/);
+        rows.set(Number(name), { ppid: Number(fields[1]), ticks: fields.slice(11, 15).reduce((sum, field) => sum + Number(field), 0) });
+      } catch {}
+    }
+  } catch {}
+  // utime, stime and the reaped children's cutime, cstime, in USER_HZ (100) ticks.
+  let ticks = 0;
+  const pending = [pid];
+  while (pending.length) {
+    const parent = pending.pop()!;
+    ticks += rows.get(parent)?.ticks ?? 0;
+    for (const [child, row] of rows) if (row.ppid === parent) pending.push(child);
+  }
+  return ticks * 10;
+}
+
+/** The newest change under DIRECTORY: the latest mtime of any file or directory in it, .git and node_modules aside. */
+export function newestChange(directory: string): number {
+  let newest = 0;
+  const walk = (path: string) => {
+    let entries;
+    try { entries = readdirSync(path, { withFileTypes: true }); newest = Math.max(newest, statSync(path).mtimeMs); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) walk(child);
+      else try { newest = Math.max(newest, statSync(child).mtimeMs); } catch {}
+    }
+  };
+  walk(directory);
+  return newest;
+}
+
+/**
+ * Whether a session did anything since the last look (GY-4017): its run log grew, its processes
+ * used CPU, or a file in its worktree changed. A Claude session prints only its final result, so
+ * output alone cannot tell a working session from a hung one.
+ */
+export function sessionActivity(log: string, worktree: string, pid: () => number | undefined) {
+  const size = () => { try { return statSync(log).size; } catch { return 0; } };
+  let last = { log: size(), cpu: sessionCpuMs(pid()), tree: newestChange(worktree) };
+  return () => {
+    const next = { log: size(), cpu: sessionCpuMs(pid()), tree: last.tree };
+    const active = next.log !== last.log || next.cpu - last.cpu >= sessionCpuActiveMs || (next.tree = newestChange(worktree)) !== last.tree;
+    last = next;
+    return active;
+  };
+}
 
 /** How long before the lease's own expiry a supervisor stops retrying a failed renewal (GY-274). */
 export const renewalSafetyMarginMs = 15_000;
@@ -262,6 +330,7 @@ export const setupLine = (subject: string, epoch: number) => `mainworks: startin
 // The deadline uses elapsed local time and server-reported duration, not synchronized clocks.
 export async function supervise(command: string, args: string[], epoch: number, renew: () => Promise<Renewal>, options: { intervalMs?: number; graceMs?: number; safetyMarginMs?: number; retryMs?: number; retryMaxMs?: number; startupWindowMs?: number; attemptBoundMs?: number; unreachableRetryMs?: number; detached?: boolean; containment?: Containment; platform?: NodeJS.Platform; session?: SupervisedSession;
   /** GY-3259: the headless run log the agent's output is appended to, one redacted JSON line per output line with its time and stream. */ log?: string;
+  /** GY-4017: the worktree whose file changes count as the session's activity; the supervisor's own directory by default. */ worktree?: string;
   /** Optional clock seam for deterministic timing tests. */ clock?: { now: () => number; setTimeout: (fn: () => void, ms?: number) => unknown; clearTimeout: (id: unknown) => void; setInterval: (fn: () => void, ms?: number) => unknown; clearInterval: (id: unknown) => void } } = {}) {
   const now = options.clock?.now ?? (() => performance.now());
   const scheduleTimeout = options.clock?.setTimeout ?? ((fn: () => void, ms?: number) => setTimeout(fn, ms));
@@ -375,7 +444,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
   return new Promise<number>((resolve, reject) => {
     let child: ReturnType<typeof spawn> | undefined;
     let stopping = false, pending = false, prelaunchInterrupted = false, finished = false;
-    let scopeSeen = false;
+    let scopeSeen = false, restarting = false;
     const supervisedPids = new Map<number, string>();
     let expiry: unknown;
     let timer: unknown;
@@ -428,7 +497,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
      * read as a session that has ended.
      */
     const orphaned = (): string | null => {
-      if (!child?.pid) return null;
+      if (!child?.pid || restarting) return null;
       if (!processAlive(child.pid)) return `the agent process (pid ${child.pid}) has exited`;
       if (containment) {
         let empty: boolean | null = null;
@@ -460,20 +529,40 @@ export async function supervise(command: string, args: string[], epoch: number, 
     void (async () => {
       try {
         if (prelaunchInterrupted) { finish(null, 1); return; }
-        child = spawn(containment?.command ?? command, containment?.args ?? args, { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
-        if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
+        // GY-4018: a resume the runtime cannot find the conversation for starts the same attempt fresh, under this lease.
+        let fresh = options.log ? freshCommand(options.log) : null;
+        const launch = (file: string, words: string[]) => {
+          const logStart = options.log ? fileSize(options.log) : 0;
+          child = spawn(file, words, { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
+          if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
+          child.on('error', error => { console.error(error.message); stop(1); });
+          child.on('exit', async (code, signal) => {
+            if (code && fresh && options.log && !stopping) {
+              const exited = child!;
+              restarting = true;
+              await new Promise(done => { exited.once('close', done); setTimeout(done, 1000).unref(); });
+              restarting = false;
+              if (unresumable(stderrSince(options.log, logStart)) && !stopping) {
+                const [next, ...rest] = fresh; fresh = null;
+                appendRunLogLine(options.log, 'stderr', 'mainworks: the earlier conversation could not be resumed; starting a fresh session with the usual prompt');
+                launch(next!, rest);
+                return;
+              }
+            }
+            endedOnItsOwn(`the agent process exited (${signal ?? `code ${code}`}) while its lease was live`); stop(code ?? 1);
+          });
+        };
+        launch(containment?.command ?? command, containment?.args ?? args);
         // Never learn the fallback root from a later /proc snapshot: after this
         // child exits its numeric PID can identify an unrelated replacement.
         // Cache the kernel identity immediately after spawn, or leave fallback
         // traversal empty when the short-lived launcher is already gone.
-        if (containment && !detached && platform === 'linux' && child.pid) {
+        if (containment && !detached && platform === 'linux' && child?.pid) {
           captureTrackedRoot(child.pid, supervisedPids, processRecord(child.pid));
         }
-        child.on('error', error => { console.error(error.message); stop(1); });
-        child.on('exit', (code, signal) => { endedOnItsOwn(`the agent process exited (${signal ?? `code ${code}`}) while its lease was live`); stop(code ?? 1); });
-        // GY-3961: a session whose run log has not grown for 30 minutes is hung; its attempt ends.
-        const logSize = () => { try { return statSync(options.log!).size; } catch { return 0; } };
-        let loggedSize = options.log ? logSize() : 0, loggedAt = now();
+        // GY-3961, GY-4017: a session with no output, CPU or worktree change for 30 minutes is hung; its attempt ends.
+        const active = options.log ? sessionActivity(options.log, options.worktree ?? process.cwd(), () => child?.pid) : undefined;
+        let activeAt = now();
         timer = scheduleInterval(async () => {
           if (pending || stopping) return;
           pending = true;
@@ -486,10 +575,9 @@ export async function supervise(command: string, args: string[], epoch: number, 
           try {
             const cause = orphaned();
             if (cause) { await surrenderOrphaned(cause); return; }
-            if (options.log) {
-              const size = logSize();
-              if (size !== loggedSize) { loggedSize = size; loggedAt = now(); }
-              else if (now() - loggedAt >= sessionIdleMs) { await surrenderOrphaned(`the session wrote no output for ${Math.round(sessionIdleMs / 60_000)} minutes`); return; }
+            if (active) {
+              if (active()) activeAt = now();
+              else if (now() - activeAt >= sessionIdleMs) { await surrenderOrphaned(`the session wrote no output, used no CPU and changed no file for ${Math.round(sessionIdleMs / 60_000)} minutes`); return; }
             }
             const renewal = await renewWithRetry(() => stopping, orphaned, () => { if (!stopping) armDeadline(); });
             if (typeof renewal === 'object') await surrenderOrphaned(renewal.orphaned);
@@ -506,10 +594,24 @@ export async function supervise(command: string, args: string[], epoch: number, 
   });
 }
 
+/** GY-4018: whether a run's output says its runtime could not find the conversation it was asked to resume. */
+const unresumable = (output: string) => /no rollout found for thread id|no conversation found/i.test(output);
+/** The fresh command line a resumed run's launcher left beside its run log (`fresh.json`), or null. */
+function freshCommand(log: string): string[] | null {
+  try { const words = JSON.parse(readFileSync(join(dirname(log), 'fresh.json'), 'utf8')); return Array.isArray(words) && words.length && words.every(word => typeof word === 'string') ? words : null; }
+  catch { return null; }
+}
+/** What a run printed on standard error to its run log from byte `from`: the runtime's own errors, not the agent's work on stdout. */
+const stderrSince = (log: string, from: number) => readFileSync(log).subarray(from).toString('utf8').split('\n').flatMap(line => {
+  try { const entry = JSON.parse(line); return entry.stream === 'stderr' ? [String(entry.text)] : []; } catch { return []; }
+}).join('\n');
+const fileSize = (file: string) => { try { return statSync(file).size; } catch { return 0; } };
+const appendRunLogLine = (file: string, stream: 'stdout' | 'stderr', text: string) => { try { appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), stream, text: maskSecrets(text) })}\n`, { mode: 0o600 }); } catch { /* a full disk never stops the agent */ } };
+
 /** Appends each line STREAM prints to the run log FILE as `{at, stream, text}`, credentials masked before anything is written. */
 export function runLogLines(output: Readable, stream: 'stdout' | 'stderr', file: string) {
   let pending = '';
-  const write = (text: string) => { try { appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), stream, text: maskSecrets(text) })}\n`, { mode: 0o600 }); } catch { /* a full disk never stops the agent */ } };
+  const write = (text: string) => appendRunLogLine(file, stream, text);
   output.setEncoding('utf8');
   output.on('data', (chunk: string) => { const lines = (pending + chunk).split('\n'); pending = lines.pop()!; lines.forEach(write); });
   output.on('end', () => { if (pending) write(pending); });

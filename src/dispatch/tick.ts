@@ -18,6 +18,7 @@ import { unexercisedFindings } from '../model/mechanical-proofs.js';
 import { cursorTextLimit, bounded, closeFailureReasons, type DispatchLaunch, type DispatchWait, dispatchAttemptCeiling, type DispatchFailure, type DispatchCursor, dispatchRetryMinMs, dispatchRetryMaxMs, capacityRecheckMs, dispatchReadTimeoutMs, attributePersistFailure, tickWaits, capacityReasonLimit, dispatchFailureReasonLimit, closureFailureReasonLimit, dispatchFailureLimit, verdictIngestGraceMs, backedOffProfiles, probeBackoffFailures, probeBackoffMs } from './cursor.js';
 import { describeAttempts, unactedProducerSession, requestSpentAt, preferFreshProfiles, requestSessions, limitNoticeExit, type DispatchedSession } from './attempts.js';
 import { selectReviewerProfile, launchWithFailover, type InstantExit } from './launch-failover.js';
+import { liveSessions } from '../model/registry.js';
 import { launchedSessionHandle, type SessionClosure, sessionHandleKey, reconcileSessionLiveness, releaseNotLiveReviews, reportClosure, sweepRegistrySessions } from './session-sweep.js';
 import { postMergeWaitReason, reviewedAfterMerge, postMergeRequest, filePostMergeFollowUps } from './post-merge.js';
 import type { DispatchEffects } from './effects.js';
@@ -120,6 +121,10 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       // whichever way the record went — so the slot is freed either way and the tick says what failed.
       try { await effects.endSession?.(closure); tick.closed.push(closure); }
       catch (error) { tick.closeFailures.push({ work: closure.key, id: closure.id, reason: bounded(message(error), closureFailureReasonLimit) }); }
+      // GY-4019: a lost product review run frees the item's product reviewer slot in the registry, so its request launches a fresh reviewer.
+      if (closure.report?.closed === 'lost' && closure.role === 'review:product' && registry && effects.endRegistrySession)
+        for (const held of liveSessions(registry).filter(session => session.role === 'reviewer' && session.group === 'product' && session.work === closure.key && session.host === config.hostId))
+          await effects.endRegistrySession({ id: held.id, role: held.role, work: held.work, pane: null, agentName: null }, closure.outcome).catch(() => {});
     }
   })();
   if (herdr && registry) await sweepRegistrySessions(config.hostId, cursor, effects, registry, herdr, [...reviews, ...producers], clock, snapshot.work, tick);

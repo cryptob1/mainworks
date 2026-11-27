@@ -55,7 +55,9 @@ import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
 import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
-import { remoteWorkerRuns } from '../headless-session.js';
+import { remoteWorkerRuns, runningWorkerPlaces } from '../headless-session.js';
+import { readHosts } from '../hosts.js';
+import { builderSessionCounts } from '../remote-session.js';
 import { readReviewLedger, staleReviewReason, type ReviewRecord } from '../reviewer.js';
 import { allowanceSentence, allowanceWarning } from '../model/allowance.js';
 import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
@@ -278,6 +280,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // GY-3757: the slowest database query of the last 10 minutes, by name, when it ran past 3 s.
   const slowRead: { slowest?: SlowQuery | null; lockHold?: LockHold | null } = unreachable ? {} : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body ?? {}, () => ({}));
   const slowest = slowRead.slowest ?? null;
+  // GY-4005: one line once the database passes 80% of its bound.
+  const databaseBound: string | null = unreachable ? null : await Promise.resolve().then(() => masterApi('database-bound')).then(body => body?.warning ?? null, () => null);
+  const databaseAttention = databaseBound ? [{ subject: 'database', text: databaseBound, next: 'Do what the line names; it clears once the database is under 80% of its bound' }] : [];
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
   const remoteRuns = readRemoteShardRuns(root);
@@ -294,7 +299,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       : { on: true },
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...unconfirmedWriteAttention(state?.mergeWriter, now), ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...unconfirmedWriteAttention(state?.mergeWriter, now), ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...databaseAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -349,7 +354,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     workerVerifications: snapshot.workerVerifications ?? [],
     items: open.map((item, index) => itemLine(item, now, launched[index])),
     ...(personalScopes > 0 ? { personalScopes: `${personalScopes} items in personal scopes` } : {}),
-    mergeWriter: (({ queue, inFlight, inFlights, lastMergeAt, untrialledLandings, refusals, serveRevert, trials, stepMedians }) => ({ queue, inFlight, ...(inFlights ? { inFlights } : {}), lastMergeAt,
+    mergeWriter: (({ queue, inFlight, inFlights, lastMergeAt, untrialledLandings, refusals, serveRevert, trials, stepMedians, pushHold }) => ({ queue, inFlight, ...(inFlights ? { inFlights } : {}), lastMergeAt,
+      // GY-4020: the pushes a pending batch gate revert holds, and why.
+      ...(pushHold ? { pushHold } : {}),
       // GY-3881: landings that went onto a moved tip without a second trial.
       untrialledLandings: untrialledLandings ?? 0, trials: trials ?? [], stepMedians: stepMedians ?? {}, lastRefusal: refusals.at(-1) ?? null,
       // GY-2990: a revert that failed its own trial is held here, with the serve and reason that held it.
@@ -378,6 +385,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     sessions,
     // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
     remoteSessions: remoteWorkerRuns(root).slice(0, 10),
+    // GY-4004: builder sessions running on each host open to sessions, of its room, and on this machine.
+    builderSessions: builderSessionCounts(runningWorkerPlaces(root), await readHosts().catch(() => [])),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }

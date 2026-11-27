@@ -290,12 +290,13 @@ test('unit:ui-workers-page — Workers is one compact table of agent sessions (a
   assert.deepEqual([...first.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(match => match[1]), ['Agent', 'Working on', 'State', 'Age']);
   // The per-account summary and the ended sessions are folded away below it.
   assert.doesNotMatch(first, /aria-label="Principals"/); assert.match(html, /aria-label="Principals"/);
-  // The item by key and title, truncated on the row with the whole title one hover away; the state in at most three words and how long it has held it.
+  // The item by its title (no task key, GY-3995), truncated on the row with the whole title one hover away; the state in at most three words and how long it has held it.
   const row = (id: string) => { const start = first.indexOf(`data-session="${id}"`); assert.ok(start >= 0, id); return first.slice(start, first.indexOf('</tr>', start)); };
   assert.deepEqual(Object.values(roleWords).slice(0, 4), ['Builds code', 'Reviews code', 'Proves requirements', 'Runs the loop']);
   const builder = row('s14');
   assert.match(builder, /data-role="worker"/);
-  assert.match(builder, /<span class="mono">GY-14<\/span> <span class="row-title">Export monthly reports as CSV<\/span><\/button>/);
+  assert.match(builder, /<span class="row-title">Export monthly reports as CSV<\/span><\/button>/);
+  assert.doesNotMatch(builder, /GY-14<\/span>/, 'no task key above the title (GY-3995)');
   assert.match(builder, /title="Export monthly reports as CSV"/);
   assert.match(builder, /data-state="Building"/);
   assert.match(builder, /<td data-label="Age"[^>]*><span class="spent">28m 30s<\/span><\/td>/);

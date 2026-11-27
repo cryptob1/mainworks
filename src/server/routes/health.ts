@@ -1,5 +1,5 @@
 import { releaseInfo, schemaVersion } from '../../release.js';
-import { planeVerdict, probeWrites, readDatabaseCapacity } from '../plane-health.js';
+import { databaseBoundWarning, planeVerdict, probeWrites, readDatabaseCapacity } from '../plane-health.js';
 import { defineRoutes, parseJson, type Services } from '../routes.js';
 import { demand } from '../../model.js';
 import { humanSignIn } from '../auth.js';
@@ -115,7 +115,7 @@ export const healthRoutes = defineRoutes('health', [
       ...releaseInfo(), schema: schemaVersion, commit: services.build.commit, protocol: services.build.protocol }));
     const [writeError, database] = settled;
     const verdict = planeVerdict(writeError, { database });
-    const body = observable({ ok: verdict.healthy, healthy: verdict.healthy, readiness, writable: verdict.writable, causes: verdict.causes, resources: { database },
+    const body = observable({ ok: verdict.healthy, healthy: verdict.healthy, readiness, writable: verdict.writable, causes: verdict.causes, warning: databaseBoundWarning(database), resources: { database },
       ...releaseInfo(), schema: schemaVersion, commit: services.build.commit, protocol: services.build.protocol });
     return answer(body);
   } },
