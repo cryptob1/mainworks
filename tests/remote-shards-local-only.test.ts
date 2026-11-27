@@ -14,12 +14,12 @@ import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
 // test files stay local and the reason is recorded once.
 
 test('unit:only-docker-tests-stay-on-the-coordinator — postgres, withDatabase, playwright and chromium are remoteable; docker stays local', async () => {
-  assert.equal(localOnlyTestPattern.source, 'docker|bwrap|unshare|landlock|hard-math|delivery-pipeline|npm exec|\\/var\\/tmp|npm_config_cache|worktreeRoot');
+  assert.equal(localOnlyTestPattern.source, 'docker|bwrap|unshare|landlock|hard-math|delivery-pipeline|npm exec|\\/var\\/tmp|npm_config_cache|worktreeRoot|setupMaster');
   for (const word of ['postgres', 'withDatabase', 'playwright', 'chromium']) {
     assert.equal(remoteableTestFile(`import { ${word} } from "./helper.js";\n`), true, `${word} is remoteable`);
   }
   assert.equal(remoteableTestFile('import { docker } from "docker";\n'), false, 'docker stays local');
-  for (const word of ['bwrap', 'unshare', 'landlock', 'hard-math', 'npm_config_cache', 'worktreeRoot']) {
+  for (const word of ['bwrap', 'unshare', 'landlock', 'hard-math', 'npm_config_cache', 'worktreeRoot', 'setupMaster']) {
     assert.equal(remoteableTestFile(`// needs ${word}\n`), false, `${word} stays local`);
   }
 

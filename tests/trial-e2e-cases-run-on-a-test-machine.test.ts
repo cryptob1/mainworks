@@ -50,12 +50,13 @@ test(`${proof} — the trial's cases run on two ready hosts, a secret's and an e
 
   // No host under its heat limit: every case runs here, exactly as before.
   const hot = await fixture.trial(['gy-compute@a', 'gy-compute@b'], ['e2e:alpha', 'e2e:beta'], () => ({ celsius: 99 }));
+  assert.deepEqual(hot.heatWaits, [10_000, 10_000], 'both the e2e host read and the test shard read wait their ten seconds on the fake clock');
   assert.deepEqual([hot.where('alpha'), hot.where('beta')], [['here'], ['here']], hot.result.logTail);
   assert.ok(hot.result.e2e?.every(item => item.host === undefined && item.failed === 0), JSON.stringify(hot.result.e2e));
 });
 
-test(`${proof} — a case whose tests name Docker only as text, marked so, may run on a test machine; one that uses it stays here`, async () => {
-  assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'smoke'), true, 'smoke\'s tests name Docker only in approved prose');
+test(`${proof} — a case needing managed worktrees stays on the coordinator with durable storage`, async () => {
+  assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'smoke'), false, 'smoke calls setupMaster, which requires durable managed worktrees');
   assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'verification-uses-remote-hosts'), false, 'its tests drive Docker');
   assert.ok(hostSafeMarker.length && !/docker|bwrap/i.test(hostSafeMarker));
 });

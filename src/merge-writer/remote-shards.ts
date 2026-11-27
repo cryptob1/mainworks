@@ -72,13 +72,13 @@ export async function rereadHotHosts(
  * delivery-pipeline: its case and script run a real nested merge trial, GY-3658), the
  * package registry (npm exec, or the npm cache a trial fixture installs through, npm_config_cache,
  * GY-3604; a shard has no network), /var/tmp (read-only there, GY-3609) or durable storage for a
- * managed worktree root (worktreeRoot, GY-3648: a shard container's writable temporary storage is
+ * managed worktree root (worktreeRoot or setupMaster, GY-4036: a shard container's writable temporary storage is
  * its tmpfs /tmp, HOME included, and Mainworks refuses a managed root on memory-backed storage).
  * Database tests start the shared warm Postgres cluster inside each remote shard container, and
  * browser tests use the Chromium shipped in the trial image. Servers, sockets and requests on
  * loopback work on a host, so their words do not keep a file local.
  */
-export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|delivery-pipeline|npm exec|\/var\/tmp|npm_config_cache|worktreeRoot/i;
+export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|delivery-pipeline|npm exec|\/var\/tmp|npm_config_cache|worktreeRoot|setupMaster/i;
 /** GY-4002: a test file that names local-only words only as text (approved prose, fixtures) says so with this line, and runs on a host. */
 export const hostSafeMarker = '// mainworks: runs on a test machine; its local-only words are text, not use.';
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words, or carries hostSafeMarker. */
@@ -833,11 +833,11 @@ async function catalogImage(input: { root: string; commit: string; baseTip?: str
  * host list and reads, and keeps each case's screenshot.
  */
 export async function catalogHosts(input: { root: string; commit: string; baseTip?: string; run: ChildRun; deadline: number; screenshots?: boolean; image?: string;
-  hosts?: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; signal?: AbortSignal }) {
+  hosts?: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; heatRereadMs?: number; heatSleep?: (ms: number) => Promise<void>; signal?: AbortSignal }) {
   const targets = input.hosts ?? await shardHosts();
   const transport = shardSshSession(input.run);
   const read = async (named: readonly string[]) => (await (input.read ?? ((names, shared) => readShardHosts(names, input.run, availableParallelism(), shared)))(named, transport)).slice(1);
-  const readings = targets.length ? await rereadHotHosts(await read(targets), read, { signal: input.signal }) : [];
+  const readings = targets.length ? await rereadHotHosts(await read(targets), read, { delayMs: input.heatRereadMs, sleep: input.heatSleep, signal: input.signal }) : [];
   const image = input.image ?? trialImage();
   const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, signal: input.signal, transport, hosts: readings,
     warm: version => catalogImage({ root: input.root, commit: input.commit, baseTip: input.baseTip, image, run: input.run, deadline: input.deadline, version }) });
@@ -884,7 +884,7 @@ export async function hostableTrialCase(worktree: string, name: string): Promise
  * start, comes back in `here`, for the coordinator to run once as it always has; `faults` names each host fault.
  */
 export async function trialE2eOnHosts(input: { root: string; commit: string; baseTip?: string; proofs: readonly string[]; run: ChildRun; deadline: number; image?: string;
-  hosts: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; signal?: AbortSignal }) {
+  hosts: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; heatRereadMs?: number; heatSleep?: (ms: number) => Promise<void>; signal?: AbortSignal }) {
   const here: string[] = [], faults: string[] = [], cases: TrialE2eCase[] = [];
   const remote = await catalogHosts({ ...input, screenshots: true });
   try {

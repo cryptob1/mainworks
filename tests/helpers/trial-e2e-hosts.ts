@@ -63,7 +63,10 @@ SSH_ORIGINAL_COMMAND="$last" exec "$shim"
   });
   /** The trial's children: its local E2E runner against this checkout's harness, as e2e-host-start-failure does; the rest as the trial runs them, through the fake hosts' ssh and Docker. */
   const run: ChildRun = async (command, args, options) => {
-    const env = { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` };
+    if (command === 'npm') return '';
+    // This machine's own probe (sh) samples its real sensors without waiting between samples; its reading is overridden below.
+    const probe = command === 'sh' ? { GRAPHYARD_PROBE_SAMPLE_SECONDS: '0' } : {};
+    const env = { ...process.env, ...options?.env, ...probe, PATH: `${hosts.bin}:${process.env.PATH}` };
     const script = args.at(-1) ?? '';
     if (command === 'node' && script.endsWith('run.mjs')) {
       await writeFile(script, (await readFile(script, 'utf8')).replaceAll(trialHarness, repository));
@@ -84,11 +87,13 @@ SSH_ORIGINAL_COMMAND="$last" exec "$shim"
   /** One merge trial of the repository's head with `proofs`, the hosts `targets` read with `adjust` applied (ready, 8 free cores and cool by default). */
   const trial = async (targets: string[], proofs: string[], adjust: (reading: HostReading) => Partial<HostReading> = () => ({})) => {
     await rm(ranLog, { force: true });
+    const heatWaits: number[] = [];
     const result = await runTrial({
       root, base: await temporaryDirectory(`${label}-base`), mergeSha: sha, changedFiles: tests, timeoutMs: 240_000, cores: 2, run, retries: 0, secretScan: false,
       e2eProofs: proofs,
       remote: {
         hosts: targets,
+        heatSleep: async ms => { heatWaits.push(ms); },
         read: async (named, transport) => (await readShardHosts(named, run, 2, transport)).map((reading, index) => index === 0
           ? { ...reading, cores: 2, busy: 2, steal: 0, celsius: null }
           : { ...reading, cores: 8, busy: 0, steal: 0, celsius: null, away: false, ...adjust(reading) }),
@@ -97,7 +102,7 @@ SSH_ORIGINAL_COMMAND="$last" exec "$shim"
     const ran = existsSync(ranLog) ? (await readFile(ranLog, 'utf8')).split('\n').filter(Boolean).map(line => { const [id, cwd] = line.split(' '); return { id: id!, cwd: cwd! }; }) : [];
     /** Where case `id` ran: the fake host whose folder held its working directory, else here. */
     const where = (id: string) => ran.filter(entry => entry.id === id).map(entry => /\/hosts\/([^/]+)\//.exec(entry.cwd)?.[1] ?? 'here');
-    return { result, ran, where, latest: readRemoteShardRuns(root).at(-1), root };
+    return { result, ran, where, heatWaits, latest: readRemoteShardRuns(root).at(-1), root };
   };
   return { hosts, trial, restore, root };
 }
