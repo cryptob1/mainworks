@@ -22,14 +22,14 @@ import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { configHome } from './install/secrets.js';
 import { cpuSensorNames } from './merge-writer/trial-load.js';
 import { cpuStatTotals, stealPercent } from './daemon/cpu-pressure.js';
-import { hostProbeScript, hostShimDigest, hostShimScript, hostShimScriptWithSigner, missingHelperVerbs, missingTrialVerbs, trialVerbs } from './host-shim.js';
+import { cpuSysfs, hostProbeScript, hostShimDigest, hostShimScript, hostShimScriptWithSigner, missingHelperVerbs, missingTrialVerbs, trialVerbs } from './host-shim.js';
 import { trialAppArmorProfilePath, trialAppArmorProfileText } from './merge-writer/trial-apparmor.js';
 import { shellQuote } from './install/transport.js';
 
 /** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. `login` (GY-3836): the owner's USER@HOST login the host was added with. */
 export interface HostRecord { target: string; addedAt: string; sessions?: number; login?: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; stat?: { total: number; steal: number } | null }
+export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; /** GY-4008: turbo or boost is off; absent on a CPU with neither. */ turboOff?: boolean; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -175,6 +175,32 @@ echo "Docker for $user: running and starts at boot"
 # A check that declares Compose services runs whole on this host, so its rootless Docker needs the Compose plugin.
 if sudo -u "$user" docker compose version >/dev/null 2>&1; then echo "Docker Compose plugin: found. Checks that declare Compose services can run here."
 else echo "Docker Compose plugin: missing. This host's rootless Docker needs it to run checks that declare Compose services; install docker-compose-plugin and they run here. Test shards work without it."; fi
+# GY-4008: shared builds run a compute machine hot; on the owner's word, a boot unit keeps turbo or boost off across reboots.
+cpu=${cpuSysfs}
+if [ -w "$cpu/intel_pstate/no_turbo" ]; then turbo="$cpu/intel_pstate/no_turbo" off=1 name=Turbo
+elif [ -w "$cpu/cpufreq/boost" ]; then turbo="$cpu/cpufreq/boost" off=0 name=Boost
+else turbo=; fi
+if [ -n "$turbo" ] && [ -e /etc/systemd/system/mainworks-turbo-off.service ]; then echo "$name: kept off at every boot"
+elif [ -n "$turbo" ]; then
+  printf '%s comes back on at every reboot. Keep it off, so shared builds run cooler? [y/N] ' "$name"
+  read -r answer || answer=
+  case "$answer" in
+    y|Y|yes|Yes|YES)
+      cat > /etc/systemd/system/mainworks-turbo-off.service <<GRAPHYARD_UNIT
+[Unit]
+Description=Keep $name off (Mainworks compute)
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo $off > $turbo'
+[Install]
+WantedBy=multi-user.target
+GRAPHYARD_UNIT
+      systemctl daemon-reload
+      systemctl enable --now mainworks-turbo-off
+      echo "$name: off now and at every boot" ;;
+    *) echo "$name: left as it is" ;;
+  esac
+fi
 # Tailscale SSH on port 22 ignores authorized_keys, so the shim: give $user its own OpenSSH on port ${computePort}.
 if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": *true'; then
   sshd=$(command -v sshd) || { echo "Install the OpenSSH server (sshd), then run this again." >&2; exit 1; }
@@ -234,6 +260,8 @@ export function parseHostProbe(text: string) {
   const user = /^user (\d+) ?(.*)$/m.exec(text);
   const verbs = /^verbs (.*)$/m.exec(text)?.[1]?.split(' ').filter(Boolean) ?? null;
   return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, migrated: /^migrated 1$/m.test(text), compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: tempMedian ?? (temps.length ? Math.max(...temps) : null), stat: cpuStatTotals(text),
+    /** GY-4008: turbo or boost off now; null on a CPU with neither. */
+    turboOff: /^turbo-off ([01])$/m.exec(text) ? /^turbo-off 1$/m.test(text) : null,
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 
@@ -518,6 +546,6 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const older = Boolean(target && (probe.shim !== hostShimDigest || (probe.verbs !== null && trialVerbs.some(verb => !probe.verbs!.includes(verb)))));
     const migrated = Boolean(target && probe.migrated);
     if (target && (older || migrated) && !login) login = await resolveLoginTarget(target, { run: options.run });
-    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...failure, ...(migrated ? { migrated: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, stat: probe.stat };
+    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...failure, ...(migrated ? { migrated: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, ...(probe.turboOff === null ? {} : { turboOff: probe.turboOff }), stat: probe.stat };
   }));
 }
