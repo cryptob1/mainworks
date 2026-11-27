@@ -18,8 +18,9 @@ import { workFixture } from './helpers/work-fixture.js';
 // GY-3996 AC-2: an item that is ready, has an open blocker, has no live session and has not changed
 // for 60 minutes is reported by the stall alarm with its key, the blocker's first 120 characters and
 // its age, and is included in the coordinator's wake message once per hour while it lasts; master
-// status no longer reports stallAlarm: null in that state. Items blocked on a human request or an open
-// scope request are excluded. Clearing the blocker clears the alarm and dispatches in the next cycle.
+// status no longer reports stallAlarm: null in that state. An item waiting on the human (parked on a
+// request, or blocked on one the human decides) or on a stored scope request still open is excluded.
+// Clearing the blocker clears the alarm and dispatches in the next cycle.
 
 const proof = 'integration:ready-item-with-stale-blocker-raises-the-stall-alarm';
 const start = Date.parse('2026-11-27T05:00:00Z');
