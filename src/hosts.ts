@@ -499,7 +499,7 @@ export async function removeHost(target: string, options: { file?: string } = {}
 }
 
 /** GY-3405: why a probed host cannot take agent sessions, in one line; null when its helper runs them. */
-export const sessionHelperReason = (target: string, probe: Awaited<ReturnType<typeof probeHost>>, login?: string) =>
+const sessionHelperReason = (target: string, probe: Awaited<ReturnType<typeof probeHost>>, login?: string) =>
   probe.ok && probe.verbs?.includes('run-session:1') ? null : probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run ${hostAddCommand(target, login)} first` : probe.reason;
 /** GY-3405: why `target` cannot take agent sessions now, in one line; null when its helper runs them. */
 export async function sessionHelperProblem(target: string, run: ChildRun = defaultChildRun): Promise<string | null> {
