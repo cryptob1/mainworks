@@ -6,7 +6,9 @@
   "target": "any",
   "required": false,
   "steps": [
+    { "kind": "command", "name": "unchanged registry observations write no receipts and real changes replay once (GY-4036)", "run": "node --import tsx tests/helpers/run-tests.ts tests/agent-registry.test.ts", "timeoutSeconds": 120 },
     { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }, { "path": "ok", "equals": true }, { "path": "readiness", "equals": true }] },
+    { "kind": "command", "name": "the image-lock tests finish in 30 s on their own lock directory, never the shared host lock (GY-4040)", "run": "node --import tsx tests/helpers/run-tests.ts tests/image-lock-covers-provision.test.ts tests/one-image-build-per-commit.test.ts", "timeoutSeconds": 30 },
     { "kind": "http", "name": "a database well under its bound shows no database warning, and health names its size and largest tables (GY-4005)", "method": "GET", "path": "/healthz", "status": 200, "expect": [{ "path": "warning", "equals": null }, { "path": "resources.database.used", "exists": true }, { "path": "resources.database.tables", "exists": true }] },
     { "kind": "command", "name": "with an owner recorded, the merge commit is authored 'NAME (Mainworks)'", "run": "node --import tsx tests/helpers/run-tests.ts tests/check-ins-are-authored-owner-and-mainworks.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "an owner change keeps in-flight work completable and a running session authors with the new owner", "run": "node --import tsx tests/helpers/run-tests.ts tests/owner-change-keeps-in-flight-work.test.ts", "timeoutSeconds": 120 },

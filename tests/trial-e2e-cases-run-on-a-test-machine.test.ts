@@ -55,8 +55,8 @@ test(`${proof} — the trial's cases run on two ready hosts, a secret's and an e
   assert.ok(hot.result.e2e?.every(item => item.host === undefined && item.failed === 0), JSON.stringify(hot.result.e2e));
 });
 
-test(`${proof} — a case whose tests name Docker only as text, marked so, may run on a test machine; one that uses it stays here`, async () => {
-  assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'smoke'), true, 'smoke\'s tests name Docker only in approved prose');
+test(`${proof} — a case needing managed worktrees stays on the coordinator with durable storage`, async () => {
+  assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'smoke'), false, 'smoke calls setupMaster, which requires durable managed worktrees');
   assert.equal(await hostableTrialCase(join(import.meta.dirname, '..'), 'verification-uses-remote-hosts'), false, 'its tests drive Docker');
   assert.ok(hostSafeMarker.length && !/docker|bwrap/i.test(hostSafeMarker));
 });
