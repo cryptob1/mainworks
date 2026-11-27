@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deployOnce, deployRecordPath, controlPlaneRecordPath, readControlPlaneRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, deployRecordPath, controlPlaneRecordPath, readControlPlaneRecord } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const previous = 'a'.repeat(40), next = 'b'.repeat(40), blob = `sha256:042822a3${'c'.repeat(56)}`;
@@ -9,8 +10,7 @@ for (const failure of ['lease does not exist: not found', 'failed to ingest']) {
     const root = await temporaryDirectory('bad-blob');
     const builds: boolean[] = [];
     let serving = previous;
-    const ports: DeployWatchPorts = {
-      fetch: async () => next, head: async () => previous, build: async () => {},
+    const ports = deployPorts(next, previous, {
       restart: async (commit, options?: { noCache?: boolean }) => {
         if (commit === next) {
           builds.push(options?.noCache ?? false);
@@ -19,9 +19,8 @@ for (const failure of ['lease does not exist: not found', 'failed to ingest']) {
         serving = commit;
       },
       health: async commit => { assert.equal(serving, commit); },
-      checkout: async () => {}, pin: async () => {}, prune: async () => {},
-      schema: async () => 1, database: async () => 1, install: 'core',
-    };
+      install: 'core',
+    });
     assert.equal(await deployOnce(deployRecordPath(root), ports, () => {}), 'deployed');
     assert.deepEqual(builds, [false, false, true]);
     const status = readControlPlaneRecord(controlPlaneRecordPath(root));

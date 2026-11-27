@@ -35,6 +35,7 @@ test('unit:knip-clean-pinned — the exports and binary main reported stay unrep
 
 // GY-4039: a deploy test builds its ports on tests/helpers/deploy-ports.ts and names only what its case varies.
 test('unit:knip-clean — no test file spells a DeployWatchPorts object inline', () => {
-  const inline = readdirSync(join(root, 'tests'), { recursive: true, encoding: 'utf8' }).filter(path => /\.test\.ts$/.test(path) && /DeployWatchPorts\s*=\s*\{|:\s*DeployWatchPorts\s*=>\s*\(\{/.test(readFileSync(join(root, 'tests', path), 'utf8')));
+  const object = /DeployWatchPorts\s*=\s*\{|:\s*DeployWatchPorts\s*=>\s*\(\{|:\s*DeployWatchPorts\s*\{[^}]*\breturn\s*\{/;
+  const inline = readdirSync(join(root, 'tests'), { recursive: true, encoding: 'utf8' }).filter(path => /\.test\.ts$/.test(path) && object.test(readFileSync(join(root, 'tests', path), 'utf8')));
   assert.deepEqual(inline, [], 'test files that still spell their deploy-watch ports inline');
 });

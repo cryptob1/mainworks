@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { controlPlaneRecordPath, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40);
@@ -29,14 +30,11 @@ function builder(exportMs: number) {
 
 function install(name: string, root: string, restart: () => Promise<void>): DeployWatchPorts {
   let running = a;
-  return {
-    fetch: async () => b, head: async () => a, build: async () => {},
+  return deployPorts(b, a, {
     restart: async commit => { await restart(); running = commit; },
     health: async commit => { if (running !== commit) throw new Error(`serves ${running.slice(0, 12)}`); },
-    checkout: async () => {}, pin: async () => {}, prune: async () => {},
-    schema: async () => 1, database: async () => 1,
     lockFile: `${root}/deploy.lock`, install: name,
-  };
+  });
 }
 
 test('integration:two-installs-deploy-builds-take-turns — two installs whose deploy builds start one second apart both serve the new commit, the second waiting for the first', { timeout: 60_000 }, async () => {
