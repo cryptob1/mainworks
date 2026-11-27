@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { cp, mkdir, readdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { credentialMaskFor, readOnlyMountWrapper } from '../src/master/confinement.js';
 import { createRequire } from 'node:module';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { gitRepo } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { watchPorts, deployHealth } from '../src/cli/upgrade.js';
 import { deployOnce, deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
 import { defaultChildRun } from '../src/child-runner.js';
@@ -19,7 +19,6 @@ const cliReleasePath = (directory: string, commit: string) => join(directory, 'd
 const activeCliRoot = (root: string) => realpath(join(root, '.graphyard', 'cli-current'));
 const source = fileURLToPath(new URL('../', import.meta.url));
 const modules = resolve(createRequire(import.meta.url).resolve('tsx'), '../../..');
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@test', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@test' } }).trim();
 
 // Each fixture owns its tsx tree. Other unchanged dependencies may be shared, just as worker
 // worktrees share dependencies; the failing installer removes only the candidate's own tree.

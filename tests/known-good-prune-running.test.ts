@@ -6,10 +6,9 @@ import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
 import { knownGoodDirectory, pinKnownGood, recordRunningPin } from '../src/master/known-good.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { gitRepo } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 /** GY-2760: pinning newer releases never prunes the pin the running loop loaded its modules from. */
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 const run: ChildRun = (command, args, options) => {
   if (command !== 'npm') return execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });
   if (args[0] === 'run') { mkdirSync(join(options!.cwd!, 'dist'), { recursive: true }); writeFileSync(join(options!.cwd!, 'dist', 'cli.js'), '// built\n'); }
