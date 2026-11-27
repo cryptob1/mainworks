@@ -3,7 +3,6 @@
 // cycle (runCycle: the merge writer step, then the batch gate step) over the production merge-writer
 // reads — real trials, real pushes, every ledger step recorded through the plane's merge-record
 // route. Agent work is scripted commits submitted as items; no AI runtime is launched.
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -26,6 +25,7 @@ import { server } from '../../src/server.js';
 import { Store } from '../../src/store.js';
 import { withDatabase } from './postgres.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { git, gitRepo } from './git-repo.js';
 import { freePort } from '../../src/cli/test-isolation.js';
 
 export const repository = 'owner/pipeline';
@@ -33,7 +33,7 @@ const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
 const coordinatorToken = `pipeline-coordinator-${'x'.repeat(32)}`, adminToken = `pipeline-admin-${'y'.repeat(32)}`;
 const identity = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com' };
-export const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...identity } }).trim();
+export { git };
 const githubDouble = new Proxy({}, { get: (_, name) => { throw new Error(`the loop called GitHub (${String(name)})`); } });
 
 /** A command E2E case: `run` exits 0 to pass. */
@@ -83,17 +83,12 @@ async function writeFiles(root: string, files: Record<string, string | null>) {
 /** The plane, the remote and the checkout, with `extra` fixture files in the base commit. `repo` overrides the managed repository (GY-3199: a world that gates Mainworks itself). */
 export async function pipelineWorld(label: string, extra: Record<string, string> = {}, repo: string = repository): Promise<World> {
   const root = await temporaryDirectory(label);
-  const origin = join(root, 'origin.git'), checkout = join(root, 'checkout'), trials = join(root, 'trials');
+  const checkout = join(root, 'checkout'), trials = join(root, 'trials');
   const store = await withDatabase(label); await store.init();
   const database = store.pool.options.connectionString!;
   const engine = new Engine(store, 120, repo);
   const { url, close: closeHttp } = await listen(server(engine, [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }, { ...operator, token: adminToken }]));
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(checkout, 'config', 'user.name', 'Fixture'); git(checkout, 'config', 'user.email', 'fixture@example.com');
-  await writeFile(join(checkout, '.gitignore'), '.graphyard/\n');
-  await writeFiles(checkout, fixtureFiles(extra, await freePort()));
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
+  const { origin } = await gitRepo({ root: checkout, label, origin: true, files: { '.gitignore': '.graphyard/\n', ...fixtureFiles(extra, await freePort()) } });
   const base = git(origin, 'rev-parse', 'main');
   git(checkout, 'checkout', '-q', '--detach');
   engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';

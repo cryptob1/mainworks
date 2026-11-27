@@ -9,6 +9,7 @@ import { prepareConfinedGitPaths, startAgentSession } from '../../src/master/lau
 import { runtimeLaunchProvider } from './runtime-launch-provider.js';
 import { runtimeLaunchTerminal } from './runtime-launch-terminal.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { gitRepo } from './git-repo.js';
 
 /** Only the negative DNS probe caps glibc to 1 attempt / 1 s; repaired DNS keeps retries so cold lookups stay deterministic. */
 export function resolverEnvironment(expected: 'fail' | 'succeed', env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -19,9 +20,7 @@ export function resolverEnvironment(expected: 'fail' | 'succeed', env: NodeJS.Pr
 export async function runtimeLaunchSession(base: string, resolver: boolean) {
   const root = join(base, 'repo'), worktree = join(root, 'assigned'), home = join(base, 'operator');
   for (const path of [root, home]) await mkdir(path, { recursive: true });
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { stdio: 'pipe' });
-  git('init', '-q'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'user.name', 'Fixture');
-  await writeFile(join(root, 'README'), 'base'); git('add', '.'); git('commit', '-qm', 'base');
+  const { git } = await gitRepo({ root, files: { README: 'base' } });
   git('worktree', 'add', '-qb', 'graphyard/test-runtime', worktree);
   prepareConfinedGitPaths(root);
   await writeFile(join(home, 'sentinel'), 'protected');

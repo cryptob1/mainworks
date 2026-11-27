@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes } from '../src/model/registry.js';
@@ -42,17 +43,13 @@ before(async () => {
   root = await temporaryDirectory('product-review-differing-lock-root'); credentials = await temporaryDirectory('product-review-differing-lock-credentials');
   const browserBin = await temporaryDirectory('product-review-differing-lock-browser');
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const commit = (message: string) => { git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', message); return git('rev-parse', 'HEAD'); };
-  git('init', '-q', '--initial-branch=main');
-  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   // The repository declares one dependency; its install lives at the repository root, untracked.
-  await writeFile(join(root, '.gitignore'), 'node_modules/\n');
-  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'project', version: '1.0.0', dependencies: { greeting: '1.0.0' } }));
-  await writeFile(join(root, 'package-lock.json'), JSON.stringify({ name: 'project', version: '1.0.0', lockfileVersion: 3, requires: true,
-    packages: { '': { name: 'project', version: '1.0.0', dependencies: { greeting: '1.0.0' } }, 'node_modules/greeting': { version: '1.0.0' } } }));
-  base = commit('base');
-  git('update-ref', 'refs/remotes/origin/main', base);
+  const { git, head } = await gitRepo({ root, files: { '.gitignore': 'node_modules/\n', 'package.json': JSON.stringify({ name: 'project', version: '1.0.0', dependencies: { greeting: '1.0.0' } }),
+    'package-lock.json': JSON.stringify({ name: 'project', version: '1.0.0', lockfileVersion: 3, requires: true,
+      packages: { '': { name: 'project', version: '1.0.0', dependencies: { greeting: '1.0.0' } }, 'node_modules/greeting': { version: '1.0.0' } } }) } });
+  const commit = (message: string) => { git('add', '.'); git('commit', '-qm', message); return git('rev-parse', 'HEAD'); };
+  base = head;
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); git('update-ref', 'refs/remotes/origin/main', base);
   await mkdir(join(root, 'node_modules', 'greeting'), { recursive: true });
   await writeFile(join(root, 'node_modules', 'greeting', 'package.json'), JSON.stringify({ name: 'greeting', version: '1.0.0', type: 'module', exports: './index.js' }));
   await writeFile(join(root, 'node_modules', 'greeting', 'index.js'), 'export const greeting = "hello from the dependency";\n');

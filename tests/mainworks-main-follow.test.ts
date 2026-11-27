@@ -1,24 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { gitWatchPorts, renderPlan, resolveTarget, upgradeCommands, upgradePlan } from '../src/cli/upgrade.js';
 import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
 import { defaultChildRun } from '../src/child-runner.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2982: every install follows Mainworks's own main, whatever base branch the managed repository uses,
 // and mainworks upgrade without --to moves to that main tip; the stable channel is gone.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-
 /** A bare origin on `branch`, a clone that pushes to it, and `commit(name)` pushing one more commit. */
 async function origin(base: string, name: string, branch: string) {
-  const bare = join(base, `${name}.git`), pusher = join(base, `${name}-pusher`);
-  git(base, 'init', '-q', '--bare', '-b', branch, bare);
-  git(base, 'clone', '-q', bare, pusher);
-  git(pusher, 'checkout', '-q', '-b', branch);
+  const { root: pusher, origin: bare } = await gitRepo({ root: join(base, `${name}-pusher`), label: name, branch, origin: true });
   const commit = async (label: string, files: Record<string, string> = {}) => {
     for (const [file, text] of Object.entries({ 'release.txt': label, ...files })) { await mkdir(dirname(join(pusher, file)), { recursive: true }); await writeFile(join(pusher, file), text); }
     git(pusher, 'add', '-A'); git(pusher, 'commit', '-q', '-m', label); git(pusher, 'push', '-q', 'origin', `HEAD:${branch}`);

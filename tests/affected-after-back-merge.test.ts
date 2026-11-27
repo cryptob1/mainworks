@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3250: a candidate that changes only pm and has back-merged a main commit touching sites
@@ -14,12 +14,6 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // pnpm and turbo through npm exec once (registry access; a remote shard has no network, so this
 // file names the local-only word and stays on this machine).
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com',
-  GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const sharedCache = process.env.npm_config_cache || join(homedir(), '.npm');
 const run: ChildRun = (command, args, { wrapper: _wrapper, ...options } = {}) =>
   defaultChildRun(command, args, { ...options, ...(options.env ? { env: { ...options.env, npm_config_cache: sharedCache } } : {}) });
@@ -101,9 +95,7 @@ const commit = async (root: string, files: Record<string, string>, message: stri
 };
 
 test('integration:affected-after-back-merge — a candidate changing only pm that back-merged a main commit touching sites builds pm and its dependent console, never sites, and the log names each selected package and why', async () => {
-  const root = await temporaryDirectory('affected-after-back-merge', tmpdir());
-  git(root, 'init', '-q', '-b', 'main');
-  await commit(root, workspace, 'base');
+  const { root } = await gitRepo({ root: await temporaryDirectory('affected-after-back-merge', tmpdir()), files: workspace });
   git(root, 'checkout', '-q', '-b', 'graphyard/gy-1-1');
   await commit(root, { 'packages/pm/build.mjs': `// pm change\n${build('pm')}` }, 'pm change');
   git(root, 'checkout', '-q', 'main');

@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +14,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -38,11 +37,7 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 }
 before(async () => {
   root = await realpath(await temporaryDirectory('planned-files-hint'));
-  const origin = join(root, 'origin.git'), checkout = join(root, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await commit(checkout, 'src/planned.ts', 'export const planned = 1;\n', 'base');
-  git(checkout, 'push', '-q', 'origin', 'main');
+  const { root: checkout } = await gitRepo({ root: join(root, 'checkout'), origin: true, files: { 'src/planned.ts': 'export const planned = 1;\n' } });
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
   // The head changes nothing it planned: only files outside its plannedFiles.

@@ -10,7 +10,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { ServeLanding } from '../src/merge-writer/serve-revert.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3667: a batch gate settles in under 45 minutes. Every failing check that needs the verified
 // commit's verdict runs there in one run, the culprit search halves the batch's prefixes, and a
@@ -109,21 +109,17 @@ test('integration:gate-known-flaky-no-rerun — a failing check with an open fla
 });
 
 // The e2e case: real git, the loop's own gate ports, eight landings.
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
-
 test('e2e:gate-settles-fast — a gate with three failing checks, two with open flaky items and one broken by one of eight landings, reverts that landing and settles without timing out', { timeout: 120_000 }, async () => {
   const base = await temporaryDirectory('gate-settles-fast');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
+  const coordinator = join(base, 'coordinator');
+  const { root: pusher, origin, head: verified } = await gitRepo({ root: join(base, 'pusher'), origin: true, files: {
+    'graphyard.json': JSON.stringify({ gate: { core: ['create-work-item', 'smoke', 'flaky-a', 'flaky-b'] } }),
+    ...Object.fromEntries(['create-work-item', 'smoke', 'flaky-a', 'flaky-b'].map(id => [`e2e/cases/${id}.json`, '{}'])),
+  } });
   const write = async (files: Record<string, string>) => {
     for (const [name, text] of Object.entries(files)) { await mkdir(join(pusher, name, '..'), { recursive: true }); await writeFile(join(pusher, name), text); }
     git(pusher, 'add', '.');
   };
-  await write({ 'graphyard.json': JSON.stringify({ gate: { core: ['create-work-item', 'smoke', 'flaky-a', 'flaky-b'] } }),
-    ...Object.fromEntries(['create-work-item', 'smoke', 'flaky-a', 'flaky-b'].map(id => [`e2e/cases/${id}.json`, '{}'])) });
-  git(pusher, 'commit', '-q', '-m', 'base');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
   for (let n = 1; n <= 8; n++) {
     git(pusher, 'checkout', '-q', '-b', `item-${n}`);
     await write({ [`src/f${n}.ts`]: n === 6 ? 'broken\n' : 'ok\n' });
@@ -144,7 +140,7 @@ test('e2e:gate-settles-fast — a gate with three failing checks, two with open 
   const reads: MergeWriterReads = {
     baseBranch: 'main', now: () => clock,
     fetch: async () => { run('fetch', '-q', 'origin', 'main'); return run('rev-parse', 'origin/main'); },
-    git: async (args, extra) => execFileSync('git', ['-C', coordinator, ...args], { encoding: 'utf8', env: { ...env, ...extra } }),
+    git: async (args, extra) => execFileSync('git', ['-C', coordinator, ...args], { encoding: 'utf8', env: { ...process.env, ...extra } }),
     merge: async () => { throw new Error('unused'); },
     trial: async (commit, _files, trialItem) => {
       clock += 3 * 60_000; // each trial takes three minutes of the gate's own time

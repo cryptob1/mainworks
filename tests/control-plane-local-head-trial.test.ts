@@ -18,7 +18,7 @@ import { Store } from '../src/store.js';
 import { completionBody } from '../src/cli/complete.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -55,15 +55,12 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('control-plane-local-head'));
-  origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout'); worktreeBase = join(fixtureRoot, 'managed');
+  checkout = join(fixtureRoot, 'checkout'); worktreeBase = join(fixtureRoot, 'managed');
   branch = 'graphyard/gy-2010-1';
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await commit(checkout, 'README.md', '# Fixture\n', 'base');
-  await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
-  await commit(checkout, 'tests/app.test.ts', "import { test } from 'node:test';\ntest('unit:app-works — the app answers', () => {});\n", 'test');
-  git(checkout, 'push', '-q', 'origin', 'main');
-  baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
+  ({ origin, head: baseTip } = await gitRepo({ root: checkout, origin: true, files: {
+    'README.md': '# Fixture\n', 'src/app.ts': 'export const app = 1;\n',
+    'tests/app.test.ts': "import { test } from 'node:test';\ntest('unit:app-works — the app answers', () => {});\n",
+  } }));
   // Worker head in the shared object store only: linked worktree, never pushed to origin.
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-2010-1');
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree, baseTip);

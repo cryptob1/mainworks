@@ -4,7 +4,7 @@ import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { serveGitHttp } from './helpers/git-http-remote.js';
 import { harness } from './install-harness.js';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall, resumeCommand, type ProfileRequest } from '../src/install/index.js';
@@ -39,9 +39,8 @@ async function stubGh(directory: string) {
 /** A checkout whose origin is unreachable, so only the merge writer's explicit https URL can work. */
 async function mergeWriterCheckout(directory: string) {
   const origin = join(directory, 'repo.git'), checkout = join(directory, 'checkout');
-  git(directory, 'init', '-q', '--bare', '-b', 'main', origin); git(origin, 'config', 'http.receivepack', 'true'); git(directory, 'clone', '-q', origin, checkout);
-  await writeFile(join(checkout, 'a.txt'), 'base\n');
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
+  await gitRepo({ root: checkout, files: { 'a.txt': 'base\n' } });
+  git(directory, 'init', '-q', '--bare', '-b', 'main', origin); git(origin, 'config', 'http.receivepack', 'true'); git(checkout, 'remote', 'add', 'origin', origin); git(checkout, 'push', '-q', '-u', 'origin', 'main');
   const baseTip = git(checkout, 'rev-parse', 'HEAD');
   await writeFile(join(checkout, 'b.txt'), 'merge\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'merge');

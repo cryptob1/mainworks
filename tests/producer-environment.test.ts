@@ -19,6 +19,7 @@ import type { RunOptions, Runner } from '../src/runner/types.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { expandTypedCommand, requestOf, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { workFixture } from './helpers/work-fixture.js';
@@ -115,11 +116,9 @@ test('unit:producer-environment a live-install proof names each .env value it la
 async function installation(pi = false) {
   const base = await realpath(await temporaryDirectory('producer-env-launch'));
   const root = join(base, 'repository'), credentials = join(base, 'credentials'), managed = join(base, 'data', 'worktrees');
-  await mkdir(root); await mkdir(credentials, { mode: 0o700 });
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'producer environment\n');
-  git('add', 'README.md'); git('-c', 'user.name=Mainworks', '-c', 'user.email=graphyard@example.test', 'commit', '-q', '-m', 'initial');
+  await mkdir(credentials, { mode: 0o700 });
+  const { git } = await gitRepo({ root, message: 'initial', files: { 'README.md': 'producer environment\n' } });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'workspace', run: { worktreeRoot: managed } }, coordinatorStatus, { probe: durable });
   const credential = join(credentials, 'producer.token'); await writeFile(credential, 'producer-token-'.padEnd(40, 'x'), { mode: 0o600 });
   await saveProducerProfile(root, { name: 'producer-a', principal: 'proof-runner', agentName: 'produce-a', kind: 'codex', credentialFile: credential }, async () => ({ actor: { id: 'proof-runner', role: 'producer', proofs: ['unit:*', 'integration:*', 'manual:*'] } }));

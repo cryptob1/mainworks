@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial } from '../src/merge-writer/trial.js';
@@ -15,27 +15,12 @@ import { masterConfigSchema } from '../src/master/profiles.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com',
-  GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com',
-  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
-};
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-const writeFiles = (root: string, files: Record<string, string>) => {
-  for (const [path, content] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), content);
-  }
-};
 const testFiles = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta'].map(name => `tests/${name}.test.ts`);
 
 /** A repository whose test runner reports each file's duration from durations.json; answers a commit per durations map. */
 async function fixtureRepo() {
-  const root = await temporaryDirectory('trial-timings-repo');
   const base = await temporaryDirectory('trial-timings-base');
-  git(root, 'init', '-q', '-b', 'main');
-  mkdirSync(join(root, '.graphyard'));
-  writeFiles(root, {
+  const { root, git } = await gitRepo({ label: 'trial-timings-repo', files: {
     '.gitignore': 'node_modules\n.graphyard\n',
     'package.json': JSON.stringify({ name: 'timings-fixture', scripts: { build: 'node -e ""' } }),
     'package-lock.json': '{"lockfileVersion":3}\n',
@@ -52,12 +37,13 @@ for (const r of results) console.log('ok - ' + r.file);
 writeFileSync(process.argv[process.argv.indexOf('--durations') + 1], results.map(r => JSON.stringify(r)).join('\\n') + '\\n');
 `,
     ...Object.fromEntries(testFiles.map(file => [file, '// fixture\n'])),
-  });
+  } });
+  mkdirSync(join(root, '.graphyard'));
   const commit = (durations: Record<string, number>) => {
     writeFileSync(join(root, 'durations.json'), JSON.stringify(durations));
-    git(root, 'add', '-A');
-    git(root, 'commit', '-qm', 'durations');
-    return git(root, 'rev-parse', 'HEAD');
+    git('add', '-A');
+    git('commit', '-qm', 'durations');
+    return git('rev-parse', 'HEAD');
   };
   return { root, base, commit };
 }

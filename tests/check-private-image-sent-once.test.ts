@@ -7,8 +7,9 @@ import type { ChildRun } from '../src/child-runner.js';
 import { hostShimDigest, hostShimVerbs, missingTrialVerbs } from '../src/host-shim.js';
 import { readShardHosts, remoteShardSession, shardSshSession } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { dockerCalls, dockerCount, git, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
+import { dockerCalls, dockerCount, shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
 // GY-3825 AC-1: a check's Compose service image that exists in the coordinator's local Docker
 // is sent to the compute host before run-check, keyed by image id, and skipped when the host
@@ -86,16 +87,15 @@ test(`${proof} — sends a local check image once by image id, skips when host h
   assert.equal(dockerCount(hosts.state('box'), 'load'), loadsAfterFirst + 1, 'rebuilt image id is transferred');
 });
 
-test(`${proof} — helper accepts an image only when the run's committed Compose file names it and refuses other names and build`, () => {
+test(`${proof} — helper accepts an image only when the run's committed Compose file names it and refuses other names and build`, async () => {
   const run = 'trial-imgcheck1';
   const repo = join(hosts.home('box'), '.graphyard', 'runs', run, 'repo');
   mkdirSync(repo, { recursive: true });
   writeFileSync(join(repo, '..', 'image'), 'graphyard-warm:000000000000-none');
-  git(repo, 'init', '-q', '-b', 'main');
-  writeFileSync(join(repo, 'compose.json'), JSON.stringify({ services: { oracle: { image: privateImage, expose: [8080] } } }));
-  writeFileSync(join(repo, 'build.json'), JSON.stringify({ services: { oracle: { image: privateImage, build: { context: '.' }, expose: [8080] } } }));
-  git(repo, 'add', '-A');
-  git(repo, 'commit', '-qm', 'fixture');
+  await gitRepo({ root: repo, message: 'fixture', files: {
+    'compose.json': JSON.stringify({ services: { oracle: { image: privateImage, expose: [8080] } } }),
+    'build.json': JSON.stringify({ services: { oracle: { image: privateImage, build: { context: '.' }, expose: [8080] } } }),
+  } });
 
   const refused = [
     `receive-image ${privateImage}`,

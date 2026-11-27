@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3967: the daily catalog failed e2e:blocker-escalates at step 8, filling "Access token". A remote
 // catalog shard runs scripts/e2e-shard.mjs over a bare checkout of the commit, which has no dist/, so the
@@ -14,10 +14,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 const repo = fileURLToPath(new URL('..', import.meta.url));
 
 async function shard(files: Record<string, string>) {
-  const root = await temporaryDirectory('e2e-shard-sign-in');
-  for (const [path, text] of Object.entries(files)) { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), text); }
-  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root });
-  git('init', '-q'); git('add', '.'); git('commit', '-qm', 'fixture');
+  const { root } = await gitRepo({ label: 'e2e-shard-sign-in', files, message: 'fixture' });
   await writeFile(join(root, 'list'), 'e2e/cases/sign-in.json\n');
   try {
     execFileSync(process.execPath, ['--import', join(repo, 'node_modules', 'tsx', 'dist', 'loader.mjs'), join(repo, 'scripts', 'e2e-shard.mjs'), 'list', 'records', '60000'], { cwd: root, stdio: 'pipe' });

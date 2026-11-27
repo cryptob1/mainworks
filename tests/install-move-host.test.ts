@@ -18,6 +18,7 @@ import { reserveTestPorts } from '../src/cli/test-isolation.js';
 import { moveInstall } from '../src/install/move.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 import { apiOk } from './helpers/api.js';
 
@@ -50,11 +51,8 @@ test('e2e:install-move-host — install move copies the database, files and cred
     running = await controlPlane(data, ports.base);
     const source = running;
     // The checkout is a linked worktree of a main clone, and holds a CLI release copy that is a linked worktree too — the layout a hand move left with dangling registrations.
-    const git = (...args: string[]) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { stdio: ['ignore', 'ignore', 'ignore'] });
-    await mkdir(repo, { recursive: true });
-    git('init', '-q', '-b', 'main'); await writeFile(join(repo, 'README.md'), 'owner/project\n'); git('add', '.'); git('commit', '-q', '-m', 'root');
+    const { head: commit, git } = await gitRepo({ root: repo, files: { 'README.md': 'owner/project\n' }, message: 'root' });
     git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-    const commit = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     git('worktree', 'add', '--detach', '--quiet', root, commit);
     const bound = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
     await setupMaster(root, { url: source.url, token: tokens.master, cliPath: launcher, credentialDirectory: configHome, hostId: 'source-host', herdrWorkspace: 'workspace-mainworks' }, bound as typeof fetch);

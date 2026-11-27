@@ -10,7 +10,7 @@ import { recordTestSelection, selectionCounts } from '../src/merge-writer/test-s
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3866: an item's trial selects only the tests importing a changed file directly (one hop), its
 // bound proofs and the static rules; the release check's sweep still runs the transitive importers.
@@ -32,11 +32,8 @@ const project: Record<string, string> = {
 };
 
 test('integration:trial-one-hop-selection — an item trial selects the direct importer and static rules, not the transitive importer; the release check is unchanged; master status shows the median share of all tests before and after', async () => {
-  const root = await temporaryDirectory('one-hop-selection');
+  const { root, head: base } = await gitRepo({ label: 'one-hop-selection', files: { 'package.json': '{}', ...project } });
   try {
-    await write(root, { 'package.json': '{}', ...project });
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
-    const base = git(root, 'rev-parse', 'HEAD');
     await write(root, { 'src/core.ts': changedCore });
     git(root, 'commit', '-qam', 'change');
     const changed = ['src/core.ts'], tests = listTestFiles(root), map = dependencyMap(root, tests);

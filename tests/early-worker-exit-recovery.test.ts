@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,6 +17,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterCauses } from '../src/daemon/master-stalled-delivery.js';
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { apiOk } from './helpers/api.js';
 
@@ -33,12 +33,9 @@ useTestStore('early-worker-exit-recovery', { leaseSeconds: 7200, credentials: [o
 const proof = 'integration:early-worker-exit-recovery';
 test(`${proof} — a headless worker run that exits nonzero at once is a diagnosed, masked launch incident that cools off, routes around, wakes once, holds on the third and recovers`, { timeout: 180_000 }, async () => {
   await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');
-  const root = await temporaryDirectory('early-exit-repo'), credentials = await temporaryDirectory('early-exit-credentials');
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  const { root, head: initialHead, git } = await gitRepo({ label: 'early-exit-repo', files: { fixture: 'base' } });
+  const credentials = await temporaryDirectory('early-exit-credentials');
   git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'fixture'), 'base'); git('add', '.'); git('commit', '-qm', 'base');
-  const initialHead = git('rev-parse', 'HEAD');
   const coordinatorFile = join(credentials, 'coordinator.token'); await writeFile(coordinatorFile, token(coordinator), { mode: 0o600 });
   const profiles = await Promise.all(workers.map(async (actor, index) => {
     const credentialFile = join(credentials, `${actor.id}.token`); await writeFile(credentialFile, token(actor), { mode: 0o600 });

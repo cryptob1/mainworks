@@ -1,7 +1,6 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { withDatabase } from './postgres.js';
 import { listen } from './http-server.js';
 import { temporaryDirectory } from './temp-dirs.js';
+import { gitRepo } from './git-repo.js';
 import { workFixture } from './work-fixture.js';
 import { AgentRegistry } from '../../src/agent-registry.js';
 import { Engine } from '../../src/engine.js';
@@ -80,11 +80,8 @@ export async function headlessWorkers(label: string, leaseSeconds = 120, agentNa
   const bin = await temporaryDirectory('bin', scratch);
   const engine = new Engine(store, leaseSeconds, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
   const { url, close } = await listen(server(engine, [coordinator, worker, reader, { id: 'fixture-admin', role: 'admin' } as Principal].map(principal => ({ ...principal, token: token(principal) }))));
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'Fixture.\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
-  git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
+  const { git, head } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); git('update-ref', 'refs/remotes/origin/main', head);
   // Herdr is on PATH and records any call: a worker launch must make none. Fixtures running at once
   // share one record, since whichever fixture's bin leads PATH answers a call.
   const herdrCalls = sharedHerdrCalls ??= join(scratch, 'herdr-calls');
