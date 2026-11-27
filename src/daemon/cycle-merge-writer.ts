@@ -526,7 +526,8 @@ async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'n
       try {
         const tip = await reads.fetch(), merged = await reads.merge(pending.head, tip, item);
         if (!('conflict' in merged)) {
-          await reads.record(item, { kind: 'refused', head: pending.head, reason: `${reads.baseBranch} moved to ${tip.slice(0, 12)}, onto which head ${pending.head.slice(0, 12)} merges without conflict, so the head is queued again for its trial there` });
+          // A fresh attempt keys the write, as every merge record is keyed (GY-1852), so it never reuses another refusal's key.
+          await attemptRecorder(writer, reads.record, randomUUID(), at)(item, { kind: 'refused', head: pending.head, reason: `${reads.baseBranch} moved to ${tip.slice(0, 12)}, onto which head ${pending.head.slice(0, 12)} merges without conflict, so the head is queued again for its trial there` });
           action('done', `${pending.key} head ${pending.head.slice(0, 12)} now merges cleanly onto ${reads.baseBranch} ${tip.slice(0, 12)}: it is trialled there instead of returned to a worker`);
           continue;
         }

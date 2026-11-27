@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { mergeWriterIdle, mergeWriterReads, mergeWriterStep } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { mergeRecordKinds, type MergeRecordEvent, type MergeTrialInput } from '../src/merge-writer/executor.js';
+import { mergeRecordKey, mergeRecordKinds, type MergeRecordEvent, type MergeTrialInput } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
@@ -39,14 +39,14 @@ async function fixture(label: string) {
     criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:item-works'] }],
     observation: { source: 'control-plane', candidate, files: ['item.txt'], scopeFiles: [{ path: 'item.txt' }], checks: [], reviews: [], merged: false, mergeSha: null, mergeable: true, protected: false, at: new Date().toISOString() } as unknown as Observation,
     gates: ['ready', 'build', 'review', 'acceptance'].map(name => ({ name, passed: true, reasons: [] })) } as Partial<Work>);
-  const events: { kind: string; payload: unknown; work: string }[] = [], trials: MergeTrialInput[] = [], reworks: { key: string; reason: string }[] = [];
+  const events: { kind: string; payload: unknown; work: string; key: string }[] = [], trials: MergeTrialInput[] = [], reworks: { key: string; reason: string }[] = [];
   let onRefused = async () => {};
   const config = masterConfigSchema.parse({ version: 1, repository: 'owner/project', baseBranch: 'main', url: 'https://graphyard.example', credentialFile: '/unused', cliPath: '/unused', githubAppId: 1, hostId: 'fixture', masterAgentName: 'fixture', workers: [], run: { mergeWriter: { deployKeyFile: join(directory, 'unused-key') } } });
   const reads = mergeWriterReads(config, checkout, defaultChildRun, { base: join(directory, 'managed'),
     trial: async input => { trials.push(input); return { build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: ['tests/item.test.ts'], proofs: { 'unit:item-works': { executed: 1, failed: 0 } } }; },
     record: async (item, event: MergeRecordEvent) => {
       const { kind, ...payload } = event;
-      events.push({ kind: mergeRecordKinds[kind], work: item.key, payload: kind === 'intent' ? { ...payload, key: item.key } : kind === 'refused' ? { ...payload, kind: 'merge' } : payload });
+      events.push({ kind: mergeRecordKinds[kind], work: item.key, key: mergeRecordKey(item, event), payload: kind === 'intent' ? { ...payload, key: item.key } : kind === 'refused' ? { ...payload, kind: 'merge' } : payload });
       if (kind === 'refused') await onRefused();
       return {};
     } });
@@ -71,6 +71,10 @@ test('integration:clean-base-move-goes-to-trial — a head refused for a conflic
   for (let cycle = 0; cycle < 6 && !f.reworks.length && !f.events.some(event => event.kind === 'merge.pushed'); cycle++) await f.step();
   assert.ok(f.events.some(event => event.kind === 'merge.refused' && /the merge conflicts in item\.txt/.test(JSON.stringify(event.payload))), 'the first trial merge conflicted with main');
   assert.deepEqual(f.reworks, [], 'the head merges cleanly onto the moved main, so it is not returned to its worker');
+  const requeue = f.events.find(event => event.kind === 'merge.refused' && /merges without conflict/.test(JSON.stringify(event.payload)));
+  assert.ok(requeue, 'the head is queued again for its trial on the moved main');
+  assert.match(requeue.key, /^merge-record:w1:[0-9a-f-]{36}:0:refused$/, 'the requeue is written under its own attempt, never a key another refusal used');
+  assert.equal(new Set(f.events.map(event => event.key)).size, f.events.length, 'no two records share an idempotency key');
   const landed = git(f.origin, 'rev-parse', 'main');
   assert.notEqual(landed, cleanTip, 'the head landed on the moved main');
   assert.deepEqual(git(f.origin, 'log', '-1', '--format=%P', landed).split(' '), [cleanTip, f.head], 'a Merge GY-1 commit onto the moved main whose second parent is the head, unchanged');
