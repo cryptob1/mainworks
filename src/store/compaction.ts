@@ -180,7 +180,8 @@ let expiredSinceRewrite = 0;
  * GY-4005: delete rows of `expiringKinds` older than the window, at most `batch` rows per short
  * transaction on the pool (never under the coordination lock), each batch audited with a
  * `ledger.compacted` row. When a catch-up of many rows finishes, the events table is rewritten once
- * (VACUUM FULL, waiting at most 5 s for its lock) so its size drops instead of only its growth stopping.
+ * (VACUUM FULL, waiting at most 5 s for its lock) so its size drops instead of only its growth stopping;
+ * a rewrite that fails (its lock busy, or too little disk for the copy) is not retried until the next catch-up.
  */
 export async function expireEvents(pool: pg.Pool, options: { retentionMs?: number; batch?: number; batches?: number; pauseMs?: number; rewriteAfter?: number } = {}) {
   const retentionMs = options.retentionMs ?? expiringRetentionMs, batch = options.batch ?? expiringBatch;
@@ -210,8 +211,8 @@ export async function expireEvents(pool: pg.Pool, options: { retentionMs?: numbe
     try {
       await db.query("SET statement_timeout = 0; SET lock_timeout = '5s'");
       await db.query('VACUUM (FULL, ANALYZE) events');
-      expiredSinceRewrite = 0; rewritten = true;
-    } catch (error) { failed = error as Error; console.error('events table rewrite failed', failed.message); } finally { db.release(failed ?? true); }
+      rewritten = true;
+    } catch (error) { failed = error as Error; console.error('events table rewrite failed', failed.message); } finally { expiredSinceRewrite = 0; db.release(failed ?? true); }
   }
   return { removed, total, done, rewritten };
 }
