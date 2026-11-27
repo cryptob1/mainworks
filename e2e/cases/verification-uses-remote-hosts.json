@@ -98,6 +98,12 @@
       "name": "Upload three base tips' warm images, then run a check on the first on every live helper version; two installs keep each other's images and an hour-old one is pruned",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/check-image-present-before-start-and-kept-while-in-use.test.ts",
       "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
+      "name": "Run the daily catalog inside 45 minutes: this machine's cases in lanes dealt by the timing baseline, a test machine's in one shard per six free cores each in its own checkout, and each lane's run adopted after a restart",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/e2e-catalog-fits-bound.test.ts",
+      "timeoutSeconds": 300
     }
   ]
 }

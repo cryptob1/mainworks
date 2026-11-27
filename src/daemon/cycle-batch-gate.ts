@@ -10,7 +10,7 @@ import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.
 import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert, type ServeRevertPorts } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
-import { HostDroppedError, localOnlyTestPattern, realFreeCores } from '../merge-writer/remote-shards.js';
+import { HostDroppedError, localOnlyTestPattern, realFreeCores, type HostReading } from '../merge-writer/remote-shards.js';
 import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
 import type { Cycle } from './cycle.js';
@@ -31,24 +31,29 @@ import { runFiles } from '../runner/pi.js';
 
 /** The gate's own item key in the trial (a proofless pseudo-item, like a revert's). */
 const gateKey = gateTrialKey;
-/** GY-3811: the full-suite diagnostics trial's input digest (build + affected over package.json), constant across commits. */
-const suiteInput = createHash('sha256').update(JSON.stringify([[], ['package.json']])).digest('hex');
-const isSameDiagnosticsKind = (isSuite: boolean) => (entry: { input: string }) => isSuite ? entry.input === suiteInput : entry.input !== suiteInput;
+/**
+ * What a diagnostics trial runs, as one digest: its unit proofs, its test files and its e2e cases.
+ * A run with no e2e case (the full suite) keeps the digest its earlier runs were recorded with.
+ */
+const trialInput = (proofs: readonly string[], files: readonly string[], e2e: readonly string[]) =>
+  createHash('sha256').update(JSON.stringify(e2e.length ? [proofs, files, e2e] : [proofs, files])).digest('hex');
 
 /**
  * GY-3811: adopt an existing detached diagnostics run before starting another — first from
  * `diagnosticsTrials` regardless of which verified commit started it, then by scanning
  * `.graphyard/trial-runs` for an unfinished diagnostics run (no `exit` file, spec key
- * `batch-gate`, not the gate's own `inFlight` run).
+ * `batch-gate`, not the gate's own `inFlight` run). GY-3974: a run is the same job when it holds
+ * the same proofs and files, so each of the catalog's lanes on this machine adopts its own.
  */
 async function adoptDiagnosticsTrial(
   file: string,
   root: string,
-  isSuite: boolean,
+  job: { proofs: readonly string[]; files: readonly string[]; e2e: readonly string[] },
   adopt: NonNullable<MergeWriterReads['adoptTrialRun']>,
 ): Promise<{ handle: TrialRunHandle; commit: string; fromDisk: boolean } | null> {
+  const input = trialInput(job.proofs, job.files, job.e2e);
   const latest = readGateRecord(file);
-  const earlier = latest?.diagnosticsTrials?.find(isSameDiagnosticsKind(isSuite));
+  const earlier = latest?.diagnosticsTrials?.find(run => run.input === input);
   if (earlier) {
     const handle = await adopt({ key: gateKey, head: earlier.commit, mergeSha: earlier.commit, directory: earlier.directory });
     if (handle) return { handle, commit: earlier.commit, fromDisk: false };
@@ -57,15 +62,13 @@ async function adoptDiagnosticsTrial(
   const exclude = latest?.inFlight?.run?.directory;
   const entries = await readdir(runsRoot).catch(() => [] as string[]);
   const candidates: { commit: string; directory: string; startedAt: string }[] = [];
+  const wanted = JSON.stringify([job.proofs, job.files, job.e2e]);
   for (const entry of entries) {
     const directory = join(runsRoot, entry);
     if (directory === exclude || directory === earlier?.directory || existsSync(runFiles(directory).exit)) continue;
     const spec = await readTrialRunSpec(directory);
-    if (!spec || spec.key !== gateKey) continue;
-    const matches = isSuite
-      ? spec.proofs.length === 0 && spec.changedFiles.length === 1 && spec.changedFiles[0] === 'package.json'
-      : spec.changedFiles.length === 0 && spec.proofs.length > 0;
-    if (matches) candidates.push({ commit: spec.head, directory, startedAt: spec.startedAt });
+    if (!spec || spec.key !== gateKey || JSON.stringify([spec.proofs, spec.changedFiles, spec.e2eProofs]) !== wanted) continue;
+    candidates.push({ commit: spec.head, directory, startedAt: spec.startedAt });
   }
   candidates.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   for (const candidate of candidates) {
@@ -159,63 +162,103 @@ async function trialFailures(reads: MergeWriterReads, commit: string, checks: re
 type CatalogRun = { failed: string[]; details: Record<string, string>; outputs: Record<string, string[]> };
 
 /**
- * GY-3874: the daily catalog's cases split into shards, one per ready test machine and one for this
+ * GY-3874: the daily catalog's cases split into shards across the ready test machines and this
  * machine, as a merge trial splits its test files; the cases a remote shard cannot run (Docker,
- * nested confinement, a named environment) stay in this machine's shard. Each remote shard goes to the
- * host with the most free CPU first and, when that host drops it, to the next; this machine's shard
- * is one ordinary trial. Every shard ends by `deadline`, the 45-minute limit.
+ * nested confinement, a named environment) stay on this machine. Each remote shard goes to the
+ * host with the most free CPU first and, when that host drops it, to the next. Every shard ends by
+ * `deadline`, the 45-minute limit.
+ * GY-3974: a shard runs its cases one after another, so a test machine takes one shard per six of
+ * its free cores, and every case it may run stays off this machine, the slowest and busiest one,
+ * which runs its own cases in lanes of at most `laneCases` cases, at most `lanesHere` at once. Cases are
+ * dealt by weight, from the commit's own timing baseline, so the lanes are cut the same way after a
+ * loop restart and each lane's run is found again.
  */
+const laneCases = 75, lanesHere = 4;
+/** GY-3974: the shards a test machine runs at once, from one to four: a heavy job takes six cores (machineSlots). */
+const hostLanes = (host: HostReading) => Math.min(4, Math.max(1, Math.round(realFreeCores(host) / 6)));
+
+/**
+ * GY-3974: `cases` over `lanes` shards, heaviest first onto the shard with the least time so far, so
+ * the split is the same whenever the weights are; the cases in `first` all go to the first shard.
+ */
+function dealCases(cases: readonly string[], lanes: number, weighs: Record<string, number>, first: ReadonlySet<string> = new Set()): string[][] {
+  const shards: string[][] = Array.from({ length: Math.max(1, lanes) }, () => []), load = shards.map(() => 0);
+  for (const proof of [...cases].sort((a, b) => weighs[b]! - weighs[a]! || a.localeCompare(b))) {
+    const shard = first.has(proof) ? 0 : load.indexOf(Math.min(...load));
+    shards[shard]!.push(proof); load[shard]! += weighs[proof]!;
+  }
+  return shards;
+}
+
 async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, commit: string, cases: readonly string[], deadline: number,
   survive: (run: Promise<CatalogRun>) => Promise<CatalogRun>, trusted: () => string | null): Promise<CatalogRun & { shards: CatalogShard[] }> {
   const remote = await reads.gate?.catalogHosts?.(commit, deadline).catch(() => undefined);
   try {
-    const hosts = [...remote?.hosts ?? []].sort((a, b) => realFreeCores(b) - realFreeCores(a));
-    const shards: string[][] = Array.from({ length: hosts.length + 1 }, () => []);
-    const roaming: string[] = [];
+    const ready = [...remote?.hosts ?? []].sort((a, b) => realFreeCores(b) - realFreeCores(a));
+    const lanes = ready.flatMap(host => Array<typeof host>(hostLanes(host)).fill(host));
+    const here: string[] = [], roaming: string[] = [], provisioned = new Set<string>(), weighs: Record<string, number> = {};
     // A case bound to a Compose application needs Docker, which only this machine gives it.
     let compose = new Set<string>();
+    // GY-3542's timing baseline: a case weighs its start and the recorded time of the tests it names, as a trial's shards weigh their files.
+    let durations: Record<string, number> = {};
     try {
       const delivery = JSON.parse(await reads.git(['show', `${commit}:graphyard.json`])).delivery ?? {};
       const kinds = new Map<string, string>((delivery.applications ?? []).map((application: { id: string; kind: string }) => [application.id, application.kind]));
       compose = new Set(Object.entries<string>(delivery.cases ?? {}).filter(([, app]) => kinds.get(app) === 'compose').map(([id]) => `e2e:${id}`));
     } catch { /* no graphyard.json binds a case */ }
-    for (const proof of hosts.length ? cases : []) {
+    try { durations = JSON.parse(await reads.git(['show', `${commit}:tests/helpers/timing-baseline.json`])).files ?? {}; } catch { /* no baseline: every case weighs its start */ }
+    const recorded = Object.values(durations).sort((a, b) => a - b), median = recorded[recorded.length >> 1] ?? 0;
+    for (const proof of cases) {
       const text = await reads.git(['show', `${commit}:e2e/cases/${proof.slice(4)}.json`]).catch(() => '');
-      const tests = await Promise.all([...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])].map(file => reads.git(['show', `${commit}:${file}`]).catch(() => '')));
-      (compose.has(proof) || localOnlyTestPattern.test([text, ...tests].join('\n')) || /"environment"/.test(text) ? shards[0]! : roaming).push(proof);
+      const named = [...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
+      const tests = await Promise.all(named.map(file => reads.git(['show', `${commit}:${file}`]).catch(() => '')));
+      weighs[proof] = 5_000 + named.reduce((sum, file) => sum + (durations[file] ?? median), 0);
+      const environment = /"environment"/.test(text);
+      if (compose.has(proof) || environment || localOnlyTestPattern.test([text, ...tests].join('\n'))) here.push(proof);
+      else roaming.push(proof);
+      // GY-3296: a named environment is provisioned around one trial, so its cases share a lane.
+      if (environment) provisioned.add(proof);
     }
-    // Each case any machine may run goes to the shard holding the fewest, so this machine's local-only cases count against its share.
-    if (!hosts.length) shards[0]!.push(...cases);
-    for (const proof of roaming) shards.reduce((fewest, shard) => shard.length < fewest.length ? shard : fewest).push(proof);
+    // With no test machine every case runs here.
+    if (!lanes.length) { here.push(...roaming); roaming.length = 0; }
+    const local = dealCases(here, Math.min(lanesHere, Math.max(1, Math.ceil(here.length / laneCases))), weighs, provisioned).filter(group => group.length);
+    const shards = dealCases(roaming, lanes.length, weighs);
     const failure = (detail: string): CatalogRun => ({ failed: ['e2e-catalog'], details: { 'e2e-catalog': detail }, outputs: {} });
-    const dropped = new Set<string>();
-    const onHost = async (index: number): Promise<CatalogRun & CatalogShard> => {
+    const none: CatalogRun & CatalogShard & { ms: number } = { host: 'none', cases: 0, ms: 0, failed: [], details: {}, outputs: {} };
+    const dropped = new Set<string>(), started = reads.now();
+    const onHost = async (index: number): Promise<CatalogRun & CatalogShard & { ms: number }> => {
       const group = shards[index]!, reasons: string[] = [];
-      for (const host of [hosts[index - 1]!, ...hosts.filter((_, other) => other !== index - 1)].filter(host => !dropped.has(host.name))) {
+      for (const host of [lanes[index]!, ...ready.filter(other => other !== lanes[index])]) {
+        if (dropped.has(host.name)) continue;
         try {
-          const ran = await remote!.run(host.name, index, group);
+          const ran = await remote!.run(host.name, index + 1, group);
           // A case the trial leaves out (a Compose preview or the fixture's own application) returns no
           // result, here as on this machine; the daily served run proves it.
           const failing = ran.filter(entry => entry.failed > 0 || entry.missing || entry.executed === 0);
-          return { host: host.name, cases: group.length, failed: failing.map(entry => entry.proof),
+          return { host: host.name, cases: group.length, ms: reads.now() - started, failed: failing.map(entry => entry.proof),
             details: Object.fromEntries(failing.filter(entry => entry.failingStep).map(entry => [entry.proof, entry.failingStep!])),
             outputs: Object.fromEntries(failing.filter(entry => entry.output?.length).map(entry => [entry.proof, entry.output!.slice(-outputLines)])) };
         } catch (error) {
-          if (!(error instanceof HostDroppedError)) return { host: host.name, cases: group.length, ...failure(`shard ${index + 1} on ${host.name}: ${message(error)}`) };
+          if (!(error instanceof HostDroppedError)) return { host: host.name, cases: group.length, ms: reads.now() - started, ...failure(`shard ${index + 1} on ${host.name}: ${message(error)}`) };
           dropped.add(host.name);
           reasons.push(error.message);
         }
       }
-      return { host: 'none', cases: group.length, ...failure(`no test machine took shard ${index + 1} of ${group.length} cases: ${reasons.join('; ')}`) };
+      return { host: 'none', cases: group.length, ms: reads.now() - started, ...failure(`no test machine took shard ${index + 1} of ${group.length} cases: ${reasons.join('; ')}`) };
     };
-    const ran = await Promise.all(shards.map(async (group, index): Promise<CatalogRun & CatalogShard> => index > 0 ? group.length ? onHost(index) : { host: 'none', cases: 0, failed: [], details: {}, outputs: {} }
-      : { host: 'local', cases: group.length, ...group.length ? await survive(trialFailures(reads, commit, group, [], gateLimitMs, trusted, true)) : { failed: [], details: {}, outputs: {} } }));
+    const ran = await Promise.all([
+      ...shards.map((group, index) => group.length ? onHost(index) : none),
+      ...local.map(async group => {
+        const outcome = await survive(trialFailures(reads, commit, group, [], gateLimitMs, trusted, true));
+        return { host: 'local', cases: group.length, ms: reads.now() - started, ...outcome };
+      }),
+    ]);
     return { failed: [...new Set(ran.flatMap(shard => shard.failed))], outputs: Object.assign({}, ...ran.map(shard => shard.outputs)),
       details: ran.reduce<Record<string, string>>((all, shard) => {
         for (const [check, detail] of Object.entries(shard.details)) all[check] = all[check] ? `${all[check]}; ${detail}` : detail;
         return all;
       }, {}),
-      shards: ran.filter(shard => shard.cases).map(({ host, cases }) => ({ host, cases })) };
+      shards: ran.filter(shard => shard.cases).map(({ host, cases, ms }) => ({ host, cases, ms })) };
   } finally { await remote?.close().catch(() => undefined); }
 }
 
@@ -510,18 +553,20 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
     // GY-3805, GY-3811: the diagnostics trial detached too, and adopt any unfinished run across deploy restarts
     // (even after verified moves to a newer commit), starting a new one only when none is running.
     if (!signal && reads.launchTrialRun && reads.adoptTrialRun && !item.environments) {
-      const isSuite = input === suiteInput, sameKind = isSameDiagnosticsKind(isSuite);
-      const adopted = await adoptDiagnosticsTrial(file, gate.root, isSuite, reads.adoptTrialRun);
+      const e2e = e2eProofsOf(item), lane = trialInput(proofs, files, e2e);
+      // GY-3974: only this job's own run is adopted, and replaced on the record; the catalog's other lanes keep theirs.
+      const others = (entry: { input: string }) => entry.input !== lane;
+      const adopted = await adoptDiagnosticsTrial(file, gate.root, { proofs, files, e2e }, reads.adoptTrialRun);
       if (adopted) {
         if (adopted.fromDisk) {
-          await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => !sameKind(run)), { commit: adopted.commit, input, directory: adopted.handle.directory }] }));
+          await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(others), { commit: adopted.commit, input: lane, directory: adopted.handle.directory }] }));
         }
         return adopted.handle.trial(step, timing);
       }
       await reads.ensureTrialImage?.();
-      const launched = reads.launchTrialRun({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2eProofsOf(item),
+      const launched = reads.launchTrialRun({ key: gateKey, head: sha, mergeSha: sha, baseTip: base ?? null, changedFiles: [...files], proofs, e2eProofs: e2e,
         reproduce: item.type !== 'chore', cores: null, ...trialShareAllowance(share, timeout, reads.cores) });
-      await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(run => !sameKind(run)), { commit: sha, input, directory: launched.directory }] }));
+      await mergeGateRecord(file, latest => ({ ...(latest ?? gated), diagnosticsTrials: [...(latest?.diagnosticsTrials ?? []).filter(others), { commit: sha, input: lane, directory: launched.directory }] }));
       return launched.trial(step, timing);
     }
     // The diagnostics (no signal) trial another commit and take an ordinary slot. The gate's own check takes the reserved

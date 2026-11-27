@@ -147,6 +147,7 @@
     "tests/done-at-merge.test.ts": 1154,
     "tests/drop-worker-host-verification.test.ts": 6279,
     "tests/e2e-cases.test.ts": 7901,
+    "tests/e2e-catalog-fits-bound.test.ts": 8220,
     "tests/e2e-delivery-pipeline-pinned.test.ts": 1430,
     "tests/e2e-done-item-gates-clean-pinned.test.ts": 297,
     "tests/e2e-fixture-node-home-pinned.test.ts": 281,
