@@ -1,4 +1,4 @@
-import { once } from './store/mutations.js';
+import { digest, once, receipt } from './store/mutations.js';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -237,20 +237,26 @@ export class AgentRegistry {
   /**
    * What an executor observed of the accounts on its own host, reported the moment a session sees one
    * spent rather than with its next selection (GY-1573), so an account on the same provider login is
-   * refused on every host at once. Folded as a selection folds it; appends only on a change.
+   * refused on every host at once. Folded as a selection folds it; appends and records a receipt only
+   * on a change (GY-4036).
    */
   async observe(actor: Principal, input: unknown, key: string) {
     demand((configurators as readonly string[]).includes(actor.role), 'Observations are reported by the executor\'s coordinator identity (or an admin)', 403);
     demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
     const request = observationRequestSchema.parse(input);
     const receiptInput = { kind: 'observe', request };
-    return this.transaction(async (db, now) => once(db, actor, key, receiptInput, async () => {
+    return this.transaction(async (db, now) => {
+      const previous = await receipt(db, actor, key, receiptInput);
+      if (previous) return previous.result as { changed: boolean; revision: number };
       const registry = await readRegistry(db), at = now.toISOString();
       const changed = foldObservations(registry, request, { actor: actor.id, at });
-      if (changed) { registry.revision++; registry.updatedAt = at; await this.append(db, actor, 'observed', registry, { host: request.host }); }
+      if (!changed) return { changed: false, revision: registry.revision };
+      registry.revision++; registry.updatedAt = at;
+      await this.append(db, actor, 'observed', registry, { host: request.host });
       const result = { changed, revision: registry.revision };
+      await db.query('INSERT INTO receipts(actor,key,fingerprint,result) VALUES($1,$2,$3,$4)', [actor.id, key, digest(receiptInput), JSON.stringify(result)]);
       return result;
-    }));
+    });
   }
 
   /**

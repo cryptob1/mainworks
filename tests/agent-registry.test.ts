@@ -738,3 +738,53 @@ for (const proof of ['integration:normal-capacity-wait', 'e2e:normal-capacity-wa
   }
   assert.equal(claims, 2, 'an unreadable registry claims no lease');
 });
+
+test('integration:registry-unchanged-observation-no-receipt — AgentRegistry.observe writes no receipt when foldObservations reports unchanged, writes one for a real change, and replays a real change from its receipt', async () => {
+  await reset();
+  await ok('agent-registry/runtimes', operator, { runtime: runtimeNamed('claude'), reason: 'register' });
+  await ok('agent-registry/models', operator, { model: { name: 'opus', id: 'claude-opus-5' }, reason: 'model' });
+  await ok('agent-registry/accounts', operator, { account: { name: 'claude-obs', runtime: 'claude', model: 'opus', credential: { host: HOST, home: null } }, reason: 'account' });
+  await ok('agent-registry/roles', operator, { role: { name: 'worker', accounts: ['claude-obs'], concurrency: 2 }, reason: 'role' });
+
+  const receiptCount = async () => Number((await store.pool.query('SELECT count(*) AS count FROM receipts')).rows[0].count);
+  const available = { host: HOST, observations: [{ account: 'claude-obs', quota: { loggedIn: true, state: 'available' as const } }] };
+  const exhausted = { host: HOST, observations: [{ account: 'claude-obs', quota: { loggedIn: true, state: 'exhausted' as const, reason: '5h limit' } }] };
+
+  const before = await receiptCount();
+  const key1 = randomUUID();
+  const first = await call('agent-registry/observe', coordinator, available, key1);
+  assert.equal(first.status, 200);
+  assert.equal(first.body.changed, true);
+  assert.equal(await receiptCount(), before + 1, 'a real change writes exactly one receipt');
+
+  // Idempotent replay of the real change returns the stored receipt without writing another.
+  const replay = await call('agent-registry/observe', coordinator, available, key1);
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.body, first.body);
+  assert.equal(await receiptCount(), before + 1, 'replaying a real change writes no second receipt');
+
+  // Reusing the real-change key with different input is still rejected.
+  const conflict = await call('agent-registry/observe', coordinator, exhausted, key1);
+  assert.equal(conflict.status, 409);
+
+  // Observing the same unchanged registry state many times with fresh keys writes no receipts.
+  const passes = 25;
+  for (let i = 0; i < passes; i++) {
+    const unchanged = await call('agent-registry/observe', coordinator, available, randomUUID());
+    assert.equal(unchanged.status, 200);
+    assert.deepEqual(unchanged.body, { changed: false, revision: first.body.revision });
+  }
+  assert.equal(await receiptCount(), before + 1, `observing unchanged state ${passes} times must not grow receipts`);
+
+  // A subsequent real change still writes exactly one receipt and replays cleanly.
+  const key2 = randomUUID();
+  const second = await call('agent-registry/observe', coordinator, exhausted, key2);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.changed, true);
+  assert.equal(second.body.revision, first.body.revision + 1);
+  assert.equal(await receiptCount(), before + 2, 'a subsequent real change writes exactly one receipt');
+  const replay2 = await call('agent-registry/observe', coordinator, exhausted, key2);
+  assert.equal(replay2.status, 200);
+  assert.deepEqual(replay2.body, second.body);
+  assert.equal(await receiptCount(), before + 2);
+});
