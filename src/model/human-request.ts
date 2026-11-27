@@ -41,13 +41,14 @@ export function defaultChoices(kind: HumanDecisionKind, sealed = false): HumanCh
   return [{ id: 'agree', label: 'Approve this plan', outcome: 'provided', input: 'none' }, { id: 'differently', label: 'Change this plan…', outcome: 'provided', input: 'text' }, decline];
 }
 /** The choices a request carries: the requester's, with Decline added when they left it out, or the kind's defaults. */
-export function requestChoices(request: { kind: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null }): HumanChoice[] {
-  const named = request.choices?.length ? request.choices : defaultChoices(request.kind, !!request.sealTo);
+export function requestChoices(request: { kind: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null; variable?: string | null }): HumanChoice[] {
+  const named = request.choices?.length ? request.choices
+    : request.variable ? [{ id: 'provide', label: `Provide ${request.variable}`, outcome: 'provided', input: 'secret' } satisfies HumanChoice] : defaultChoices(request.kind, !!request.sealTo);
   return named.some(choice => choice.outcome === 'declined') ? named : [...named, decline];
 }
 /** What a request's recommendation misses (GY-1410), naming the field; empty when it has one: the choice recommended or the safest way to obtain a value, plus WHY. A request with choices names one by its label; a value request may advise freely. */
-export function recommendationIssues(data: { kind?: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null; recommendation?: string; why?: string }): string[] {
-  const choices = data.kind ? requestChoices({ kind: data.kind, choices: data.choices, sealTo: data.sealTo }) : [];
+export function recommendationIssues(data: { kind?: HumanDecisionKind; choices?: HumanChoice[] | null; sealTo?: string | null; variable?: string | null; recommendation?: string; why?: string }): string[] {
+  const choices = data.kind ? requestChoices({ kind: data.kind, choices: data.choices, sealTo: data.sealTo, variable: data.variable }) : [];
   const valueRequest = choices.some(choice => choice.input === 'secret') || choices.every(choice => choice.outcome === 'declined' || choice.input !== 'none');
   const unnamed = data.kind && data.recommendation?.trim() && !valueRequest && !recommendedChoice({ ...data, kind: data.kind });
   return [
@@ -114,6 +115,8 @@ interface HumanOnlyRequest {
   ask?: string | null; steps?: string[] | null; why?: string | null;
   /** What the requester recommends (GY-1410), shown first with `why`; absent only on requests recorded before it was required. */
   recommendation?: string | null;
+  /** A deployed environment variable asked for: the browser seals its value to `sealHost`, whose loop sets it (runtime-check.ts). */
+  variable?: string | null; sealHost?: string | null;
 }
 export interface HumanRequest extends HumanOnlyRequest {
   kind: HumanDecisionKind;
@@ -127,6 +130,8 @@ export const retainedHumanRequests = 20;
 export const humanRequestBlocker = 'Waiting on a human-only decision';
 /** How dispatch's refusal of an item parked on a human opens (assertDispatchable): a designed wait whose text names the answer that resumes it. */
 export const dispatchHumanWait = 'Dispatch waits on a human-only decision';
+/** The blocker a provided variable leaves until the loop has set it in every environment. */
+export const runtimeVariableBlocker = 'Waiting for the loop to set';
 export const describeHumanRequest = (request: Pick<HumanRequest, 'kind' | 'needed'>) => `${humanRequestBlocker} (${humanDecisionLabel[request.kind]}): ${request.needed}`;
 export const parkedOnHuman = (work: { humanRequest?: HumanRequest | null }) => !!work.humanRequest && !work.humanRequest.answer;
 

@@ -1,5 +1,6 @@
 import { genericChoiceIssues, humanDecisionKinds, recommendationIssues, type HumanChoice, type HumanDecisionKind } from '../model/human-request.js';
 import { shortAskIssues } from '../model/human-ask.js';
+import { variableName } from '../model-boundary/documentation.js';
 import { workMutation, type CliCommand } from './registry.js';
 
 /**
@@ -33,11 +34,15 @@ export const parkCommand: CliCommand = {
     '                                the choice you recommend (its label, preselected), or the',
     '                                safest way to obtain a value asked for, such as a fine-grained',
     '                                token scoped to one repository, short expiry, only the',
-    '                                permissions needed; WHY, required, says why in one sentence',
+    '                                permissions needed; WHY, required, says why in one sentence.',
+    '                                --variable NAME asks for a deployed environment variable: the',
+    '                                owner pastes it, the browser seals it to this host and the loop',
+    '                                sets it in every environment; you never see the value',
   ],
   async run(context, work) {
     const { print } = context;
-    const { epoch, kind, needed, choices, ask, steps, why, recommendation, reason } = parkInput(context.args);
+    const { epoch, kind, needed, choices, ask, steps, why, recommendation, reason, variable } = parkInput(context.args);
+    if (variable) return print(await workMutation(context, work)('park', { epoch, kind, needed, reason, ask, recommendation, why, ...(steps ? { steps } : {}), ...(choices ? { choices } : {}), variable, sealHost: context.individualHostId() }));
     // A credential is sealed to this host when the human provides it, so the host's key goes with the request.
     // Imported here: session-commands.ts lists this command, so a static import would be a cycle.
     const { hostSealKey } = await import('./session-commands.js');
@@ -49,16 +54,17 @@ export const parkCommand: CliCommand = {
 /** The park command's arguments, validated as the server would before anything is posted: a malformed park mutates nothing. */
 export function parkInput(args: readonly string[]) {
   const epoch = Number(args[0]), kind = args[1], separator = args.indexOf('--');
-  const { needed, choices, ask, steps, why, recommendation } = parkArgs(args.slice(2, separator < 0 ? args.length : separator));
+  const { needed, choices, ask, steps, why, recommendation, variable } = parkArgs(args.slice(2, separator < 0 ? args.length : separator));
   const reason = separator < 0 ? '' : args.slice(separator + 1).join(' ').trim();
   if (!Number.isInteger(epoch) || epoch < 1 || !humanDecisionKinds.includes(kind as HumanDecisionKind) || !needed || !ask || !reason) throw new Error(`Use park GY-N EPOCH KIND NEEDED... --ask ASK [--step STEP]... --recommend TEXT --why WHY [--choice LABEL]... -- REASON, where KIND is ${humanDecisionKinds.join(', ')}`);
-  const issues = [...recommendationIssues({ kind: kind as HumanDecisionKind, choices, recommendation, why }), ...shortAskIssues({ ask, steps, why }), ...genericChoiceIssues(choices)];
+  if (variable !== undefined && !variableName.safeParse(variable).success) throw new Error('--variable needs a NAME of letters, digits and _, such as --variable SENDGRID_API_KEY');
+  const issues = [...recommendationIssues({ kind: kind as HumanDecisionKind, choices, variable, recommendation, why }), ...shortAskIssues({ ask, steps, why }), ...genericChoiceIssues(choices)];
   if (issues.length) throw new Error(`${issues.join('. ')}.`);
-  return { epoch, kind: kind as HumanDecisionKind, needed, choices, ask, steps, why, recommendation, reason };
+  return { epoch, kind: kind as HumanDecisionKind, needed, choices, ask, steps, why, recommendation, reason, variable };
 }
 
 const choiceFlags = { '--choice': 'none', '--choice-text': 'text', '--choice-secret': 'secret' } as const;
-const askFlags: readonly string[] = ['--ask', '--step', '--why', '--recommend'];
+const askFlags: readonly string[] = ['--ask', '--step', '--why', '--recommend', '--variable'];
 /**
  * NEEDED, the short ask, the recommendation and the requester's choices from the words between KIND
  * and `--`. `--ask`, `--why`, `--recommend` and each `--step` take the next word as their text; each
@@ -66,7 +72,7 @@ const askFlags: readonly string[] = ['--ask', '--step', '--why', '--recommend'];
  */
 function parkArgs(words: readonly string[]) {
   const needed: string[] = [], choices: HumanChoice[] = [], steps: string[] = [];
-  let ask: string | undefined, why: string | undefined, recommendation: string | undefined;
+  let ask: string | undefined, why: string | undefined, recommendation: string | undefined, variable: string | undefined;
   for (let index = 0; index < words.length; index++) {
     const flag = words[index], input = choiceFlags[flag as keyof typeof choiceFlags];
     if (!input && !askFlags.includes(flag)) { needed.push(flag); continue; }
@@ -75,8 +81,9 @@ function parkArgs(words: readonly string[]) {
     if (flag === '--ask') ask = value;
     else if (flag === '--why') why = value;
     else if (flag === '--recommend') recommendation = value;
+    else if (flag === '--variable') variable = value;
     else if (flag === '--step') steps.push(value);
     else choices.push({ id: `choice-${choices.length + 1}`, label: value, outcome: 'provided', input });
   }
-  return { needed: needed.join(' ').trim(), choices: choices.length ? choices : undefined, ...(ask ? { ask } : {}), ...(steps.length ? { steps } : {}), ...(why ? { why } : {}), ...(recommendation ? { recommendation } : {}) };
+  return { needed: needed.join(' ').trim(), choices: choices.length ? choices : undefined, ...(ask ? { ask } : {}), ...(steps.length ? { steps } : {}), ...(why ? { why } : {}), ...(recommendation ? { recommendation } : {}), ...(variable ? { variable } : {}) };
 }
