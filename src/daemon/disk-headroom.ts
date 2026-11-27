@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { stat, statfs } from 'node:fs/promises';
 import type { ChildRun } from '../child-runner.js';
 import type { MasterConfig } from '../master/profiles.js';
+import { freeBytes } from '../master/worktrees.js';
 import { trialImage } from '../merge-writer/trial-container.js';
 import { diskFloorBytes } from '../merge-writer/trial-load.js';
 import { reclaimTrialCheckouts, trialCheckoutPrefix, trialCheckoutRoots, trialTemporaryPrefix, trialTemporaryRoots } from '../merge-writer/trial.js';
@@ -163,7 +164,7 @@ export async function mainworksVolumes(paths: string[], run?: ChildRun): Promise
     if (device === undefined || seen.has(device)) continue;
     seen.add(device);
     const info = await statfs(path).catch(() => null);
-    volumes.push({ path, freeBytes: info ? Number(info.bavail) * Number(info.bsize) : null, ...(info ? { totalBytes: Number(info.blocks) * Number(info.bsize) } : {}), ...(path === dockerRoot ? { docker: true } : {}) });
+    volumes.push({ path, freeBytes: await freeBytes(path), ...(info ? { totalBytes: Number(info.blocks) * Number(info.bsize) } : {}), ...(path === dockerRoot ? { docker: true } : {}) });
   }
   return volumes;
 }
