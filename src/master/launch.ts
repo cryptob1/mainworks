@@ -200,17 +200,15 @@ export async function masterSessionConfinement(kind: string, root: string, probe
   // GY-3237: the Herdr socket and config the install records now — the main server after a
   // GY-3212 migration, a private instance while it drains — so `herdr agent list` and
   // `master review GY-N` reach it from inside the confinement.
-  // GY-3237: the host's review-ledger lock directory, shared with the loop, which `master review` takes.
-  const ledgerLocks = join(dataDirectory(), 'review-ledger');
   // GY-3445: and the host-wide heavy-jobs folder, whose drain record `master drain` and `master resume` write.
   const heavyJobs = heavyJobsDirectory();
   // GY-3698: the machine's compute known-hosts and host list files, so `host add` works from the confined master while the rest of machine/ stays hidden.
   const config = configHome(environment && setting('CONFIG_HOME', environment));
   const knownHosts = hostKnownHostsFile(config), hosts = hostsFile(config);
-  for (const path of [ledgerLocks, heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
+  for (const path of [heavyJobs, dirname(knownHosts)]) mkdirSync(path, { recursive: true });
   if (!existsSync(knownHosts)) writeFileSync(knownHosts, '', { mode: 0o600 });
   if (!existsSync(hosts)) writeFileSync(hosts, '[]\n', { mode: 0o600 });
-  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: root, bwrap: probe.bwrap ?? undefined, writable: [managed, ledgerLocks, heavyJobs, knownHosts, hosts, ...writable], drainWritable: true, environment, ...(credentialMask ? { credentialMask } : {}), ...(herdrPaths?.length ? { herdrPaths } : {}) });
+  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: root, bwrap: probe.bwrap ?? undefined, writable: [managed, heavyJobs, knownHosts, hosts, ...writable], drainWritable: true, environment, ...(credentialMask ? { credentialMask } : {}), ...(herdrPaths?.length ? { herdrPaths } : {}) });
   const records = masterRecords(root);
   mkdirSync(records, { recursive: true, mode: 0o700 });
   // Mount options precede the socket-confinement command inside bubblewrap.
