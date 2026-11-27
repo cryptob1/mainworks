@@ -11,8 +11,8 @@
 // any coordination transaction.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs';
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { atomicPrivateWrite, readCredentialFile } from '../private-file.js';
@@ -110,20 +110,26 @@ function worktreeRepositories(root: string, carried: string[]): string[] {
     .filter(entry => !carried.some(base => entry === base || entry.startsWith(`${base}/`)));
 }
 
-/** Every file under PATHS the move cannot read, SKIP left out: a symbolic link is copied as itself, so it is not followed. */
-function unreadablePaths(paths: string[], skip: string[]): string[] {
-  const found: string[] = [];
+/** A socket, FIFO or device file: nothing a move can copy, and each is recreated by whatever made it. */
+const special = (entry: Stats) => !entry.isFile() && !entry.isDirectory() && !entry.isSymbolicLink();
+/**
+ * Every file under PATHS the move cannot read, and every special file it leaves behind, each named
+ * once though the trees overlap, SKIP left out: a symbolic link is copied as itself, so it is not followed.
+ */
+function scanFiles(paths: string[], skip: string[]) {
+  const unreadable: string[] = [], skipped: string[] = [];
   const visit = (path: string) => {
     if (skip.includes(path)) return;
     try {
       const entry = lstatSync(path);
       if (entry.isSymbolicLink()) return;
-      if (entry.isDirectory()) for (const name of readdirSync(path)) visit(join(path, name));
+      if (special(entry)) skipped.push(path);
+      else if (entry.isDirectory()) for (const name of readdirSync(path)) visit(join(path, name));
       else accessSync(path, constants.R_OK);
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') found.push(path); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unreadable.push(path); }
   };
   for (const path of paths) visit(path);
-  return found;
+  return { unreadable: [...new Set(unreadable)], skipped: [...new Set(skipped)] };
 }
 
 /** Docker commands of the move run on the target: through SSH for a real move, directly for a stand-in directory. */
@@ -193,17 +199,17 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   const stop = [...loopStop, ...planeStop];
   // GY-4043: the sandbox mask file (mode 000) is recreated on first launch, so it stays behind; every other file must be readable before anything changes.
   const stateName = basename(stateDirectory(root)), rootSkipped = [join(stateName, 'worktrees'), join(stateName, 'masked')], databaseFiles = [basename(postgres), basename(volumeArchive)];
-  const unreadable = unreadablePaths([...directories, ...unitFiles, ...credentials], rootSkipped.map(entry => join(root, entry)));
+  const { unreadable, skipped: specials } = scanFiles([...directories, ...unitFiles, ...credentials], rootSkipped.map(entry => join(root, entry)));
+  const skipped = specials.length ? `Left behind ${specials.length} socket, FIFO or device file${specials.length === 1 ? '' : 's'}, which nothing can copy: ${specials.join(', ')}` : null;
   const start = [
     ...(local ? [] : [`docker volume create ${volume}`, `docker run --rm -v ${volume}:/data -v ${directory}:/in postgres:17-alpine tar -C /data -xf /in/graphyard-data.tar`, `docker compose --project-directory ${join(directory, 'compose')} up -d`]),
     ...(unitNames.length ? ['systemctl --user daemon-reload', `systemctl --user enable --now ${unitNames.join(' ')}`] : []),
     `cd ${root} && mainworks master status`,
   ];
-  const plan = { from, to, target: options.into ? resolve(options.into) : `${to} over SSH`, database, files, worktrees, credentials, accounts, refusals, unreadable,
+  const plan = { from, to, target: options.into ? resolve(options.into) : `${to} over SSH`, database, files, worktrees, credentials, accounts, refusals, unreadable, skipped,
     trialImage: { title: trialImage.title, command: trialImage.command }, stop: stop.map(command => command.join(' ')), start };
   if (options.plan) return { ...plan, applied: false, next: refusals.length ? 'Wait until nothing is leased, trialled or queued, then rerun without --plan' : 'Rerun without --plan to move the install' };
   if (refusals.length) throw new Error(`The install cannot move while work is in flight: ${refusals.join('; ')}`);
-
   if (unreadable.length) throw new Error(`Nothing was moved: the move cannot read ${unreadable.join(', ')}; make each readable or remove it, then rerun`);
 
   await persistLoopStateScope(masterFile, stored);
@@ -214,18 +220,18 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   /** Copies one path to the target: rsync over SSH for a real move, in process for a stand-in directory — no rsync to spawn, so the move runs anywhere (the trial image ships none). */
   const copy = (path: string, extra: { exclude?: string[]; mode?: number; contents?: boolean } = {}) => {
     const exclude = extra.exclude ?? [];
-    if (!options.into) return exec('rsync', ['-a', '--mkpath', ...exclude.flatMap(entry => ['--exclude', `/${entry}`]), ...(extra.mode !== undefined ? [`--chmod=F${extra.mode.toString(8)}`] : []), extra.contents ? `${path}/` : path, `${to}:${path}`]);
+    if (!options.into) return exec('rsync', ['-a', '--no-D', '--mkpath', ...exclude.flatMap(entry => ['--exclude', `/${entry}`]), ...(extra.mode !== undefined ? [`--chmod=F${extra.mode.toString(8)}`] : []), extra.contents ? `${path}/` : path, `${to}:${path}`]);
     const targetPath = join(resolve(options.into), path);
     return (async () => {
       await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
-      await cp(path, targetPath, { recursive: true, verbatimSymlinks: true, filter: (candidate: string) => !exclude.some(entry => candidate === join(path, entry)) });
+      await cp(path, targetPath, { recursive: true, verbatimSymlinks: true, filter: async (candidate: string) => !exclude.some(entry => candidate === join(path, entry)) && !special(await lstat(candidate)) });
       if (extra.mode !== undefined) await chmod(targetPath, extra.mode);
     })();
   };
   // The loop stops first and the control plane last: the accounts are re-pointed through the
   // control plane once every file is on the target, and only then is the database stopped and copied.
-  const stopped: string[][][] = [], repointed: string[] = [];
-  const stopNow = async (commands: string[][]) => { if (!commands.length) return; stopped.push(commands); await stopping(commands); };
+  const stopped = new Set<string[][]>(), repointed: string[] = [];
+  const stopNow = async (commands: string[][]) => { if (!commands.length) return; stopped.add(commands); await stopping(commands); };
   try {
     await stopNow(loopStop);
     for (const path of directories) await copy(path, { contents: true, exclude: path === root ? rootSkipped : path === directory ? databaseFiles : [] });
@@ -256,7 +262,13 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   } catch (error) {
     const undone: string[] = [];
     try {
-      for (const commands of stopped.reverse()) { await starting(commands.map(([program, ...args]) => [program!, ...args.map(word => word === 'stop' ? 'start' : word)])); undone.push(`started ${commands.map(command => command.at(-1) === 'stop' ? 'the control plane' : command.at(-1)).join(', ')} again`); }
+      // The control plane first, so the accounts can be pointed back before the loop dispatches again.
+      const restart = async (commands: string[][], what: string) => {
+        if (!stopped.has(commands)) return;
+        await starting(commands.map(([program, ...args]) => [program!, ...args.map(word => word === 'stop' ? 'start' : word)]));
+        undone.push(`started ${what} again`);
+      };
+      await restart(planeStop, 'the control plane');
       if (repointed.length) {
         // The restarted control plane may take a moment to answer.
         for (let attempt = 1; ; attempt++) {
@@ -265,6 +277,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
         }
         undone.push(`${repointed.join(', ')} point at ${from} again`);
       }
+      await restart(loopStop, loopStop.map(command => command.at(-1)).join(', '));
     } catch (undo) {
       throw new Error(`The move to ${to} failed (${(error as Error).message}) and could not be fully undone (${(undo as Error).message})${undone.length ? `; it ${undone.join('; ')}` : ''}`);
     }

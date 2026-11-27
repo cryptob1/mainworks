@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { chmod, mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +46,10 @@ test('integration:install-move-skips-mask-and-never-strands-an-install — the m
   // The sandbox mask file a confined session leaves in the checkout.
   const mask = join(root, '.graphyard', 'masked');
   await writeFile(mask, '', { mode: 0 }); await chmod(mask, 0);
+  // A live listening socket and a FIFO in the copied trees: nothing can copy them, so they stay behind.
+  const socket = join(root, 'live.sock'), fifo = join(directory, 'pipe');
+  const listening = createServer(); await new Promise<void>(accept => listening.listen(socket, accept)); t.after(() => new Promise<void>(accept => listening.close(() => accept())));
+  execFileSync('mkfifo', [fifo]);
 
   const recorder = () => {
     const calls: { kind: 'stop' | 'start'; commands: string[]; host: string; copied: boolean }[] = [];
@@ -76,7 +82,10 @@ test('integration:install-move-skips-mask-and-never-strands-an-install — the m
 
   // The mask file stays behind; the accounts are re-pointed only after every file is copied, and the control plane is stopped last.
   const moved = recorder(), target = join(scratch, 'target');
-  assert.equal((await moveInstall(root, { to: 'new-host', into: target }, moved.into(target))).applied, true);
+  const result = await moveInstall(root, { to: 'new-host', into: target }, moved.into(target));
+  assert.equal(result.applied, true);
+  assert.equal(result.skipped, `Left behind 2 socket, FIFO or device files, which nothing can copy: ${socket}, ${fifo}`);
+  assert.equal(existsSync(join(target, socket)) || existsSync(join(target, fifo)), false, 'the socket and the FIFO are not copied');
   assert.equal(existsSync(join(target, mask)), false, 'the mask file is not copied');
   assert.deepEqual(moved.calls.map(call => [call.kind, call.host, call.copied]), [['stop', 'old-host', false], ['stop', 'new-host', true]]);
   assert.ok(moved.calls[1]!.commands.every(command => command.includes('-local-')), 'the control plane stops after the re-point');
