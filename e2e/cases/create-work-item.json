@@ -1,7 +1,7 @@
 {
   "id": "create-work-item",
   "title": "An operator creates a work item, finds it in the work list and releases it",
-  "description": "POST /api/work creates an item with its criteria, replaying the create under the same idempotency key returns the same item, GET /api/work lists it, and POST /api/work/:id/ready releases it from the backlog. When the target is a checkout's e2e serve, its seed file is keyed by its own port, so another serve in the checkout never overwrites or removes it (GY-3666). A waiter for a host heavy-job slot names who holds it (GY-3773). A second holder takes a free slot without waiting while the first holder's ticket is still in queue/ (GY-3868). Once startup has completed, the board master status reads lists the new item (GY-4001). A CLI launched while the server serves another commit waits for the matching release instead of exiting (GY-4003).",
+  "description": "POST /api/work creates an item with its criteria, replaying the create under the same idempotency key returns the same item, GET /api/work lists it, and POST /api/work/:id/ready releases it from the backlog. When the target is a checkout's e2e serve, its seed file is keyed by its own port, so another serve in the checkout never overwrites or removes it (GY-3666). A waiter for a host heavy-job slot names who holds it (GY-3773). A second holder takes a free slot without waiting while the first holder's ticket is still in queue/ (GY-3868). Once startup has completed, the board master status reads lists the new item (GY-4001). A CLI launched while the server serves another commit waits for the matching release instead of exiting (GY-4003). Host add offers to keep turbo or boost off across reboots, and the host row shows whether it is off (GY-4008).",
   "tags": ["api", "work"],
   "target": "uat",
   "required": true,
@@ -32,6 +32,7 @@
     {"kind": "command", "name": "a waiter's wait line names the slot holder (GY-3773)", "run": "test ! -e tests/managed-worktree-root.test.ts || node --import tsx tests/helpers/run-tests.ts --test-name-pattern=GY-3773 tests/managed-worktree-root.test.ts", "timeoutSeconds": 300},
     {"kind": "command", "name": "session and trial launches exclude reserved host CPUs (GY-4006)", "run": "test ! -e tests/reserved-cpus-excluded.test.ts || node --import tsx --test --test-name-pattern=\"launch properties\" tests/reserved-cpus-excluded.test.ts", "timeoutSeconds": 60},
     {"kind": "command", "name": "a second holder takes the free slot while the first holder's ticket is still queued (GY-3868)", "run": "test ! -e tests/managed-worktree-root.test.ts || node --import tsx tests/helpers/run-tests.ts --test-name-pattern=GY-3868 tests/managed-worktree-root.test.ts", "timeoutSeconds": 300},
-    {"kind": "command", "name": "a CLI launched mid-deploy waits for the matching release (GY-4003)", "run": "test ! -e tests/launch-waits-for-handover.test.ts || node --import tsx tests/helpers/run-tests.ts tests/launch-waits-for-handover.test.ts", "timeoutSeconds": 300}
+    {"kind": "command", "name": "a CLI launched mid-deploy waits for the matching release (GY-4003)", "run": "test ! -e tests/launch-waits-for-handover.test.ts || node --import tsx tests/helpers/run-tests.ts tests/launch-waits-for-handover.test.ts", "timeoutSeconds": 300},
+    {"kind": "command", "name": "host add offers to keep turbo or boost off across reboots (GY-4008)", "run": "test ! -e tests/host-keeps-boost-off.test.ts || node --import tsx tests/helpers/run-tests.ts tests/host-keeps-boost-off.test.ts", "timeoutSeconds": 300}
   ]
 }
