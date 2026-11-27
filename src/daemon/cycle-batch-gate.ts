@@ -17,6 +17,7 @@ import type { Cycle } from './cycle.js';
 import { actionLine } from './run.js';
 import { actionDetailMax, message, storeAction } from './state.js';
 import { batchGateFlights as flights, busyTrialSlots } from './trial-slots.js';
+import { holdingMergePushes } from './gate-revert-hold.js';
 import { fileLoopFault, gateFiledItem, readProjectCapabilities, repairedProof } from './control-plane.js';
 import { currentEvidence } from '../model/evidence.js';
 import { EnvironmentFault, declaredEnvironments, environmentSecretsFile, environmentStatePath, localEnvironment, loopLifecycle, trustedCheckout, type AppEnvironment } from '../app-environments.js';
@@ -320,7 +321,7 @@ async function recordRepaired(record: GateRecord, work: readonly Work[], attest:
 }
 
 /** The gate's ports over the merge writer's reads. */
-export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null): GatePorts & { diagnose: DiagnosePort } {
+export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null, state?: object): GatePorts & { diagnose: DiagnosePort } {
   const git = reads.git;
   // GY-3973: the work a run holds predates its own filings, so an item these ports filed is open to them until a later cycle's work says otherwise.
   const filed = new Set<string>();
@@ -392,7 +393,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       }
       return current;
     },
-    revert: async (landing, gated, check, prior = [], onStep) => {
+    // GY-4020: from main as it stands to the leased push, the merge writer's pushes on `state` wait for the revert.
+    revert: (landing, gated, check, prior = [], onStep) => holdingMergePushes(state, landing.item.key, reads.now, async () => {
       // Merges may have landed while the gate ran: the revert goes onto main as it stands now.
       const tip = (await reads.fetch()).toLowerCase();
       let current = tip;
@@ -414,7 +416,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
         await reads.createWork?.(failingCase ? reland : { ...reland, criteria: entry.item.criteria.map(({ id, text, proofs }) => ({ id, text, proofs: [...proofs] })) }, `gate-reland:${entry.sha}`).catch(() => null);
       }
       return { revertSha: current };
-    },
+    }),
     file,
     faultDedup: key => work.some(item => item.faultKey === key),
     // GY-3973: an item the cycle's work lists is open until it is done; a closed one is not listed at all.
@@ -606,7 +608,7 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
       return launched.trial(progress, timing, signal);
     });
   };
-  const ports = batchGatePorts({ ...reading, git, trial }, cycle.snapshot.work, () => readGateRecord(file)?.verified ?? null);
+  const ports = batchGatePorts({ ...reading, git, trial }, cycle.snapshot.work, () => readGateRecord(file)?.verified ?? null, cycle.state);
   // GY-3444: the gate's bound leaves out the time its checks wait for a slot. GY-3474: only its own
   // check's wait — the host heavy-job slot, or its own container start held by the cap, heat or the
   // disk floor. The loop's CPU hold on other launches and another install's gate are not its waits,
