@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { composeBounds, composePreviewConfig, composeProjectName } from '../src/compose-preview.js';
 import { allowedCpus } from '../src/reserved-cpus.js';
-import { detachedLaunch, runFiles, sessionLaunch } from '../src/runner/pi.js';
+import { detachedLaunch, runContainment, runFiles, sessionLaunch } from '../src/runner/pi.js';
 import { systemdContainment } from '../src/session-watch.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -74,6 +74,12 @@ test(`${proof} — launch properties with no reservation name no CPUs`, () => wi
   assert.equal((composeServices().services.web as { cpuset?: string }).cpuset, reserved, "a Compose file's own cpuset stands");
 }));
 
+test(`${proof} — launch properties never need a user manager: a run's scope is decided as it is with no reserved CPUs`, () => withReserved(reserved, () => {
+  assert.equal(runContainment({ cgroup: '0::/user.slice/user-1000.slice/user@1000.service', systemd: () => { throw new Error('never asked'); } }), 'setsid', 'outside every service: its own session, as before');
+  assert.equal(runContainment({ cgroup: '0::/system.slice/graphyard-executor@a.service', systemd: () => false }), 'setsid', 'no user manager answers: its own session only');
+  assert.equal(runContainment({ cgroup: '0::/user.slice/user-1000.slice/user@1000.service/app.slice/graphyard-master.service', systemd: () => true }), 'systemd', 'a service with a user manager: a scope, as before');
+}));
+
 test(`${proof} — a session and a trial child started with the setting run only on the other CPUs`, async () => withReserved(reserved, async () => {
   const base = await temporaryDirectory('reserved-cpus');
   for (const [name, launch] of [['session', sessionLaunch], ['trial', detachedLaunch]] as const) {
@@ -85,7 +91,7 @@ test(`${proof} — a session and a trial child started with the setting run only
     child.stderr!.on('data', chunk => { error += chunk; });
     const [code] = await once(child, 'exit', { signal: AbortSignal.timeout(20_000) });
     const allowed = allowedByKernel(readFileSync(runFiles(directory).stdout, 'utf8'));
-    assert.deepEqual([code, cpus(allowed)], [0, others()], `${name} child ended with ${code} and its kernels's CPU list is ${allowed}: ${error.trim()}`);
+    assert.deepEqual([code, cpus(allowed)], [0, others()], `${name} child ended with ${code} and the kernel lets it use ${allowed || 'an unreadable CPU list'}: ${error.trim()}`);
   }
 }));
 
