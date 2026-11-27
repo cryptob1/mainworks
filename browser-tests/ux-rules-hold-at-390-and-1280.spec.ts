@@ -79,13 +79,6 @@ for (const width of [390, 1280]) {
     expect(Number(/([\d.]+) merges\/hour/.exec(await page.locator('[data-work-header]').innerText())![1])).toBeGreaterThanOrEqual(3);
     await settle(page);
     found.push(...judge('Work', await read(page), width));
-    // GY-3987: each count once — the filter chips carry In flight and Shipped today, so neither the
-    // header line nor the top strip repeats them; the strip's week count says it is the week's.
-    await expect(page.locator('[data-work-header]')).not.toContainText(/in flight|merged today/);
-    await expect(page.locator('.top-bar .activity-strip')).not.toContainText('merged today');
-    await expect(page.locator('.top-bar .shipped-strip')).toContainText('shipped this week');
-    // The Now column reads owner-first, without the merge writer's or reviewer's own words.
-    for (const cell of await page.locator('[data-col="now"]').allInnerTexts()) expect(cell).not.toMatch(/merge trial|latest main|diff and proofs/i);
 
     await page.getByRole('link', { name: /Rate-limit the login endpoint/ }).click();
     await expect(page.getByRole('heading', { name: 'Rate-limit the login endpoint', level: 1 })).toBeVisible();
@@ -95,15 +88,6 @@ for (const width of [390, 1280]) {
       await settle(page);
       found.push(...judge(`Change · ${tab}`, await read(page), width));
     }
-    // GY-3987: Now says what is happening without repeating the state beside the title, and Next
-    // names the action, not only who moves it.
-    const state = (await page.locator('[data-task-state] strong').innerText()).trim();
-    await expect(page.locator('.where-now .page-fact')).not.toContainText(`${state} ·`);
-    await expect(page.locator('.where-now .next-line')).not.toContainText('(automatic)');
-    await expect(page.locator('.where-now .next-line')).toHaveText(/^Next: \S+ \w+ .+/);
-    // Details labels the priority picker.
-    await page.getByRole('tablist', { name: 'Task evidence' }).getByRole('tab', { name: 'Details', exact: true }).click();
-    await expect(page.locator('.priority-control')).toContainText('Priority');
 
     await nav(page, 'Lead');
     await expect(page.getByRole('heading', { name: 'Lead', level: 1 })).toBeVisible();

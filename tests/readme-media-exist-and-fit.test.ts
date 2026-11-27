@@ -57,7 +57,7 @@ function mp4Seconds(bytes: Buffer): number {
   return duration / scale;
 }
 
-test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, work.png, change.png, lead.png and pipeline.svg, referenced by README with alt texts of six words or more, within size/dimension limits, reproducible via npm run docs:media from a healthy demo line', () => {
+test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, work.png, change.png, lead.png and pipeline.svg, referenced by README with alt texts of six words or more, within size/dimension limits, reproducible via npm run docs:media from a healthy demo line in plain words', () => {
   const readme = readFileSync(pathOf('README.md'), 'utf8');
   const manifest = JSON.parse(readFileSync(pathOf('package.json'), 'utf8'));
   assert.ok(typeof manifest.scripts?.['docs:media'] === 'string' && manifest.scripts['docs:media'].length > 0, 'package.json defines npm run docs:media');
@@ -144,5 +144,7 @@ test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, wo
     const moving = board.groups.moving!.map(entry => entry.key).sort();
     assert.deepEqual(moving, [...withAgent, ...testing].map(item => item.key).sort(), `${phase}: the board's moving rows are the in-progress rows`);
     for (const item of work.filter(item => item.stage === 'done')) assert.ok(item.delivery?.mergedAt, `${phase}: ${item.key} shown done is merged`);
+    // GY-3987: the Work capture's Now column reads owner-first, never the merge writer's or reviewer's own words.
+    for (const entry of board.groups.moving!) assert.doesNotMatch(entry.does, /merge trial|latest main|diff and proofs/i, `${phase}: ${entry.key} Now reads plainly: "${entry.does}"`);
   }
 });
