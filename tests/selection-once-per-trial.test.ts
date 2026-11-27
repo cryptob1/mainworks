@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,22 +7,22 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runMergeTrial } from '../src/merge-writer/executor.js';
 import { readTestSelections, testSelectionSummary } from '../src/merge-writer/test-selection.js';
 import { runTrial } from '../src/merge-writer/trial.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3787: a trial picks its tests once, and that step costs little more than the selector itself.
 
 const proof = 'integration:selection-once-per-trial';
 const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const policy = { mode: 'local', candidateSchedule: null, deploy: { adapter: 'command', project: null, uat: null, production: null }, mergeGate: { perCandidate: [], preMerge: [
   { check: 'test', command: 'node runner.cjs', source: 'script', reason: 'fixture', selection: { command: 'node select.cjs', pattern: '^tests/[\\w./-]+\\.test\\.ts$' } }] } };
 const selectable = 300;
 
 /** A seeded repository: 300 selectable tests of 600, each importing the same 60 modules of 270 KB; tests/t0 holds the proof, and tests/t1 fails its first run on the head. */
 async function fixture() {
-  const root = await temporaryDirectory('selection-once-repo', tmpdir()), state = await temporaryDirectory('selection-once-state', tmpdir()), base = await temporaryDirectory('selection-once-trials', tmpdir());
+  const state = await temporaryDirectory('selection-once-state', tmpdir()), base = await temporaryDirectory('selection-once-trials', tmpdir());
+  const { root, git } = await gitRepo({ root: await temporaryDirectory('selection-once-repo', tmpdir()) });
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
   write('package.json', JSON.stringify({ name: 'fixture', scripts: {} }));
   write('package-lock.json', JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }));
   write('graphyard.json', JSON.stringify({ delivery: policy }));
@@ -51,11 +50,11 @@ process.exit(status);
   const line = 'export const value = { text: "a string", other: "another string" };\n';
   for (let n = 0; n < 60; n++) write(`src/m${n}.ts`, `${n < 59 ? `import './m${n + 1}.js';\n` : ''}${line.repeat(4000)}`);
   for (let n = 0; n < 600; n++) write(`tests/t${n}.test.ts`, `import '../src/m0.js';\n// ${n === 0 ? proof : n}\n`);
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const tip = gitIn(root, 'rev-parse', 'HEAD');
+  git('add', '-A'); git('commit', '-q', '-m', 'base');
+  const tip = git('rev-parse', 'HEAD');
   write('src/fixed', '');
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'the change');
-  const merge = gitIn(root, 'rev-parse', 'HEAD');
+  git('add', '-A'); git('commit', '-q', '-m', 'the change');
+  const merge = git('rev-parse', 'HEAD');
   const children: { command: string; ms: number; wrapper: readonly string[] }[] = [];
   // The fixture's own commands run for real, outside the trial container (covered separately).
   const run: ChildRun = async (command, args, options) => {

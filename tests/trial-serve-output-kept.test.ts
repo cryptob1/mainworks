@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { removeTree, writableDirectories } from '../src/install/worktree-root.js';
 import { runMergeTrial } from '../src/merge-writer/executor.js';
@@ -14,8 +15,6 @@ import { defaultChildRun } from '../src/child-runner.js';
 // in a file under the trial run directory and its last 40 lines, with when it ran, in the trial
 // result; a trial whose scratch holds a read-only tree removes it and reports no leftover.
 
-const identity = { GIT_AUTHOR_NAME: 'Someone', GIT_AUTHOR_EMAIL: 'someone@example.com', GIT_COMMITTER_NAME: 'Someone', GIT_COMMITTER_EMAIL: 'someone@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const gitIn = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
 const port = 20000 + ((process.pid + 7919) % 20_000);
 const homeCase = { id: 'home', title: 'The home page answers', target: 'any', required: false, steps: [{ kind: 'http', method: 'GET', path: '/', status: 200 }] };
 // 100 lines, then waits forever (or exits) without ever listening.
@@ -27,16 +26,12 @@ const readOnlyBuild = 'mkdir -p "$TMPDIR/cache/mod/sub" && echo x > "$TMPDIR/cac
 // assertions, rather than a short wall-clock race, are the regression (GY-3386).
 async function trialOf(exit: boolean) {
   const scratch = await temporaryDirectory('trial-serve-output', tmpdir());
-  const root = join(scratch, 'repo');
-  mkdirSync(root, { recursive: true });
-  const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  gitIn(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: readOnlyBuild, test: 'node --eval 0' } }));
-  write('graphyard.json', JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${port}`, readySeconds: 30 } } }));
-  write('serve.js', printer(exit));
-  write('e2e/cases/home.json', JSON.stringify(homeCase));
-  gitIn(root, 'add', '-A'); gitIn(root, 'commit', '-q', '-m', 'base');
-  const head = gitIn(root, 'rev-parse', 'HEAD');
+  const { root, head } = await gitRepo({ root: join(scratch, 'repo'), files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: readOnlyBuild, test: 'node --eval 0' } }),
+    'graphyard.json': JSON.stringify({ e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${port}`, readySeconds: 30 } } }),
+    'serve.js': printer(exit),
+    'e2e/cases/home.json': JSON.stringify(homeCase),
+  } });
   const merged = await trialMerge(args => defaultChildRun('git', ['-C', root, ...args]), { head, baseTip: head });
   assert.ok('mergeSha' in merged);
   const runDirectory = join(scratch, 'run'), temporaryRoot = join(scratch, 'tmp');

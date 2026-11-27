@@ -17,7 +17,7 @@ import { completeCommand, completionBody } from '../src/cli/complete.js';
 import { syncWork } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -47,9 +47,8 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 }
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('submit-head'));
-  const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  git(fixtureRoot, 'init', '-q', '--bare', '-b', 'main', origin); git(fixtureRoot, 'clone', '-q', origin, checkout);
-  const first = await commit(checkout, 'README.md', '# Fixture\n', 'base');
+  checkout = join(fixtureRoot, 'checkout');
+  const { head: first } = await gitRepo({ root: checkout, origin: true, files: { 'README.md': '# Fixture\n' } });
   await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
   git(checkout, 'push', '-q', 'origin', 'main');
   baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
@@ -267,9 +266,8 @@ test('unit:sync-control-plane-no-fetch — sync reads mergeWriter from /api/stat
   const root = await realpath(await temporaryDirectory('sync-control-plane'));
   const cwd = process.cwd();
   try {
-    const origin = join(root, 'origin.git'), clone = join(root, 'clone'), other = join(root, 'other');
-    git(root, 'init', '-q', '--bare', '-b', 'main', origin); git(root, 'clone', '-q', origin, clone);
-    await commit(clone, 'README.md', '# Fixture\n', 'base'); git(clone, 'push', '-q', 'origin', 'main');
+    const clone = join(root, 'clone'), other = join(root, 'other');
+    const { origin } = await gitRepo({ root: clone, origin: true, files: { 'README.md': '# Fixture\n' } });
     const sharedTip = git(clone, 'rev-parse', 'refs/remotes/origin/main');
     git(clone, 'checkout', '-q', '-b', 'graphyard/gy-9-1');
     await commit(clone, 'src/x.ts', 'export const x = 1;\n', 'work');

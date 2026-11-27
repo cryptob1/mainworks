@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall } from '../src/install/index.js';
 import { localTransport, type Transport } from '../src/install/transport.js';
 import { harness } from './install-harness.js';
@@ -13,13 +12,10 @@ import { harness } from './install-harness.js';
 // --apply sets both URLs on the checkout. The remote's refusal is the transport's ssh answer —
 // the probe the preflight runs is `ssh git@github.com git-upload-pack`, the fetch direction's own.
 
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-
 /** A checkout whose origin fetches OWNER/PROJECT over SSH. */
-async function sshCheckout(directory: string) {
-  const root = join(directory, 'checkout');
-  execFileSync('git', ['init', '-q', root]);
-  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:owner/project.git'], { cwd: root });
+async function sshCheckout(label: string) {
+  const { root } = await gitRepo({ label });
+  git(root, 'remote', 'add', 'origin', 'git@github.com:owner/project.git');
   await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'project', scripts: { test: 'node --test', typecheck: 'tsc --noEmit' } }));
   return root;
 }
@@ -37,8 +33,7 @@ function mixedTransport(fake: Transport): Transport {
 const REFUSAL = "ERROR: The 'owner' organization has enabled SAML SSO; this SSH key is not authorized for it. Visit https://github.com/settings/ssh to authorize.";
 
 test('e2e:saml-pushurl-fix — preflight names the pushurl-only fix and --push-auth gh, and --apply sets the https fetch URL with the SSH pushurl', { timeout: 120_000 }, async () => {
-  const directory = await temporaryDirectory('saml-pushurl-fix');
-  const root = await sshCheckout(directory);
+  const root = await sshCheckout('saml-pushurl-fix');
   const fixture = await harness({ provider: 'compose', serverUrl: 'http://127.0.0.1:4310', root, extraResponses: [
     { match: 'ssh -o BatchMode=yes git@github.com git-upload-pack', result: { stdout: '', stderr: REFUSAL, code: 1 } },
   ] });
@@ -68,8 +63,7 @@ test('e2e:saml-pushurl-fix — preflight names the pushurl-only fix and --push-a
 });
 
 test('integration:saml-pushurl-fix — under --push-auth gh there is no Repository check to fail, and no non-SAML refusal changes origin', { timeout: 120_000 }, async () => {
-  const directory = await temporaryDirectory('saml-pushurl-fix-other');
-  const root = await sshCheckout(directory);
+  const root = await sshCheckout('saml-pushurl-fix-other');
   const fixture = await harness({ provider: 'compose', serverUrl: 'http://127.0.0.1:4310', root, extraResponses: [
     { match: 'ssh -o BatchMode=yes git@github.com git-upload-pack', result: { stdout: '', stderr: 'git@github.com: Permission denied (publickey).', code: 255 } },
   ] });

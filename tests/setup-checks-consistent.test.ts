@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { buildProposal, collectScanInput, detectDeploy, detectStack, discover, p
 import { applyProposal } from '../src/repository-setup.js';
 import * as setup from '../src/setup-from-zero.js';
 import { setupFromZeroChecks, setupSteps } from '../src/setup-from-zero.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 /**
@@ -26,11 +27,8 @@ const setupNext: typeof setup.setupNext = (...args) => setup.setupNext(...args);
 const signedIn = (scopes: string) => ({ code: 0, stdout: `github.com\n  ✓ Logged in to github.com account pilot (keyring)\n  - Token scopes: ${scopes}\n` });
 
 async function repository(files: Record<string, string>) {
-  const root = join(await temporaryDirectory('setup-checks'), 'repo');
-  await mkdir(root, { recursive: true });
-  for (const [path, text] of Object.entries(files)) { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), text); }
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
-  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'git@github.com:owner/scratch.git');
+  const { root, git } = await gitRepo({ label: 'setup-checks', files });
+  git('remote', 'add', 'origin', 'git@github.com:owner/scratch.git');
   return root;
 }
 

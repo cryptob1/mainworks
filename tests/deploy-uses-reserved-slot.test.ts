@@ -10,7 +10,7 @@ import { watchPorts } from '../src/cli/upgrade.js';
 import { pinKnownGood } from '../src/master/known-good.js';
 import { acquireVerificationSlot, declarationSlot, gateSlot, heldSlots, requestHeavyDrain, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3450 (AC-4): on 2026-11-17 the deploy build of 3b9606c4, verified 19:52Z, waited 30 minutes
 // behind merge trials GY-3448, GY-3447 and others. The deploy build and restart of a gate-verified
@@ -36,11 +36,7 @@ test('integration:deploy-uses-reserved-slot — with both ordinary slots held by
   delete process.env.DATABASE_URL;
   await mkdir(join(home, 'owner-project'), { recursive: true });
   await writeFile(join(home, 'owner-project', 'install.json'), JSON.stringify({ version: 1, installId: 'owner-project', repository: 'owner/project', provider: 'compose', baseBranch: 'main', createdAt: 'now', updatedAt: 'now' }));
-  await mkdir(cli);
-  await writeFile(join(cli, 'package.json'), '{}');
-  await writeFile(join(cli, '.gitignore'), 'node_modules/\n.graphyard/\n');
-  git(cli, 'init', '-q', '-b', 'main'); git(cli, 'add', '.'); git(cli, 'commit', '-q', '-m', 'verified');
-  const commit = git(cli, 'rev-parse', 'HEAD');
+  const { head: commit } = await gitRepo({ root: cli, message: 'verified', files: { 'package.json': '{}', '.gitignore': 'node_modules/\n.graphyard/\n' } });
 
   const trial = await acquireVerificationSlot({ directory: slots, label: 'test merge GY-3448' });
   const verification = await acquireVerificationSlot({ directory: slots, label: 'worker verification GY-3447' });

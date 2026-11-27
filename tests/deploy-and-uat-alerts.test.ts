@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { Launcher, type Cycle } from '../src/daemon/cycle.js';
@@ -10,20 +9,20 @@ import { deliveryAlertStep, postAlert } from '../src/daemon/delivery-alerts.js';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3529: beside the stalled-yard alert, the loop tells run.alertUrl which items the delivery watch
 // newly serves and which release candidate failed UAT, each once and never again after a restart;
 // a Slack incoming webhook gets {"text": ...}, any other receiver the plain-text body.
 
-const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } }).trim();
 const commit = (root: string, message: string) => { git(root, 'commit', '--allow-empty', '-q', '-m', message); return git(root, 'rev-parse', 'HEAD'); };
 
 const done = (key: string, title: string, mergeSha: string) => ({ id: key, key, title, stage: 'done', delivery: { mergedAt: '2030-04-01T00:00:00Z', mergeSha, authorizationRevision: 1 } }) as unknown as Work;
 
 async function world(alertUrl: string) {
-  const root = await temporaryDirectory('deploy-alerts-repo'), home = await temporaryDirectory('deploy-alerts-home');
-  git(root, 'init', '-q', '-b', 'main');
+  const { root } = await gitRepo({ label: 'deploy-alerts-repo' });
+  const home = await temporaryDirectory('deploy-alerts-home');
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: join(home, 'coordinator.token'), cliPath: '/bin/graphyard',
     repository: 'owner/project', baseBranch: 'main', hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [], run: { alertUrl } }) as MasterConfig;
   return { root, config };

@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
@@ -15,7 +14,7 @@ import { evaluateLandability } from '../src/model-boundary/landability.js';
 import { landabilityRefusals } from '../src/model/landability.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
@@ -46,15 +45,10 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('master-attest-manual'));
-  const origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await commit(checkout, 'README.md', '# Fixture\n', 'base');
+  checkout = join(fixtureRoot, 'checkout');
   // src/store/ is sensitive under the repository's own policy, so this change's acceptance gate
   // demands exactly the manual: attestation the master records.
-  await commit(checkout, 'src/store/attested.ts', 'export const attested = 1;\n', 'store');
-  git(checkout, 'push', '-q', 'origin', 'main');
-  baseTip = git(checkout, 'rev-parse', 'refs/remotes/origin/main');
+  ({ head: baseTip } = await gitRepo({ root: checkout, origin: true, files: { 'README.md': '# Fixture\n', 'src/store/attested.ts': 'export const attested = 1;\n' } }));
   const worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
   head = await commit(worktree, 'src/store/attested.ts', 'export const attested = 2;\n', 'the change');
@@ -86,9 +80,9 @@ test('integration:master-attest-manual — master attest records the manual: pro
     const [, workId, command] = path.split('/');
     return new Response(JSON.stringify(await engine.execute(operatorAgent, command as 'evidence', workId, body, id())), { status: 200 });
   }) as unknown as typeof fetch;
-  const root = await temporaryDirectory('master-attest-root'), credentialFile = join(await temporaryDirectory('master-attest-credential'), 'operator-agent.token');
+  const { root } = await gitRepo({ label: 'master-attest-root' });
+  const credentialFile = join(await temporaryDirectory('master-attest-credential'), 'operator-agent.token');
   await writeFile(credentialFile, `${'o'.repeat(40)}\n`, { mode: 0o600 });
-  execFileSync('git', ['init', '--quiet', root]);
   const config = { url: 'http://127.0.0.1:1', operatorAgent: { id: operatorAgent.id, credentialFile } } as unknown as MasterConfig;
   const deps = { coordinator: async () => ({ now: new Date().toISOString(), work: [await store.workDocument(item.id)] }), readSecret: async () => '', agents: () => [], daemonLock: async () => null, fetcher };
   const reason = 'the onboarding files match the guide the operator accepted';

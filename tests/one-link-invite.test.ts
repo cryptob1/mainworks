@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -10,6 +10,7 @@ import { masterSessionConfinement } from '../src/master/launch.js';
 import { inviteRefused, teammateSessionTtlMs } from '../src/server/auth.js';
 import { funnelCommand } from '../src/team-access.js';
 import { servedInstall, servedNode } from './helpers/served-install.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { until } from './helpers/until.js';
 
@@ -161,9 +162,7 @@ test('e2e:one-link-invite — Invite gives exactly one link on the install\'s Fu
   process.env.HOME = home;
   try {
     const root = join(home, 'code', 'project'), configHome = join(home, '.config', 'graphyard'), installDir = join(configHome, 'project-install');
-    mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, 'README.md'), 'tracked\n');
-    for (const args of [['init', '-q', '-b', 'main'], ['add', '.'], ['-c', 'user.name=T', '-c', 'user.email=t@t', 'commit', '-qm', 'seed']]) execFileSync('git', ['-C', root, ...args]);
+    await gitRepo({ root, files: { 'README.md': 'tracked\n' }, message: 'seed' });
     const secret = 'operator-admin-credential-'.padEnd(48, 'x');
     const operatorToken = join(installDir, 'tokens', 'operator.token'), masterToken = join(configHome, 'masters', 'master.token'), deployKey = join(installDir, 'merge-writer.key');
     for (const [file, value] of [[operatorToken, secret], [masterToken, 'master-own-token-'.padEnd(40, 'x')], [deployKey, 'deploy-key']]) {
