@@ -20,7 +20,7 @@ const shortSha = (sha: string) => <span className="mono" title={sha}>{sha.slice(
  * open ones plus the master's pane), the checks running (merge trials and a batch gate on main, as
  * /api/status counts them) and today's merges. Each number rides a data attribute for readers and tests.
  */
-function ActivityStrip({ work, observedAt, status }: { work: Work[]; observedAt: number; status?: Dashboard['status'] }) {
+function ActivityStrip({ work, observedAt, status, onWork }: { work: Work[]; observedAt: number; status?: Dashboard['status']; onWork: boolean }) {
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const agents = workersView(work, new Date(now)).running.filter(row => !row.stale && row.roleKind !== 'master').length + (status?.setup?.panes?.master ? 1 : 0);
   const checks = typeof status?.checksRunning === 'number' ? status.checksRunning : 0;
@@ -30,7 +30,8 @@ function ActivityStrip({ work, observedAt, status }: { work: Work[]; observedAt:
   return <p className="activity-strip" aria-label="Activity" data-on-shift={agents} data-in-trial={checks} data-shipped-tonight={merged}>
     <span className="beacon" aria-hidden="true"/>{plural(agents, 'agent')} working
     <span aria-hidden="true"> · </span>{plural(checks, 'check')} running
-    <span aria-hidden="true"> · </span><span className="mono">{merged}</span> merged today
+    {/* GY-3987: on Work the Shipped today chip carries today's merges, so the strip leaves them out there. */}
+    {!onWork && <><span aria-hidden="true"> · </span><span className="mono">{merged}</span> merged today</>}
   </p>;
 }
 
@@ -43,7 +44,7 @@ function ShippedStrip({ work, observedAt, live }: { work: Work[]; observedAt: nu
   if (typeof live?.commit !== 'string') return null;
   const { shipped, waiting } = shippedCounts(work, live, Number.isNaN(observedAt) ? Date.now() : observedAt);
   return <p className="shipped-strip" aria-label="Shipped" data-shipped={shipped.length} data-waiting={waiting.length}>
-    <span className="mono">{shipped.length}</span> shipped · <span className="mono">{waiting.length}</span> going live
+    <span className="mono">{shipped.length}</span> shipped this week · <span className="mono">{waiting.length}</span> going live
   </p>;
 }
 
@@ -322,7 +323,7 @@ export default function TopBar(dashboard: Dashboard & { onPalette?: () => void }
     <div className="top-bar-row">
       {status?.repository && <p className="project-name" data-title><img className="project-emblem" src="/favicon.svg" alt=""/>{status.repository}</p>}
       <div className="top-bar-live">
-        {(view !== 'home' || selected) && <ActivityStrip work={work} observedAt={observedAt} status={status}/>}
+        {(view !== 'home' || selected) && <ActivityStrip work={work} observedAt={observedAt} status={status} onWork={view === 'work' && !selected}/>}
         <ShippedStrip work={work} observedAt={observedAt} live={status?.live}/>
         <OpenApp status={status}/>
         <Invite api={dashboard.api} status={status}/>
