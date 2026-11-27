@@ -39,6 +39,7 @@ import { reworkReasonMax } from './rework.js';
 import type { Cycle } from './cycle.js';
 import { heavyJobsDirectory, readHeavyDrain, type HeavyDrain } from '../master/verification-slots.js';
 import { setting } from '../setting.js';
+import { formatAge } from '../model/duration.js';
 
 /** The merge writer's ports (merge-writer/executor.ts). */
 export interface MergeWriterReads extends MergePorts {
@@ -376,44 +377,76 @@ const attemptProgressLine = (item: { key: string }, event: MergeRecordEvent): st
   }
 };
 
+const unconfirmedWaiters = new WeakMap<MergeWriterState, Map<string, Set<() => void>>>();
+const hasUnconfirmed = (writer: MergeWriterState, id: string) => (writer.unconfirmed ?? []).some(entry => entry.id === id);
+const waitForConfirmed = (writer: MergeWriterState, id: string) => new Promise<void>(resolve => {
+  let byItem = unconfirmedWaiters.get(writer);
+  if (!byItem) unconfirmedWaiters.set(writer, byItem = new Map());
+  let set = byItem.get(id);
+  if (!set) byItem.set(id, set = new Set());
+  set.add(resolve);
+});
+const notifyConfirmed = (writer: MergeWriterState) => {
+  const byItem = unconfirmedWaiters.get(writer);
+  if (!byItem) return;
+  for (const [id, set] of byItem) {
+    if (hasUnconfirmed(writer, id)) continue;
+    byItem.delete(id);
+    for (const resolve of set) resolve();
+  }
+};
+
 /**
- * The record port of one attempt (GY-1852): every write carries the attempt id and its place in the
- * attempt, so its key (`mergeRecordKey`) is never sent with any other input. A write whose reply is
- * unknown is kept on `state.mergeWriter.unconfirmed` with its exact input, for `replayUnconfirmed`.
- * Each write is also the attempt progress the summary reports (GY-2053), recorded before it is
- * sent: the write itself is the writer moving, whatever its reply turns out to be.
+ * The record port of one attempt (GY-1852, GY-3981): every write carries the attempt id and its
+ * place in the attempt, so its key (`mergeRecordKey`) is never sent with any other input. Writes
+ * for one item run in write-number order and wait while an earlier write for that item is
+ * unconfirmed; other items never wait. A write whose reply is unknown is kept on
+ * `state.mergeWriter.unconfirmed` with its exact input, for `replayUnconfirmed`. Each write is
+ * also the attempt progress the summary reports (GY-2053), recorded before it is sent.
  */
 function attemptRecorder(writer: MergeWriterState, record: MergePorts['record'], attempt: string, at: () => string): MergePorts['record'] {
-  let next = 0;
+  const nextByItem = new Map<string, number>();
+  const inFlightByItem = new Map<string, Set<Promise<unknown>>>();
   return async (item, event) => {
-    const mergeAttempt = { id: attempt, write: next++ };
+    let active = inFlightByItem.get(item.id);
+    if (event.kind !== 'trial-step' && active?.size) await Promise.allSettled([...active]);
+    while (hasUnconfirmed(writer, item.id)) await waitForConfirmed(writer, item.id);
+    const write = nextByItem.get(item.id) ?? 0;
+    nextByItem.set(item.id, write + 1);
+    const mergeAttempt = { id: attempt, write };
     writer.progress = { at: at(), what: attemptProgressLine(item, event) };
-    try { return await record({ ...item, mergeAttempt }, event); }
-    catch (error) {
+    if (!active) inFlightByItem.set(item.id, active = new Set());
+    const pending = Promise.resolve().then(() => record({ ...item, mergeAttempt }, event)).catch(error => {
       if (!keyReusedRefusal(error) && replyUnknown(error)) {
         writer.unconfirmed = [...writer.unconfirmed ?? [], { key: item.key, id: item.id, attempt, write: mergeAttempt.write, event: { ...event }, sentAt: at(), replays: 0, lastError: errorText(error).slice(0, 2000) }].slice(-mergeWriterKeptUnconfirmed);
       }
       throw error;
-    }
+    });
+    active.add(pending);
+    try { return await pending; }
+    finally { active.delete(pending); }
   };
 }
 
 /**
- * Every write whose reply was lost, replayed before anything new starts (GY-1852): the identical
- * input under the identical key, so a write the server holds answers its stored receipt and the
- * merge proceeds from the ledger next cycle. A key the server refuses as reused with different
- * input, any other answer the server gave, or a write still unanswered after
- * `mergeWriterUnconfirmedReplays` cycles is never sent again: the item's merge ledger, as the
- * snapshot read it, is adopted, and the next merge runs under a new attempt id. Answers whether any
- * write was settled or is still owed; while one is, nothing new starts.
+ * Every write whose reply was lost, replayed at the start of every merge step whether or not
+ * trials are running (GY-1852, GY-3981): the identical input under the identical key, so a write
+ * the server holds answers its stored receipt without recording anything twice. A key the server
+ * refuses as reused with different input, any other answer the server gave, or a write still
+ * unanswered after `mergeWriterUnconfirmedReplays` cycles is never sent again: the item's merge
+ * ledger, as the snapshot read it, is adopted, and the next merge runs under a new attempt id.
+ * Answers whether any write was handled; only the items whose writes were unconfirmed wait.
  */
 export async function replayUnconfirmed(cycle: Pick<Cycle, 'state' | 'now' | 'snapshot' | 'performed'>, record: MergePorts['record']): Promise<boolean> {
   const { state, now, snapshot, performed } = cycle;
   const writer = state.mergeWriter;
   if (!writer.unconfirmed?.length) return false;
+  const pendingList = writer.unconfirmed;
+  const handled = new Set(pendingList);
   const at = () => new Date(now()).toISOString();
   const kept: UnconfirmedRecord[] = [];
-  for (const pending of writer.unconfirmed) {
+  for (const pending of pendingList) {
+    if (kept.some(entry => entry.id === pending.id)) { kept.push(pending); continue; }
     const actionKey = `merge-writer-replay:${pending.key}:${pending.attempt}:${pending.write}`, kind = String(pending.event.kind);
     const item = snapshot.work.find(entry => entry.id === pending.id);
     const action = (actionState: 'done' | 'failed', detail: string) => performed.push(storeAction(state, actionKey, { kind: 'merge', work: pending.key, principal: null, state: actionState, detail: detail.slice(0, 1900), attempts: pending.replays + 1, epoch: null, cycle: state.cycle, at: at() }));
@@ -438,11 +471,14 @@ export async function replayUnconfirmed(cycle: Pick<Cycle, 'state' | 'now' | 'sn
       else if (pending.replays + 1 >= mergeWriterUnconfirmedReplays) adopt(`was still unanswered after ${pending.replays + 1} replays: ${errorText(error).slice(0, 500)}`);
       else {
         kept.push({ ...pending, replays: pending.replays + 1, lastError: errorText(error).slice(0, 2000) });
-        action('failed', `The ${kind} record of ${pending.key} (attempt ${pending.attempt}, write ${pending.write}) is still unanswered (replay ${pending.replays + 1}); it is replayed with its exact input next cycle and nothing new starts: ${errorText(error)}`);
+        action('failed', `The ${kind} record of ${pending.key} (attempt ${pending.attempt}, write ${pending.write}) is still unanswered (replay ${pending.replays + 1}); it is replayed with its exact input next cycle and ${pending.key}'s next write waits: ${errorText(error)}`);
       }
     }
   }
-  if (kept.length) writer.unconfirmed = kept; else delete writer.unconfirmed;
+  const added = (writer.unconfirmed ?? []).filter(entry => !handled.has(entry));
+  const remaining = [...kept, ...added].slice(-mergeWriterKeptUnconfirmed);
+  if (remaining.length) writer.unconfirmed = remaining; else delete writer.unconfirmed;
+  notifyConfirmed(writer);
   return true;
 }
 
@@ -804,13 +840,14 @@ async function startMergeFlight(cycle: Pick<Cycle, 'state' | 'effects' | 'now'>,
  * settles it as refused. An entry whose run is gone falls through to the reconcile, which refuses
  * the intent unpushed and queues the head afresh. Answers whether a flight started.
  */
-async function adoptRestartedTrials(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>, reads: MergeWriterReads, ledger: Readonly<Record<string, MergeLedgerState>>): Promise<boolean> {
+async function adoptRestartedTrials(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>, reads: MergeWriterReads, ledger: Readonly<Record<string, MergeLedgerState>>, held?: (key: string) => boolean): Promise<boolean> {
   const { state, snapshot, performed, now } = cycle;
   const writer = state.mergeWriter;
   const adopt = reads.adoptTrialRun;
   if (!adopt || flying(state) || writer.inFlight?.revert) return false;
   const adopted: { work: Work; handle: TrialRunHandle }[] = [];
   for (const entry of writer.inFlights ?? (writer.inFlight ? [writer.inFlight] : [])) {
+    if (held?.(entry.key)) continue;
     // Only an intent still open for this exact head and merge commit names a trial whose verdict has not landed.
     const ledgerState = ledger[entry.key];
     if (!entry.run || !ledgerState || ledgerState.state !== 'intent' || ledgerState.head?.toLowerCase() !== entry.head || ledgerState.mergeSha !== entry.run.mergeSha) continue;
@@ -1038,16 +1075,19 @@ export async function mergeWriterStep(cycle: Cycle) {
   if (await fileOwedRelands(cycle, reads)) changed = true;
   revertWaiting.delete(state);
   if (await serveRevertAttempt(cycle, reads)) changed = true;
-  // GY-1852: a write whose reply was lost is replayed first; the snapshot predates it, so nothing new starts in the cycle that settled one.
-  const replayed = !flying(state) && await replayUnconfirmed(cycle, reads.record);
+  // GY-1852, GY-3981: replay unconfirmed writes at the start of every merge step even while trials are running;
+  // hold only the items whose writes were unconfirmed (the snapshot predates a replay settled this cycle).
+  const unconfirmedBefore = new Set((writer.unconfirmed ?? []).map(entry => entry.key));
+  const replayed = await replayUnconfirmed(cycle, reads.record);
   if (replayed) changed = true;
+  const heldByUnconfirmed = (key: string) => unconfirmedBefore.has(key) || (writer.unconfirmed ?? []).some(entry => entry.key === key);
   // GY-3159: the merge trials a restart left running are adopted before the reconcile below can
   // settle their open intents as refused: each becomes a flight again whose adopted trial answers
   // in place of a fresh launch, so it reaches its own verdict (merged, or refused for its own
   // failure) and the restart never discards it. GY-3965: a merge landing this cycle holds neither
   // an adoption nor a new trial: trials run detached and the next loop adopts them.
-  if (!flying(state) && !writer.inFlight?.revert && !replayed && reads.adoptTrialRun
-    && await adoptRestartedTrials(cycle, reads, snapshotLedger(snapshot.work))) changed = true;
+  if (!flying(state) && !writer.inFlight?.revert && reads.adoptTrialRun
+    && await adoptRestartedTrials(cycle, reads, snapshotLedger(snapshot.work), heldByUnconfirmed)) changed = true;
   // GY-3182: a slot free beside running flights starts the next due head now, without waiting for them
   // to settle; the heads they carry are out of the queue and their open intents out of the reconcile.
   // GY-3401: at the CPU temperature limit, half the cap; the figures ride the CPU reading to master status and the Workers page.
@@ -1059,10 +1099,10 @@ export async function mergeWriterStep(cycle: Cycle) {
   const parallel = Math.min(trialCapNow(state, fullCap), trialCapNow(state, hostCap) - batchGateBusySlots(state));
   const busy = new Set([...live].flatMap(flight => flight.keys ?? [flight.key])), busySlots = flightSlots(state);
   // Pushing a completed trial takes no trial slot, even while every slot is occupied.
-  if (![...live].some(flight => flight.revert) && !revertWaiting.has(state) && !writer.inFlight?.revert && !writer.unconfirmed?.length && !replayed) {
+  if (![...live].some(flight => flight.revert) && !revertWaiting.has(state) && !writer.inFlight?.revert) {
     const ledger = snapshotLedger(snapshot.work);
     for (const item of snapshot.work) {
-      if (busy.has(item.key) || settledNow.has(item.key) || !awaitsMerge(item, ledger, now())) continue;
+      if (busy.has(item.key) || settledNow.has(item.key) || heldByUnconfirmed(item.key) || !awaitsMerge(item, ledger, now())) continue;
       const record = attemptRecorder(writer, reads.record, randomUUID(), at);
       try {
         const landed = await pushPassedTrial({ ...reads, record }, item);
@@ -1079,9 +1119,9 @@ export async function mergeWriterStep(cycle: Cycle) {
   // GY-3437, GY-3501: pressure above the ceiling alone stops new trials; heat never does — the cap
   // still reads half, so status shows what returns once it cools, and the trial container guard
   // waits on its own limit once the flight launches.
-  if (busySlots < parallel && !cpuPressureHeld(state) && ![...live].some(flight => flight.revert) && !revertWaiting.has(state) && !writer.unconfirmed?.length
-    && !writer.inFlight?.revert && !replayed) {
-    const free = snapshot.work.filter(item => !busy.has(item.key) && !settledNow.has(item.key));
+  if (busySlots < parallel && !cpuPressureHeld(state) && ![...live].some(flight => flight.revert) && !revertWaiting.has(state)
+    && !writer.inFlight?.revert) {
+    const free = snapshot.work.filter(item => !busy.has(item.key) && !settledNow.has(item.key) && !heldByUnconfirmed(item.key));
     const ledger = snapshotLedger(free);
     // Intents a crash left open are settled against the base before any new merge (AC-5); the next cycle reads the snapshot they changed.
     // Each item's reconcile is its own attempt (GY-1852), so a pushed or reconciled record retried later never reuses a key with a new instant or tip.
@@ -1100,7 +1140,7 @@ export async function mergeWriterStep(cycle: Cycle) {
     }
     // GY-2079: with the cycle's open intents settled, a head whose timeout record reached the bound is refused: the refusal is the ledger's last word for the head, so the queue drops it, and the rework it grounds is requested next cycle. A write whose reply was lost is replayed (GY-1852); the record keeps its reason and is asked for again.
     for (const counted of writer.timeouts) {
-      if (!counted.reason) continue;
+      if (!counted.reason || heldByUnconfirmed(counted.key)) continue;
       const item = snapshot.work.find(entry => entry.id === counted.id);
       if (!item) { counted.reason = null; continue; }
       try { await record(item, { kind: 'refused', head: counted.head, reason: counted.reason }); }
@@ -1125,7 +1165,7 @@ export async function mergeWriterStep(cycle: Cycle) {
       const summary = ordered.slice(0, mergeWriterKeptQueue).map(entry => holding.held.has(entry.id) ? { ...entry, waiting: `a green ${reads.baseBranch}: ${holding.reason}`.slice(0, 500) } : entry);
       if (JSON.stringify(summary) !== JSON.stringify(writer.queue)) { writer.queue = summary; changed = true; }
       // GY-2079: a timeout record whose head the queue no longer holds goes with it.
-      const kept = writer.timeouts.filter(entry => busy.has(entry.key) || ordered.some(queued => queued.key === entry.key && queued.head === entry.head));
+      const kept = writer.timeouts.filter(entry => busy.has(entry.key) || heldByUnconfirmed(entry.key) || ordered.some(queued => queued.key === entry.key && queued.head === entry.head));
       if (kept.length !== writer.timeouts.length) { writer.timeouts = kept; changed = true; }
       for (const work of queue.due.filter(entry => holding.held.has(entry.id))) {
         const head = work.candidate!.sha.toLowerCase(), prior = ledger[work.key];
@@ -1158,6 +1198,17 @@ export async function mergeWriterStep(cycle: Cycle) {
  * With `now` (GY-2963) the flight names its current step's elapsed time and whether it has run past
  * the stall bound without a step advancing.
  */
+const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
+/** GY-3981: one line per unconfirmed merge write naming the item, how long it has waited, and its last error. */
+const unconfirmedWriteLine = (entry: UnconfirmedRecord, now: number) =>
+  `${entry.key}: unconfirmed merge write for ${formatAge(entry.sentAt, now)}: ${oneLine(entry.lastError)}`;
+export const unconfirmedWriteAttention = (writer: MergeWriterState | null | undefined, now: number) =>
+  (writer?.unconfirmed ?? []).map(entry => ({
+    subject: entry.key,
+    text: unconfirmedWriteLine(entry, now),
+    next: 'Wait for the next replay or check the control plane if it repeats',
+  }));
+
 export type MergeWriterSummary = {
   trials?: MergeWriterState['trials']; stepMedians?: Record<string, number>;
   queue: MergeWriterState['queue']; inFlight: (MergeWriterState['inFlight'] & { stepMs?: number; stalled?: boolean }) | null; lastMergeAt: string | null;
@@ -1169,6 +1220,8 @@ export type MergeWriterSummary = {
   progress?: MergeWriterState['progress']; motionBoundMs?: MergeWriterState['motionBoundMs'];
   /** GY-2990: the last verified serve, the reverts a failing serve caused, and the revert held when its own trial failed. */
   serveRevert?: MergeWriterState['serveRevert'];
+  /** GY-3981: unconfirmed merge writes still awaiting replay, one line each; absent when none. */
+  unconfirmed?: string[];
 };
 export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, now?: number): MergeWriterSummary => {
   if (!writer) return { queue: [], inFlight: null, lastMergeAt: null, refusals: [], reworks: [] };
@@ -1177,7 +1230,7 @@ export const mergeWriterSummary = (writer: MergeWriterState | null | undefined, 
     return Number.isFinite(at) && now !== undefined ? { ...entry, stepMs: Math.max(0, now - at), stalled: now - at >= mergeStallMs } : entry;
   };
   const inFlight = writer.inFlight && timed(writer.inFlight);
-  return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, untrialledLandings: writer.untrialledLandings ?? 0, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert };
+  return { trials: writer.trials, stepMedians: trialStepMedians(writer.trials ?? []), queue: writer.queue, inFlight, ...(writer.inFlights ? { inFlights: writer.inFlights.map(timed) } : {}), lastMergeAt: writer.lastMergeAt, untrialledLandings: writer.untrialledLandings ?? 0, refusals: writer.refusals, reworks: writer.reworks, progress: writer.progress, motionBoundMs: writer.motionBoundMs, serveRevert: writer.serveRevert, ...(writer.unconfirmed?.length ? { unconfirmed: writer.unconfirmed.map(entry => unconfirmedWriteLine(entry, now ?? Date.now())) } : {}) };
 };
 ;
 ;
