@@ -61,7 +61,7 @@ export const statusRoutes = defineRoutes('status', [
     const read = runner ? async (args: readonly string[]) => { const result = await runner(args); if (result.status !== 0) throw new Error(result.stderr); return result.stdout; } : null;
     const deploys = servingRoot ? readDeployHistory(servingRoot, repository ?? null) : [];
     const work = await engine.store.fleet();
-    return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { deploys, git: read, releaseFlakes: servingRoot ? readGateRecord(gateRecordPath(servingRoot))?.flakes : [] }) };
+    return { at: now, work, flow: await readFlow(engine.store.pool, work, now, { repository, deploys, git: read, releaseFlakes: servingRoot ? readGateRecord(gateRecordPath(servingRoot))?.flakes : [] }) };
   }),
   // GY-3757: the slowest database query of the last 10 minutes when it ran past 3 s, for master status; `name` keeps the queries whose name starts with it.
   // GY-3799: with the longest coordination-lock hold of the last 10 minutes, 1 s or more.

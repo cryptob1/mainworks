@@ -95,6 +95,7 @@ export function FlowLine({ flow }: { flow?: FlowReport | null }) {
         {day.reviewReasons?.length ? <p className="muted" data-review-reasons>Review reasons: {day.reviewReasons.map(reason => `${cap(reason.label)} ${reason.count}`).join(' · ')}</p> : null}
         {day.flakyChecks?.length ? <p className="muted" data-flaky-checks>Flaky checks: {day.flakyChecks.map(flaky => `${flaky.check} ${flaky.count}`).join(' · ')}</p> : null}
         {day.trialFailures?.length ? <p className="muted" data-trial-failures>Failing checks: {day.trialFailures.map(failing => `${failing.check} ${failing.count}`).join(' · ')}</p> : null}
+        {flow!.onboarding?.map(line => <p key={line.repository} className="muted" data-flow-onboarding>{line.repository}: {line.waiting ? `no merge yet, waiting ${plainDuration(line.minutes)}` : `${plainDuration(line.minutes)} from connection to first merge`}</p>)}
         <p className="muted">Flaky trials {percent(day.flakyRate)} of {day.trials}. Merges reverted {percent(day.revertRate)}.</p>
       </div></details>
     </div>

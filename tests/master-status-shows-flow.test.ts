@@ -59,7 +59,7 @@ test('e2e:master-status-shows-flow — after a merge, master status shows the fl
 test('integration:master-status-shows-flow — the master reads /api/flow for its numbers; a failed read names its reason and the rest still answers', async () => {
   const status = await report();
   assert.ok(status.flow, `flow is shown (${status.flowError})`);
-  assert.deepEqual(Object.keys(status.flow).sort(), ['24h', '6h', '7d']);
+  assert.deepEqual(Object.keys(status.flow).sort(), ['24h', '6h', '7d', 'onboarding']);
   assert.equal(typeof status.flow['24h'].attemptsPerHour, 'number');
 
   // The flow read fails as production's did: its query ran past the statement timeout.
