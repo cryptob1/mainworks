@@ -301,10 +301,9 @@ export async function saveProducerProfile(root: string, profileInput: unknown, v
 }
 
 /**
- * The settings the master may tune on its own: the loop and dispatch cadence, the workflows the
- * provider runs with its own secret, the deployment the loop verifies, which reviewer profile
- * answers first, the producer session budget, the quota ceiling, how often the loop promotes to
- * production, and a profile's account order.
+ * The settings the master may tune on its own: the loop's cadence, the workflows the provider
+ * runs with its own secret, which reviewer profile answers first, the producer session budget,
+ * the quota ceiling, and a profile's account order.
  * Everything else — the merge method, server and repository binding, credential and
  * identity paths, the environment inventory — is onboarding's or the operator's: no CLI path
  * writes it, and the master's harness grants no direct edit of master.json, so re-pointing a credential can never be a routine master action.
