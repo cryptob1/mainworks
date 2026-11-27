@@ -1,16 +1,17 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  // GY-3964: tests are not entry points, so code only tests use is reported.
+  // GY-3964: tests are no entry points, so code only tests use is reported.
   "entry": [
     "bin/*.mjs",
     "scripts/**/*.{mjs,ts}",
-    // Built by scripts/build-publisher.mjs and loaded by scripts/graphyard-pull.mjs through tsImport, which knip does not follow.
+    // Loaded by path through tsImport (scripts/build-publisher.mjs, scripts/graphyard-pull.mjs), which knip does not follow.
     "src/publish-verified.ts",
     "src/dispatch/worker-pull.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}"],
+  // An export its own file uses is live code; knip reports an export no file besides its own uses.
   "ignoreExportsUsedInFile": true,
-  // Test seams kept for tests; each file's one kept export and why.
+  // The 13 exports kept for tests alone, each with its reason. knip ignores these files' exports and nothing else.
   "ignoreIssues": {
     "src/daemon/cycle-merge-writer.ts": ["exports"], // mergeWriterIdle: the idle writer state about 48 test files start from.
     "src/install/transport.ts": ["exports"], // fakeTransport: the install tests' stand-in for SSH to a host.

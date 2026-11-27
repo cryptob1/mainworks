@@ -19,12 +19,15 @@ import { z } from 'zod';
 import { stateDirectory, unitPrefix, type UnitPrefix } from './layout.js';
 
 export const legacyLoopUnit = 'graphyard-master.service';
-export const legacyExecutorTemplate = 'graphyard-executor@.service';
+/** The legacy executor unit's file name, read from the host to tell whose the legacy alias is (GY-1452); no unit is templated from it. */
+export const legacyExecutorUnit = 'graphyard-executor@.service';
 /** Where an install records the units it owns; local and ignored, like every file under `.graphyard/`. */
 export const installUnitsFile = '.graphyard/units.json';
 /** GY-3711: the record's path in ROOT's own state directory (`.mainworks` for a fresh install). */
 export const installUnitsPath = (root: string) => resolve(stateDirectory(root), 'units.json');
 
+// Not strict: a record written before GY-3964 still names its executorTemplate. Nothing reads that; the parse
+// drops it and keeps the rest, so such a record loads and is rewritten without it.
 const recordSchema = z.object({
   version: z.literal(1),
   /** The install slug the names derive from; null for the legacy alias. */
@@ -32,7 +35,7 @@ const recordSchema = z.object({
   master: z.string().regex(/^(?:graphyard|mainworks)-master[A-Za-z0-9@._-]*\.service$/),
   /** True when the install kept the pre-GY-1441 names because its units already ran this checkout. */
   alias: z.boolean(),
-}); // not strict: a record written before GY-3964 still names its executorTemplate, which nothing reads
+});
 export type InstallUnits = z.infer<typeof recordSchema>;
 
 /**
@@ -74,7 +77,7 @@ export const userUnitDirectory = (env: NodeJS.ProcessEnv = process.env) =>
 export function legacyUnitFiles(unitDirectory = userUnitDirectory()): LegacyUnitFile[] {
   const temporary = canonical(tmpdir());
   if (underTestRunner() && !`${canonical(unitDirectory)}${sep}`.startsWith(`${temporary}${sep}`)) return [];
-  return [legacyLoopUnit, legacyExecutorTemplate].map(name => {
+  return [legacyLoopUnit, legacyExecutorUnit].map(name => {
     const path = join(unitDirectory, name);
     try { return { path, text: readFileSync(path, 'utf8') }; } catch (error) { if (!absent(error)) throw error; return { path, text: null }; }
   });
