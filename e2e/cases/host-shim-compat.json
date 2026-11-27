@@ -8,6 +8,12 @@
   "steps": [
     {
       "kind": "command",
+      "name": "a host-shim fixture built while another worker lands the helper signing key keeps that key",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/host-shim-trial-cause-fixed.test.ts",
+      "timeoutSeconds": 120
+    },
+    {
+      "kind": "command",
       "name": "an older helper that speaks every trial verb stays ready, one lacking a verb reads away with the reason; master status reads the latest probe with when it was read",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/host-shim-compat.test.ts",
       "timeoutSeconds": 300
