@@ -807,8 +807,9 @@ async function catalogImage(input: { root: string; commit: string; baseTip?: str
     : input.baseTip ? await selectWarmImage({ ...input, sha: input.commit }) : (await ensureWarmImage(input)).tag;
   const source = fileURLToPath(new URL('../..', import.meta.url));
   const release = await local('git', ['-C', source, 'rev-parse', 'HEAD']).catch(() => randomUUID());
-  // Keyed by trial image, release and warm image, so the commit is the tag's last part and each release keeps its two newest.
-  const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}\n${warm}`).digest('hex');
+  // Keyed by trial image and release only, so a release's catalog images are one family its prune keeps to the two newest;
+  // the tag's last part is the warm image's commit (v2), and a v1 warm image is fixed per lockfile.
+  const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}`).digest('hex');
   const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.version === 'v1' ? undefined : parseWarmImageTag(warm)?.commit ?? input.commit);
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
   const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
@@ -834,7 +835,7 @@ export async function catalogHosts(input: { root: string; commit: string; baseTi
   const read = async (named: readonly string[]) => (await (input.read ?? ((names, shared) => readShardHosts(names, input.run, availableParallelism(), shared)))(named, transport)).slice(1);
   const readings = targets.length ? await rereadHotHosts(await read(targets), read, { signal: input.signal }) : [];
   const image = input.image ?? trialImage();
-  const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, transport, hosts: readings,
+  const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, signal: input.signal, transport, hosts: readings,
     warm: version => catalogImage({ root: input.root, commit: input.commit, baseTip: input.baseTip, image, run: input.run, deadline: input.deadline, version }) });
   return {
     readings,
