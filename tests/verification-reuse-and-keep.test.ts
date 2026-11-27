@@ -84,7 +84,7 @@ test('integration:verification-reuse-and-keep — verify then complete on the sa
 
   // Any other head runs them as before.
   await writeFile(join(f.root, 'tests/required.test.ts'), (await readFile(join(f.root, 'tests/required.test.ts'), 'utf8')) + '// another head\n');
-  f.git('commit', '-qam', 'another head');
+  f.git('commit', '-qam', 'another head\n\nAC-1 — met: verification passed');
   const head = f.git('rev-parse', 'HEAD');
   await verify(head);
   assert.equal(executions, 2, 'another head runs its proof files');

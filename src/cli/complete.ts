@@ -441,6 +441,40 @@ function firstFailingLine(output: string): string | null {
   return slice.find(line => line && !failureMarker(line)) ?? null;
 }
 
+const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * GY-4038: unmet acceptance criteria was code review's largest rework cause after GY-3939.
+ * Requires a commit-message ruling "AC-N — met: HOW" for each non-bootstrap criterion, and refuses
+ * any criterion left unruled or ruled unmet/not met.
+ */
+export function validateCriteriaRulings(
+  commitMessages: string,
+  criteria: readonly { id: string; text?: string; bootstrap?: unknown }[],
+): string | null {
+  const required = criteria.filter(criterion => !criterion.bootstrap && criterion.id);
+  if (!required.length) return null;
+  const lines = commitMessages.split('\n');
+  const unmet: typeof required = [];
+  const unruled: typeof required = [];
+  for (const criterion of required) {
+    const idPattern = new RegExp(`(?:^|[^\\w-])${escapeRegex(criterion.id)}(?:$|[^\\d])`);
+    const matching = lines.filter(line => idPattern.test(line));
+    if (matching.some(line => /\b(?:unmet|not\s+met)\b/i.test(line))) unmet.push(criterion);
+    else if (!matching.some(line => /\bmet\b/i.test(line))) unruled.push(criterion);
+  }
+  if (!unmet.length && !unruled.length) return null;
+  const format = (list: typeof required) => list.map(criterion => `[${criterion.id}]${criterion.text ? ` ${criterion.text}` : ''}`).join('\n');
+  if (unmet.length) {
+    return `complete refused: criterion ruling marks ${unmet.map(criterion => criterion.id).join(', ')} unmet:\n`
+      + format(unmet)
+      + '\nFix each unmet criterion before submitting, then add a line "AC-N — met: HOW" to a commit message and complete again.';
+  }
+  return `complete refused: review judges every acceptance criterion on this head and sends back any that is unmet:\n`
+    + format(unruled)
+    + '\nVerify each criterion above against your diff (code, callers, edge cases and proofs) and add a line "AC-N — met: HOW" for each to a commit message, then complete again.';
+}
+
 /**
  * GY-3638: fast local preflight before `complete` submits a head. Refuses in seconds what the
  * merge writer would refuse after review, the queue and trial start-up — reusing the executor's
@@ -450,11 +484,12 @@ function firstFailingLine(output: string): string | null {
  * 3. `featureCaseFailure` over the files added or modified by the head;
  * 4. `workerFastGates` when the repository carries them (`workerFastGatesPresent`);
  * 5. Changed source/test relative imports resolve in the head, then `staticRuleTests` when present;
- * 6. GY-3939: each changed assertion in an existing test is ruled "kept meaning" in a commit message.
+ * 6. GY-3939: each changed assertion in an existing test is ruled "kept meaning" in a commit message;
+ * 7. GY-4038: each non-bootstrap acceptance criterion is ruled "AC-N — met: HOW" in a commit message.
  */
 export async function completePreflight(
   root: string,
-  work: { key: string; type?: string; criteria?: { id: string; proofs: string[]; bootstrap?: unknown }[] },
+  work: { key: string; type?: string; criteria?: { id: string; text?: string; proofs: string[]; bootstrap?: unknown }[] },
   head: string,
   options: CompletePreflightOptions = {},
 ): Promise<void> {
@@ -576,6 +611,14 @@ export async function completePreflight(
       });
       throw new Error(reason ?? `${trialFailurePrefix}: tests ${failingFiles.join(', ')}${firstLine ? `: ${firstLine}` : ''}`);
     }
+  }
+
+  // 6. GY-4038: unmet acceptance criteria was code review's largest rework cause after GY-3939;
+  // the worker checks and rules each criterion met in a commit message first, as the reviewer will.
+  if (baseTip && criteria.length) {
+    const from = (await git(['merge-base', baseTip, head])).trim();
+    const criteriaFailure = validateCriteriaRulings(await git(['log', '--format=%B', `${from}..${head}`]), criteria);
+    if (criteriaFailure) throw new Error(criteriaFailure);
   }
 }
 

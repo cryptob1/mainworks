@@ -94,7 +94,7 @@ test('integration:complete-checks-relative-imports — complete refuses a head a
     'tests/helpers/missing.ts': 'export const helper = 1;\n',
   });
   git(root, 'add', 'tests/helpers/missing.ts');
-  git(root, 'commit', '--quiet', '-m', 'commit missing helper');
+  git(root, 'commit', '--quiet', '-m', 'commit missing helper\n\nAC-1 — met: relative import resolves');
   const cleanHead = git(root, 'rev-parse', 'HEAD');
 
   {
@@ -177,7 +177,7 @@ test('e2e:complete-checks-relative-imports — on a running test install a worke
     // Fix the missing relative import and confirm complete now submits.
     await writeFiles(root, { 'src/helpers/missing.ts': 'export const helper = 1;\n' });
     git(root, 'add', 'src/helpers/missing.ts');
-    git(root, 'commit', '--quiet', '-m', 'commit missing helper');
+    git(root, 'commit', '--quiet', '-m', 'commit missing helper\n\nAC-1 — met: relative import resolves');
     const cleanHead = git(root, 'rev-parse', 'HEAD');
 
     const accepted = await runComplete(cleanHead);
