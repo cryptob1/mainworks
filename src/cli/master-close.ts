@@ -3,7 +3,7 @@ import type { CloseInput } from '../model/closure.js';
 
 const closeUsage = 'Use master close GY-N REASON --duplicate-of GY-M | --superseded-by COMMIT|GY-M | --obsolete';
 export const closeHelp = [
-  '  master close GY-N REASON --duplicate-of GY-M | --superseded-by COMMIT|GY-M | --obsolete',
+  '  lead close GY-N REASON --duplicate-of GY-M | --superseded-by COMMIT|GY-M | --obsolete',
   '                                Close work that will never be delivered; refused under a live',
   '                                lease or merge execution, never counted as delivered',
 ];

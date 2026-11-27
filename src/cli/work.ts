@@ -68,7 +68,7 @@ export const workCommands = defineCommands([
   {
     // GY-3344: how a reporter (another install's Master) reaches this install's Master, and reads its replies.
     name: 'message',
-    help: ['  message TEXT                 Message this install\'s Master; master status shows it until it replies'],
+    help: ['  message TEXT                 Message this install\'s Lead; lead status shows it until it replies'],
     run: async ({ id, args, api, print }) => {
       const text = [id, ...args].filter(Boolean).join(' ').trim();
       if (!text) throw new Error('Use message TEXT');
@@ -122,7 +122,7 @@ export const workCommands = defineCommands([
   },
   {
     name: 'messages',
-    help: ['  messages                     Your messages to this install\'s Master, with its replies'],
+    help: ['  messages                     Your messages to this install\'s Lead, with its replies'],
     run: async ({ api, print }) => print(await api('master/messages')),
   },
   {

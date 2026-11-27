@@ -10,7 +10,7 @@ import blocked from './guide/blocked.js';
 import review from './guide/review.js';
 import proof from './guide/proof.js';
 import upgrade from './guide/upgrade.js';
-import master from './guide/master.js';
+import lead from './guide/lead.js';
 import setup from './guide/setup.js';
 import infra from './guide/infra.js';
 import publishing from './guide/publishing.js';
@@ -30,7 +30,7 @@ export const guideTopics = {
   review,
   proof,
   upgrade,
-  master,
+  lead,
   setup,
   infra,
   publishing,
@@ -47,6 +47,7 @@ export const guideList = () => `${PRODUCT_NAME} guide topics: ${guideTopicList.j
 
 /** One topic's procedure; an unknown topic is refused with the list, so a typo is never a silence. */
 export function guideText(topic: string): string {
+  if (topic === 'master') topic = 'lead'; // the old name still prints the topic (GY-4042)
   if (!Object.hasOwn(guideTopics, topic)) throw new Error(`Unknown guide topic: ${topic}. ${guideList()}`);
   return guideTopics[topic as GuideTopic];
 }

@@ -35,7 +35,7 @@ test('master-only commands ignore an unrelated unavailable worker token file', a
     await exec('git', ['init', '-q'], { cwd });
     await mkdir(join(cwd, '.graphyard')); await writeFile(join(cwd, '.graphyard/connection.json'), '{broken', { mode: 0o644 });
     const result = await exec(process.execPath, [launcher, 'master', 'guide'], { cwd, env: { ...process.env, GRAPHYARD_TOKEN_FILE: join(cwd, 'removed-worker.token'), GRAPHYARD_HOST_ID: '   ' } });
-    assert.match(result.stdout, /Master-agent operating mode/);
+    assert.match(result.stdout, /Lead-agent operating mode/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -391,7 +391,7 @@ test('master run executes the durable loop as a supervised process and master st
     // both commits.
     skewed = true;
     await assert.rejects(exec(process.execPath, [launcher, 'master', 'run', '--once'], { cwd: root, env }), new RegExp(`server runs an unknown commit, CLI expects [0-9a-f]{40}: deploy main first \\(server merge protocol ${MERGE_PROTOCOL - 1}, CLI merge protocol ${MERGE_PROTOCOL}`));
-    await assert.rejects(exec(process.execPath, [launcher, 'master', 'merge'], { cwd: root, env }), /There is no master merge/);
+    await assert.rejects(exec(process.execPath, [launcher, 'master', 'merge'], { cwd: root, env }), /There is no lead merge/);
   } finally { await close(); await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); } });
 
 test('sync merges origin/BASE without rebasing and judges only the merge: in-scope, new and outside files all pass, and a real conflict stops the merge', async () => {

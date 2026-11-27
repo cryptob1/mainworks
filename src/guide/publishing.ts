@@ -1,4 +1,4 @@
-export default `When a verified commit deploys, Mainworks pushes its \`vYYYY.M.D-<sha12>\` tag. GitHub Actions then publishes \`@cryptob1/graphyard\` with npm OIDC provenance, and both GHCR images (\`mainworks\`, \`mainworks-trial\`) with \`GITHUB_TOKEN\`; the host holds no publish token. Publishing runs apart from merge and deploy, and \`mainworks master status\` shows npm's latest version.
+export default `When a verified commit deploys, Mainworks pushes its \`vYYYY.M.D-<sha12>\` tag. GitHub Actions then publishes \`@cryptob1/graphyard\` with npm OIDC provenance, and both GHCR images (\`mainworks\`, \`mainworks-trial\`) with \`GITHUB_TOKEN\`; the host holds no publish token. Publishing runs apart from merge and deploy, and \`mainworks lead status\` shows npm's latest version.
 
 One-time owner setup:
 

@@ -24,7 +24,7 @@ test('unit:master-prompt-single-source — the master prompt is at most 200 word
     assert.match(prompt, /dedicated Mainworks master agent for .*, responsible for the product succeeding/);
     assert.match(prompt, /only goals and priorities, spending money or opening third-party accounts, and issuing credentials to people belong to the human/);
     assert.match(prompt, /Never implement, claim worker leases, review, approve or submit evidence/);
-    assert.match(prompt, /Run node \/bin\/graphyard\.mjs master status, then node \/bin\/graphyard\.mjs master guide\./);
+    assert.match(prompt, /Run node \/bin\/graphyard\.mjs lead status, then node \/bin\/graphyard\.mjs lead guide\./);
     assert.ok(prompt.includes(itemLeadBrief.trim()), 'the prompt asks for why and simplest first');
   }
 });

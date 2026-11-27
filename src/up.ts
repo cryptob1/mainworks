@@ -1156,7 +1156,7 @@ export function recordedUp(root: string): { repository: string; provider: string
 }
 
 /** The options `mainworks up` parses (GY-1510). */
-export const upOptions = { 'merge-token-stdin': { type: 'boolean' }, 'push-auth': { type: 'string' }, 'base-branch': { type: 'string' }, port: { type: 'string' }, repo: { type: 'string' }, provider: { type: 'string' }, agent: { type: 'boolean' }, json: { type: 'boolean' }, master: { type: 'string' }, wait: { type: 'string' }, local: { type: 'boolean' }, url: { type: 'string' } } as const;
+export const upOptions = { 'merge-token-stdin': { type: 'boolean' }, 'push-auth': { type: 'string' }, 'base-branch': { type: 'string' }, port: { type: 'string' }, repo: { type: 'string' }, provider: { type: 'string' }, agent: { type: 'boolean' }, json: { type: 'boolean' }, lead: { type: 'string' }, master: { type: 'string' }, wait: { type: 'string' }, local: { type: 'boolean' }, url: { type: 'string' } } as const;
 
 /**
  * `mainworks up`'s flags. With a run RECORDED in this checkout, an omitted --repo or --provider is
@@ -1183,7 +1183,7 @@ export function upRequestFromArgs(args: string[], recorded: { repository: string
   const pushAuth = values['push-auth'];
   if (pushAuth !== undefined && pushAuth !== 'gh') throw new Error('Use --push-auth gh');
   if (pushAuth && values['merge-token-stdin']) throw new Error('Choose one merge-writer credential: --push-auth gh (the gh login) or --merge-token-stdin (a fine-grained token)');
-  return { repository, provider: provider ?? recorded?.provider ?? 'compose', agent: !!values.agent, master: values.master ?? 'claude',
+  return { repository, provider: provider ?? recorded?.provider ?? 'compose', agent: !!values.agent, master: values.lead ?? values.master ?? 'claude',
     ...(values['base-branch'] ? { baseBranch: values['base-branch'] } : {}), ...(port !== null ? { port } : {}), ...(minutes !== null ? { waitMs: minutes * 60_000 } : {}), ...(url ? { url } : {}), ...(values['merge-token-stdin'] ? { mergeToken: '' } : {}), ...(pushAuth ? { pushAuth: 'gh' as const } : {}) };
 }
 

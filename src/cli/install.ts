@@ -31,7 +31,7 @@ export async function principalCommand(args: string[], dependencies: InstallDepe
   const { values } = parseArgs({ args: rest, options: { role: { type: 'string' }, 'session-kind': { type: 'string' }, grant: { type: 'string', multiple: true }, proof: { type: 'string', multiple: true }, 'token-file': { type: 'string' }, repo: { type: 'string' } }, allowPositionals: false });
   if ((action !== 'add' && action !== 'remove') || !id) throw new Error('Use principal add ID --role ROLE [--session-kind ai|human] [--grant NAME]... [--proof PATTERN]... [--token-file PATH] [--repo OWNER/NAME], or principal remove ID [--repo OWNER/NAME]');
   if (action === 'remove' && (values.role || values['session-kind'] || values.grant?.length || values.proof?.length || values['token-file'])) throw new Error('principal remove takes only ID and --repo');
-  const entry = action === 'add' ? rosterEntry({ id, role: values.role, sessionKind: values['session-kind'], grants: values.grant, proofs: values.proof }) : null;
+  const entry = action === 'add' ? rosterEntry({ id, role: values.role === 'lead' ? 'coordinator' : values.role, sessionKind: values['session-kind'], grants: values.grant, proofs: values.proof }) : null;
   const root = repositoryRoot(dependencies.cwd);
   const repository = values.repo ?? (await discover(root)).repository;
   if (!repository) throw new Error('Use --repo OWNER/NAME, or run from a checkout whose origin is the managed repository');
@@ -69,11 +69,11 @@ export const installCommands = defineCommands([
     name: 'up',
     help: [
       '  up --repo OWNER/NAME [--base-branch NAME] [--provider compose|local] [--port N]',
-      '     [--local] [--master claude|codex] [--agent] [--wait MINUTES]',
+      '     [--local] [--lead claude|codex] [--agent] [--wait MINUTES]',
       '     [--url URL] [--merge-token-stdin] [--push-auth gh] [--json]',
       '                                First-run setup in one command: preflight, control plane, host supervisor and',
-      '                                Herdr, the merge writer\'s deploy key, master autonomy, onboarding, agent',
-      '                                accounts, harness and master loop, resumable (.graphyard/up.json;',
+      '                                Herdr, the merge writer\'s deploy key, lead autonomy, onboarding, agent',
+      '                                accounts, harness and lead loop, resumable (.graphyard/up.json;',
       '                                a rerun reuses its --repo/--provider). Ctrl-C stops the install too. Onboarding files are',
       '                                published on graphyard/onboarding and filed as a work item; setup waits for the loop',
       '                                to merge them; no pull request is opened.',
@@ -85,7 +85,7 @@ export const installCommands = defineCommands([
       '                                installs keep theirs) and links use it (reachableUrl); without Tailscale it stays local.',
       '                                --agent runs every step non-interactively (JSON events on stderr). No GitHub App is',
       '                                registered: up creates the repository when missing and registers the merge writer\'s deploy',
-      '                                key with the gh login. --url URL names the control plane\'s address before master init',
+      '                                key with the gh login. --url URL names the control plane\'s address before lead init',
       '                                records one (HTTPS, or HTTP on loopback); --json prints the result as JSON.',
       '                                --merge-token-stdin pipes a fine-grained token (Contents read/write on the repository) to',
       '                                the install instead of a deploy key, where the organization disables deploy keys.',
@@ -131,7 +131,7 @@ export const installCommands = defineCommands([
       '  install move --to HOST [--into DIR] [--plan]',
       '                                Move this install to HOST: refuses while an item is leased, trialled or queued',
       '                                to merge or a file to copy is unreadable; stops the loop, copies the install files,',
-      '                                the credential directory, every credential file master.json names (0600) and the',
+      '                                the credential directory, every credential file the lead\'s config names (0600) and the',
       '                                main Git repository the checkout and its CLI releases are worktrees of, provisions',
       '                                the merge-trial image on HOST and sets hostId there; then re-points the registry',
       '                                accounts on this host, stops the control plane, copies the database and prints',
@@ -238,7 +238,7 @@ export const installCommands = defineCommands([
     ],
     async run(context) { return (await import('./install-doctor.js')).runDoctor(context); },
   },
-  { name: 'principal', help: ['  principal add ID --role admin|coordinator|worker|reader|producer|reporter [--session-kind ai|human]',
+  { name: 'principal', help: ['  principal add ID --role admin|lead|worker|reader|producer|reporter [--session-kind ai|human]',
     '              [--grant external-runs:import|delivery:observe-sha] [--proof unit:*|integration:*|e2e:*|manual:*]...',
     '              [--token-file PATH] [--repo OWNER/NAME]',
     '  principal remove ID [--repo OWNER/NAME]',
@@ -247,8 +247,8 @@ export const installCommands = defineCommands([
     '                                roster back from the control plane. A producer needs an explicit --grant or --proof; --token-file',
     '                                restores an existing credential instead of minting one; delivery:observe-sha is held alone, by a',
     '                                dedicated observer principal; a later install --apply keeps the entry. Repeating either command',
-    '                                changes nothing. A reporter is another install\'s Master: with GRAPHYARD_URL and its token file it',
-    '                                files items (create), messages this install\'s Master (message) and reads back its own items',
+    '                                changes nothing. A reporter is another install\'s Lead: with GRAPHYARD_URL and its token file it',
+    '                                files items (create), messages this install\'s Lead (message) and reads back its own items',
     '                                and the replies (status GY-N, messages), and nothing else.'], readsConnection: () => false,
     async run(context) { context.print(await principalCommand([context.id, ...context.args].filter((value): value is string => value !== undefined), { cwd: process.cwd(), cliPath: await context.activeCliPath(), hostId: context.individualHostId(), log: line => console.error(line) })); } },
 ]);
