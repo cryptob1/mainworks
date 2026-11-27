@@ -62,7 +62,7 @@ export const mergeRecordBodySchema = z.discriminatedUnion('kind', [
       phases: trialPhaseDurations.optional(), attempts: trialAttempts,
       // GY-2965: how each bound E2E case ran against the served head; a run of one becomes a trusted record on the item and a run in the case's history.
       e2e: z.array(z.object({ proof: z.string().regex(/^e2e:[a-zA-Z0-9._/-]+$/).max(200), case: z.string().max(200), executed: z.number().int().min(0), failed: z.number().int().min(0),
-        missing: z.boolean().optional(), failingStep: z.string().max(2000).nullable().optional() }).strict()).max(trialE2eResultLimit).optional(),
+        missing: z.boolean().optional(), failingStep: z.string().max(2000).nullable().optional(), host: z.string().max(200).optional() }).strict()).max(trialE2eResultLimit).optional(),
       // GY-3267: each browser case's kept screenshots (after the candidate, before the base tip), base64 PNGs within the trial's capture bound.
       screenshots: z.array(z.object({ case: z.string().min(1).max(200),
         before: z.string().max(Math.ceil(trialScreenshotBytesMax / 3) * 4).optional(), after: z.string().max(Math.ceil(trialScreenshotBytesMax / 3) * 4).optional() }).strict()).max(trialScreenshotCasesMax).optional(),
