@@ -17,11 +17,11 @@ import { Engine } from '../src/engine.js';
 import { supervise } from '../src/session-watch.js';
 
 // GY-4062: the incident of 2026-11-27 21:42Z. GY-4051 epochs 4 and 5 were placed on a test machine
-// whose helper could not run them; each exited at once with nothing written, and each attempt was
+// whose helper could not run them; each started, exited 1 with nothing written, and each attempt was
 // spent. A host opened to sessions whose helper lacks run-session is skipped for sessions and
-// status says why, while it stays ready for test shards. A session that ends before the agent wrote
+// status says why, while it stays ready for test shards. A session that fails before the agent wrote
 // anything is a setup failure: the same attempt starts on this machine under its own supervisor and
-// lease, and the host takes no session for 30 minutes.
+// lease, and the host takes no session for 30 minutes. One that exits 0 finished, whatever it wrote.
 
 const proof = 'integration:session-old-helper-skipped';
 const older = 'gy-compute@older-helper', silent = 'gy-compute@silent-exit';
@@ -53,41 +53,43 @@ test(`${proof} — a host whose helper lacks run-session is skipped with its rea
     { coordinator: 0, hosts: [{ host: older, running: 0, room: 3, takesNone: reason }, { host: silent, running: 1, room: 3 }] }, 'master status carries the reason beside the host');
 });
 
-/** A stand-in `ssh` whose run-session answers as the incident's host did: the agent starts, then the session exits 1 with nothing written. */
-const silentSsh = `#!/bin/sh
+/** A stand-in `ssh` whose run-session answers as the incident's host did: the agent starts, then the session exits `code` with nothing written. */
+const silentSsh = (code: number) => `#!/bin/sh
 for arg; do case "$arg" in -fNM|-O) exit 0;; esac; done
 IFS= read -r request
 IFS= read -r handover
 printf '\\036mainworks-started {}\\n' >&2
-exit 1
+exit ${code}
 `;
 const imageId = `sha256:${'ab'.repeat(32)}`;
-/** The host's Docker and helper answers a session's preparation needs; only the run-session itself is the stand-in ssh on PATH. */
+/** The host's helper answers its probe and a session's preparation; only the run-session itself is the stand-in ssh on PATH. */
 const silentRun = `async (command, args, options) => {
   if (command === 'docker') return args[0] === 'images' ? '' : '${imageId}';
+  if (command === 'ssh' && args.at(-1) === 'probe') return ${JSON.stringify(probe(hostShimDigest, hostShimVerbs.join(' ')))};
   if (command === 'ssh' && args.at(-1)?.startsWith('prepare-run')) return 'run trial-silent';
   if (command === 'ssh') return '';
   return defaultChildRun(command, args, options);
 }`;
 const prepare: ChildRun = async (command, args, options) => {
   if (command === 'docker') return args[0] === 'images' ? '' : imageId;
+  if (command === 'ssh' && args.at(-1) === 'probe') return probe(hostShimDigest, hostShimVerbs.join(' '));
   if (command === 'ssh' && args.at(-1)?.startsWith('prepare-run')) return 'run trial-silent';
   if (command === 'ssh') return '';
   return defaultChildRun(command, args, options);
 };
 
-async function silentHost() {
+async function silentHost(code = 1) {
   const directory = await temporaryDirectory('session-silent-exit');
   const { root } = await gitRepo({ root: join(directory, 'repo'), files: { 'base.txt': 'base' } });
   const file = join(directory, 'hosts.json'), bin = join(directory, 'bin');
   await mkdir(bin);
   await writeFile(file, JSON.stringify([{ target: silent, sessions: 3, addedAt: added }]));
-  await writeFile(join(bin, 'ssh'), silentSsh);
+  await writeFile(join(bin, 'ssh'), silentSsh(code));
   await chmod(join(bin, 'ssh'), 0o755);
   return { directory, root, file, bin };
 }
 
-test(`${proof} — a session that ends before it writes anything starts the same attempt here and pauses the host for 30 minutes`, async () => {
+test(`${proof} — a session that fails before it writes anything starts the same attempt here and pauses the host for 30 minutes`, async () => {
   const { directory, root, file, bin } = await silentHost();
   const previous = process.env.PATH, localRan = join(directory, 'local-command');
   process.env.PATH = `${bin}:${previous}`;
@@ -103,6 +105,23 @@ test(`${proof} — a session that ends before it writes anything starts the same
     assert.match(printed, /Sessions paused on gy-compute@silent-exit: the agent exited 1 before writing any output\. Starting this attempt on this machine\./);
     assert.match((await sessionCooldown(silent, file))?.reason ?? '', /exited 1 before writing any output/);
     assert.equal(await remoteSessionHost('codex', () => [], prepare, file), null, 'the next placement skips the paused host');
+  } finally { process.env.PATH = previous; }
+});
+
+test(`${proof} — a session that exits 0 with nothing written finished: nothing starts here and the host is not paused`, async () => {
+  const { directory, root, file, bin } = await silentHost(0);
+  const previous = process.env.PATH, localRan = join(directory, 'local-command');
+  process.env.PATH = `${bin}:${previous}`;
+  let printed = '';
+  const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
+  try {
+    const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
+      localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
+      env: {}, run: prepare, hostsFile: file, output: sink, errors: sink });
+    assert.equal(code, 0, printed);
+    assert.equal(existsSync(localRan), false, 'a session that finished is not run again here');
+    assert.equal(await sessionCooldown(silent, file), null, 'nor is its host paused');
+    assert.equal(await remoteSessionHost('codex', () => [], prepare, file), silent, 'the host keeps taking sessions');
   } finally { process.env.PATH = previous; }
 });
 
