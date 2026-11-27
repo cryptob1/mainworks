@@ -81,7 +81,7 @@ async function setup(agentName: (config: MasterConfig) => string | null) {
 
 test('integration:orphaned-product-review-is-reclaimed — a headless product review whose run is gone is lost on its second missed report, its registry session ends, and one fresh reviewer launches for the head', async () => {
   // The GY-4000 handle: registered before its runtime started, never given a name to match.
-  const { host, config, item, launches, tick, live, running, held } = await setup(() => null);
+  const { host, config, launches, tick, live, running, held } = await setup(() => null);
   try {
     const cursor = emptyDispatchCursor(config);
     const first = await tick(cursor);
