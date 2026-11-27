@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { link, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { setting } from './setting.js';
 
 /** Links the lock file into place holding this process's id, atomically; a lock whose process is gone is taken over. */
 export async function takeLock(lock: string, holder = ''): Promise<boolean> {
@@ -34,10 +35,11 @@ const heldLocks = new AsyncLocalStorage<ReadonlySet<string>>();
 /**
  * GY-3710: runs `work` holding the host-wide lock `name` (under /tmp, whatever an install's TMPDIR), waiting while another process or install holds it.
  * GY-4030: the lock names its `holder`; `onWait` hears the current holder once, when this caller starts waiting.
+ * GY-4040: MAINWORKS_LOCK_ROOT moves the lock directory, so a test never waits on or holds the lock real deploys take.
  */
 export async function withHostLock<T>(name: string, work: () => Promise<T>, options: { holder?: string; onWait?: (holder: string) => unknown } = {}): Promise<T> {
   if (heldLocks.getStore()?.has(name) || process.env[heldLocksVariable]?.split(',').includes(name)) return work();
-  const lock = join('/tmp', 'mainworks-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
+  const lock = join(setting('LOCK_ROOT') ?? '/tmp/mainworks-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
   for (let waited = false; !await takeLock(lock, options.holder); await delay(1000)) {
     if (waited) continue;
     waited = true;
