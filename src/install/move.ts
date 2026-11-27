@@ -25,6 +25,7 @@ import { deployUnitOf, readInstallUnits, userUnitDirectory } from './units.js';
 import { localUnit } from './local.js';
 import { provisionTrialImage, trialImagePlan } from './trial-image.js';
 import { commandFailure, shellQuote, type CommandResult, type RunOptions, type Transport } from './transport.js';
+import { persistLoopStateScope } from '../loop-state.js';
 import { stateDirectory } from './layout.js';
 
 export interface MoveApi { read(path: string): Promise<any>; write(path: string, data: unknown): Promise<any> }
@@ -177,6 +178,7 @@ export async function moveInstall(root: string, options: { to: string; into?: st
   if (options.plan) return { ...plan, applied: false, next: refusals.length ? 'Wait until nothing is leased, trialled or queued, then rerun without --plan' : 'Rerun without --plan to move the install' };
   if (refusals.length) throw new Error(`The install cannot move while work is in flight: ${refusals.join('; ')}`);
 
+  await persistLoopStateScope(masterFile, stored);
   const reason = `Install moved from ${from} to ${to}`;
   for (const name of accounts) await registryCommand(config, ['account', 'set', name, '--host', to, '--reason', reason], api);
   await (dependencies.stop ?? (async commands => { for (const [program, ...args] of commands) await (dependencies.run ?? run)(program!, args).catch(() => {}); }))(stop);
