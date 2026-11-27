@@ -14,7 +14,7 @@ const cli = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const HOST = 'test-host';
 
 // A stand-in runtime: records its environment and answers the question from stdin.
-const stubRuntime = `#!/usr/bin/env node
+const stubRuntime = `#!${process.execPath}
 const fs = require('node:fs');
 const input = fs.readFileSync(0, 'utf8');
 const question = /Question: (.*)/.exec(input)?.[1];
@@ -50,7 +50,9 @@ test('integration:ask-investigator-starts — ask resolves a registered runtime 
     });
     const { root: repo } = await gitRepo({ label: 'ask-investigator-starts-repo', files: { 'README.md': 'hello\n' } });
     const runtimeBin = await temporaryDirectory('ask-investigator-starts-bin');
-    const claudeHome = await temporaryDirectory('ask-investigator-starts-home');
+    const claudeHomeA = await temporaryDirectory('ask-investigator-starts-home-a');
+    const claudeHomeB = await temporaryDirectory('ask-investigator-starts-home-b');
+    const callerOwnHome = await temporaryDirectory('ask-investigator-starts-home-own');
     const emptyBin = await temporaryDirectory('ask-investigator-starts-empty');
     const compileCache = await temporaryDirectory('ask-investigator-starts-cache');
     writeFileSync(join(runtimeBin, 'claude'), stubRuntime, { mode: 0o755 });
@@ -72,15 +74,18 @@ test('integration:ask-investigator-starts — ask resolves a registered runtime 
         },
       }],
       models: [{ name: 'opus', provider: 'Anthropic', id: 'claude-opus-4', cost: { inputPerMTok: null, outputPerMTok: null }, capability: { tier: 'strong', contextTokens: null } }],
-      accounts: [{ name: 'claude-a', runtime: 'claude', model: 'opus', credential: { host: HOST, home: claudeHome }, enabled: true, maxSessions: null }],
-      roles: [{ name: 'worker', accounts: ['claude-a'], concurrency: 1 }],
+      accounts: [
+        { name: 'claude-a', runtime: 'claude', model: 'opus', credential: { host: HOST, home: claudeHomeA }, enabled: true, maxSessions: null },
+        { name: 'claude-b', runtime: 'claude', model: 'opus', credential: { host: HOST, home: claudeHomeB }, enabled: true, maxSessions: null },
+      ],
+      roles: [{ name: 'worker', accounts: ['claude-a', 'claude-b'], concurrency: 1 }],
       reason: 'Register launchable claude runtime for ask test',
     });
 
     const strippedPath = pathWithout('claude', 'codex');
     assert.equal(onSearchPath('claude', strippedPath), null, 'builder PATH lacks claude');
 
-    const runAsk = async (question: string) => {
+    const runAsk = async (question: string, extraEnv: Record<string, string | undefined> = {}) => {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         PATH: strippedPath,
@@ -94,6 +99,11 @@ test('integration:ask-investigator-starts — ask resolves a registered runtime 
       delete env.GRAPHYARD_ASK_RUNTIME;
       delete env.MAINWORKS_ASK_RUNTIME;
       delete env.CLAUDE_CONFIG_DIR;
+      delete env.CODEX_HOME;
+      for (const [key, value] of Object.entries(extraEnv)) {
+        if (value === undefined) delete env[key];
+        else env[key] = value;
+      }
       const { stdout } = await promisify(execFile)(process.execPath, [cli, 'ask', item.key, question], { cwd: repo, env });
       return JSON.parse(stdout);
     };
@@ -106,10 +116,25 @@ test('integration:ask-investigator-starts — ask resolves a registered runtime 
     assert.deepEqual(answered.evidence, ['README.md:1']);
 
     const seen = JSON.parse(readFileSync(record, 'utf8'));
-    assert.equal(seen.claudeConfigDir, claudeHome, 'investigator receives the registered account login home');
+    assert.equal(seen.claudeConfigDir, claudeHomeA, 'investigator receives the registered account login home');
     assert.equal(seen.customFlag, 'from-registry', 'investigator receives the registered runtime environment');
     assert.equal(seen.miseNoConfig, '1', 'investigator keeps mise off unrelated configs as worker launches do');
     assert.ok(seen.path.split(delimiter).includes(runtimeBin), 'investigator PATH includes the registered runtime directory');
+
+    // AC-1 (confinement): when the caller already has its own registered account home, keep it instead of switching to the first worker account.
+    const answeredOwnAccount = await runAsk('Keep my account home?', { CLAUDE_CONFIG_DIR: claudeHomeB });
+    assert.equal(answeredOwnAccount.failure, undefined, answeredOwnAccount.failure);
+    const seenOwnAccount = JSON.parse(readFileSync(record, 'utf8'));
+    assert.equal(seenOwnAccount.claudeConfigDir, claudeHomeB, 'caller running on claude-b keeps claude-b login instead of claude-a');
+    assert.equal(seenOwnAccount.customFlag, 'from-registry');
+
+    // AC-1 (confinement): when the caller has its own login home outside registered accounts (e.g. master), keep it with the registered runtime's environment.
+    const answeredOwnUnregistered = await runAsk('Keep my own login?', { CLAUDE_CONFIG_DIR: callerOwnHome });
+    assert.equal(answeredOwnUnregistered.failure, undefined, answeredOwnUnregistered.failure);
+    const seenOwnUnregistered = JSON.parse(readFileSync(record, 'utf8'));
+    assert.equal(seenOwnUnregistered.claudeConfigDir, callerOwnHome, 'caller keeps its own login home via runtime-only candidate');
+    assert.equal(seenOwnUnregistered.customFlag, 'from-registry');
+    assert.ok(seenOwnUnregistered.path.split(delimiter).includes(runtimeBin), 'runtime-only candidate still gets registered runtime PATH');
 
     // AC-1: when no runtime can start, the answer names the runtimes tried and why each failed.
     await f.ok('agent-registry/runtimes', {
