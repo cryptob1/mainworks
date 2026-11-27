@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -266,7 +267,7 @@ test('D4-6 an unresolved serialized operation blocks successors; an unfenced ada
   await assert.rejects(select(h, await release(h, manifests.three), 3), /unresolved none operation/);
 });
 
-test('rollback HTTP routes derive authority from the credential and appear in delivery status', async () => {
+test('rollback HTTP routes derive authority from the credential and appear in delivery status', async (t) => {
   const f = await environment(); const { one } = await degraded(f);
   // Collector, builder, observer, promoter and both executors hold producer
   // credentials and count toward the review/proof agent limit the server
@@ -275,18 +276,15 @@ test('rollback HTTP routes derive authority from the credential and appear in de
   let http: ReturnType<typeof server>;
   try { http = server(engine, principals.map(p => ({ ...p, token: `${p.id}-token-${'x'.repeat(32)}` }))); }
   finally { if (configuredReviewers === undefined) delete process.env.GRAPHYARD_MAX_REVIEWERS; else process.env.GRAPHYARD_MAX_REVIEWERS = configuredReviewers; }
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(http.address() as any).port}`;
+  const { url } = await listen(http, t);
   const call = (actor: Principal, path: string, body?: unknown) => api(url, `${actor.id}-token-${'x'.repeat(32)}`, path, { body, key: id() });
-  try {
-    assert.equal((await call(worker, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);
-    assert.equal((await call(executor, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);
-    const requested = await call(operator, 'delivery/rollback', rollbackRequest(f, one, 2)); assert.equal(requested.status, 200);
-    assert.equal((await call(worker, 'delivery/rollback-claim', { rollbackId: requested.body.id, registration: f.registrations.executor, epoch: f.executorEpoch })).status, 403);
-    const claimed = await call(executor, 'delivery/rollback-claim', { rollbackId: requested.body.id, registration: f.registrations.executor, epoch: f.executorEpoch }); assert.equal(claimed.status, 200);
-    assert.equal((await call(executor, 'delivery/rollback-resolve', { rollbackId: requested.body.id, outcome: 'applied', reason: 'no', evidence: 'https://provider.example.test/ops/1' })).status, 403);
-    assert.equal((await call(reader, 'delivery')).body.rollbacks.find((r: RollbackRequest) => r.id === requested.body.id).state, 'in-flight');
-    assert.equal((await call(worker, 'validation/capacity')).status, 404);
-    assert.equal((await call(worker, 'validation/artifacts/migrate', { target: 'postgres' })).status, 404);
-  } finally { await new Promise<void>(resolve => http.close(() => resolve())); }
+  assert.equal((await call(worker, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);
+  assert.equal((await call(executor, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);
+  const requested = await call(operator, 'delivery/rollback', rollbackRequest(f, one, 2)); assert.equal(requested.status, 200);
+  assert.equal((await call(worker, 'delivery/rollback-claim', { rollbackId: requested.body.id, registration: f.registrations.executor, epoch: f.executorEpoch })).status, 403);
+  const claimed = await call(executor, 'delivery/rollback-claim', { rollbackId: requested.body.id, registration: f.registrations.executor, epoch: f.executorEpoch }); assert.equal(claimed.status, 200);
+  assert.equal((await call(executor, 'delivery/rollback-resolve', { rollbackId: requested.body.id, outcome: 'applied', reason: 'no', evidence: 'https://provider.example.test/ops/1' })).status, 403);
+  assert.equal((await call(reader, 'delivery')).body.rollbacks.find((r: RollbackRequest) => r.id === requested.body.id).state, 'in-flight');
+  assert.equal((await call(worker, 'validation/capacity')).status, 404);
+  assert.equal((await call(worker, 'validation/artifacts/migrate', { target: 'postgres' })).status, 404);
 });

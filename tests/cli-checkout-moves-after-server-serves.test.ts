@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer as createHttpServer } from 'node:http';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall } from '../src/install/index.js';
@@ -36,14 +35,14 @@ async function repositories(label: string, seed?: (pusher: string) => Promise<vo
   return { checkout, commit, a };
 }
 
-test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and restarts the server while the CLI checkout holds the old commit, moves the checkout once health passes, and leaves it on the old commit when health fails', async () => {
+test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and restarts the server while the CLI checkout holds the old commit, moves the checkout once health passes, and leaves it on the old commit when health fails', async (t) => {
   const { checkout, commit, a } = await repositories('cli-checkout-deploy');
   const b = await commit('B');
   let served = a, refused: string | null = null;
-  const { url, close } = await listen(createHttpServer((request, response) => {
+  const { url } = await listen((request, response) => {
     const ok = served !== refused;
     response.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok, healthy: ok, commit: served }));
-  }));
+  }, t);
   const tree = gitWatchPorts(checkout, defaultChildRun);
   const samples: string[] = [];
   const ports = gitDeployPorts(checkout, {
@@ -58,24 +57,22 @@ test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and r
     pin: async sha => { samples.push(`pin ${short(sha)} @ ${short(head(checkout))}`); },
   });
   const root = await temporaryDirectory('cli-checkout-record'), file = deployRecordPath(root);
-  try {
-    // The server reports the new commit healthy only after the restart, and the checkout moves then — never before.
-    await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
-    assert.deepEqual(samples, [`build ${short(b)} @ ${short(a)}`, `restart ${short(b)} @ ${short(a)}`, `health ${short(b)} @ ${short(a)}`, `checkout ${short(b)} @ ${short(a)}`, `pin ${short(b)} @ ${short(b)}`],
-      'the CLI checkout holds the old commit through build, restart and health, and is moved only before the pin that follows');
-    assert.equal(head(checkout), b, 'the checkout is on the new tip after the server serves it');
-    assert.equal(readDeployRecord(file)?.tip, b);
+  // The server reports the new commit healthy only after the restart, and the checkout moves then — never before.
+  await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
+  assert.deepEqual(samples, [`build ${short(b)} @ ${short(a)}`, `restart ${short(b)} @ ${short(a)}`, `health ${short(b)} @ ${short(a)}`, `checkout ${short(b)} @ ${short(a)}`, `pin ${short(b)} @ ${short(b)}`],
+    'the CLI checkout holds the old commit through build, restart and health, and is moved only before the pin that follows');
+  assert.equal(head(checkout), b, 'the checkout is on the new tip after the server serves it');
+  assert.equal(readDeployRecord(file)?.tip, b);
 
-    // A server deploy that fails health rolls back, and the CLI checkout stays on the commit the server went back to.
-    const c = await commit('C');
-    refused = c;
-    samples.length = 0;
-    await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
-    assert.deepEqual(samples, [`build ${short(c)} @ ${short(b)}`, `restart ${short(c)} @ ${short(b)}`, `health ${short(c)} @ ${short(b)}`, `build ${short(b)} @ ${short(b)}`, `restart ${short(b)} @ ${short(b)}`, `health ${short(b)} @ ${short(b)}`, `checkout ${short(b)} @ ${short(b)}`, `pin ${short(b)} @ ${short(b)}`],
-      'the failed deploy never moved the CLI checkout, and the rollback finds it already on the old commit');
-    assert.equal(head(checkout), b, 'the CLI checkout stays on the old commit');
-    assert.deepEqual([readDeployRecord(file)?.tip, readDeployRecord(file)?.failed], [b, c]);
-  } finally { await close(); }
+  // A server deploy that fails health rolls back, and the CLI checkout stays on the commit the server went back to.
+  const c = await commit('C');
+  refused = c;
+  samples.length = 0;
+  await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
+  assert.deepEqual(samples, [`build ${short(c)} @ ${short(b)}`, `restart ${short(c)} @ ${short(b)}`, `health ${short(c)} @ ${short(b)}`, `build ${short(b)} @ ${short(b)}`, `restart ${short(b)} @ ${short(b)}`, `health ${short(b)} @ ${short(b)}`, `checkout ${short(b)} @ ${short(b)}`, `pin ${short(b)} @ ${short(b)}`],
+    'the failed deploy never moved the CLI checkout, and the rollback finds it already on the old commit');
+  assert.equal(head(checkout), b, 'the CLI checkout stays on the old commit');
+  assert.deepEqual([readDeployRecord(file)?.tip, readDeployRecord(file)?.failed], [b, c]);
 });
 
 test('unit:deploy-builds-from-its-own-worktree — a watch pass over a fixture install redeploys from the install\'s build worktree at the new commit while the watched checkout still holds the old one, then publishes the ready CLI without moving or npm-ci-ing the watched checkout', async () => {
@@ -113,11 +110,11 @@ appendFileSync(process.env.GRAPHYARD_TEST_REDEPLOY_LOG, JSON.stringify({ args: p
     process.env.GRAPHYARD_TEST_REDEPLOY_LOG = log;
     const b = await commit('B');
 
-    const { url, close } = await listen(createHttpServer((request, response) => {
+    const { url, close } = await listen((request, response) => {
       // The new commit serves only once the redeploy restarted the server (GY-3700: the watch probes first).
       const up = existsSync(log);
       response.writeHead(up ? 200 : 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: up, healthy: up, version: up ? `unreleased ${b.slice(0, 12)}` : 'unreleased old' }));
-    }));
+    });
     const repoRoot = await temporaryDirectory('deploy-build-repo'), file = deployRecordPath(repoRoot);
     const ports = await watchPorts({ cliRoot: checkout, repoRoot, repository: 'owner/project', url, run: defaultChildRun });
     if (typeof ports === 'string') throw new Error(ports);

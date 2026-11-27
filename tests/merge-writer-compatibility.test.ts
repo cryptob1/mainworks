@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { after, before } from 'node:test';
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
@@ -79,7 +80,7 @@ const token = (principal: Principal) => credentials.find(credential => credentia
 /** A port the deleted GitHub client or shadow gate would have been: any touch fails the case. */
 const trap = (what: string) => new Proxy({}, { get: (_, name) => { if (name === 'then') return undefined; throw new Error(`the loop touched ${what} (${String(name)})`); } });
 
-let store: Store, engine: Engine, http: ReturnType<typeof controlPlane>, url: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 let fixture: string, origin: string, checkout: string, managed: string, deployKey: string, baseTip: string, head: string, workerPushes: string;
 const branch = 'graphyard/gy-1-1';
 
@@ -114,12 +115,11 @@ before(async () => {
   store = await withDatabase('merge-writer-compatibility'); await store.init();
   engine = new Engine(store, 120, repository);
   engine.gitRunner = gitRunnerFor(checkout); engine.baseBranch = 'main';
-  http = controlPlane(engine, credentials);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  const http = controlPlane(engine, credentials);
+  ({ url, close } = await listen(http));
 });
 after(async () => {
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
 });
 

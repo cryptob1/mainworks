@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 // GY-3785 AC-2: the quiet-update wait counts running builder sessions as work in flight with the
 // same 4-hour upper bound, and a stub builder session under `watch` survives a control-plane
 // restart mid-item and submits without a new attempt.
@@ -30,9 +31,6 @@ import { deployPorts } from './helpers/deploy-ports.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
-const listen = (http: Server, port = 0) => new Promise<void>(resolve => http.listen(port, '127.0.0.1', resolve));
-const close = (http: Server) => new Promise<void>(resolve => { http.close(() => resolve()); http.closeAllConnections(); });
-const portOf = (http: Server) => (http.address() as { port: number }).port;
 
 test('e2e:builder-survives-update — quiet-update wait counts running builder sessions as in flight with a 4-hour upper bound', async t => {
   const root = await temporaryDirectory('quiet-builder-wait');
@@ -114,8 +112,7 @@ test('e2e:builder-survives-update — restarts the control plane mid-item and as
   engine.gitRunner = gitRunnerFor(worktree);
   let stopBeat = await engine.startPlaneBeat(500);
   let http: Server | undefined = server(engine, [operator, worker]);
-  await listen(http);
-  const port = portOf(http);
+  let { port, close } = await listen(http);
   const base = `http://127.0.0.1:${port}`;
 
   let watchChild: ReturnType<typeof spawn> | undefined;
@@ -177,7 +174,7 @@ test('e2e:builder-survives-update — restarts the control plane mid-item and as
 
     // Restart the control plane: stop it for 5s (longer than the 3s lease!) then bring a fresh Engine + server back up.
     stopBeat();
-    await close(http);
+    await close();
     http = undefined;
     await delay(5_000);
     assert.equal(exited, null, `watch killed builder during control plane restart: ${stderr}`);
@@ -187,7 +184,7 @@ test('e2e:builder-survives-update — restarts the control plane mid-item and as
     engine.gitRunner = gitRunnerFor(worktree);
     stopBeat = await engine.startPlaneBeat(500);
     http = server(engine, [operator, worker]);
-    await listen(http, port);
+    ({ close } = await listen(http, port));
 
     // Run reconcile right after restart — the builder must still keep its item and renew on epoch 1.
     await engine.reconcile();
@@ -207,7 +204,7 @@ test('e2e:builder-survives-update — restarts the control plane mid-item and as
   } finally {
     try { watchChild?.kill('SIGKILL'); } catch {}
     stopBeat();
-    if (http) await close(http);
+    if (http) await close();
     await store.close();
   }
 });

@@ -1,7 +1,7 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { createServer, type Server } from 'node:http';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -94,7 +94,7 @@ async function fixtureRepository(files: Record<string, string>) {
 }
 async function stubControlPlane(work: any, root: string) {
   const submitted: unknown[] = [];
-  const server: Server = createServer((request, response) => {
+  const { url, close } = await listen((request, response) => {
     let body = ''; request.on('data', chunk => body += chunk);
     request.on('end', async () => {
       response.setHeader('Content-Type', 'application/json');
@@ -108,9 +108,7 @@ async function stubControlPlane(work: any, root: string) {
       response.statusCode = 404; response.end('{}');
     });
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${address.port}`, submitted, close: () => new Promise(resolve => server.close(resolve)) };
+  return { url, submitted, close };
 }
 const cli = async (cwd: string, url: string, ...args: string[]) => {
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD_|MAINWORKS_|HERDR_)/.test(name)));

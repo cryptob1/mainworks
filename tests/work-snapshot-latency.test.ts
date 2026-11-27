@@ -1,10 +1,10 @@
+import { listen } from './helpers/http-server.js';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { AddressInfo } from 'node:net';
 import { withDatabase } from './helpers/postgres.js';
 import { Store, storeConnectionTimeoutMs, storeStatementTimeoutMs } from '../src/store.js';
 import { Engine } from '../src/engine.js';
@@ -31,7 +31,7 @@ const ITEMS = 100, OBSERVATIONS_PER_ITEM = 40, HEADS_PER_ITEM = 12;
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const coordinatorToken = 'c'.repeat(40);
 
-let store: Store; let http: ReturnType<typeof server>; let origin: string; let directory: string;
+let store: Store; let close: (() => Promise<void>) | undefined; let origin: string; let directory: string;
 let config: MasterConfig;
 
 const sha = (item: number, head: number) => `${item.toString(16).padStart(4, '0')}${head.toString(16).padStart(4, '0')}`.padEnd(40, 'a');
@@ -81,17 +81,15 @@ before(async () => {
   // the row, so the tables carry the churn a live ledger does.
   await store.pool.query(`INSERT INTO events(work_id,actor,kind,payload) SELECT id,'github','github.observed',jsonb_build_object('work',document,'details',jsonb_build_object('observation',n)) FROM work_items, generate_series(1,$1::int) AS n`, [OBSERVATIONS_PER_ITEM]);
   for (let round = 0; round < 5; round++) await store.pool.query("UPDATE work_items SET document=jsonb_set(document,'{revision}',to_jsonb((document->>'revision')::int+1))");
-  http = server(new Engine(store, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  origin = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+  ({ url: origin, close } = await listen(server(new Engine(store, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }])));
   directory = await temporaryDirectory('snapshot-master');
   const credentialFile = join(directory, 'coordinator.token'); await writeFile(credentialFile, coordinatorToken, { mode: 0o600 });
   config = masterConfigSchema.parse({ version: 1, url: origin, credentialFile, cliPath: launcher, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, mergeMethod: 'merge', workers: [] });
 });
 after(async () => {
-  if (hotHttp) await new Promise<void>(resolve => hotHttp.close(() => resolve()));
+  await closeHot?.();
   if (hotStore) await hotStore.close();
-  if (http) await new Promise<void>(resolve => http.close(() => resolve()));
+  await close?.();
   if (store) await store.close();
   if (directory) await rm(directory, { recursive: true, force: true });
 });
@@ -262,7 +260,7 @@ test('integration:cycle-within-interval — a coordination cycle over the 100-it
 // item's whole document holds: the work index's summary of it drops those histories.
 const HOT_SETTLED = 1_000, HOT_OPEN = 10, SETTLED_HISTORY = 80;
 const settledMarker = /settled-history:(GY-S\d+)/g;
-let hotStore: Store; let hotHttp: ReturnType<typeof server>; let hotOrigin: string;
+let hotStore: Store; let closeHot: (() => Promise<void>) | undefined; let hotOrigin: string;
 
 function settledItem(index: number, now: Date): Work {
   const work = ledgerItem(index, now) as any, key = `GY-S${index + 1}`, at = new Date(now.getTime() - 3_600_000).toISOString();
@@ -297,9 +295,7 @@ const hotPaths = () => seeded ??= (async () => {
     await hotStore.pool.query('INSERT INTO work_items(id,document) VALUES($1,$2)', [item.id, JSON.stringify(item)]);
     await hotStore.pool.query('INSERT INTO jobs(work_id) VALUES($1)', [item.id]);
   }
-  hotHttp = server(new Engine(hotStore, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }]);
-  await new Promise<void>(resolve => hotHttp.listen(0, '127.0.0.1', resolve));
-  hotOrigin = `http://127.0.0.1:${(hotHttp.address() as AddressInfo).port}`;
+  ({ url: hotOrigin, close: closeHot } = await listen(server(new Engine(hotStore, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }])));
 })();
 
 async function hotRead(path: string) {

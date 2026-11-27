@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { createServer } from 'node:http';
 import { promisify } from 'node:util';
 import { shellQuote } from '../src/install/transport.js';
 import { existsSync } from 'node:fs';
@@ -120,13 +119,13 @@ async function moveHost(startTarget: boolean) {
       // Stand in for Docker and systemd; execute the printed shell and serve the copied database.
       const bin = join(scratch, 'bin'), built = join(scratch, 'image-built'), calls = join(scratch, 'docker-calls');
       await mkdir(bin);
-      const bridge = await listen(createServer(async (request, response) => {
+      const bridge = await listen(async (request, response) => {
         try {
           if (request.url === '/start') running = await controlPlane(join(target, data), ports.base);
           else assert.ok((await running!.ok('work-snapshot', undefined, tokens.master)).work.some((entry: { key: string }) => entry.key === item.key));
           response.end('ok');
         } catch (error) { response.statusCode = 500; response.end(String(error)); }
-      }));
+      });
       const fetchCommand = (path: string) => `${shellQuote(process.execPath)} -e ${shellQuote(`fetch('${bridge.url}/${path}').then(async r => { if (!r.ok) throw new Error(await r.text()); })`)}`;
       await writeFile(join(bin, 'systemctl'), `#!/bin/sh\ncase "$*" in\n  "--user daemon-reload") exit 0;;\n  "--user enable --now "*) ${fetchCommand('start')};;\n  *) exit 1;;\nesac\n`, { mode: 0o755 });
       await writeFile(join(bin, 'mainworks'), `#!/bin/sh\n[ "$*" = "master status" ] || exit 1\n${fetchCommand('status')}\n`, { mode: 0o755 });

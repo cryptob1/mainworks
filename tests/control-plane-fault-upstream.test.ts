@@ -1,6 +1,6 @@
+import { listen } from './helpers/http-server.js';
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -58,17 +58,14 @@ async function cycles(count: number, cfg: ReturnType<typeof config>, effects: Da
 
 test('e2e:control-plane-fault-upstream — with upstream configured, a stuck upgrade and a stalled step are filed once to the upstream install, none into the managed repository', async t => {
   const filed: { key: string; title: string; auth: string }[] = [];
-  const server = createServer((request, response) => {
+  const { port } = await listen((request, response) => {
     let body = '';
     request.on('data', chunk => { body += chunk; });
     request.on('end', () => {
       filed.push({ key: String(request.headers['idempotency-key']), title: JSON.parse(body).title, auth: String(request.headers.authorization) });
       response.writeHead(201, { 'Content-Type': 'application/json' }).end(JSON.stringify({ key: `GY-${filed.length + 100}` }));
     });
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => server.close());
-  const port = (server.address() as { port: number }).port;
+  }, t);
   const credentialFile = join(await temporaryDirectory('control-plane-fault-credential'), 'upstream.token');
   await writeFile(credentialFile, 'u'.repeat(40), { mode: 0o600 });
   const upstream = { url: `http://127.0.0.1:${port}`, credentialFile };

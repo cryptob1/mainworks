@@ -1,9 +1,9 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
 import { join, resolve } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { Store } from '../src/store.js';
@@ -115,7 +115,7 @@ async function startSharedMasterUxServers(count: number) {
     { id: 'install-a', role: 'reporter', token: 'test-install-a' },
   ];
 
-  interface Slot { site: string; url: string; http: Server; sockets: Set<Duplex>; stopBridge(): void; reset(logFile: string): Promise<void>; dropTerminals(): void }
+  interface Slot { site: string; url: string; close: () => Promise<void>; sockets: Set<Duplex>; stopBridge(): void; reset(logFile: string): Promise<void>; dropTerminals(): void }
   const slots: Slot[] = [];
   for (let index = 0; index < count; index++) {
     const site = await temporaryDirectory(`master-ux-s${index}`);
@@ -125,8 +125,7 @@ async function startSharedMasterUxServers(count: number) {
     const http = server(engine, principals);
     const sockets = new Set<Duplex>();
     http.on('upgrade', (req, socket) => { if (req.url?.startsWith('/api/terminal?')) { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); } });
-    await new Promise<void>(done => http.listen(0, '127.0.0.1', done));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close } = await listen(http);
     const readSession: SessionReader = async () => {
       const state = JSON.parse(await readFile(stateFile, 'utf8'));
       const master = state.master ?? {};
@@ -141,7 +140,7 @@ async function startSharedMasterUxServers(count: number) {
     };
     await startBridge();
     slots.push({
-      site, url, http, sockets,
+      site, url, close, sockets,
       stopBridge: () => { bridgeStopping?.abort(); },
       dropTerminals: () => { for (const socket of sockets) socket.destroy(); },
       reset: async (nextLogFile: string) => {
@@ -152,7 +151,7 @@ async function startSharedMasterUxServers(count: number) {
     });
   }
 
-  const control = createServer(async (req, res) => {
+  const { url: controlUrl, close: closeControl } = await listen(async (req, res) => {
     const match = req.url?.match(/^\/slot\/(\d+)\/(reset|drop-terminals)$/);
     const slot = match ? slots[Number(match[1])] : undefined;
     if (!match || !slot || req.method !== 'POST') { res.writeHead(404); res.end(); return; }
@@ -161,17 +160,15 @@ async function startSharedMasterUxServers(count: number) {
     else await slot.reset(String(JSON.parse(raw).logFile));
     res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}');
   });
-  await new Promise<void>(done => control.listen(0, '127.0.0.1', done));
-  const controlUrl = `http://127.0.0.1:${(control.address() as { port: number }).port}`;
 
   return {
     config: JSON.stringify({ controlUrl, slots: slots.map(({ site, url }) => ({ site, url })) }),
     close: async () => {
-      await new Promise<void>(done => { control.close(() => done()); control.closeAllConnections(); });
+      await closeControl();
       for (const slot of slots) {
         slot.stopBridge();
         slot.dropTerminals();
-        await new Promise<void>(done => { slot.http.close(() => done()); slot.http.closeAllConnections(); });
+        await slot.close();
       }
       await store.close();
     },

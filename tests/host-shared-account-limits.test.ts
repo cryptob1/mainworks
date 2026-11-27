@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -35,7 +36,7 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 const hostId = 'shared-host';
 const now = () => new Date().toISOString();
 
-interface Install { root: string; config: MasterConfig; registry: AgentRegistry; server: ReturnType<typeof server>; store: Store; url: string }
+interface Install { root: string; config: MasterConfig; registry: AgentRegistry; close: () => Promise<void>; store: Store; url: string }
 const installs: Install[] = [];
 let scratch: string, home: string, holder: ChildProcess | undefined, held: { account: string; session: string } | undefined;
 
@@ -51,14 +52,12 @@ before(async () => {
   for (const [index, repository] of ['owner/one', 'owner/two'].entries()) {
     const store = index === 0 ? store1 : store2;
     const engine = new Engine(store, 120, repository);
-    const http = server(engine, [{ ...coordinator, token: token(index + 1) }]);
-    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const { url, close } = await listen(server(engine, [{ ...coordinator, token: token(index + 1) }]));
     const root = await temporaryDirectory(index === 0 ? 'one' : 'two', scratch);
     (await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } })).git('remote', 'add', 'origin', `https://github.com/${repository}.git`);
     const credentials = await temporaryDirectory(index === 0 ? 'credentials-one' : 'credentials-two', scratch);
     await setupMaster(root, { url, token: token(index + 1), cliPath: launcher, hostId, credentialDirectory: credentials, run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
-    installs.push({ root, config: await loadMasterConfig(root), registry: new AgentRegistry(store), server: http, store, url });
+    installs.push({ root, config: await loadMasterConfig(root), registry: new AgentRegistry(store), close, store, url });
     // One account on the shared home, limited to a single session — the limit every install on the host counts.
     await installs[index]!.registry.mutate(coordinator, 'apply', {
       runtimes: [{ name: 'sharedkit', launch: { kind: 'sharedkit', args: [], environment: { HOME: home }, homeVariable: 'RUNTIME_HOME', modelFlag: null, login: null, loginFile: 'auth.json' } }],
@@ -72,7 +71,7 @@ before(async () => {
 after(async () => {
   if (holder && holder.exitCode === null && holder.signalCode === null) { holder.kill('SIGKILL'); await once(holder, 'exit').catch(() => {}); }
   for (const install of installs) {
-    await new Promise<void>(resolve => { install.server.closeAllConnections?.(); install.server.close(() => resolve()); });
+    await install.close();
     await install.store.close();
   }
 });

@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -39,7 +40,7 @@ const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const digestOf = (label: string) => `sha256:${label.repeat(64).slice(0, 64)}`;
 const expected = { api: digestOf('1'), web: digestOf('2') }, wrong = digestOf('f'), inputs = digestOf('d');
 let store: Store, engine: Engine, validation: Validation, delivery: Delivery;
-let http: ReturnType<typeof server>, url: string;
+let close: (() => Promise<void>) | undefined, url: string;
 let serial = 0;
 before(async () => {
   store = await withDatabase('delivery'); await store.init();
@@ -48,12 +49,12 @@ before(async () => {
   // and count toward the shared review/proof agent limit the server enforces at
   // boot; this roster needs five, so raise the configurable limit for this file.
   const configuredReviewers = process.env.GRAPHYARD_MAX_REVIEWERS; process.env.GRAPHYARD_MAX_REVIEWERS = '5';
+  let http: ReturnType<typeof server>;
   try { http = server(engine, principals.map(p => ({ ...p, token: `${p.id}-token-${'x'.repeat(32)}` }))); }
   finally { if (configuredReviewers === undefined) delete process.env.GRAPHYARD_MAX_REVIEWERS; else process.env.GRAPHYARD_MAX_REVIEWERS = configuredReviewers; }
-  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
-  url = `http://127.0.0.1:${(http.address() as any).port}`;
+  ({ url, close } = await listen(http));
 });
-after(async () => { if (http) await new Promise<void>(resolve => http.close(() => resolve())); if (store) await store.close(); });
+after(async () => { await close?.(); if (store) await store.close(); });
 const id = () => randomUUID();
 const at = (offsetSeconds: number, from = Date.now()) => new Date(from + offsetSeconds * 1000).toISOString();
 async function reload(w: Work) { return (await store.list()).find(item => item.id === w.id)!; }

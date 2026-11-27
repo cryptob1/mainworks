@@ -1,3 +1,4 @@
+import { listen } from './helpers/http-server.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,9 +13,8 @@ import { Agent, createServer, get } from 'node:http';
 
 /** Close a server while a keep-alive client has a request in flight and keeps polling; resolves whether close() called back within 2 s. */
 async function closesUnderPolling(close: (server: ReturnType<typeof createServer>, done: () => void) => void) {
-  const server = createServer((_req, res) => setTimeout(() => res.end('ok'), 200));
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const agent = new Agent({ keepAlive: true }), port = (server.address() as { port: number }).port;
+  const { server, port } = await listen(createServer((_req, res) => setTimeout(() => res.end('ok'), 200)));
+  const agent = new Agent({ keepAlive: true });
   const poll = () => new Promise<void>(resolve => get({ host: '127.0.0.1', port, agent }, res => { res.resume(); res.on('end', resolve); }).on('error', () => resolve()));
   await poll();
   void poll(); await new Promise(resolve => setTimeout(resolve, 50)); // a poll in flight at teardown

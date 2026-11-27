@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { type IncomingMessage } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { databaseUrl } from './helpers/postgres.js';
-import { listen as startServer } from './helpers/http-server.js';
+import { listen } from './helpers/http-server.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 
@@ -20,15 +20,12 @@ import { git, gitRepo } from './helpers/git-repo.js';
 // run as subprocesses of a fresh home that never names a Mainworks path.
 
 const source = fileURLToPath(new URL('..', import.meta.url));
-const closes: (() => Promise<void>)[] = [];
-after(async () => { for (const close of closes) await close(); });
 const body = async (request: IncomingMessage) => { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk as Buffer); return Buffer.concat(chunks); };
-const listen = async (server: Server) => { const { port, close } = await startServer(server); closes.push(close); return `127.0.0.1:${port}`; };
 
 /** A local npm registry: what `npm publish` puts is what `npx` gets. */
 async function npmRegistry() {
   const packages = new Map<string, any>(), tarballs = new Map<string, Buffer>();
-  const host = await listen(createServer(async (request, response) => {
+  const { url } = await listen(async (request, response) => {
     const path = decodeURIComponent(new URL(request.url!, 'http://registry').pathname);
     if (request.method === 'PUT') {
       const put = JSON.parse((await body(request)).toString());
@@ -41,19 +38,19 @@ async function npmRegistry() {
     if (tarballs.has(path)) return response.writeHead(200, { 'content-type': 'application/octet-stream' }).end(tarballs.get(path));
     const held = packages.get(path.slice(1));
     response.writeHead(held ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(held ?? {}));
-  }));
-  return { url: `http://${host}/`, packages };
+  }, { after });
+  return { url: `${url}/`, packages };
 }
 
 /** A local image registry: the tags pushed to it are the tags a pull finds. */
 async function imageRegistry() {
   const tags = new Map<string, string>(), pulls: string[] = [];
-  const host = await listen(createServer(async (request, response) => {
+  const { url } = await listen(async (request, response) => {
     const [, name, tag] = /^\/v2\/(.+)\/manifests\/(.+)$/.exec(request.url!) ?? [];
     if (request.method === 'PUT') tags.set(`${name}:${tag}`, (await body(request)).toString()); else pulls.push(`${name}:${tag}`);
     response.writeHead(request.method === 'PUT' || tags.has(`${name}:${tag}`) ? 200 : 404).end(tags.get(`${name}:${tag}`) ?? '');
-  }));
-  return { host, tags, pulls };
+  }, { after });
+  return { host: new URL(url).host, tags, pulls };
 }
 
 /** docker, gh, npm, ssh, herdr, systemctl and tailscale as a trial can have them: docker talks to the image registry and keeps its images in a file; `npm ci` links this checkout's installed dependencies. */

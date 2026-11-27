@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer as createHttpServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -208,7 +207,7 @@ test('unit:tests/managed-serve.test.ts — a serve that never answers is recorde
   } finally { stopServing(root); }
 });
 
-test('unit:tests/managed-serve.test.ts — a repository declaring no node application reports exactly what it reported before and the pass does nothing; doctor prints a FAIL line naming the URL when a declared serve does not answer', async () => {
+test('unit:tests/managed-serve.test.ts — a repository declaring no node application reports exactly what it reported before and the pass does nothing; doctor prints a FAIL line naming the URL when a declared serve does not answer', async (t) => {
   // A managed repository that declares nothing: the pass records nothing, and master status reads
   // exactly what it read before this feature — unconfigured, no served commit, no atMain claim, no
   // failure, main's tip named, and the serve fields null when nothing is declared.
@@ -242,14 +241,12 @@ test('unit:tests/managed-serve.test.ts — a repository declaring no node applic
   assert.match(setupLine(serve), new RegExp(`^FAIL serve: .*${escaped(deadUrl)}`));
 
   // A declared serve that answers: one PASS line naming the URL.
-  const { url: live, close } = await listen(createHttpServer((request, response) => response.writeHead(200).end('served')));
-  try {
-    await writeFile(serveRecordPath(root), `${JSON.stringify({ commit: main, url: live, failed: null, reason: null, pid: null, at: new Date().toISOString() }, null, 2)}\n`);
-    const liveServe = (await setupFromZeroChecks(doctorInput)).find(check => check.id === 'serve') as SetupCheck | undefined;
-    assert.ok(liveServe);
-    assert.equal(liveServe.status, 'pass');
-    assert.match(liveServe.detail, new RegExp(`${escaped(live)} answers at ${main.slice(0, 12)}`));
-  } finally { await close(); }
+  const { url: live } = await listen((request, response) => response.writeHead(200).end('served'), t);
+  await writeFile(serveRecordPath(root), `${JSON.stringify({ commit: main, url: live, failed: null, reason: null, pid: null, at: new Date().toISOString() }, null, 2)}\n`);
+  const liveServe = (await setupFromZeroChecks(doctorInput)).find(check => check.id === 'serve') as SetupCheck | undefined;
+  assert.ok(liveServe);
+  assert.equal(liveServe.status, 'pass');
+  assert.match(liveServe.detail, new RegExp(`${escaped(live)} answers at ${main.slice(0, 12)}`));
 });
 
 test('unit:tests/managed-serve.test.ts — a malformed node application is named, never served', () => {
