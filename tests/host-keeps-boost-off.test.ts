@@ -20,7 +20,7 @@ const proof = 'integration:host-keeps-boost-off';
 let hosts: Awaited<ReturnType<typeof fakeHosts>>, config: string;
 const saved = { PATH: process.env.PATH, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME, GRAPHYARD_CPU_SYSFS: process.env.GRAPHYARD_CPU_SYSFS };
 const cpu = (name: string) => join(hosts.host(name), 'sys-cpu');
-const unit = (name: string) => join(hosts.host(name), 'etc', 'systemd', 'system', 'graphyard-turbo-off.service');
+const unit = (name: string) => join(hosts.host(name), 'etc', 'systemd', 'system', 'mainworks-turbo-off.service');
 
 before(async () => {
   hosts = await fakeHosts('host-keeps-boost-off', [{ name: 'intel' }, { name: 'amd' }, { name: 'plain' }]);
@@ -62,7 +62,7 @@ test(`${proof} — declining changes nothing; accepting installs a boot unit tha
   // Accepting: a boot unit writes 1 to no_turbo (0 to boost) and is enabled now.
   const accepted = await prepare('intel', 'y\n');
   assert.match(accepted, /Turbo: off now and at every boot/);
-  assert.match(await readFile(join(hosts.host('intel'), 'log'), 'utf8'), /systemctl enable --now graphyard-turbo-off/);
+  assert.match(await readFile(join(hosts.host('intel'), 'log'), 'utf8'), /systemctl enable --now mainworks-turbo-off/);
   await boot('intel');
   assert.equal((await readFile(join(cpu('intel'), 'intel_pstate', 'no_turbo'), 'utf8')).trim(), '1');
   assert.match(await prepare('amd', 'y\n'), /Boost: off now and at every boot/);

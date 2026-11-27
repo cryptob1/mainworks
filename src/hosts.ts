@@ -180,13 +180,13 @@ cpu=${cpuSysfs}
 if [ -w "$cpu/intel_pstate/no_turbo" ]; then turbo="$cpu/intel_pstate/no_turbo" off=1 name=Turbo
 elif [ -w "$cpu/cpufreq/boost" ]; then turbo="$cpu/cpufreq/boost" off=0 name=Boost
 else turbo=; fi
-if [ -n "$turbo" ] && [ -e /etc/systemd/system/graphyard-turbo-off.service ]; then echo "$name: kept off at every boot"
+if [ -n "$turbo" ] && [ -e /etc/systemd/system/mainworks-turbo-off.service ]; then echo "$name: kept off at every boot"
 elif [ -n "$turbo" ]; then
   printf '%s comes back on at every reboot. Keep it off, so shared builds run cooler? [y/N] ' "$name"
   read -r answer || answer=
   case "$answer" in
     y|Y|yes|Yes|YES)
-      cat > /etc/systemd/system/graphyard-turbo-off.service <<GRAPHYARD_UNIT
+      cat > /etc/systemd/system/mainworks-turbo-off.service <<GRAPHYARD_UNIT
 [Unit]
 Description=Keep $name off (Mainworks compute)
 [Service]
@@ -196,7 +196,7 @@ ExecStart=/bin/sh -c 'echo $off > $turbo'
 WantedBy=multi-user.target
 GRAPHYARD_UNIT
       systemctl daemon-reload
-      systemctl enable --now graphyard-turbo-off
+      systemctl enable --now mainworks-turbo-off
       echo "$name: off now and at every boot" ;;
     *) echo "$name: left as it is" ;;
   esac
