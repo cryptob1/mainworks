@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { composeBounds, composePreviewConfig, composeProjectName } from '../src/compose-preview.js';
 import { allowedCpus } from '../src/reserved-cpus.js';
 import { detachedLaunch, runContainment, runFiles, sessionLaunch } from '../src/runner/pi.js';
-import { systemdContainment } from '../src/session-watch.js';
+import { supervise, systemdContainment } from '../src/session-watch.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -93,6 +94,17 @@ test(`${proof} — a session and a trial child started with the setting run only
     const allowed = allowedByKernel(readFileSync(runFiles(directory).stdout, 'utf8'));
     assert.deepEqual([code, cpus(allowed)], [0, others()], `${name} child ended with ${code} and the kernel lets it use ${allowed || 'an unreadable CPU list'}: ${error.trim()}`);
   }
+}));
+
+test(`${proof} — a worker supervised by watch, which gets no scope of its own, runs only on the other CPUs`, async () => withReserved(reserved, async () => {
+  // `mainworks watch` supervises detached (src/cli/workspace.ts): the agent leads its own group inside the run's scope, and the supervisor starts it.
+  const base = await temporaryDirectory('reserved-cpus-watch'), log = join(base, 'log.jsonl');
+  const agent = "console.log(require('node:fs').readFileSync('/proc/self/status', 'utf8').match(/Cpus_allowed_list.*/)[0])";
+  const renewal = () => ({ updatedAt: new Date().toISOString(), lease: { epoch: 1, expiresAt: new Date(Date.now() + 2_000).toISOString() } });
+  const code = await supervise(process.execPath, ['-e', agent], 1, async () => renewal(), { intervalMs: 100, graceMs: 75, log });
+  const lines = (await readFile(log, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { stream: string; text: string });
+  const kernel = allowedByKernel(lines.find(line => line.stream === 'stdout' && line.text.includes('Cpus_allowed_list'))?.text);
+  assert.deepEqual([code, cpus(kernel)], [0, others()], `the supervised agent ended with ${code} and the kernel lets it use ${kernel || 'an unreadable CPU list'}`);
 }));
 
 const hostOnly = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore', timeout: 5_000 }); return false; } catch { return 'no systemd user manager answers here'; } })();
