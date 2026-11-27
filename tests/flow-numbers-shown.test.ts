@@ -51,7 +51,7 @@ test('e2e:flow-numbers-shown — /api/flow and master status read 75% first pass
   assert.deepEqual({ attempts: day.attempts, merges: day.merges, firstPassYield: day.firstPassYield }, { attempts: 4, merges: 3, firstPassYield: 0.75 });
   assert.equal(day.rework['merge trial'], 1);
   assert.deepEqual({ p90: day.stations.review.p90, oldest: day.stations.review.oldest.key }, { p90: 120, oldest: items[4].key });
-  assert.deepEqual(Object.keys(flow).sort(), ['24h', '6h', '7d', 'ageSeconds', 'asOf', 'attention']);
+  assert.deepEqual(Object.keys(flow).sort(), ['24h', '6h', '7d', 'ageSeconds', 'asOf', 'attention', 'onboarding']);
 
   const directory = await temporaryDirectory('flow-numbers-shown');
   const config = masterConfigSchema.parse({ version: 1, url, repository: 'owner/game', credentialFile: join(directory, 'coordinator.token'), cliPath: '/bin/graphyard', hostId: 'test-host', baseBranch: 'main',
@@ -59,7 +59,7 @@ test('e2e:flow-numbers-shown — /api/flow and master status read 75% first pass
   const root = await temporaryDirectory('flow-numbers-shown-root');
   execFileSync('git', ['init', '-q', root]);
   const report = await masterStatusReport(root, config, api, async (command, args) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${'b'.repeat(40)}\n`);
-  assert.deepEqual(Object.keys(report.flow!).sort(), ['24h', '6h', '7d']);
+  assert.deepEqual(Object.keys(report.flow!).sort(), ['24h', '6h', '7d', 'onboarding']);
   assert.equal(report.flow!['24h'].firstPassYield, 0.75);
   const lines = report.attention.filter(line => line.subject === 'review');
   assert.equal(lines.length, 1);
