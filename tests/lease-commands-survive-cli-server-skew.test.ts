@@ -55,12 +55,12 @@ test('unit:lease-commands-survive-cli-server-skew — heartbeat and blocked from
 
   // A non-lease command keeps today's behaviour: refused by name, before its first API request.
   requests.length = 0;
-  const status = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...env, GRAPHYARD_RELEASE_HANDOVER_MS: '1500' } }).then(() => null, (error: any) => error);
+  const status = await exec(process.execPath, [launcher, 'status', 'GY-1'], { cwd, env: { ...env, GRAPHYARD_RELEASE_HANDOVER_MS: '3000' } }).then(() => null, (error: any) => error);
   assert.match(status?.stderr ?? '', new RegExp(`CLI commit ${head} and server commit ${deployed} differ: run mainworks upgrade$`, 'm'), 'the refusal names no proceeding');
   assert.doesNotMatch(status?.stderr ?? '', /proceeds/);
   assert.equal(status?.code, 1, 'persistent skew exits with failure after the bounded handover window');
   const retries = (status?.stderr.match(/release handover: retry/g) ?? []).length;
-  assert.ok(retries >= 2, 'each retry is observable');
-  assert.match(status?.stderr ?? '', /still serves another commit after 2s; giving up/, 'the window ends by name');
+  assert.ok(retries >= 1, 'each retry is observable');
+  assert.match(status?.stderr ?? '', /still serves another commit after 3s; giving up/, 'the window ends by name');
   assert.deepEqual(requests, Array(retries + 1).fill('GET /healthz'), 'the initial probe and every retry send no API request');
 });

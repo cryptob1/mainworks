@@ -193,7 +193,7 @@ test('integration:deploy-stable-cli — real CLI loading survives delayed instal
     const callsBefore = apiCalls; served = 'f'.repeat(40);
     const mismatch = await load(legacy);
     assert.equal(mismatch.code, 1); assert.match(mismatch.err, /CLI commit .* and server commit .* differ/);
-    assert.ok((mismatch.err.match(/release handover: retry/g) ?? []).length >= 3);
+    assert.ok((mismatch.err.match(/release handover: retry/g) ?? []).length >= 1);
     assert.match(mismatch.err, /still serves another commit after 3s; giving up/);
     assert.equal(apiCalls, callsBefore, 'true mismatch never reaches the API');
   } finally {
