@@ -4,6 +4,7 @@ import { baseFailurePrefix, trialAheadOfReviewPrefix } from '../model/merge-queu
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 import type { DeployHistoryEntry, GitRead } from '../deploy-watch.js';
 import { flowAttention, flowNumbers, flowWindows, type FlakeEvent, type FlowEvent, type FlowItem, type FlowNumbers, type FlowWindow } from '../flow-numbers.js';
+import { deriveNotMoving, type NotMovingItem } from '../daemon/stall-alarm.js';
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
 export const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
@@ -142,6 +143,7 @@ interface FlowLiveOptions { deploys?: readonly DeployHistoryEntry[]; git?: GitRe
 export type Flow = Record<FlowWindow, FlowNumbers> & { attention: ReturnType<typeof flowAttention> };
 /** The flow as every reader gets it: the stored numbers, when they were computed and how long ago. */
 export type FlowReport = Flow & { asOf: string; ageSeconds: number };
+export type NotMovingReport = { notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[]; asOf: string; ageSeconds: number };
 
 function numbers(items: readonly FlowItem[], now: number, releaseFlakes: readonly FlakeEvent[] = []): Flow {
   const windows = Object.fromEntries(Object.entries(flowWindows).map(([name, hours]) => [name, flowNumbers(items, hours, now, releaseFlakes)])) as Record<FlowWindow, FlowNumbers>;
@@ -149,26 +151,22 @@ function numbers(items: readonly FlowItem[], now: number, releaseFlakes: readonl
 }
 
 /** The flow numbers for 6 hours, 24 hours and 7 days over `work`, and the attention line the 24 hours raise. */
-export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow & { items: FlowItem[] }> {
+export async function readFlow(pool: Queryable, work: readonly Flowed[], now: number, live?: FlowLiveOptions): Promise<Flow & { items: FlowItem[]; notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[] }> {
   const [{ ledger, attempts }, deployed] = await Promise.all([
     rows(pool, now),
     live?.deploys?.length && live.git ? resolveDeployedAt(work, live.deploys, live.git, now) : Promise.resolve(new Map<string, string | null>()),
   ]);
   const items = flowItems(work, ledger, attempts, deployed, now);
-  return { ...numbers(items, now, live?.releaseFlakes), items };
+  const eventsByWork = new Map(work.map((item, i) => [item.id, items[i]!.events]));
+  const stall = deriveNotMoving(work as readonly Work[], now, eventsByWork);
+  return { ...numbers(items, now, live?.releaseFlakes), items, ...stall };
 }
 
-type Stored = { at: number; work: readonly (Flowed & { reportedBy?: string })[]; flow: Flow & { items: FlowItem[] } };
+type Stored = { at: number; work: readonly (Flowed & { reportedBy?: string })[]; flow: Flow & { items: FlowItem[]; notMoving: NotMovingItem[]; waitingOnPerson: NotMovingItem[] } };
 const jobs = new WeakMap<object, { last?: Stored; running?: Promise<Stored> }>();
 /** Drops the stored flow so the next reader computes it again: a test that changes the ledger and reads again within the minute. */
 export const forgetFlow = (key: object) => { jobs.delete(key); };
-/**
- * GY-3763: one computation per server at most once a minute, shared by every reader. A reader gets
- * the stored result with its age; one that finds it a minute old starts the next computation and
- * still answers from the stored one. Only the first read ever waits.
- */
-export async function sharedFlow(key: object, now: number, compute: (now: number) => Promise<Stored>,
-  visible: <T extends { id: string; key: string }>(items: T[]) => T[] = items => items): Promise<FlowReport> {
+async function loadSharedFlow(key: object, now: number, compute: (now: number) => Promise<Stored>): Promise<Stored> {
   let job = jobs.get(key);
   if (!job) jobs.set(key, job = {});
   if (!job.running && (!job.last || now - job.last.at >= 60_000)) {
@@ -176,9 +174,24 @@ export async function sharedFlow(key: object, now: number, compute: (now: number
     own.running = running;
     running.finally(() => { if (own.running === running) own.running = undefined; }).catch(() => {});
   }
-  const stored = job.last ?? await job.running!;
+  return job.last ?? await job.running!;
+}
+/**
+ * GY-3763: one computation per server at most once a minute, shared by every reader. A reader gets
+ * the stored result with its age; one that finds it a minute old starts the next computation and
+ * still answers from the stored one. Only the first read ever waits.
+ */
+export async function sharedFlow(key: object, now: number, compute: (now: number) => Promise<Stored>,
+  visible: <T extends { id: string; key: string }>(items: T[]) => T[] = items => items): Promise<FlowReport> {
+  const stored = await loadSharedFlow(key, now, compute);
   // A reporter sees only its own items: its numbers come from the stored histories, not a new read.
   const keys = new Set(visible([...stored.work]).map(item => item.key));
-  const { items: _items, ...flow } = keys.size === stored.work.length ? stored.flow : { ...numbers(stored.flow.items.filter(item => keys.has(item.key)), stored.at), items: [] };
+  const { items: _items, notMoving: _nm, waitingOnPerson: _wp, ...flow } = keys.size === stored.work.length ? stored.flow : { ...numbers(stored.flow.items.filter(item => keys.has(item.key)), stored.at), items: [], notMoving: [], waitingOnPerson: [] };
   return { ...flow, asOf: new Date(stored.at).toISOString(), ageSeconds: Math.max(0, Math.round((now - stored.at) / 1000)) };
+}
+/** GY-4000: not-moving open items and human-waiting items from the same shared flow computation. */
+export async function sharedNotMoving(key: object, now: number, compute: (now: number) => Promise<Stored>,
+  visible: <T extends { id: string; key: string }>(items: T[]) => T[] = items => items): Promise<NotMovingReport> {
+  const stored = await loadSharedFlow(key, now, compute), keys = new Set(visible([...stored.work]).map(item => item.key));
+  return { notMoving: stored.flow.notMoving.filter(i => keys.has(i.key)), waitingOnPerson: stored.flow.waitingOnPerson.filter(i => keys.has(i.key)), asOf: new Date(stored.at).toISOString(), ageSeconds: Math.max(0, Math.round((now - stored.at) / 1000)) };
 }

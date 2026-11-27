@@ -486,6 +486,7 @@ export function demoAnswer(state, route, search = new URLSearchParams()) {
   if (route === 'work-snapshot') return { work: state.work, jobs: [], now: at(0) };
   if (route === 'board') return state.board;
   if (route === 'flow') return state.flow;
+  if (route === 'not-moving') return state.notMoving ?? { notMoving: [], waitingOnPerson: [] };
   if (route === 'work') return state.work;
   if (route === `work/${state.item103.id}/timings`) return state.item103Timings;
   if (route === `work/${state.item103.id}/diff`) return state.item103Diff;

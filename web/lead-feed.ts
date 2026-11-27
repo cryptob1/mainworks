@@ -1,6 +1,14 @@
 import type { Work } from '../src/model';
 import type { HumanRequestRow } from '../src/model/human-request';
+import { formatDuration } from '../src/model/duration';
 import { isClosed } from '../src/model';
+
+/** GY-4000: one open item that has stopped moving, as `/api/not-moving` reports it. */
+export interface NotMovingRow { key: string; title: string; stage: string; ageMs: number; owner: string }
+/** At most five plain lines (oldest first) plus a count of the rest; empty when none. */
+export const notMovingLines = (items: readonly NotMovingRow[]): string[] => items.length
+  ? [...items.slice(0, 5).map(i => `${i.key} ${i.title.length > 50 ? `${i.title.slice(0, 49)}…` : i.title} — ${formatDuration(i.ageMs / 60_000)} in ${i.stage}, next: ${i.owner}`), ...(items.length > 5 ? [`+${items.length - 5} more not moving`] : [])]
+  : [];
 
 /**
  * The Lead's conversation (GY-3602): one time-ordered feed of the messages people typed into the

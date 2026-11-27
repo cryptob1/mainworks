@@ -428,6 +428,7 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 @media(max-width:650px){.shell:has(.master-tabs){display:flex;flex-direction:column;height:100dvh;overflow:hidden}.main:has(.master-tabs){flex:1;height:auto;min-height:0;padding:12px var(--space-4) 68px;gap:var(--space-2)}}
 /* GY-3345: threads with other installs' Masters, in the Messages tab; long words wrap, never widen the page. */
 .stall-alarm{margin:0 0 var(--space-2);padding:var(--space-2) var(--space-3);border-left:3px solid var(--blocked);border-radius:var(--radius);background:var(--raised);color:var(--text);overflow-wrap:anywhere}
+.stall-alarm ul{margin:0;padding-left:1.1rem}
 .master-messages{min-width:0;margin-top:8px}
 /* GY-3394: the blockers the Master owes — one row each, the item, its wait and the recorded blocker. */
 .master-owes{list-style:none;margin:0;padding:0}

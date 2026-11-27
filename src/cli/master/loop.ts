@@ -84,7 +84,8 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
       return snapshot;
     };
     const effects = daemonEffects(root, current, { snapshot: retriedSnapshot(ownedSnapshot), sessionHistory: async work => (await masterApi(`work/${work.id}`, masterToken)).sessions ?? [], mutate: masterMutation,
-      messages: async () => (await masterApi('master/messages', masterToken)).messages ?? [] });
+      messages: async () => (await masterApi('master/messages', masterToken)).messages ?? [],
+      flow: async () => masterApi('not-moving', masterToken).catch(() => null) });
     // GY-1603: a stopped loop's process exits within its unit's stop bound, whatever handle is left open.
     const exit = exitWhenStopped();
     const held = state.lock && state.lock.pid !== process.pid ? state.lock : null;

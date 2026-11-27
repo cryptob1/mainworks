@@ -37,7 +37,7 @@ import { signoffAttention, stalledDelivery, stalledDeliveryAction } from '../dae
 import { failureHeld, repeatedFailureCause } from '../daemon/repeated-failure.js';
 import { reworkCapCause, reworkCapHeld } from '../model/rework-ground.js';
 import { alertMinutesOf } from '../daemon/yard-alerts.js';
-import { stallAlarmKey } from '../daemon/stall-alarm.js';
+import { formatNotMovingLines, stallAlarmKey } from '../daemon/stall-alarm.js';
 import { plannerDraftAttention } from '../daemon/planner.js';
 import { stoppedRoles, type StoppedRole } from '../master/stopped-roles.js';
 import { deliverySpeed, type MergedItem, type SpeedEvent } from '../pipeline-speed.js';
@@ -109,6 +109,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   let unreachable: string | null = null;
   // GY-3699: the flow numbers come from their own route, read beside the other reads so a slow or failed read delays nothing; a failure carries its reason.
   const flowRead: Promise<FlowReport | { error: string }> = Promise.resolve().then(() => masterApi('flow')).catch(error => ({ error: `The flow numbers could not be read: ${error instanceof Error ? error.message : String(error)}` }));
+  const notMovingRead = Promise.resolve().then(() => masterApi('not-moving')).then(body => Array.isArray(body?.notMoving) ? body.notMoving : [], () => []);
   const [snapshot, runtime, credentials, state] = await Promise.all([(masterApi('work-snapshot') as Promise<{ work: Work[]; now: string; workerVerifications?: ReturnType<typeof pendingWorkerVerifications> }>).catch(error => {
     if (typeof error?.status === 'number') throw error;
     unreachable = error instanceof Error ? error.message : String(error);
@@ -260,6 +261,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const flowAnswer = await flowRead;
   const flow = 'error' in flowAnswer ? null : flowAnswer;
   const flowAttention = flow?.attention ? [flow.attention] : [];
+  const notMoving = formatNotMovingLines(await notMovingRead);
   // GY-3690: one line while the owner turned the public link on and someone is invited, but the link is not public.
   const linkOff: { doing: string; lastPublic: string | null } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('team-access/host')).then(body => body?.publicLinkOff ?? null, () => null);
   // GY-3850: one line while no owner is named; commits are then authored 'Mainworks'.
@@ -273,8 +275,10 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
   const remoteRuns = readRemoteShardRuns(root);
   return {
-    // GY-3432: the stall alarm the loop raised, first, until a launch starts or the item is acted on.
+    // GY-3778: the empty-board alarm, when standing.
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
+    // GY-4000: open items that have stopped moving, oldest first, at most five plus rest count; omitted when none.
+    ...(notMoving.length ? { notMoving } : {}),
     // GY-3593: when the caretaker last ran, and its result line.
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3890: whether the empty-board/low-water planner is on, or off with who turned it off.

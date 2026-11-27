@@ -7,7 +7,7 @@ import { formatAge } from '../../src/model/duration';
 import { humanAsk } from '../../src/model/human-ask';
 import LiveTerminal, { type TerminalHandle } from '../components/live-terminal';
 import { PageHeader } from '../components/page-layout';
-import { goalOrder, leadFeed, ledgerKinds, steerers, type FeedDecision, type LedgerRow, type RegistryRow, type TypedLine } from '../lead-feed';
+import { goalOrder, leadFeed, ledgerKinds, notMovingLines, steerers, type FeedDecision, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
 
 type Message = { id: number; from: string; to?: string; thread: string; text: string; at: string; replies: { id: number; by: string; text: string; at: string }[] };
 type Entry = { id: number; who: string; text: string; at: string };
@@ -83,6 +83,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [registry, setRegistry] = useState<RegistryRow[]>([]);
   const [team, setTeam] = useState<{ login: string; role: string }[] | null>(null);
+  const [notMoving, setNotMoving] = useState<NotMovingRow[]>([]);
   const [tab, setTab] = useState<MasterTab>(() => masterTabFromHash(typeof location === 'undefined' ? '' : location.hash));
   const [draft, setDraft] = useState('');
   const [boxNote, setBoxNote] = useState('');
@@ -103,6 +104,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
     void api(`events?kind=${ledgerKinds.join(',')}&payload=details&order=desc&limit=60&view=rows`).then(body => setLedger(Array.isArray(body) ? body : []), () => {});
     void api('agent-registry/history?limit=60').then(body => setRegistry(Array.isArray(body) ? body : []), () => setRegistry([]));
     void api('team-access').then(body => setTeam(body.teammates ?? []), () => setTeam(null));
+    void api('not-moving').then(body => setNotMoving(Array.isArray(body?.notMoving) ? body.notMoving : []), () => {});
     return api('master/messages').then(body => { setMessages(body.messages ?? []); setMessagesLoaded(true); }, () => { setMessagesLoaded(true); });
   };
   useEffect(() => {
@@ -138,6 +140,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   };
   // GY-3432: the loop's stall alarm, first, until work moves again.
   const stall = typeof status?.setup?.stallAlarm === 'string' ? status.setup.stallAlarm : null;
+  const stalledLines = notMovingLines(notMoving);
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const owes = masterOwes(work, now);
   // Who this session is, as the conversation judges it: the operator may act on anything, an
@@ -184,6 +187,9 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   return <>
     <PageHeader title="Lead" fact="Steer the Lead and act on its cards."/>
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
+    {stalledLines.length > 0 && <section className="stall-alarm" data-not-moving role="alert" aria-label="Not moving">
+      <ul>{stalledLines.map(entry => <li key={entry}>{entry}</li>)}</ul>
+    </section>}
     {owes.length > 0 && <section className="panel" aria-label="Blockers the Lead owes"><h2>Blocked ({owes.length})</h2>
       <ul className="master-owes">{owes.map(entry => <li key={entry.id}>
         <button className="text-button" onClick={() => setSelected(entry.id)}><span data-title>{entry.title}</span></button>
