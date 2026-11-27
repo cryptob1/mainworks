@@ -30,7 +30,7 @@ import { shellQuote } from './install/transport.js';
 /** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. `login` (GY-3836): the owner's USER@HOST login the host was added with. */
 export interface HostRecord { target: string; addedAt: string; sessions?: number; login?: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { sessionCooldown?: SessionCooldown; host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; /** GY-4008: turbo or boost is off; absent on a CPU with neither. */ turboOff?: boolean; stat?: { total: number; steal: number } | null }
+export interface HostReading { sessionCooldown?: SessionCooldown; /** GY-4062: why a host opened to sessions takes none while its helper lacks run-session; it keeps taking test shards. */ takesNone?: string; host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; /** GY-4008: turbo or boost is off; absent on a CPU with neither. */ turboOff?: boolean; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
@@ -498,11 +498,12 @@ export async function removeHost(target: string, options: { file?: string } = {}
   return { removed: true, hosts: next };
 }
 
+/** GY-3405: why a probed host cannot take agent sessions, in one line; null when its helper runs them. */
+const sessionHelperReason = (target: string, probe: Awaited<ReturnType<typeof probeHost>>, login?: string) =>
+  probe.ok && probe.verbs?.includes('run-session:1') ? null : probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run ${hostAddCommand(target, login)} first` : probe.reason;
 /** GY-3405: why `target` cannot take agent sessions now, in one line; null when its helper runs them. */
 export async function sessionHelperProblem(target: string, run: ChildRun = defaultChildRun): Promise<string | null> {
-  const probe = await probeHost(target, run);
-  if (probe.ok && probe.verbs?.includes('run-session:1')) return null;
-  return probe.ok || probe.update ? `${target}'s helper is older than this release and takes no sessions: run ${hostAddCommand(target)} first` : probe.reason;
+  return sessionHelperReason(target, await probeHost(target, run));
 }
 
 /** GY-3405: open an added host to `sessions` agent sessions at once (0 closes it to them), once its helper runs them. */
@@ -560,6 +561,8 @@ export async function readHostReadings(previous: HostReading[], options: { file?
     const older = Boolean(target && (probe.shim !== hostShimDigest || (probe.verbs !== null && trialVerbs.some(verb => !probe.verbs!.includes(verb)))));
     const migrated = Boolean(target && probe.migrated);
     if (target && (older || migrated) && !login) login = await resolveLoginTarget(target, { run: options.run });
-    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...failure, ...(migrated ? { migrated: true } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, ...(probe.turboOff === null ? {} : { turboOff: probe.turboOff }), stat: probe.stat };
+    // GY-4062: a host opened to sessions whose helper lacks run-session takes none, and status says why; it keeps taking test shards.
+    const takesNone = record?.sessions && target ? sessionHelperReason(target, probe, login) : null;
+    return { host, ...(target ? {} : { local: true }), ...(login ? { login } : {}), at, away: false, ...(older ? { older: true } : {}), ...failure, ...(migrated ? { migrated: true } : {}), ...(takesNone ? { takesNone } : {}), cores: probe.cores, celsius: probe.celsius, steal: stealPercent(before, probe.stat), runs: probe.runs, busy: probe.load, ...(probe.turboOff === null ? {} : { turboOff: probe.turboOff }), stat: probe.stat };
   }));
 }
