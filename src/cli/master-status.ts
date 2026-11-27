@@ -355,7 +355,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     delivery: stalled.length ? { state: 'stalled', reason: stalled.map(cause => cause.detail).join('\n'), nextAction: stalledDeliveryAction }
       : { state: state?.mergeWriter.inFlight ? 'validating' : 'no shared base failure', reason: null, nextAction: null },
     deliverySpeed: deliverySpeed(merged, open, now),
-    flow: flow ? { '6h': flow['6h'], '24h': flow['24h'], '7d': flow['7d'] } : null,
+    flow: flow ? { '6h': flow['6h'], '24h': flow['24h'], '7d': flow['7d'], onboarding: flow.onboarding } : null,
     flowError: 'error' in flowAnswer ? flowAnswer.error : null,
     // GY-3763: the server computes flow at most once a minute; this is how old the numbers above are.
     flowAgeSeconds: flow?.ageSeconds ?? null,

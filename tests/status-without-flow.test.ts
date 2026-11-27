@@ -32,7 +32,7 @@ test('integration:status-without-flow — /api/status runs no flow query and car
     assert.deepEqual(seen.filter(flowSql), []);
     seen.length = 0;
     const flow = await get('flow');
-    assert.deepEqual(Object.keys(flow).filter(key => !['attention', 'asOf', 'ageSeconds'].includes(key)).sort(), ['24h', '6h', '7d']);
+    assert.deepEqual(Object.keys(flow).filter(key => !['attention', 'asOf', 'ageSeconds', 'onboarding'].includes(key)).sort(), ['24h', '6h', '7d']);
     assert.equal(typeof flow['24h'].attemptsPerHour, 'number');
     assert.ok(seen.some(flowSql), 'GET /api/flow reads the ledger');
   } finally {
