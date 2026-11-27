@@ -8,6 +8,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
+import { describeHumanRequest } from '../src/model/human-request.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Work } from '../src/model.js';
@@ -90,9 +91,9 @@ const alarmOf = (state: DaemonState) => state.actions[stallAlarmKey]?.detail;
 
 test(`${proof} — a ready item with an open blocker, no live session and no change for 60 minutes raises the stall alarm, appears in master status, and wakes the coordinator once per hour`, async () => {
   const item = blockedReadyItem('GY-218');
-  const humanBlocked = blockedReadyItem('GY-219', {
-    humanRequest: { id: 'hr-1', kind: 'goals-and-priorities', needed: 'Choose priority', options: ['A', 'B'], askedBy: 'master', at: iso(start), answer: null } as any,
-  });
+  // An item parked on a human decision carries the request and the blocker the park wrote beside it.
+  const parkedRequest = { id: 'hr-1', kind: 'goals-and-priorities' as const, reason: 'Two fixes conflict', needed: 'Choose priority', requestedBy: 'worker-a', epoch: 1, at: iso(start), answer: null };
+  const humanBlocked = blockedReadyItem('GY-219', { humanRequest: parkedRequest, blocker: describeHumanRequest(parkedRequest) });
   const scopeBlocked = blockedReadyItem('GY-220', {
     agentRequests: [{ id: 'sr-1', type: 'scope-request' as any, epoch: 1, requestedBy: 'worker-a', at: iso(start), reason: 'Need extra file', decider: { kind: 'rule', who: 'master', command: null }, releasedLease: true, state: 'open' }],
   });
@@ -114,7 +115,7 @@ test(`${proof} — a ready item with an open blocker, no live session and no cha
   assert.ok(alarm.includes('GY-218'), `alarm names the item key: ${alarm}`);
   assert.ok(alarm.includes(longBlocker.slice(0, 120)), `alarm names the first 120 chars of the blocker: ${alarm}`);
   assert.equal(alarm.includes(longBlocker), false, 'alarm caps blocker text at 120 characters');
-  assert.match(alarm, /1h/, `alarm includes the blocker age: ${alarm}`);
+  assert.ok(alarm.includes('(1h)'), `alarm includes the blocker age: ${alarm}`);
   assert.equal(alarm.includes('GY-219'), false, 'item blocked on an open human request is excluded');
   assert.equal(alarm.includes('GY-220'), false, 'item blocked on an open scope request is excluded');
 
@@ -122,7 +123,7 @@ test(`${proof} — a ready item with an open blocker, no live session and no cha
   const report = await f.status();
   assert.equal(report.stallAlarm, alarm, 'master status carries the stall alarm');
 
-  // Coordinator wake message includes the alarm exactly once within the hour even as age advances.
+  // The coordinator's wake message carries the alarm, once: nothing wakes it again within the hour.
   assert.equal(f.prompts.length, promptsBeforeStall + 1, 'coordinator woken once when the stall alarm fires');
   assert.ok(f.prompts.at(-1)!.includes('GY-218') && f.prompts.at(-1)!.includes(longBlocker.slice(0, 120)));
 
