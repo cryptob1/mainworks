@@ -67,7 +67,7 @@ test('integration:deploy-build-lease-error-retried-once — a build that loses i
   }), () => {}, null);
   assert.equal(outcome, 'deployed');
   assert.equal(attempts, 2, 'one retry, no more');
-  assert.equal(readControlPlaneRecord(controlPlaneRecordPath(root))?.retried, `The image build of ${b.slice(0, 12)} was retried once after a BuildKit lease error`);
+  assert.equal(readControlPlaneRecord(controlPlaneRecordPath(root))?.retried, `The image build of ${b.slice(0, 12)} was retried once without build cache after a BuildKit lease error`);
 });
 
 // Pre-GY-4030 installs parse the entire lock file as a PID, including during rollback.

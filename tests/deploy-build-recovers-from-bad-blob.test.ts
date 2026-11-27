@@ -6,7 +6,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const previous = 'a'.repeat(40), next = 'b'.repeat(40), blob = `sha256:042822a3${'c'.repeat(56)}`;
 for (const failure of ['lease does not exist: not found', 'failed to ingest']) {
-  test(`integration:deploy-build-recovers-from-bad-blob — ${failure} twice retries this build without cache and names the blob`, { timeout: 15_000 }, async () => {
+  test(`integration:deploy-build-recovers-from-bad-blob — ${failure} retries this build once without cache and names the blob`, { timeout: 15_000 }, async () => {
     const root = await temporaryDirectory('bad-blob');
     const builds: boolean[] = [];
     let serving = previous;
@@ -22,7 +22,7 @@ for (const failure of ['lease does not exist: not found', 'failed to ingest']) {
       install: 'core',
     });
     assert.equal(await deployOnce(deployRecordPath(root), ports, () => {}), 'deployed');
-    assert.deepEqual(builds, [false, false, true]);
+    assert.deepEqual(builds, [false, true]);
     const status = readControlPlaneRecord(controlPlaneRecordPath(root));
     assert.equal(status?.commit, next);
     assert.match(status?.retried ?? '', /without.*cache/);
