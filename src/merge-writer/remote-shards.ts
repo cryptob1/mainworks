@@ -10,6 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
+import { allowedCpus } from '../reserved-cpus.js';
 import { probeShimVerbs, supportsCheckImages, supportsRunShardNonce, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { generateTrialVerdictNonce, harnessModules, parseTrialVerdict, trialImage, trialVerdictMissingNonce } from './trial-container.js';
@@ -272,7 +273,10 @@ export const mirrorName = (root: string) => `${createHash('sha1').update(root).d
 /** GY-3627: where the warm image stores its filled Node compile cache. */
 const warmCompileCacheDirectory = '/warm/compile-cache';
 /** GY-3914: warm-image builds run dependency installation and build steps unprivileged with all capabilities dropped. */
-const warmBuildDockerFlags = '--user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges';
+const warmBuildDockerFlags = () => {
+  const cpus = allowedCpus();
+  return `--user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges${cpus ? ` --cpuset-cpus=${cpus}` : ''}`;
+};
 /** GY-3936: the test database checks a new warm image must pass before it is tagged; an image without the package passes. */
 const warmDatabaseChecks = [
   { command: 'postgres --version', script: '"$bin/postgres" --version' },
@@ -289,7 +293,7 @@ async function commitCheckedWarmImage(local: (command: string, args: string[]) =
   try {
     for (const check of warmDatabaseChecks) {
       const runner = `${name}-check`;
-      try { await local('docker', ['run', '--rm', '--name', runner, ...warmBuildDockerFlags.split(' '), '--entrypoint', '/bin/sh', candidate, '-c', check.script]); }
+      try { await local('docker', ['run', '--rm', '--name', runner, ...warmBuildDockerFlags().split(' '), '--entrypoint', '/bin/sh', candidate, '-c', check.script]); }
       catch (error) {
         const failed = error as { stderr?: unknown; message?: string };
         throw new Error(`the new warm image failed \`${check.command}\`, so it was not used: ${(String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-300)}`);
@@ -368,7 +372,7 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
     const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ' + linkNativeLibraries;
     try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
       await commitCheckedWarmImage(local, name, tag);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return tag;
@@ -405,7 +409,7 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       'rm -rf /warm/build',
     ].join(' && ');
     try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
       await commitCheckedWarmImage(local, name, tag, ['--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return { tag, built: true };
@@ -802,7 +806,7 @@ async function catalogImage(input: { root: string; commit: string; image: string
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
   const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
   try {
-    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
+    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
     await local('docker', ['commit', name, tag]);
   } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
   await pruneWarmImageFamily(tag, local);

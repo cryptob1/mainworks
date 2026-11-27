@@ -297,6 +297,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     }),
     masterMessages: deps.messages,
     flow: deps.flow,
+    reportCapacity: (work, event) => mutate(`work/${work.id}/capacity`, event, randomUUID()),
     masterSession: {
       ...masterSessionEffects(root, current, run),
       // GY-2949: the master pane's limit notice holds its account exactly as a worker's holds theirs,

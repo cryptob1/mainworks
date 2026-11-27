@@ -5,6 +5,7 @@ import { realpathSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { previewSiteByteLimit, previewSiteFileLimit, previewSitePathSchema, type PreviewSiteFile } from './project-previews.js';
+import { allowedCpus } from './reserved-cpus.js';
 import { processPidNamespace, processStartTicks, tempOwnerGone, tempOwnerJudgeable, tmpReclaimMinAgeMs, type TempOwner } from './tmp-reclaim.js';
 import { setting } from './setting.js';
 
@@ -138,10 +139,11 @@ function composeMountProblems(config: Json, checkout: string, service: string): 
  * The configuration the preview runs: the resolved one under `project`, with no container name or
  * host port of its own (so two previews never collide), only `service`'s `port` published on an
  * ephemeral loopback port, each service one container (no `scale` or replicas) bounded (`bounds`), unable to gain privileges, not
- * restarted, given the preview's `variables`, and each container and network labelled with `owner`.
+ * restarted, given the preview's `variables`, and each container and network labelled with `owner`. GY-4006: on a host that
+ * reserves CPUs for another project, each container runs on the rest, whatever its file declares.
  */
 export function composePreviewConfig(config: Json, options: { project: string; service: string; port: number; bounds: ComposeBounds; variables: Record<string, string>; owner: TempOwner; publish?: boolean }): Json {
-  const labels = { [composeOwnerLabel]: JSON.stringify(options.owner) };
+  const labels = { [composeOwnerLabel]: JSON.stringify(options.owner) }, cpuset = allowedCpus();
   const services = Object.fromEntries(Object.entries<Json>(config.services ?? {}).map(([name, entry]) => {
     const { container_name: _name, ports: _ports, cpus: _cpus, mem_limit: _memory, memswap_limit: _swap, pids_limit: _pids, restart: _restart, scale: _scale, deploy, ...rest } = entry;
     const { resources: _resources, restart_policy: _policy, replicas: _replicas, ...placement } = deploy ?? {};
@@ -149,7 +151,7 @@ export function composePreviewConfig(config: Json, options: { project: string; s
     const build = typeof entry.build === 'string' ? { context: entry.build } : entry.build;
     const built = build ? { image: `${options.project}-${name}`, build: { ...build, labels: composeBuildLabels(keyed(build.labels)) } } : {};
     return [name, {
-      ...rest, ...built, ...(Object.keys(placement).length ? { deploy: placement } : {}),
+      ...rest, ...built, ...(Object.keys(placement).length ? { deploy: placement } : {}), ...(cpuset ? { cpuset } : {}),
       cpus: options.bounds.cpus, mem_limit: `${options.bounds.memoryMb}m`, memswap_limit: `${options.bounds.memoryMb}m`, pids_limit: options.bounds.pids, restart: 'no',
       security_opt: [...new Set([...(entry.security_opt ?? []), 'no-new-privileges:true'])],
       environment: { ...keyed(entry.environment), ...options.variables },

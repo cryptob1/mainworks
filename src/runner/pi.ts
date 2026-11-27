@@ -1,3 +1,4 @@
+import { reservedCpuPrefix, reservedCpuProperties } from '../reserved-cpus.js';
 import { sessionScopeProperties } from '../session-share.js';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -175,6 +176,8 @@ const quoted = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
  * parameters, invoked literally through "$0" "$@" without a PTY. It handles TERM, INT and HUP so that a stop sent to the run's group still records Pi's exit. The
  * `confinement` words wrap Pi alone, never the shell: the run's directory lies under the
  * coordinator checkout the confinement makes read-only, so only the shell outside it can write there.
+ * With CPUs reserved for another project (GY-4006) the command starts under `taskset -c`, and a scope
+ * also names them (AllowedCPUs), so everything the run starts keeps off them.
  */
 export function detachedLaunch(directory: string, id: string, command: string, args: string[], containment: RunContainment, confinement: readonly string[] = [], boundSeconds?: number, scopeProperties: readonly string[] = [], stdinFile?: string) {
   if (confinement.length) args = confinedRuntimeArgs(command, args);
@@ -194,9 +197,9 @@ export function detachedLaunch(directory: string, id: string, command: string, a
     + `for grace in 1 2 3 4 5; do kill -0 $$ 2>/dev/null || exit 0; sleep 1; done; kill -KILL -$$ ) & watchdog=$!; ` : '';
   const script = `trap : TERM INT HUP; ${watchdog}if command -v "$0" >/dev/null 2>&1; then ${confined}"$0" "$@" <${stdinFile ? quoted(stdinFile) : '/dev/null'} >${quoted(files.stdout)} 2>${quoted(files.stderr)}; code=$?; `
     + `else printf '%s: command not found\\n' "$0" >${quoted(files.stderr)}; code=spawn; fi; ${watchdog ? 'kill -TERM "$watchdog" 2>/dev/null; ' : ''}printf '%s\\n' "$code" >${quoted(pending)} && mv -f ${quoted(pending)} ${quoted(files.exit)}`;
-  const shell = ['/bin/sh', '-c', script, command, ...args];
+  const shell = [...reservedCpuPrefix(), '/bin/sh', '-c', script, command, ...args];
   const unit = containment === 'systemd' ? `graphyard-run-${id}.scope` : null;
-  return unit ? { file: 'systemd-run', args: ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, ...scopeProperties, '--', ...shell], unit } : { file: shell[0], args: shell.slice(1), unit };
+  return unit ? { file: 'systemd-run', args: ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, ...scopeProperties, ...reservedCpuProperties(), '--', ...shell], unit } : { file: shell[0], args: shell.slice(1), unit };
 }
 
 /** GY-3438: an agent session's launch — a worker, reviewer or producer — whose scope carries the session's CPU and memory share. */

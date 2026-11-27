@@ -16,6 +16,7 @@ import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerEr
 import { TrialHeatError } from './trial-load.js';
 import { harnessModules } from './trial-container.js';
 import { heldJobEnvironment } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 import type { MergeTrialRun } from './executor.js';
 import { stateDirectory } from '../install/layout.js';
 
@@ -145,7 +146,7 @@ export function launchTrialRun(input: { runsRoot: string; spec: TrialRunSpec; sp
   const launch = detachedLaunch(directory, id, command, args, containment, [], selfBoundSeconds(spec.timeoutMs));
   if (!failure) {
     try {
-      const child = (input.spawn ?? spawn)(launch.file, launch.args, { env: runEnvironment(process.env, heldJobEnvironment()), stdio: ['ignore', 'ignore', 'ignore'], detached: true });
+      const child = (input.spawn ?? spawn)(launch.file, launch.args, { env: runEnvironment(process.env, { ...heldJobEnvironment(), ...(setting('RESERVED_CPUS') ? { MAINWORKS_RESERVED_CPUS: setting('RESERVED_CPUS')! } : {}) }), stdio: ['ignore', 'ignore', 'ignore'], detached: true });
       child.on('error', error => { failure = `${command} could not be started: ${error.message}`; });
       child.unref();
       meta = { ...meta, pid: child.pid ?? null, identity: child.pid ? processIdentity(child.pid) : null };
