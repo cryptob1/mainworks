@@ -28,7 +28,6 @@ test('integration:trial-started-after-a-merge-survives-loop-restart — the tria
   const cursor = join(world.root, 'cursor.json');
   await mkdir(world.trials, { recursive: true });
   const first = await world.submit('First', { 'first.txt': 'first\n' });
-  const second = await world.submit('Second', { 'second.txt': 'second\n' });
   let child: ChildProcess | undefined, errors = '';
   const start = () => {
     // Two cores: one trial slot, so the second head waits for the first to land.
@@ -54,6 +53,9 @@ test('integration:trial-started-after-a-merge-survives-loop-restart — the tria
   try {
     start();
     await waitFor(commands, rows => rows.some(row => row.key === first.key && row.step === 'tests'), 'the first trial reaches its tests');
+    // Submitted once the first trial runs, the second head is its own batch and waits for the one slot.
+    const second = await world.submit('Second', { 'second.txt': 'second\n' });
+    await delay(1500);
     assert.ok(!(await commands()).some(row => row.key === second.key), 'the second head waits for the one slot');
     await writeFile(join(world.trials, `release-${first.key}`), '');
     await waitFor(() => ledger(first.id), value => value === 'reconciled', 'the first head lands: ' + errors);
