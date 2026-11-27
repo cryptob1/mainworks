@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { writePnpmWorkspace } from './helpers/pnpm-workspace-fixture.js';
+import { pnpmWorkspaceFiles, writePnpmWorkspace } from './helpers/pnpm-workspace-fixture.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3200: the merge trial installs a pnpm workspace with its frozen lockfile and builds only what
@@ -19,10 +19,7 @@ const run: ChildRun = (command, args, { wrapper: _wrapper, ...options } = {}) =>
   defaultChildRun(command, args, { ...options, ...(options.env ? { env: { ...options.env, npm_config_cache: sharedCache } } : {}) });
 
 async function trialOf(change: Record<string, string>) {
-  const { root } = await gitRepo({ label: 'pnpm-workspace-trial' });
-  writePnpmWorkspace(root);
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { root, head: base } = await gitRepo({ label: 'pnpm-workspace-trial', files: pnpmWorkspaceFiles });
   writePnpmWorkspace(root, change);
   git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'change');
   const head = git(root, 'rev-parse', 'HEAD');

@@ -60,10 +60,8 @@ test('unit:tests/package-manager.test.ts — pnpm install paths: a pnpm checkout
   assert.deepEqual(served, [[...pnpm10, 'install', '--frozen-lockfile']]);
 
   // The trial: installs afresh even though the root holds a node_modules, then builds and tests through pnpm.
-  const { git } = await gitRepo({ root });
-  write(root, { '.gitignore': 'node_modules\n.graphyard\n' }); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  const { git, head: base } = await gitRepo({ root, files: { '.gitignore': 'node_modules\n.graphyard\n' } });
   mkdirSync(join(root, 'node_modules'));
-  const base = git('rev-parse', 'HEAD');
   write(root, { 'apps/one/build.mjs': '// changed\n' }); git('commit', '-q', '-am', 'change');
   const merged = await trialMerge(async args => git(...args), { head: git('rev-parse', 'HEAD'), baseTip: base });
   assert.ok('mergeSha' in merged);
