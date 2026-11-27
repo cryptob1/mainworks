@@ -99,7 +99,7 @@ export interface DaemonEffects {
   /** GY-3743: Mainworks's disk use by kind (Docker images by repository, build cache, worktrees, trial runs, CLI releases), read at most once an hour. */
   diskUseByKind?: () => Promise<DiskKind[]>;
   /** Reclaims Mainworks's own leftovers when free space is below the floor (GY-3122): what it removed, by name. */
-  reclaimDisk?: () => Promise<string[]>;
+  reclaimDisk?: () => Promise<import('./disk-headroom.js').Reclaimed>;
   /**
    * GY-3348: the host's CPU reading — the text of /proc/pressure/cpu and /proc/stat, or null where
    * the pressure file is missing (not Linux), in which case nothing is held. Absent, no reading is
@@ -120,7 +120,8 @@ export interface DaemonEffects {
   /** Stops running trial containers whose checkout is gone or that outlived twice the trial deadline (GY-3186), answering what was stopped. */
   stopOrphanTrials?: () => Promise<string[]>;
   /** Takes back what ended jobs left: owner-gone trial and verification scratch, stopped trial containers with their volumes, and trial build cache older than a day (GY-3188), answering what was removed. */
-  reclaimJobLeftovers?: () => Promise<string[]>;
+  /** Null when the hourly sweep is not due. */
+  reclaimJobLeftovers?: () => Promise<import('./disk-headroom.js').Reclaimed | null>;
   /** Removes the install's CLI release copies nothing uses (GY-3334), answering what went, the bytes freed and the copies left with why. */
   sweepCliReleases?: () => Promise<{ removed: string[]; bytes: number; left: string[] }>;
   /** GY-3553: restamps the served CLI release when its commit stamp names another commit than it holds; what it rewrote, or null. */

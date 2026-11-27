@@ -247,7 +247,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     },
     stopOrphanTrials: () => stopOrphanTrialContainers(run, trialContainerMaxAgeMs(current().run)),
     // GY-3188: hourly, so the builder and Docker are not asked every cycle.
-    reclaimJobLeftovers: async () => { if (Date.now() - leftoversSweptAt < 3_600_000) return []; leftoversSweptAt = Date.now(); return reclaimJobLeftovers(run); },
+    reclaimJobLeftovers: async () => { if (Date.now() - leftoversSweptAt < 3_600_000) return null; leftoversSweptAt = Date.now(); return reclaimJobLeftovers(run); },
     usage: master => collectUsage(root, current(), master),
     // GY-3334: hourly, like the job leftovers: the walk reads /proc and every release copy.
     sweepCliReleases: async () => {
