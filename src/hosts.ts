@@ -216,13 +216,22 @@ export async function localPublicKey(home = homedir()) {
   throw new Error(`No SSH public key in ${join(home, '.ssh')}: create one with ssh-keygen -t ed25519, then run that command again`);
 }
 
-function parseHostProbe(text: string) {
+/** GY-3948: median of whole-degree CPU sensor samples, or null with none. */
+export function medianCelsius(samples: readonly number[]): number | null {
+  if (!samples.length) return null;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid]! : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
+}
+
+export function parseHostProbe(text: string) {
   if (/^(?:graphyard|mainworks)-no-docker$/m.test(text)) return null;
   const number = (pattern: RegExp) => { const value = Number(pattern.exec(text)?.[1]); return Number.isFinite(value) ? value : null; };
+  const tempMedian = number(/^temp-median (\d+)$/m);
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
   const verbs = /^verbs (.*)$/m.exec(text)?.[1]?.split(' ').filter(Boolean) ?? null;
-  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, migrated: /^migrated 1$/m.test(text), compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: temps.length ? Math.max(...temps) : null, stat: cpuStatTotals(text),
+  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, migrated: /^migrated 1$/m.test(text), compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: tempMedian ?? (temps.length ? Math.max(...temps) : null), stat: cpuStatTotals(text),
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };
 }
 

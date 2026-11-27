@@ -27,6 +27,39 @@ export const shardHosts = async () => (await readHosts().catch(() => [])).map(ho
 export const realFreeCores = (reading: HostReading) => Math.max(0, reading.cores - reading.busy - reading.steal * reading.cores);
 /** A host takes shards while it answers and its hottest CPU sensor is under its limit. */
 export const underHeatLimit = (reading: HostReading) => !reading.away && (reading.celsius === null || reading.celsius < reading.limit);
+/** GY-3948: how long the coordinator waits before reading a hot host with free cores a second time. */
+export const heatRereadDelayMs = 10_000;
+
+/**
+ * GY-3948: when a remote host's first smoothed reading is at or over its heat limit and it has
+ * free cores, read it once more after `delayMs` (10 s) before placing a check or shard elsewhere.
+ * A host over the limit on both reads is skipped with its reason naming both values.
+ */
+export async function rereadHotHosts(
+  readings: readonly HostReading[],
+  read: (targets: readonly string[]) => Promise<HostReading[]>,
+  options: { delayMs?: number; eligible?: (reading: HostReading) => boolean; sleep?: (ms: number) => Promise<void>; signal?: AbortSignal } = {},
+): Promise<HostReading[]> {
+  const eligible = options.eligible ?? (() => true);
+  const hot = readings.filter(reading => !reading.away && reading.celsius !== null && reading.celsius >= reading.limit && realFreeCores(reading) > 0 && eligible(reading));
+  if (!hot.length || options.signal?.aborted) return [...readings];
+  const delayMs = options.delayMs ?? heatRereadDelayMs;
+  if (options.sleep) await options.sleep(delayMs);
+  else await new Promise<void>(resolve => {
+    const timer = setTimeout(resolve, delayMs);
+    options.signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+  });
+  if (options.signal?.aborted) return [...readings];
+  const second = new Map((await read(hot.map(entry => entry.name))).map(entry => [entry.name, entry]));
+  return readings.map(first => {
+    const reread = second.get(first.name);
+    if (!reread) return first;
+    if (!reread.away && reread.celsius !== null && reread.celsius >= reread.limit) {
+      return { ...reread, reason: `too hot (${first.celsius}°C, then ${reread.celsius}°C; limit ${reread.limit}°C)` };
+    }
+    return reread;
+  });
+}
 
 /**
  * GY-3419, GY-3522, GY-3612: the words a test file names when it needs what a remote shard lacks —
@@ -660,6 +693,31 @@ export function readRemoteShardRuns(root: string): RemoteShardRun[] {
   try { const runs = JSON.parse(readFileSync(remoteShardRecordPath(root), 'utf8')); return Array.isArray(runs) ? runs : []; } catch { return []; }
 }
 
+/** GY-3948: one check or shard batch placed elsewhere because a ready compute host was over its heat limit. */
+export interface HeatFallbackRecord { kind: 'check' | 'shard'; count: number; at: string; hosts: string[] }
+const heatFallbackRecordPath = (root: string) => join(stateDirectory(root), 'heat-fallbacks.json');
+const heatFallbackRetentionMs = 24 * 60 * 60_000;
+
+export async function recordHeatFallback(root: string, entry: HeatFallbackRecord): Promise<void> {
+  if (entry.count <= 0) return;
+  const path = heatFallbackRecordPath(root);
+  const cutoff = Date.now() - heatFallbackRetentionMs;
+  const kept = readHeatFallbacks(root).filter(item => Date.parse(item.at) >= cutoff);
+  kept.push(entry);
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.${randomUUID().slice(0, 8)}`;
+  await writeFile(temporary, `${JSON.stringify(kept)}\n`);
+  await rename(temporary, path);
+}
+export function readHeatFallbacks(root: string): HeatFallbackRecord[] {
+  try { const items = JSON.parse(readFileSync(heatFallbackRecordPath(root), 'utf8')); return Array.isArray(items) ? items : []; } catch { return []; }
+}
+/** GY-3948: how many checks or shards were placed elsewhere for heat in the last hour. */
+export function heatFallbacksInLastHour(entries: readonly HeatFallbackRecord[], now = Date.now()): number {
+  const cutoff = now - 60 * 60_000;
+  return entries.reduce((sum, entry) => Date.parse(entry.at) >= cutoff && Date.parse(entry.at) <= now ? sum + entry.count : sum, 0);
+}
+
 /**
  * Master status's remote shard line over the last 20 trials, or null before any trial ran with hosts.
  * GY-3517: given the loop's latest probes, each host's state is that probe's, with when it was read,
@@ -760,7 +818,8 @@ async function catalogImage(input: { root: string; commit: string; image: string
 export async function catalogHosts(input: { root: string; commit: string; run: ChildRun; deadline: number }) {
   const targets = await shardHosts();
   const transport = shardSshSession(input.run);
-  const readings = targets.length ? (await readShardHosts(targets, input.run, availableParallelism(), transport)).slice(1) : [];
+  const initial = targets.length ? (await readShardHosts(targets, input.run, availableParallelism(), transport)).slice(1) : [];
+  const readings = await rereadHotHosts(initial, async named => (await readShardHosts(named, input.run, availableParallelism(), transport)).slice(1));
   const image = trialImage();
   const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, transport, hosts: readings,
     warm: () => catalogImage({ root: input.root, commit: input.commit, image, run: input.run, deadline: input.deadline }) });

@@ -27,7 +27,7 @@ import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResu
 import { shellQuote } from '../shell-quote.js';
 import { recordTestSelection, selectionCounts } from './test-selection.js';
 import { supportsCheckImages } from '../host-shim.js';
-import { HostBusyError, HostDroppedError, readShardHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
+import { HostBusyError, HostDroppedError, readShardHosts, recordHeatFallback, rereadHotHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
@@ -875,7 +875,7 @@ export interface RunTrialInput {
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `mainworks check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `mainworks host add` recorded unless a test names others — and how they are read. */
-  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession };
+  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession; heatRereadMs?: number };
   /** GY-3704: a check with services ran on `host`, or fell back from it to this machine for `fallback` (at most 500 characters). */
   onHostCheck?: (entry: { check: string; host: string; fallback?: string }) => void;
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
@@ -1586,11 +1586,21 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const transport = input.remote?.transport ?? shardSshSession(run);
     let session: ReturnType<typeof remoteShardSession> | null = null;
     try {
-      const readings = (await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cpu.cores(), shared)))(hosts, transport)).slice(1);
+      const readHosts = (named: readonly string[]) => (input.remote?.read ?? ((targets, shared) => readShardHosts(targets, run, cpu.cores(), shared)))(named, transport);
+      const initial = (await readHosts(hosts)).slice(1);
+      const readings = await rereadHotHosts(initial, async named => (await readHosts(named)).slice(1), {
+        delayMs: input.remote?.heatRereadMs,
+        eligible: reading => Boolean(reading.compose),
+        signal: input.signal,
+      });
       session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings });
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose)
         .sort((a, b) => Number(supportsCheckImages(b.verbs)) - Number(supportsCheckImages(a.verbs)) || realFreeCores(b) - realFreeCores(a))[0];
-      if (!host) return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : reading.compose ? 'too hot' : 'no Docker Compose plugin: install docker-compose-plugin there'}`).join('; ')})`, readings.map(reading => reading.name));
+      if (!host) {
+        const hotHosts = readings.filter(reading => !reading.away && reading.compose && !underHeatLimit(reading)).map(reading => reading.name);
+        if (hotHosts.length) await recordHeatFallback(input.root, { kind: 'check', count: 1, at: new Date().toISOString(), hosts: hotHosts }).catch(() => {});
+        return here(`no host is ready (${readings.map(reading => `${reading.name}: ${reading.away ? reading.reason ?? 'away' : !reading.compose ? 'no Docker Compose plugin: install docker-compose-plugin there' : reading.reason ?? 'too hot'}`).join('; ')})`, readings.map(reading => reading.name));
+      }
       enterStep(`tests: ${check.check} on ${host.name}`);
       const probe = tcpAcceptProbe(check.services!.map(({ service, port }) => ({ host: service, port })), 120_000);
       const ended = await session.check(host.name, { file: check.services![0]!.file, services: check.services!.map(({ service, port }) => ({ service, port })), cpus: Math.max(1, host.cores),
@@ -1600,7 +1610,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       log.push(`[remote] check ${check.check} ran on ${host.name}: ${ended.steps.map(({ step, ms }) => `${step} ${stepSeconds(ms)}`).join(', ')}`, `$ [${host.name}] ${check.argv.join(' ')}\n${ended.out}`);
       return { ok: ended.status === 0, out: ended.out, status: ended.status, signal: null, cause: undefined };
     } catch (error) {
-      if (error instanceof HostDroppedError) return here(error.message, [error.host]);
+      if (error instanceof HostDroppedError) {
+        if (/CPU sensor|too hot/i.test(error.reason)) await recordHeatFallback(input.root, { kind: 'check', count: 1, at: new Date().toISOString(), hosts: [error.host] }).catch(() => {});
+        return here(error.message, [error.host]);
+      }
       if ((error as { timedOut?: boolean }).timedOut) throw new TrialTimeoutError('tests', Math.max(0, now() - startedAt), tail());
       throw error;
     } finally { await (session ? session.close() : transport.close()); }
@@ -1800,7 +1813,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const hosts = input.remote?.hosts ?? await shardHosts();
     // GY-3534: one SSH transport carries the probe and every shard, over a few multiplexed connections per host.
     const transport = hosts.length ? shardSshSession(run) : undefined;
-    const readings = hosts.length ? await (input.remote?.read ?? ((named, shared) => readShardHosts(named, run, cores, shared)))(hosts, transport!) : [];
+    const readHosts = (named: readonly string[]) => (input.remote?.read ?? ((targets, shared) => readShardHosts(targets, run, cores, shared)))(named, transport!);
+    const initialReadings = hosts.length ? await readHosts(hosts) : [];
+    const readings = hosts.length
+      ? [initialReadings[0]!, ...(await rereadHotHosts(initialReadings.slice(1), async named => (await readHosts(named)).slice(1), { delayMs: input.remote?.heatRereadMs, signal: input.signal }))]
+      : [];
     const remoteLanes = readings.slice(1).filter(underHeatLimit).reduce((sum, reading) => sum + Math.floor(realFreeCores(reading)), 0);
     // GY-3419, GY-3612: test files naming Docker or host-pinned confinement stay local-only;
     // database and browser tests run on remote shards (browser tests stay local when the trial image
@@ -1910,9 +1927,19 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
           : {};
         input.onMetrics({ shardsPerHost, hostTemperatures, fileDurations });
       }
-      if (hosts.length) await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
-        queuedWhileIdle: placement.queuedWhileIdle, host: local.name, celsius: local.reading.celsius,
-        hosts: readings.map(reading => ({ name: reading.name, away: reading.away || placement.dropped.includes(reading.name), reason: dropped.get(reading.name)?.reason ?? reading.reason, celsius: reading.celsius, freeCores: Math.round(realFreeCores(reading) * 10) / 10 })) }).catch(() => {});
+      if (hosts.length) {
+        const hotHosts = [
+          ...readings.slice(1).filter(reading => !reading.away && !underHeatLimit(reading)).map(reading => reading.name),
+          ...[...dropped.entries()].filter(([, error]) => /CPU sensor|too hot/i.test(error.reason)).map(([name]) => name),
+        ];
+        if (hotHosts.length) {
+          const fallbackShards = placement.ran.filter((name, index) => name === local.name && !pinned[index]).length;
+          if (fallbackShards > 0) await recordHeatFallback(input.root, { kind: 'shard', count: fallbackShards, at: new Date().toISOString(), hosts: [...new Set(hotHosts)] }).catch(() => {});
+        }
+        await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
+          queuedWhileIdle: placement.queuedWhileIdle, host: local.name, celsius: local.reading.celsius,
+          hosts: readings.map(reading => ({ name: reading.name, away: reading.away || placement.dropped.includes(reading.name), reason: dropped.get(reading.name)?.reason ?? reading.reason, celsius: reading.celsius, freeCores: Math.round(realFreeCores(reading) * 10) / 10 })) }).catch(() => {});
+      }
     } finally { await release(); await session?.close(); }
     const ran = settledShards.filter(shard => shard !== undefined);
     for (const shard of ran) log.push(...shard.entries);

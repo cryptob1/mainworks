@@ -28,7 +28,7 @@ import { servingReport, controlPlaneRecordPath, controlPlaneSummary, controlPlan
 import { codeSizeSummary, diagnosticsAttention, gateRecordPath, gateHoldAttention, gateSummary, readGateRecord } from '../batch-gate.js';
 import { thisWeekReport } from '../project-memory.js';
 import { trialTestGateStatus } from '../merge-writer/trial.js';
-import { connectionResetAttention, outdatedShimAttention, readRemoteShardRuns, remoteShardSummary, zeroRemoteShareAttention } from '../merge-writer/remote-shards.js';
+import { connectionResetAttention, heatFallbacksInLastHour, outdatedShimAttention, readHeatFallbacks, readRemoteShardRuns, remoteShardSummary, zeroRemoteShareAttention } from '../merge-writer/remote-shards.js';
 import { attemptLabel, readAttemptLaunch, type AttemptLaunch } from '../master/session-resume.js';
 import { plainStage, waitingReason } from '../model/plain-stage.js';
 import { signoffAttention, stalledDelivery, stalledDeliveryAction } from '../daemon/master-stalled-delivery.js';
@@ -300,7 +300,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     heavyDrain: drain,
     // GY-3447: who holds the host's heavy-job slots (trials, gates, whole suites, deploy builds) and the limit they share.
     // GY-3528: the budget across this machine and every ready host, and each machine's load, one line each; GY-3704: with its last check fallback.
-    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: hostFallbackLines(root), holders: slotHolders(heavyJobsDirectory(), await liveSlots(heavyJobsDirectory())) },
+    heavyJobs: { limit: heavyJobLimit(heavyJobsDirectory()), budget: budgetLine(heavyJobBudget(heavyJobsDirectory()).machines), machines: hostFallbackLines(root), holders: slotHolders(heavyJobsDirectory(), await liveSlots(heavyJobsDirectory())), heatFallbacksLastHour: heatFallbacksInLastHour(readHeatFallbacks(root), now) },
     // GY-3694: heads waiting for or running a merge trial against twice the available trial slots (local heavy-job limit plus ready hosts).
     testQueue: testQueueStatus(open, state?.mergeWriter, state?.hosts, now),
     // GY-3446: the temporary limits standing now, each with the time it reverts to the default; null once expired or never set.
