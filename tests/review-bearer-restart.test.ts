@@ -7,6 +7,7 @@ import { databaseUrl } from './helpers/postgres.js';
 import { Store } from '../src/store.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { api } from './helpers/api.js';
 
 const H = 'a'.repeat(40), B = 'b'.repeat(40), M = 'c'.repeat(40);
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -30,10 +31,7 @@ test('integration:review-bearer-restart — original launch bearers survive a re
     const [ready] = await once(child, 'message'); url = ready.url; return ready.pid as number;
   }
   async function stop() { const exited = once(child!, 'exit'); child!.send('stop'); await exited; child = undefined; }
-  async function post(token: string, path: string, body: unknown) {
-    const response = await fetch(`${url}/api/work/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    return { status: response.status, body: await response.json() as any };
-  }
+  const post = (token: string, path: string, body: unknown) => api(url, token, `work/${path}`, { body });
   const read = async (work: Work) => (await store!.pool.query('SELECT document FROM work_items WHERE id=$1', [work.id])).rows[0].document as Work;
   const put = async (work: Work) => store!.pool.query('INSERT INTO work_items(id,document) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET document=$2', [work.id, JSON.stringify(work)]);
   const launch = (token: string, extra = {}) => ({ reviewer: 'reviewer', head: H, baseTip: B, tokenHash: hash(token), expiresAt: expiresAt(), ...extra });

@@ -1,6 +1,5 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +18,7 @@ import { smokeRegistryAccount } from '../src/runner/roles.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { shellQuote } from '../src/shell-quote.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3829: a Pi account set up against an OpenCode account reads its Z.AI key from the file
 // OpenCode login actually writes, both on live account check and on role set; when the key command
@@ -168,14 +168,7 @@ test('e2e:pi-key-from-opencode-login — on a running test install a Pi account 
   const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-pi-key'), credentials));
   servers.push(close);
 
-  const apiCall = async (bearer: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined
-      ? { headers: { Authorization: `Bearer ${bearer}` } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const parsed = await response.json() as any;
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(parsed)}`);
-    return parsed;
-  };
+  const apiCall = (bearer: string, path: string, body?: unknown) => apiOk(url, bearer, path, { body });
 
   const piRuntime = structuredClone(proposedRuntimes.find(entry => entry.name === 'pi')!);
   await apiCall(token(operator), 'agent-registry/apply', {

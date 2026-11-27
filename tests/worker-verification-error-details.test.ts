@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -20,6 +19,7 @@ import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3506: a failing confined verification step must preserve its exit status/signal and masked
@@ -99,7 +99,7 @@ test('e2e:worker-verification-error-details — forced runner failure surfaces e
   const { url: serverUrl, close } = await listen(server(engine, [worker, coordinator]));
   t.after(close);
   const url = serverUrl;
-  const mutate = async (path: string, body: unknown) => (await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinator.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) })).json();
+  const mutate = async (path: string, body: unknown) => (await api(url, coordinator.token, path, { body })).body;
 
   let mode: 'crash' | 'proof-fail' | 'proof-pass' = 'crash';
   const verify = async (_root: string, item: Work, input: WorkerVerificationInput, _base: string, _parent?: string, progress: (line: string) => void = () => {}): Promise<WorkerVerificationResult> => {

@@ -1,6 +1,5 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createElement } from 'react';
@@ -15,6 +14,7 @@ import type { Principal } from '../src/model.js';
 import { caseDirectory, loadCases, syncCases } from '../src/e2e/case.js';
 import { ensureShippedScenarios } from '../src/scenarios.js';
 import { TestsView } from '../web/pages/tests.js';
+import { api } from './helpers/api.js';
 
 // GY-2964: a managed repository's Tests page lists that repository's own end-to-end cases, never
 // Mainworks's seeded built-in scenarios. The built-in scenario revisions ship in code and are
@@ -42,12 +42,9 @@ before(async () => {
 after(async () => { await gameClose?.(); await gyClose?.(); for (const store of [gameStore, gyStore]) if (store) await store.close(); });
 
 /** The CLI's authenticated request helper, against one control plane. */
-const apiFor = (url: string) => async (path: string, data?: unknown, key: string = randomUUID()) => {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(operator.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data) });
-  const body = await response.json() as any;
-  if (!response.ok) throw Object.assign(new Error(body?.error ?? `HTTP ${response.status}`), { status: response.status });
+const apiFor = (url: string) => async (path: string, data?: unknown, key?: string) => {
+  const { status, body } = await api(url, tokens.get(operator.id)!, path, { body: data, key });
+  if (status >= 300) throw Object.assign(new Error(body?.error ?? `HTTP ${status}`), { status });
   return body;
 };
 // Read the bound URLs at call time: the servers listen in `before`.

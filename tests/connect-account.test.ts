@@ -18,6 +18,7 @@ import type { Principal } from '../src/model.js';
 import { sealForHost } from '../web/seal.js';
 import { ConnectCard, default as FleetPage, type ConnectView } from '../web/pages/fleet.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const coordinator: Principal = { id: 'master', role: 'coordinator' };
@@ -90,11 +91,8 @@ before(async () => {
 
 after(async () => { process.env.PATH = originalPath; await close?.(); if (store) await store.close(); });
 
-async function call(path: string, actor: Principal, data?: unknown) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
-const ok = async (path: string, actor: Principal, data?: unknown) => { const result = await call(path, actor, data); assert.equal(result.status, 200, `${path}: ${JSON.stringify(result.body)}`); return result.body; };
+const call = (path: string, actor: Principal, data?: unknown) => api(url, tokens.get(actor.id)!, path, { body: data });
+const ok = (path: string, actor: Principal, data?: unknown) => apiOk(url, tokens.get(actor.id)!, path, { body: data });
 
 /** The host worker's configuration and injectables, pointed at the test control plane. */
 const workerOptions = (overrides: Record<string, unknown> = {}) => ({

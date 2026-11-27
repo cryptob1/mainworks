@@ -10,6 +10,7 @@ import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -24,12 +25,8 @@ const token = (id: string) => credentials.find(credential => credential.id === i
 const loopId = 'release-recorded-operator';
 let store: Store, url: string, agentToken: string;
 
-const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...(path === 'work-snapshot' ? { [coordinationViewHeader]: 'coordination' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const parsed = await response.json() as any;
-  assert.equal(response.status, 200, JSON.stringify(parsed));
-  return parsed;
-};
+const call = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) =>
+  apiOk(url, bearer, path, { method, body, headers: path === 'work-snapshot' ? { [coordinationViewHeader]: 'coordination' } : {} });
 const file = (title: string, extra: Record<string, unknown> = {}) => call(token(operator.id), 'POST', 'work', { why: 'w', simplest: 's',
   title, type: 'chore', description: 'The first description', criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:release-recorded-hold-edit', 'e2e:fixture'] }], policy: { checks: ['test'], review: true }, ...extra }) as Promise<Work>;
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;

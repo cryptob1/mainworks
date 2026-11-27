@@ -15,6 +15,7 @@ import { lockedWork } from '../src/store/locked-read.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { api } from './helpers/api.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -34,14 +35,8 @@ const tokenOf = (principal: Principal) => credentials.find(credential => credent
 let store: Store, url: string;
 useTestStore('human-proof', { credentials: credentials }, ctx => { ({ store, url } = ctx); });
 
-async function post(principal: Principal, path: string, body: unknown, key = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${tokenOf(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as any };
-}
-const rows = async (id: string) => {
-  const response = await fetch(`${url}/api/human-requests`, { headers: { Authorization: `Bearer ${tokenOf(human)}` } });
-  return ((await response.json() as { requests: HumanRequestRow[] }).requests).filter(row => row.id === id);
-};
+const post = (principal: Principal, path: string, body: unknown, key?: string) => api(url, tokenOf(principal), path, { method: 'POST', body, key });
+const rows = async (id: string) => ((await api(url, tokenOf(human), 'human-requests')).body.requests as HumanRequestRow[]).filter(row => row.id === id);
 const stored = async (id: string) => {
   const work = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
   return work;

@@ -23,6 +23,7 @@ import {
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -45,16 +46,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (path: string, data?: unknown, key: string = randomUUID()) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(operator.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
-  const body = await response.json() as any;
-  if (!response.ok) throw Object.assign(new Error(body?.error ?? `HTTP ${response.status}`), { status: response.status });
-  return body;
-};
+const api = (path: string, data?: unknown, key?: string) => apiOk(url, tokens.get(operator.id)!, path, { body: data, key });
 
 test('unit:scenario-capacity-limit-redispatch-registered — revision 1 ships in src/scenarios.ts; listing materializes it; create, sync and run-recording work on a fresh install without a prior sync', async () => {
   const id = capacityLimitRedispatchScenario;

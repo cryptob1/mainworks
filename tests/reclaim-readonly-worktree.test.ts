@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { chmod, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -12,6 +11,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3226: an ended attempt's worktree holding a read-only (0555) directory tree is removed by the
 // loop's reclaim step; a removal that fails is tried again on the next cycle; a symlink out of the
@@ -25,13 +25,7 @@ const credentials = [operator, coordinator, worker].map(principal => ({ ...princ
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
 let url: string, install: string;
-const ok = async (principal: Principal, path: string, body: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', body: JSON.stringify(body),
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() } });
-  const text = await response.text();
-  assert.equal(response.status, 200, `${path}: ${text}`);
-  return JSON.parse(text);
-};
+const ok = (principal: Principal, path: string, body: unknown) => apiOk(url, token(principal), path, { method: 'POST', body });
 const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 useTestStore('reclaim-readonly-worktree', { leaseSeconds: 1, repository: 'owner/reclaim-readonly', credentials: credentials }, async ctx => {

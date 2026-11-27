@@ -10,6 +10,7 @@ import { caseResult, flakiness, scenarioOf, type ScenarioRun } from '../src/mode
 
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api } from './helpers/api.js';
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 // Time-bomb allowance (GY-1694): artifact createdAt 2026-09-01 is provenance fixture nothing dates against the clock; new Date()/Date.now() stamp live observations and set request deadlines relative to the wall clock.
@@ -32,12 +33,7 @@ let pullRequest = 300, cases = 0;
 
 useTestStore('test-case-repository', { repository: repository, credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ store, engine, url } = ctx); });
 
-async function call(path: string, actor: Principal, data?: unknown, key = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
+const call = (path: string, actor: Principal, data?: unknown, key?: string) => api(url, tokens.get(actor.id)!, path, { body: data, key });
 async function defineCase(id = `booking-sms-${++cases}`) {
   const defined = await call('scenarios', operator, { id, title: `Booking ${id} sends an SMS`, purpose: 'A confirmed booking texts the customer', steps: ['Book'], expected: ['An SMS arrives'], environment: 'staging', runner: 'Playwright', testPath: `tests/e2e/${id}.spec.ts` });
   assert.equal(defined.status, 200, JSON.stringify(defined.body));

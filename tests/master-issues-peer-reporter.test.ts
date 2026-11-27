@@ -20,6 +20,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import type { Principal } from '../src/model.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3385: `principal add` needs a host write the confined Master session is refused (EROFS on the
 // install's apply lock), so no install could peer. `master peer issue --root DIR` mints the peer's
@@ -71,12 +72,7 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
     const { url, close: closeServer } = await listen(server(engine, [{ ...coordinator, token: token(coordinator) }]));
     let running = true;
     closers.push(async () => { if (!running) return; running = false; await closeServer(); await store.close(); });
-    const api = async (path: string, body?: unknown, key?: string) => {
-      const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key ?? crypto.randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-      const result = await response.json() as any;
-      if (!response.ok) throw new Error(JSON.stringify(result));
-      return result;
-    };
+    const api = (path: string, body?: unknown, key?: string) => apiOk(url, token(coordinator), path, { body, key });
     const root = await temporaryDirectory(`peer-issue-${name}`, scratch);
     (await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } })).git('remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
     await setupMaster(root, { url, token: token(coordinator), cliPath: cli, hostId: 'fixture-host', herdrWorkspace: `w-${name}`,

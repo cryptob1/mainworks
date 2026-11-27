@@ -27,6 +27,7 @@ import { endRun } from '../src/runner/registry.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { apiOk } from './helpers/api.js';
 const dropRun = (name: string) => endRun(name, { ok: false, reason: 'exit', detail: 'dropped', startedAt: new Date().toISOString(), endedAt: new Date().toISOString() } as any);
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -147,16 +148,7 @@ test('unit:review-launch-skips-spent-accounts — session never goes live after 
   const fixture = registryFixture(config.hostId!, ['claude', 'codex'], ['reviewer'], 4);
   const item = await insertWork(makeReviewItem('GY-9502', 'req-9502', at()));
   const chosenAccounts: string[] = [];
-  const mutate = async (path: string, body: unknown) => {
-    const res = await fetch(`${url}/api/${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      body: JSON.stringify(body),
-    });
-    const parsed = await res.json();
-    if (!res.ok) throw new Error(JSON.stringify(parsed));
-    return parsed;
-  };
+  const mutate = (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body });
   const loadItem = async () => (await store.pool.query('SELECT document FROM work_items WHERE id = $1', [item.id])).rows[0].document as Work;
   const baseEffects = dispatchEffects(root, () => config, {
     snapshot: async () => ({ work: [await loadItem()], now: at() }),

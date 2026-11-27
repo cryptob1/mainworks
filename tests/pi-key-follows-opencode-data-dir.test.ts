@@ -1,6 +1,5 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -20,6 +19,7 @@ import { registryHeadlessLaunch, smokeRegistryAccount } from '../src/runner/role
 import { registryCommand } from '../src/cli/master-registry.js';
 import { shellQuote } from '../src/shell-quote.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3832: a Pi account's key command names <home>/opencode/auth.json, and the OpenCode runtime may
 // keep the login elsewhere: under the XDG_DATA_HOME its launch sets, in auth.json or in OpenCode 2.x's opencode.db.
@@ -124,14 +124,7 @@ test('e2e:pi-key-follows-opencode-data-dir — on a running test install a Pi ac
   const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-pi-key'), credentials));
   servers.push(close);
 
-  const apiCall = async (bearer: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined
-      ? { headers: { Authorization: `Bearer ${bearer}` } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const parsed = await response.json() as any;
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(parsed)}`);
-    return parsed;
-  };
+  const apiCall = (bearer: string, path: string, body?: unknown) => apiOk(url, bearer, path, { body });
 
   const piRuntime = structuredClone(proposedRuntimes.find(entry => entry.name === 'pi')!);
   await apiCall(token(operator), 'agent-registry/apply', {

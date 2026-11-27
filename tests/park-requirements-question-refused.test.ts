@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { Engine } from '../src/engine.js';
@@ -12,6 +11,7 @@ import { routedParkCommand } from '../src/cli/session-commands.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1816: GY-1814's release-soak fix sat parked under goals and priorities on a question that was
@@ -34,10 +34,7 @@ let store: Store, engine: Engine, url: string;
 
 useTestStore('park-requirements-question-refused', { repository: repository, credentials: credentials }, ctx => { ({ store, engine, url } = ctx); });
 
-const request = async (credential: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() as any };
-};
+const request = (credential: string, method: 'GET' | 'POST', path: string, body?: unknown) => api(url, credential, path, { method, body });
 const reload = async (workId: string) => (await store.list()).find(item => item.id === workId)!;
 /** A claimed item to park on: created, readied and claimed under the worker's own credential. */
 const claimed = (n: number): Promise<Work> => lifecycle(engine, operator, { type: 'chore',  title: `Requirements question ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['unit:behaves', 'e2e:fixture'] }] }, { claim: worker });

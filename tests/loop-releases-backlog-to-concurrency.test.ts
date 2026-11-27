@@ -13,6 +13,7 @@ import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -34,19 +35,8 @@ let agentToken: string;
 
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string;
 
-const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const result = await call(bearer, method, path, body, headers);
-  assert.equal(result.status, 200, JSON.stringify(result.body));
-  return result.body;
-};
+const call = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => api(url, bearer, path, { method, body, headers });
+const ok = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => apiOk(url, bearer, path, { method, body, headers });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const events = async (id: string) => (await store.pool.query('SELECT kind, actor FROM events WHERE work_id=$1', [id])).rows as { kind: string; actor: string }[];
 /** One backlog item as the operator filed it, older than every item filed after it. */

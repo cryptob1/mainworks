@@ -21,6 +21,7 @@ import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -38,15 +39,9 @@ const token = (id: string) => credentials.find(credential => credential.id === i
 const loopId = 'hold-and-message-operator';
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, root: string, checkout: string, config: MasterConfig;
 
-const request = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...(path === 'work-snapshot' ? { [coordinationViewHeader]: 'coordination' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() as any };
-};
-const call = async (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const { status, body: parsed } = await request(bearer, method, path, body);
-  assert.equal(status, 200, JSON.stringify(parsed));
-  return parsed;
-};
+const options = (method: string, path: string, body?: unknown) => ({ method, body, headers: path === 'work-snapshot' ? { [coordinationViewHeader]: 'coordination' } : {} as Record<string, string> });
+const request = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => api(url, bearer, path, options(method, path, body));
+const call = (bearer: string, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, bearer, path, options(method, path, body));
 const reload = async (id: string): Promise<Work> => call(token(operator.id), 'GET', `work/${id}`);
 /** The real `mainworks master` subcommand, authenticated as the loop's operator-agent identity. */
 const master = (id: string, ...args: string[]) => runAutonomyCommand(checkout, config, id, args, {

@@ -31,6 +31,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { until } from './helpers/until.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3331: a product reviewer that cannot reach the app records could not run — never changes
 // requested. The launch hands the session the connection a worker's gets plus a browser tool; a
@@ -195,10 +196,7 @@ test('e2e:product-review-environment — a reviewer that reports it could not re
   const next = runtime(approve(headA));
   const effects = dispatchEffects(root, await loadMasterConfig(root), {
     snapshot: async () => ({ work: [await stored(work.id)], now: now() }),
-    mutate: async (path: string, body: unknown) => {
-      const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-      const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
-    },
+    mutate: (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body }),
     run, headless: next.exec,
   });
   effects.inventory = async () => headlessInventory();

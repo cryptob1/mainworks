@@ -1,6 +1,5 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -18,6 +17,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { until } from './helpers/until.js';
+import { api as request } from './helpers/api.js';
 
 // Require pre-merge review for the fixture's changed source, just as this sensitive fix does.
 setRepositoryPolicy({ ...repositoryPolicy(), risk: { sensitive: [{ glob: 'app.js', rule: 'fixture requires independent review' }], declared: true }, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -49,12 +49,9 @@ test('integration:restart-required', () => assert.equal(answer, 42));
   t.after(close);
   const url = serverUrl;
   const api = async (path: string, body?: unknown, token = host.token) => {
-    const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(result)}`);
-    return result;
+    const result = await request(url, token, path, { body });
+    if (result.status >= 300) throw new Error(`${result.status}: ${JSON.stringify(result.body)}`);
+    return result.body;
   };
   const start = () => api(`work/${work.id}/worker-verification`, { head, epoch: 1, mode: 'verify' }, worker.token).then(value => ({ value, error: null }), error => ({ value: null, error }));
   const pending = async (token = host.token) => (await api('work-snapshot', undefined, token)).workerVerifications;

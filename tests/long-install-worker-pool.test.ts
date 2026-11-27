@@ -29,6 +29,7 @@ import { sessionNameRefusal } from '../src/session-name.js';
 import { Store } from '../src/store.js';
 import HumanRequestsPage from '../web/pages/human-requests.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3299: hwd-backend's install (inspecthoa-hwd-backend) allows 13 workers — 13 accounts × concurrency 1 —
 // but growWorkerPool named the second profile's session inspecthoa-hwd-backend-claude-1-2, 33 characters,
@@ -69,12 +70,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const result = await response.json() as any;
-  assert.ok(response.ok, `${method} ${path}: ${JSON.stringify(result)}`);
-  return result;
-};
+const api = (method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => apiOk(url, token(coordinator), path, { method, body, headers });
 const snapshot = () => api('GET', 'work-snapshot') as Promise<{ work: Work[]; now: string }>;
 const status = async () => masterStatusReport(root, await loadMasterConfig(root), path => api('GET', path), async () => { throw new Error('no git in the fixture'); });
 /** The dashboard's Needs you page after the loop's read carries its standing growth failure, as `master run` sends it. */

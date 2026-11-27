@@ -15,6 +15,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3725: flow numbers measure merge-to-live time (median, p90, samples and oldest merged change
 // not yet serving) as the 'live' station, joining each merge with the first serving deploy record
@@ -47,17 +48,7 @@ after(async () => {
   else process.env.GRAPHYARD_REPOSITORY_ROOT = previousRoot;
 });
 
-const call = async (token: string, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, {
-    method: body ? 'POST' : 'GET',
-    signal: AbortSignal.timeout(30_000),
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  if (!response.ok) throw Object.assign(new Error(text), { status: response.status });
-  return JSON.parse(text);
-};
+const call = (token: string, path: string, body?: unknown) => apiOk(url, token, path, { body, signal: AbortSignal.timeout(30_000) });
 const masterApi = (path: string) => call(coordinatorToken, path);
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
