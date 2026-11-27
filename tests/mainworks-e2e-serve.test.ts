@@ -99,10 +99,18 @@ test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command
       const file = `e2e/cases/${id}.json`;
       return { file, definition: parseCase(file, readFileSync(join(checkout, file), 'utf8')) };
     });
-    let report: E2eReport | null = null;
-    const core = projectCaseSuite(checkout, token, { cases, select: () => true,
-      withholdSecrets: true, artifactsDirectory: join(scratch, 'artifacts'), signal: AbortSignal.timeout(180_000), report: value => { report = value; } })
-      .run(url.origin, null);
+    // GY-4045: the cases' command steps run whole test files and need nothing an earlier step captured,
+    // so each runs as its own part beside the case's other steps and the other cases; one after another
+    // they were 20 s of create-work-item alone. Every step of every case still runs and must pass.
+    const parts = cases.flatMap(({ file, definition }) => {
+      const others = definition.steps.filter(step => step.kind !== 'command');
+      const groups = [...(others.length ? [others] : []), ...definition.steps.filter(step => step.kind === 'command').map(step => [step])];
+      return groups.map(steps => ({ file, definition: { ...definition, steps } }));
+    });
+    const outcomes: E2eReport['cases'] = [];
+    const core = Promise.all(parts.map((part, index) => projectCaseSuite(checkout, token, { cases: [part], select: () => true,
+      withholdSecrets: true, artifactsDirectory: join(scratch, 'artifacts', String(index)), signal: AbortSignal.timeout(180_000), report: value => { outcomes.push(...value.cases); } })
+      .run(url.origin, null)));
 
     // GY-3038: the same served head must actually deliver to its scratch bare origin. A push
     // failure after a passing build/test trial must fail this case, never manufacture delivery.
@@ -132,8 +140,9 @@ test('unit:mainworks-repo-serves-its-head-for-e2e — the declared serve command
     // runs beside the core cases instead of after them.
     await Promise.all([core, delivery]);
     for (const id of ids) {
-      const outcome: E2eReport['cases'][number] | undefined = (report as E2eReport | null)?.cases.find(entry => entry.id === id);
-      assert.equal(outcome?.verdict, 'passed', `${id}: ${JSON.stringify(outcome?.failingStep ?? outcome)}`);
+      const ran = outcomes.filter(entry => entry.id === id);
+      assert.equal(ran.length, parts.filter(part => part.definition.id === id).length, `${id}: every part reported`);
+      for (const outcome of ran) assert.equal(outcome.verdict, 'passed', `${id}: ${JSON.stringify(outcome.failingStep ?? outcome)}`);
     }
 
 
