@@ -147,7 +147,7 @@ export const sessionIdleMs = 30 * 60_000;
 /** CPU a session's processes must use between two looks to count as working; an idle timer uses far less (GY-4017). */
 export const sessionCpuActiveMs = 50;
 
-/** CPU milliseconds used so far by the session rooted at PID: its graphyard systemd scope's cpu.stat less this supervisor's own share, or its process tree's times. */
+/** CPU milliseconds used so far by the session rooted at PID: its own systemd scope's cpu.stat less this supervisor's own share, or its process tree's times. */
 export function sessionCpuMs(pid: number | undefined): number {
   if (!pid || process.platform !== 'linux') return 0;
   try {
