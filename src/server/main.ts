@@ -1,4 +1,5 @@
 import { once } from 'node:events';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Store } from '../store.js';
@@ -190,8 +191,9 @@ export const observationConcurrency = (poolMax = defaultDatabasePoolSize) => obs
  * Every head is observed from the checkout (the control plane is the only merge writer), and GitHub
  * is not asked.
  */
-export async function observationWorkers(engine: Engine, concurrency: number, stopped: () => boolean = () => false, idleMs = 1000): Promise<void> {
-  const idle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export async function observationWorkers(engine: Engine, concurrency: number, stopped: () => boolean = () => false, idleMs = 1000, signal?: AbortSignal): Promise<void> {
+  // A stop ends the idle wait at once (GY-4015): each server close used to wait out up to a second here.
+  const idle = (ms: number) => sleep(ms, undefined, { signal }).catch(() => {});
   const worker = async () => {
     while (!stopped()) {
       let claimed = false;
@@ -206,9 +208,10 @@ export async function observationWorkers(engine: Engine, concurrency: number, st
 /** Start the observation workers for the process's lifetime; `stop` resolves once each has finished its current job. */
 export function startObservationWorkers(engine: Engine, concurrency = observationConcurrency(engine.store.pool.options.max)) {
   let stopped = false;
-  const done = observationWorkers(engine, concurrency, () => stopped)
+  const stopping = new AbortController();
+  const done = observationWorkers(engine, concurrency, () => stopped, undefined, stopping.signal)
     .catch(error => console.error('observation workers stopped', error instanceof Error ? error.message : 'unknown'));
-  return { concurrency, stop: () => { stopped = true; return done; } };
+  return { concurrency, stop: () => { stopped = true; stopping.abort(); return done; } };
 }
 
 /**

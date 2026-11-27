@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { remoteWorkerRuns, startHeadlessWorker } from '../src/headless-session.js';
+import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { setHostSessions } from '../src/hosts.js';
 import { remoteSessionHost } from '../src/remote-session.js';
 import { clearRuns } from '../src/runner/registry.js';
@@ -70,12 +71,15 @@ const exec = (command: string, args: string[], options: { cwd: string; env: Reco
   child.on('close', code => code === 0 ? resolve(output) : reject(Object.assign(new Error(`exit ${code}: ${output}`), { output })));
 });
 
+/** The fixture host's probe reads this machine's own cores, load and sensors; placement here is judged by session count, so it reads an idle, cool host. */
+const idle: ChildRun = async (command, args, options) => String(await defaultChildRun(command, args, options)).replace(/^cores \d+$/m, 'cores 8').replace(/^load \S+$/m, 'load 0.00').replace(/^temp.*$/gm, '');
+
 test(`${proof} — a host opened to sessions takes a worker of a runtime its image holds, and only up to its count`, async () => {
-  assert.equal(await remoteSessionHost('codex', () => [], undefined, hostsFile), null, 'a host added for shards takes no session');
+  assert.equal(await remoteSessionHost('codex', () => [], idle, hostsFile), null, 'a host added for shards takes no session');
   await setHostSessions(target, 1, { file: hostsFile });
-  assert.equal(await remoteSessionHost('codex', () => [], undefined, hostsFile), target);
-  assert.equal(await remoteSessionHost('codex', () => [target], undefined, hostsFile), null, 'a host with its one session running takes no second');
-  assert.equal(await remoteSessionHost('claude', () => [], undefined, hostsFile), null, 'a runtime the image lacks stays on this machine');
+  assert.equal(await remoteSessionHost('codex', () => [], idle, hostsFile), target);
+  assert.equal(await remoteSessionHost('codex', () => [target], idle, hostsFile), null, 'a host with its one session running takes no second');
+  assert.equal(await remoteSessionHost('agy', () => [], idle, hostsFile), null, 'a runtime the image lacks stays on this machine');
 });
 
 test(`${proof} — the worker session runs on the added host and completes its item; its run names where it ran`, { timeout: 300_000 }, async () => {
