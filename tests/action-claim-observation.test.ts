@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store, save } from '../src/store.js';
-import { Engine, sameBesideBookkeeping } from '../src/engine.js';
+import { Engine } from '../src/engine.js';
+import { sameBesideBookkeeping } from '../src/engine/observe.js';
 import type { Principal, Work } from '../src/model.js';
 import type { ActionRow } from '../src/model/actions.js';
 

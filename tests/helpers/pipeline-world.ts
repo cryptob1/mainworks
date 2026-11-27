@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listen } from './http-server.js';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord, type GateRecord } from '../../src/batch-gate.js';
-import { fileFlakyCheck } from '../../src/daemon/cycle-batch-gate.js';
+import { fileFlakyCheck } from '../../src/daemon/control-plane.js';
 import { defaultChildRun, type ChildRun } from '../../src/child-runner.js';
 import { runCycle } from '../../src/daemon/cycle.js';
 import { mergeWriterReads, type MergeWriterReads } from '../../src/daemon/cycle-merge-writer.js';

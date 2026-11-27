@@ -4,7 +4,7 @@
  * page and the server cannot disagree. This module re-exports it for the pages that read one item's
  * group (the item page, a card) and keeps the page's own summary sentence.
  */
-export {  boardFromStatus,  classify, groupLabel, groupMeaning, groupOf, groupWithin, groups, humanOnlyIds, isBoard, mergedAt, nextActor, releasedAt, shippedCounts, timedGroups,  upNextMeaning,  } from '../src/model/board';
+export { classify, groupLabel, groupWithin, isBoard, mergedAt, nextActor, releasedAt, shippedCounts, timedGroups } from '../src/model/board';
 export type {  Board, BoardItem,  Group, OpenGroup } from '../src/model/board';
 import type { OpenGroup } from '../src/model/board';
 

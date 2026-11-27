@@ -1,5 +1,5 @@
 import { privateFile, readCredentialFile, assertOutsideWorktrees, atomicPrivateWrite, atomicPrivateText } from '../private-file.js';
-export { privateFile, readCredentialFile, assertOutsideWorktrees, atomicPrivateWrite, atomicPrivateText } from '../private-file.js';
+export { readCredentialFile, atomicPrivateWrite, atomicPrivateText } from '../private-file.js';
 // Concern: loading, validating and saving the master config, its credential files and profiles, and live reload.
 import { randomUUID, createHash } from 'node:crypto';
 import type { z } from 'zod';

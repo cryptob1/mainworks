@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { workerPrompt } from '../src/master/dispatch.js';
-import { reviewPrompt, reviewStandard, reviewStandards } from '../src/reviewer.js';
+import { reviewPrompt } from '../src/reviewer.js';
+import { reviewStandard, reviewStandards } from '../src/review-prompt.js';
 
 // GY-3166: the worker brief carries the standards the reviewers judge by, from the one function
 // their requests read, and its last step before complete is a self-check against them. The

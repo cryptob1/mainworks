@@ -13,7 +13,8 @@ import { daemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { ChildProcessError, defaultChildTimeoutMs } from '../src/child-runner.js';
-import { alignLoopUnit, installLoopSupervisor, LoopSupervisorRefusal, loopStopTimeoutSeconds, loopSupervision, loopSupervisionAttention, loopUnitDirectory, loopUnitName, loopUnitText, loopWatchdogSeconds, supervisorSupport, temporaryDirectories, testSuiteHomeGuard, underTestRunner, unsupervisedInstruction } from '../src/install/loop-unit.js';
+import { alignLoopUnit, installLoopSupervisor, LoopSupervisorRefusal, loopStopTimeoutSeconds, loopSupervision, loopSupervisionAttention, loopUnitDirectory, loopUnitName, loopUnitText, loopWatchdogSeconds, supervisorSupport, testSuiteHomeGuard, unsupervisedInstruction } from '../src/install/loop-unit.js';
+import { temporaryDirectories, underTestRunner } from '../src/runtime-environment.js';
 import { deployUnitOf, perInstallUnits } from '../src/install/units.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 // Time-bomb allowance (GY-1694): Date.now() only measures how long the bounded runs took.

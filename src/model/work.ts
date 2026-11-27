@@ -21,7 +21,7 @@ export type Stage = typeof stages[number];
 export const sliceIds = ['product', 'infrastructure', 'docs-experience'] as const; export type SliceId = typeof sliceIds[number];
 /** The shipped setting: every new item is system-driven unless its intent says `"systemDriven": false`. */
 export const systemDrivenDefault = true;
-export { declaredPostDeploy, liveObservationPhrase, postDeployCriterionRefusal, postDeployOnlyRefusal, postDeployProof, postDeployProofPrefix, postDeployProofs } from './post-merge-proofs.js';
+export { declaredPostDeploy, postDeployCriterionRefusal, postDeployOnlyRefusal } from './post-merge-proofs.js';
 export type ObservationWindow = z.infer<typeof observationWindowSchema>;
 export type Create = z.infer<typeof createSchema>;
 /**

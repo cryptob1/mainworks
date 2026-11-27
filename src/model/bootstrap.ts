@@ -4,7 +4,7 @@ import { postDeployProof } from './post-merge-proofs.js';
 import { evidenceBindsCandidate } from './carry.js';
 import { evidenceProves } from './mechanical-proofs.js';
 import { pathScopesOverlap } from './documentation-glob.js';
-export { pathScope, pathScopeContains, pathScopesOverlap } from './documentation-glob.js';
+export { pathScopesOverlap } from './documentation-glob.js';
 
 export interface BootstrapObligation extends BootstrapMode { key: string; workId: string; criterionId: string; proof: string }
 

@@ -11,7 +11,8 @@ import { candidateKey, dispatchKey, reconcilePendingActions } from '../src/daemo
 import { cycleFailureDelay, cycleFailureStart, noteCycleFailure } from '../src/daemon/liveness.js';
 import { daemonSummary, runDaemon } from '../src/daemon/run.js';
 import { profileHealth } from '../src/daemon/sessions.js';
-import { retriedSnapshot, snapshotRetryDelayMs, type DaemonEffects } from '../src/daemon/effects.js';
+import { retriedSnapshot, type DaemonEffects } from '../src/daemon/effects.js';
+import { snapshotRetryDelayMs } from '../src/daemon/snapshot-retry.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';

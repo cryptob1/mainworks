@@ -37,7 +37,7 @@ import { recordInstallCliPath, userLauncherPath, userLauncherState, writeUserLau
 import { installIdFor, providers, REDACTED, SERVER_PORT, type EnvValue, type InstallInputs, type InstallPlan, type PlanAction, type PlanDrift, type PlanValue, type PreflightItem, type Provider } from './types.js';
 
 export * from './types.js';
-export { adapterFor, type ProviderAdapter } from './adapters.js';
+export { type ProviderAdapter } from './adapters.js';
 
 export interface ProfileRegistration {
   repository: { connected: boolean; herdr: boolean; detail: string };

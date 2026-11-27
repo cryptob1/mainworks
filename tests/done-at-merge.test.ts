@@ -5,7 +5,7 @@ import { useTestStore } from './helpers/test-store.js';
 import type { Principal, Work } from '../src/model.js';
 import { deliveryState } from '../src/model/delivery.js';
 import { actionAccount } from '../src/model-boundary/next-action.js';
-import { nextActionKinds } from '../src/model/next-action.js';
+import { nextActionKinds } from '../src/model/action-kinds.js';
 import { openActions } from '../src/model/actions.js';
 import { groupOf, nextCommand } from '../src/model/board.js';
 import { prSteps } from '../src/model/pr-steps.js';

@@ -5,7 +5,8 @@ import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { awaitsMerge } from '../src/model/merge-queue.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
-import { keptTrialAheadOfReview, mergeCandidateHold, mergeOne, mergeOpeningHold, mergeRecordKinds, trialAheadOfReviewReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { mergeCandidateHold, mergeOne, mergeOpeningHold, mergeRecordKinds, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { keptTrialAheadOfReview, trialAheadOfReviewReason } from '../src/model/merge-queue.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 

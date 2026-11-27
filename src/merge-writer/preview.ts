@@ -18,7 +18,6 @@ import type { PreviewableApplication as Application, ProjectDelivery } from '../
 import type { Work } from '../model/work.js';
 import { heldEntries, heldOpenPaths, readTempOwner, tempOwnerGone, tempOwnerJudgeable, tempOwnerMarker, tmpReclaimMinAgeMs, treeLastWritten, writeTempOwner } from '../tmp-reclaim.js';
 
-export { serveStaticSite,  } from './serve-head.js';
 
 /** One case's result on the preview; an `unrun` case names why in `reason` (a declared install secret the preview withholds). */
 interface PreviewCase { case: string; verdict: 'passed' | 'failed' | 'flaky' | 'unrun'; required: boolean; reason?: string }

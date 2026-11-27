@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { headlessReviewAnswer, reviewPrompt } from '../src/reviewer.js';
 import { reviewStandards } from '../src/review-prompt.js';
-import { emptyProjectMemory, projectMemoryDigest } from '../src/project-memory.js';
+import { emptyProjectMemory, projectMemoryDigest } from '../src/model/project-memory.js';
 import { verificationMapDigest } from '../src/verification-maps.js';
 
 // GY-3490: reviewer prompts state their verdict choices once, up front, delete repeated copies,

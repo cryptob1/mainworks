@@ -18,7 +18,8 @@ import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 import WorkDetails from '../web/pages/work-details.js';
-import { groupOf, timedGroups } from '../web/groups.js';
+import { timedGroups } from '../web/groups.js';
+import { groupOf } from '../src/model/board.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';

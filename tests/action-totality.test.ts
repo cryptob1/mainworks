@@ -11,7 +11,8 @@ import { type Gate, type Observation, type Principal, type Work } from '../src/m
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { reviewNeed } from '../src/model/dispatch.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
-import { actionJudgment, refusalAction } from '../src/model/next-action.js';
+import { refusalAction } from '../src/model/next-action.js';
+import { actionJudgment } from '../src/model/action-kinds.js';
 import type { ActionAccount } from '../src/model/action-account.js';
 import { actionlessCards, stalledCards } from '../src/model/actionless.js';
 import type { Dashboard } from '../web/pages/dashboard.js';

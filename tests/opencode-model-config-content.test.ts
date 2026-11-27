@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { accountLaunch } from '../src/master/environments.js';
-import { headlessArgs } from '../src/headless-session.js';
+import { headlessArgs } from '../src/headless-argv.js';
 import { proposedRuntimes } from '../src/model/registry-proposal.js';
 
 // GY-3118: opencode 2.2.5's interactive TUI exits on --model, so a registry model id reaches

@@ -255,7 +255,6 @@ async function gateEnvironments(reads: MergeWriterReads, commit: string, cases: 
   return result;
 }
 
-export { fileFlakyCheck, gateFiledItem, pinningProof, repairedProof } from './control-plane.js';
 
 /**
  * GY-3443: while the gate's last outcome is verified, every open item owing `manual:batch-gate-repaired`

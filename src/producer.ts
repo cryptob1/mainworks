@@ -37,7 +37,6 @@ import { liveInstallGuidance, liveInstallProof, liveInstallRequiredEnv, liveInst
 import { runRecordSchema, type RunRecord, type Runner } from './runner/types.js';
 import { projectMemoryDigest, type ProjectMemory } from './model/project-memory.js';
 import { readProjectMemory } from './project-memory.js';
-export { parseEnvValue } from './env-file.js';
 
 /**
  * The local secrets a live-install proof producer may receive from the repo-root .env

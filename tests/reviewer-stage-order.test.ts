@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reviewPrompt, reviewStandard } from '../src/reviewer.js';
-import { mergeOne, mergeQueue, trialAheadOfReviewReason, type MergePorts, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { reviewPrompt } from '../src/reviewer.js';
+import { reviewStandard } from '../src/review-prompt.js';
+import { mergeOne, mergeQueue, type MergePorts, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { trialAheadOfReviewReason } from '../src/model/merge-queue.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import type { Work } from '../src/model.js';
 

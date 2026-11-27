@@ -31,7 +31,7 @@ import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
-export { promptAttempts, promptAcceptMs, promptRetryPauseMs,  PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
+export { herdrErrorCode, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 
 /**
  * Keep what an interrupted attempt had not committed. The work is committed on the attempt's own
@@ -672,8 +672,6 @@ export async function startAgentSession(name: string, kind: string, pane: string
   } finally { settle(launched); }
 }
 
-export { secretsBusUnjudged, secretsBusMigration, secretsBusEndpointProblem, keyringEndpointWarning, keyringProbeBackoffMs, keyringProbeBackoffMaxMs } from './launch-keyring.js';
-export type { KeyringEndpointVerdict, KeyringProbeBackoff } from './launch-keyring.js';
 
 /** Launch every terminal role through the same pane/start/close sequence. The request is
  * delivered by startAgentSession on the runtime command line. Coordinates are cleared only

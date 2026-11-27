@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { headlessArgv } from '../src/headless-session.js';
+import { headlessArgv } from '../src/headless-argv.js';
 import { opencodeAuthList, opencodeModels } from '../src/master/runtimes.js';
 
 // GY-3425: since GY-3414 every opencode worker and reviewer ran `opencode run … --standalone`, and

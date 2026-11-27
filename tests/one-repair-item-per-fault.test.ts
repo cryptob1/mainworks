@@ -11,7 +11,8 @@ import {
   trialNetworkFaultItem,
   trialSandboxFaultItem,
 } from '../src/daemon/control-plane.js';
-import { batchGatePorts, gateFiledItem } from '../src/daemon/cycle-batch-gate.js';
+import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
+import { gateFiledItem } from '../src/daemon/control-plane.js';
 import { bootstrapGate, runGate } from '../src/batch-gate.js';
 import { controlPlaneRecordPath, writeControlPlaneRecord } from '../src/deploy-watch.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';

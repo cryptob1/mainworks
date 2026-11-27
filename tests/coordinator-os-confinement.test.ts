@@ -9,7 +9,8 @@ const isDirectory = (path: string) => { try { return statSync(path).isDirectory(
 import { bwrapOnPath, coordinatorConfinement, coordinatorConfinementRefusal, hostProcessLaunchTargets, processLaunchMaskWords, readOnlyMountWrapper, secretsBusPath, sessionGitAdminDirectory, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { checkoutGitDirectory, checkoutWorktreeAdminDirectory, workerConfinementRefusal } from '../src/master/profiles.js';
 import { createServer } from 'node:net';
-import { headlessConfinementWrapper, keyringEndpointWarning, type KeyringEndpointVerdict, secretsBusEndpointProblem, secretsBusMigration, secretsBusUnjudged, launcherCoordinatorRoot, launcherRootUndetermined, prepareConfinedGitPaths, sessionConfinement, startAgentSession } from '../src/master/launch.js';
+import { headlessConfinementWrapper, launcherCoordinatorRoot, launcherRootUndetermined, prepareConfinedGitPaths, sessionConfinement, startAgentSession } from '../src/master/launch.js';
+import { keyringEndpointWarning, type KeyringEndpointVerdict, secretsBusEndpointProblem, secretsBusMigration, secretsBusUnjudged } from '../src/master/launch-keyring.js';
 import { confiningSpawn } from '../src/runner/roles.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

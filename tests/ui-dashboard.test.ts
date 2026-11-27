@@ -8,7 +8,8 @@ import type { Work } from '../src/model.js';
 import { NOW, boardApi, boardStatus, boardWork } from '../browser-tests/ui-board.js';
 // @ts-expect-error Dependency-free fixture script.
 import { fixtureApi, visibleWords } from '../scripts/dashboard-fixture.mjs';
-import { boardFromStatus, classify, groupLabel, groupOf, groupWithin, groups, humanOnlyIds, mergedAt, nextActor, timedGroups } from '../web/groups.js';
+import { classify, groupLabel, groupWithin, mergedAt, nextActor, timedGroups } from '../web/groups.js';
+import { boardFromStatus, groupOf, groups, humanOnlyIds } from '../src/model/board.js';
 import { prSteps, stateIds } from '../src/model/pr-steps.js';
 import { noRelease } from '../src/model/release.js';
 import { jargon } from '../src/model/plain-status.js';

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { headlessArgv } from '../src/headless-session.js';
+import { headlessArgv } from '../src/headless-argv.js';
 import { onSearchPath } from '../src/runtime-binary.js';
 
 // GY-3425 e2e: the headless opencode worker's command line, run against this host's installed

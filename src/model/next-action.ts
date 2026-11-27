@@ -16,10 +16,8 @@ import { formatAge } from './duration.js';
 // `action-account.ts`; each is re-exported here so what an item needs next is still read from
 // one place. `action-account.ts` is the one exception: it imports the computation below, so it
 // is imported from directly rather than re-exported through the module it depends on.
-export { actionJudgment, executorRunnableKinds, llmRoles, mechanicalActionKinds, nextActionKinds, nextActionLlmRoles } from './action-kinds.js';
 export type {  NextAction,  NextActionKind } from './action-kinds.js';
 // What stands beside an action lives in `concerns.ts`, re-exported here likewise.
-export {   humanNeeded, humanNeededActions,  } from './concerns.js';
 ;
 
 /**

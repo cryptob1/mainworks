@@ -245,4 +245,3 @@ export async function remoteFetchProbe(root: string): Promise<string | null> {
   catch (error: any) { return (String(error?.stderr ?? '').trim() || String(error?.message ?? error)).split('\n').filter(Boolean).join(' ').slice(0, 400); }
 }
 
-export { diskExhaustion, reclaimAdvice,  diskExhaustionMessage, writeFailure } from '../disk-space.js';

@@ -23,7 +23,7 @@ export { countProofCases };
 // ---- The queue (model/merge-queue.ts) ------------------------------------------------------------
 import { baseFailurePrefix, gate, keptTrialAheadOfReview, open, trialAheadOfReviewReason } from '../model/merge-queue.js';
 import { setting } from '../setting.js';
-export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge,  trialAheadOfReviewPrefix, trialAheadOfReviewReason, trialRefusalHeld, keptTrialAheadOfReview,   } from '../model/merge-queue.js';
+export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge, trialAheadOfReviewPrefix, trialRefusalHeld } from '../model/merge-queue.js';
 
 /** Whether trial results still belong to this implementation and policy. */
 export function mergeCandidateObsolete(current: Work | undefined, selected: Work = current!): string | null {

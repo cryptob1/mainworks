@@ -1,4 +1,3 @@
-export { shellQuote } from '../shell-quote.js';
 // Concern: dispatching a worker — dispatchability, the worker launch, its prompt and environment.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve } from 'node:path';

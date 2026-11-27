@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { type Work } from '../src/model.js';
 import { actionAccount } from '../src/model-boundary/next-action.js';
-import { humanNeededActions } from '../src/model/next-action.js';
+import { humanNeededActions } from '../src/model/concerns.js';
 import { unproducedManualProofs } from '../src/model/unproduced-attestation.js';
 import { workFixture } from './helpers/work-fixture.js';
 

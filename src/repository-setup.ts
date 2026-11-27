@@ -28,8 +28,7 @@ import { pinnedNodePath } from './node-pin.js';
 import { defaultChildRun } from './child-runner.js';
 import { herdrSync } from './herdr-host.js';
 import { stateDirectory, defaultConfigHome } from './install/layout.js';
-export { readInstallLoopCode, readLoopCode, judgeLoopCode, localLoopCodeFiles, unitLauncherCheckout, systemdCommandLineWords, type UnitCode, type LoopCodeReading, type LoopCodeFiles, type LoopCodeFacts } from './loop-code.js';
-export { shellQuote } from './shell-quote.js';
+export { readLoopCode, type LoopCodeReading } from './loop-code.js';
 
 export const hostIdSchema = z.string().trim().min(1).max(200);
 // GY-1960: connection.json is forward-tolerant — a field a newer CLI wrote that this one does not

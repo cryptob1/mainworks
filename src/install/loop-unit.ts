@@ -15,7 +15,6 @@ import { installIdFor } from './types.js';
 import { installLauncherPath, unitLauncherFault, writeInstallLauncher } from './cli-release.js';
 import { canonical, temporaryDirectories, underTestRunner } from '../runtime-environment.js';
 import { stateDirectory } from './layout.js';
-export { temporaryDirectories, underTestRunner } from '../runtime-environment.js';
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, 200);
 
 // --- The master loop's own supervisor ----------------------------------------

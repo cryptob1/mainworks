@@ -20,7 +20,8 @@ import { launchReview, readReviewLedger, reconcileReviews, saveReviewerProfile, 
 import { reviewBindingFile } from '../src/review-post.js';
 import { liveRun } from '../src/runner/registry.js';
 import { realRuntimeBinary } from '../src/runtime-binary.js';
-import { headlessArgs, headlessKind, headlessRunsDirectory, spawnHeadless, type HeadlessExec } from '../src/headless-session.js';
+import { headlessRunsDirectory, spawnHeadless, type HeadlessExec } from '../src/headless-session.js';
+import { headlessArgs, headlessKind } from '../src/headless-argv.js';
 import { readRunMeta, runAlive } from '../src/runner/pi.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { emptyDaemonState } from '../src/daemon/state.js';

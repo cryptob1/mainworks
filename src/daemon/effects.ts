@@ -21,7 +21,7 @@ import type { ComposeServer } from './compose-recovery.js';
 import type { FaultItem } from './control-plane.js';
 import type { MemoryNote, ProductBrief } from '../model/project-memory.js';
 import type { EnvironmentReadings } from './environment-blockers.js';
-export { snapshotRetryDelayMs, retriedSnapshot } from './snapshot-retry.js';
+export { retriedSnapshot } from './snapshot-retry.js';
 
 /** GY-1713: body `error` + zod `issues` so a refusal names the refused field; else stringify. */
 export function refusedBodyDetail(result: unknown): string {

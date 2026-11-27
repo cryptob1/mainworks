@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reviewPrompt, reviewStandard, reviewRetryPrompt } from '../src/reviewer.js';
+import { reviewPrompt, reviewRetryPrompt } from '../src/reviewer.js';
+import { reviewStandard } from '../src/review-prompt.js';
 import { pinnedCases, singleCaseWarnings } from '../src/model.js';
 
 const head = 'a'.repeat(40), base = 'b'.repeat(40);

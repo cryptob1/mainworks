@@ -7,7 +7,8 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { accountLaunch, agentLaunchPlan, checkAgentEnvironment, discoverAgentEnvironments, NoHealthyAccountError, prepareAgentEnvironment, readEnvironmentLog, selectAccount, setupAgentEnvironments, type EnvironmentProbe } from '../src/master/environments.js';
-import { deliverPrompt, herdrErrorCode, PromptNotAcceptedError } from '../src/master/launch.js';
+import { deliverPrompt, herdrErrorCode } from '../src/master/launch.js';
+import { PromptNotAcceptedError } from '../src/master/prompt-delivery.js';
 import { dispatchWork, workerPrompt } from '../src/master/dispatch.js';
 import { inspectProducerCredentials, inspectWorkerCredentials, loadMasterConfig, masterSettingsFromArgs, saveMasterSettings, setupMaster } from '../src/master/config.js';
 import { masterHarness, sessionHarnessFile, startMaster } from '../src/master/harness.js';

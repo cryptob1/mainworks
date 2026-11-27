@@ -59,9 +59,6 @@ import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
 import { endRegistrySessionById } from './master/registry-slot.js';
 import { stateDirectory } from './install/layout.js';
-export { controlPlaneFindingSection } from './review-prompt.js';
-export { reviewStandard, reviewStandards, repetitionReviewSection, repeatingPaths, touchesRepeatingPath } from './review-prompt.js';
-export { simplicityParagraph, blockingStandardSection, postDeployReviewSection, singleCaseReviewSection, criteriaRuleSection, criteriaVerdictRule } from './review-prompt.js';
 
 const sha40 = z.string().regex(/^[0-9a-f]{40}$/i);
 /** The most BLOCKING lines of a post-merge verdict that are each filed as their own follow-up item (GY-1525 AC-4). */
@@ -525,7 +522,6 @@ export function cliUnreachableRefusal(config: Partial<Pick<MasterConfig, 'cliPat
   return null;
 }
 
-export { browserToolName, browserToolOnPath } from './browser-tool.js';
 /**
  * GY-3331: why a product-review launch cannot give its session the three things its own
  * environment owes it — the control plane's address, the CLI it posts through, and a browser tool

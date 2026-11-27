@@ -8,7 +8,7 @@ import { thisWeek, type ThisWeek } from './model/lessons-to-code.js';
 import { gateRecordPath, readGateRecord } from './batch-gate.js';
 import { stateDirectory } from './install/layout.js';
 
-export { emptyProjectMemory,      masterLessons,       projectMemoryDigest,     recordNoteInMemory,           type MemoryNote, type ProjectMemory, type ProductBrief,   } from './model/project-memory.js';
+export { recordNoteInMemory, type MemoryNote, type ProjectMemory, type ProductBrief } from './model/project-memory.js';
 ;
 
 export const projectMemoryPath = (root: string) => resolve(stateDirectory(root), 'project-memory.json');

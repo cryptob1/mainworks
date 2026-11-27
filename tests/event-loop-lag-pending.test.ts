@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EventLoopLag } from '../src/engine.js';
+import { EventLoopLag } from '../src/reconcile/lag.js';
 
 // GY-1886: the sampler records a sample only when its 10 ms timer callback runs, so a hold of the
 // loop that ended just before read() — the callback that elapsed during the hold still queued
