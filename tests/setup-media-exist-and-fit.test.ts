@@ -10,7 +10,8 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 test('unit:setup-media-exist-and-fit — setup-connect.png and setup-first-goal.png exist at 1600 px, are linked from docs/setup.md, and npm run docs:media draws them from the demo data', () => {
   const setup = read('docs/setup.md').toString();
-  const script = read('scripts/docs-media.mjs').toString();
+  // GY-3962: the page setup the media share with the UX captures lives in scripts/demo-server.mjs.
+  const script = read('scripts/docs-media.mjs').toString() + read('scripts/demo-server.mjs').toString();
   for (const name of ['setup-connect.png', 'setup-first-goal.png']) {
     const bytes = read(`docs/media/${name}`);
     assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} is a PNG`);

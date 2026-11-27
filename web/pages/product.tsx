@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProductBrief } from '../../src/model/project-memory';
-import { EmptyState, PageHeader } from '../components/page-layout';
+import { PageHeader } from '../components/page-layout';
 
 /** The dashboard's Product page (GY-3274): the install's one product brief, shown read-only. */
 export default function ProductPage({ api }: { api: (path: string) => Promise<any> }) {
@@ -22,10 +22,9 @@ export default function ProductPage({ api }: { api: (path: string) => Promise<an
 export function ProductView({ brief, error, loading, retry }: { brief: ProductBrief | null; error: string; loading: boolean; retry(): void }) {
   const when = (at: string) => new Date(at).toLocaleString();
   return <section className="product-page" aria-label="Product">
-    <PageHeader title="Product" fact={brief ? `Updated ${new Date(brief.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} by the master.` : loading ? 'Reading the product brief…' : error ? 'The product brief could not be read.' : 'No product brief yet.'}
+    <PageHeader title="Product" fact={brief ? `Updated ${new Date(brief.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} by the master.` : loading ? 'Reading the product brief…' : error ? 'The product brief could not be read.' : 'No product brief yet; the Lead writes it, and it shows here.'}
       actions={error && <button type="button" onClick={retry}>Retry</button>}/>
     {error && <p role="alert" className="amber">{error}</p>}
-    {!loading && !error && !brief && <EmptyState title="The master has not written the brief.">It records one with <code>master brief set FILE REASON</code>.</EmptyState>}
     {brief && <article className="product-brief panel">{briefBlocks(brief.markdown)}</article>}
     {brief && brief.history.length > 0 && <details className="panel product-history"><summary>Changes ({brief.history.length})</summary><ul>
       {brief.history.map(change => <li key={`${change.at}:${change.by}`}>{when(change.at)} — {change.by}: {change.why} ({change.words} words)</li>)}

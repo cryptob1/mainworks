@@ -67,7 +67,7 @@ const marks = { passed: '✓', failed: '×', running: '●' } as const;
 export function Checks({ trial, output }: { trial: TrialTimings | null; output: string | null }) {
   return <section className="task-checks" aria-label="Checks">
     {trial?.steps.length ? <ul>{trial.steps.map((step, index) => <li key={index} className={`check-${step.result}`} data-check={step.step}>
-      <span aria-hidden="true">{marks[step.result]}</span><span className="check-name">{step.step}</span><span className="check-result">{step.result}</span><span className="check-time">{shortDuration(step.durationMs)}</span></li>)}</ul>
+      <span aria-hidden="true">{marks[step.result]}</span><span className="check-name">{step.step.replace(/^e2e:/, 'E2E case ')}</span><span className="check-result">{step.result}</span><span className="check-time">{shortDuration(step.durationMs)}</span></li>)}</ul>
       : <p className="muted">No test merge has run on this change yet.</p>}
     {output && <pre className="run-log" aria-label="Test output">{output}</pre>}
     {!output && trial?.steps.at(-1)?.result === 'running' && <p className="muted">No test output yet: it shows as each group of tests ends.</p>}

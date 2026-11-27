@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { NOW, at, buildDemoState } from './docs-media-demo.mjs';
+import { NOW, at, buildDemoState, demoAnswer } from './docs-media-demo.mjs';
 
 const min = 60_000;
 
@@ -33,30 +33,7 @@ export function startDemoServer(dist) {
         res.statusCode = 503;
         return res.end(JSON.stringify({ error: 'The control plane is restarting' }));
       }
-      if (route === 'status') return res.end(JSON.stringify(state.status));
-      if (route === 'work-snapshot') return res.end(JSON.stringify({ work: state.work, jobs: [], now: at(0) }));
-      if (route === 'board') return res.end(JSON.stringify(state.board));
-      if (route === 'flow') return res.end(JSON.stringify(state.flow));
-      if (route === 'work') return res.end(JSON.stringify(state.work));
-      if (route === `work/${state.item103.id}/timings`) return res.end(JSON.stringify(state.item103Timings));
-      if (route === `work/${state.item103.id}/diff`) return res.end(JSON.stringify(state.item103Diff));
-      if (route.startsWith('work/') && route.endsWith('/timings')) return res.end(JSON.stringify({ releasedAt: at(-10 * min), checkout: '/srv/acme-storefront', trial: null }));
-      if (route.startsWith('work/') && route.endsWith('/diff')) return res.end(JSON.stringify({ files: [] }));
-      if (route.startsWith('work/')) {
-        const id = route.slice('work/'.length);
-        const found = state.work.find((w) => w.id === id);
-        return res.end(JSON.stringify(found ?? state.work[0]));
-      }
-      if (route === 'costs') return res.end(JSON.stringify({ builder: { model: 'claude-sonnet-4-6', accountModel: 'claude-sonnet-4-6', differs: false } }));
-      if (route === 'events') return res.end(JSON.stringify(state.leadEvents));
-      if (route === 'typed-input') return res.end(JSON.stringify({ typed: state.typed }));
-      if (route === 'team-access') return res.end(JSON.stringify({ teammates: [] }));
-      if (route === 'master/messages') return res.end(JSON.stringify({ messages: [] }));
-      if (route === 'agent-registry/history') return res.end(JSON.stringify([]));
-      if (route === 'delivery') return res.end(JSON.stringify({ environments: [], releases: [], rollbacks: [], now: at(0) }));
-      if (route.startsWith('validation')) return res.end(JSON.stringify({ requests: [], candidates: [], nextCursor: null }));
-      if (route === 'operator-agents') return res.end(JSON.stringify([]));
-      return res.end(JSON.stringify([]));
+      return res.end(JSON.stringify(demoAnswer(state, route, url.searchParams)));
     }
 
     const file = join(dist, url.pathname === '/' ? 'index.html' : url.pathname);

@@ -140,7 +140,7 @@ test('e2e:lead-conversation — the Lead is a conversation of messages and cards
     // AC-2: the choice answers in place as the signed-in person.
     await approvalCard.getByRole('button', { name: 'Approve 2 more seats' }).click();
     await expect(conversation.getByText(spendAsk)).toHaveCount(0, settled);
-    await expect(rail.getByText('Nothing waits on you.')).toBeVisible(settled);
+    await expect(rail.getByText('Nothing waits on you; a decision only you can make shows here.')).toBeVisible(settled);
     const parked = await call('test-human-operator', `work/${items.watch}`);
     expect(parked.humanRequests.at(-1).answer).toMatchObject({ by: 'operator', outcome: 'provided' });
     expect(parked.humanRequests.at(-1).answer.choice.id).toBe('approve-2');
