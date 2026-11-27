@@ -4,7 +4,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { masterConfigSchema, workerProfileSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, workerProfileSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { accountLaunch } from '../src/master/environments.js';
 import { installWorkerHarness, prepareSessionHarness, sessionHarnessPlan, workerHarnessPlan } from '../src/master/harness.js';
 import { coordinatorCheckoutRoot, workerConfinementRefusal } from '../src/master/profiles.js';

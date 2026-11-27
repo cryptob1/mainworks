@@ -10,7 +10,7 @@ import { type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { TrialTimeoutError } from '../src/merge-writer/trial.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

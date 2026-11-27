@@ -12,7 +12,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { harnessDecision } from '../src/harness.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
-import { blockerCommands, branchRestoration, sessionHarnessPlan, unrunnableRemedies, workerHarnessPlan } from '../src/master.js';
+import { blockerCommands, branchRestoration, sessionHarnessPlan, unrunnableRemedies, workerHarnessPlan } from '../src/master/harness.js';
 import { parseLocalScopeDiff } from '../src/sync.js';
 import type { Observation, Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

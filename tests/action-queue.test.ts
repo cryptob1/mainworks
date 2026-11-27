@@ -20,7 +20,7 @@ import { launchedSessionHandle } from '../src/dispatch/session-sweep.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { runWorkerPull, workerPullIntervalMs } from '../src/dispatch/worker-pull.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { localRequest } from './helpers/local-request.js';
 // @ts-expect-error Dependency-free worker entry point.
 import { pullOnce, transportRetries } from '../scripts/graphyard-pull.mjs';

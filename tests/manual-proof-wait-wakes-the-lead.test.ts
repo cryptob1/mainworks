@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { emptyDaemonState, daemonStateSchema } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { flowNumbers, type FlowItem } from '../src/flow-numbers.js';

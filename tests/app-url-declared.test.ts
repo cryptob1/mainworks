@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3434: master status lists where the app runs — graphyard.json's app.url as main holds it, with

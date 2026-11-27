@@ -11,7 +11,7 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { controlPlaneRecordPath, writeControlPlaneRecord } from '../src/deploy-watch.js';
 import { masterPrompt } from '../src/master/harness.js';
 import { guideTopics } from '../src/guide.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3233: a fault in Mainworks itself — a stuck control-plane upgrade, a loop step past its

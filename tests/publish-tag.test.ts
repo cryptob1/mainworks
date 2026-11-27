@@ -10,7 +10,7 @@ import { mergeWriterReads, type MergeWriterReads } from '../src/daemon/cycle-mer
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { deployOnce, deployRecordPath, writeControlPlaneRecord, controlPlaneRecordPath } from '../src/deploy-watch.js';
 import { masterStatusReport, npmPublishedVersion } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { publishedVersion } from '../src/release.js';

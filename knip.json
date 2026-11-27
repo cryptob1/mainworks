@@ -2,17 +2,30 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "bin/*.mjs",
-    "scripts/**/*.{mjs,ts}",
-    "tests/**/*.test.ts",
-    "tests/browser/*.ts",
-    "tests/fixtures/postgres-in-scratch.ts",
-    "tests/helpers/heavy-job-launcher.ts",
-    "tests/helpers/*-server.ts",
-    "tests/helpers/playwright-report-fixture.ts",
-    "tests/helpers/worker-sync.mjs",
-    "browser-tests/**/*.spec.ts"
+    "scripts/**/*.{mjs,ts}"
   ],
-  "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}", "tests/**/*.{ts,mjs}", "browser-tests/**/*.ts"],
-  "ignoreBinaries": ["flock", "tailscale", "mise", "bwrap", "sha256sum", "rg", "opencode", "codex", "ffmpeg", "uv"],
-  "ignoreDependencies": ["esbuild", "playwright", "@xterm/xterm"]
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "web/**/*.{ts,tsx}",
+    "bin/**/*.mjs",
+    "scripts/**/*.{mjs,ts}"
+  ],
+  "ignoreBinaries": [
+    "flock",
+    "tailscale",
+    "mise",
+    "bwrap",
+    "sha256sum",
+    "rg",
+    "opencode",
+    "codex",
+    "ffmpeg",
+    "uv"
+  ],
+  "ignoreDependencies": [
+    "esbuild",
+    "playwright",
+    "@xterm/xterm"
+  ],
+  "ignoreExportsUsedInFile": true
 }

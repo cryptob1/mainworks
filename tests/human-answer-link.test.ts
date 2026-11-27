@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { masterInstructions } from '../src/master.js';
+import { masterInstructions } from '../src/master/instructions.js';
 import type { Principal } from '../src/model.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';

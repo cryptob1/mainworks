@@ -17,7 +17,7 @@ import { defaultDeployKeyFile, defaultMergeWriterParallel, mergeWriterSettings, 
 import { deliveredReason, otherHeadRefusal, unheldShaRefusal, unintendedShaRefusal } from '../src/server/merge-record.js';
 import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { mergeLedgerRefusals, pushRefusal, trialRefusal, type Principal, type Work } from '../src/model.js';
 import { Store, save } from '../src/store.js';
 import { lockedWork } from '../src/store/locked-read.js';

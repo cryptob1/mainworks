@@ -8,7 +8,7 @@ import { mergeWriterIdle, mergeWriterStep, type MergeWriterReads } from '../src/
 import { mergeRecordKinds, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { maxMergeWriterParallel } from '../src/master/merge-writer-settings.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';

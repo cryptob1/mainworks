@@ -17,7 +17,7 @@ import { server } from '../src/server.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { mergeOne, runMergeTrial, type MergeRecordEvent } from '../src/merge-writer/executor.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { countJunitCases, countProofCases, junitCases } from '../src/proof-runner.js';
 import { runProof } from '../src/cli/verify.js';

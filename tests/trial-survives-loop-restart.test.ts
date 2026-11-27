@@ -7,7 +7,7 @@ import type { TrialRunHandle, TrialRunRequest } from '../src/merge-writer/trial-
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { slotsDirectoryVariable, writeMachines, type Machine } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 
 // GY-3722: the shard-placement alert said this machine was overloaded beside an idle host but not
 // what ran here, and the confined master cannot list processes. The loop now names the five local

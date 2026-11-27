@@ -6,7 +6,7 @@ import { Store } from '../src/store.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, masterRunSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, masterRunSchema, type MasterConfig } from '../src/master/profiles.js';
 import { workerPrompt } from '../src/master/dispatch.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { defaultAttemptBoundMinutes, defaultAttemptCeilingMinutes } from '../src/master/attempt-bound.js';

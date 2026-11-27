@@ -11,7 +11,7 @@ import { gateTrialKey } from '../src/merge-writer/trial-load.js';
 import { readTrialTimings } from '../src/merge-writer/trial-timings.js';
 import { slowestTrialTestFiles, plannerPrompt } from '../src/daemon/planner.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 

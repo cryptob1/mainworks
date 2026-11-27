@@ -9,7 +9,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { emptyMergeWriterState, type MergeWriterState } from '../src/daemon/cycle-merge-writer.js';
 import { daemonStatePath, readDaemonState, writeDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 import type { Work } from '../src/model.js';

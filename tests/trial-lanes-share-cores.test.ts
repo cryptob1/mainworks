@@ -16,7 +16,7 @@ const { mergeWriterIdle, mergeWriterStep, trialShareAllowance } = writer;
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
 

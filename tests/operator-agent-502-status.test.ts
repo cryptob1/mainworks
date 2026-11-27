@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { daemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { RefusedResponse } from '../src/model/refusal.js';
 import { planeWideRefusal } from '../src/model/refusal.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

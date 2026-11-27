@@ -18,7 +18,7 @@ import { sensitiveReviewRefusal, postMergeReviewMark } from '../src/model/post-m
 import { postReview, readReviewBinding, reviewBindingFile, reviewBindingSchema, ReviewPostRefusal, screenshotUploads, writeReviewBinding, type ReviewPostBinding } from '../src/review-post.js';
 import { independenceRefusal, headRefusal, reviewLaunchBodySchema, secondVerdictRefusal, tokenRefusal, tokenRegistered } from '../src/server/review-verdict.js';
 import { assertReviewCandidate, readReviewLedger, reviewRecordSchema, reviewPrompt, reviewStandard, saveReviewerProfile, staleReviewReason } from '../src/reviewer.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';

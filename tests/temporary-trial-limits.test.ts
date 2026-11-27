@@ -15,7 +15,8 @@ import { cpuPressureStep, cpuWaiting, trialCapNow } from '../src/daemon/cpu-pres
 import type { TrialRunHandle } from '../src/merge-writer/trial-run.js';
 import type { MergePorts, MergeTrialRun } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
-import { masterConfigSchema, masterSettingsFromArgs, saveMasterSettings, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { masterSettingsFromArgs, saveMasterSettings } from '../src/master/config.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { fleetCommand } from '../src/cli/master/fleet.js';
 import { acquireVerificationSlot, heavyJobLimit, heldSlots, hostHeavyJobsDirectory, readStrictCap, setStrictCap, slotsDirectoryVariable, verificationEnvironment, withHeavyJob } from '../src/master/verification-slots.js';

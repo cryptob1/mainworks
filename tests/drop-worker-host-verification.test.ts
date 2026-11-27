@@ -14,7 +14,7 @@ import { server } from '../src/server.js';
 import { completeCommand } from '../src/cli/complete.js';
 import type { CliContext } from '../src/cli/context.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { acquireVerificationSlot, heldSlots, slotsDirectoryVariable, heldVariable } from '../src/master/verification-slots.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';

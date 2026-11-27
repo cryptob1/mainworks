@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { MasterConfig } from '../master.js';
+import type { MasterConfig } from '../master/profiles.js';
 import { removeReviewerProfile, saveReviewerProfile } from '../reviewer.js';
 
 /** The reviewer launch profiles. */

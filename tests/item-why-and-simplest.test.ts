@@ -8,7 +8,7 @@ import { itemLeadBrief, itemLeadRule } from '../src/review-prompt.js';
 import { masterPrompt } from '../src/master/harness.js';
 import { masterGuide } from '../src/master/guide.js';
 import { workerPrompt } from '../src/master/dispatch.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { controlPlaneUpgradeItem, stepStallItem, trialHostFaultItem } from '../src/daemon/control-plane.js';
 import { gateFiledItem } from '../src/daemon/cycle-batch-gate.js';
 import { baseFailureItem } from '../src/model/base-failure.js';

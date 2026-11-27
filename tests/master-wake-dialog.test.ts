@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectConsentPrompt, detectNoticeDialog } from '../src/consent-prompt.js';
-import { deliverPrompt, PromptNotAcceptedError } from '../src/master.js';
+import { deliverPrompt, PromptNotAcceptedError } from '../src/master/launch.js';
 
 // GY-1872: the master session sat idle on Claude Code's autocompact suggestion until a human
 // pressed esc. The classifier recognises that settings-suggestion dialog and answers it with the

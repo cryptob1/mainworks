@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { loopCodeRoot } from '../src/daemon/checkout-state.js';
 import { daemonEffects } from '../src/daemon/effects-production.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

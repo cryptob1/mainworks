@@ -6,7 +6,7 @@ import { writeFile } from 'node:fs/promises';
 import { emptyDaemonState, daemonStateSchema, daemonStatePath } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { dispatchCauses, deploymentCauses } from '../src/daemon/master-stalled-delivery.js';

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dispatchOrder, dispatchSort, dispatchStarvationMs, stageWaitMs } from '../src/coordination.js';
 import { hotspots } from '../src/daemon/hotspots.js';
-import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';

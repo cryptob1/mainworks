@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';

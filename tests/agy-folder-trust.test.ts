@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { agyConfigFile, launchPlan, LaunchRefusedError, trustAgyFolder } from '../src/harness.js';
 import { runtimeAdapter } from '../src/master/runtimes.js';
-import { awaitRuntimeStart, SessionStartError, startAgentSession } from '../src/master.js';
+import { awaitRuntimeStart, SessionStartError, startAgentSession } from '../src/master/launch.js';
 import { detectConsentPrompt } from '../src/consent-prompt.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

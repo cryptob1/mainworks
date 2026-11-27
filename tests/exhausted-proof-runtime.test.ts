@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { exhaustedProofRework, type ExhaustedProof } from '../src/daemon/rework.js';
 import { describeAttempts, instantExitReason, isUnactedProducerAttempt, unactedProducerAttempts } from '../src/dispatch/attempts.js';
 import { dispatchFailureLimit, emptyDispatchCursor } from '../src/dispatch/cursor.js';

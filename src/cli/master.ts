@@ -91,12 +91,12 @@ export const masterCommands = defineCommands([
       const root = await checkoutRoot(context, `mainworks master ${id ?? ''}`.trimEnd());
       // The master's role instructions lead the guide.
       if (id === 'guide') {
-        const [{ masterInstructions }, { masterGuide }] = await Promise.all([import('../master.js'), import('../master/guide.js')]);
+        const [{ masterInstructions }, { masterGuide }] = await Promise.all([import('../master/instructions.js'), import('../master/guide.js')]);
         return console.log(`${masterInstructions}\n${masterGuide}`);
       }
       if (id === 'init') return masterInit(context, root);
       if (id === 'setup') {
-        const [{ masterSetupCommand }, { loadStoredMasterConfig }] = await Promise.all([import('./master-setup.js'), import('../master.js')]);
+        const [{ masterSetupCommand }, { loadStoredMasterConfig }] = await Promise.all([import('./master-setup.js'), import('../master/config.js')]);
         return masterSetupCommand(context, root, await loadStoredMasterConfig(root));
       }
       const [

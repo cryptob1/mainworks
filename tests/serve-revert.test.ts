@@ -8,7 +8,7 @@ import { mergeWriterIdle, mergeWriterStateSchema, mergeWriterStep, mergeWriterSu
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { daemonEffects } from '../src/daemon/effects-production.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import { relandItemFor, runServeRevert, selectServeCulprit, serveRangeCommits, type RelandInput, type ServeRevertPorts } from '../src/merge-writer/serve-revert.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';

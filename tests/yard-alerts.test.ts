@@ -8,7 +8,7 @@ import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { alertRepeatMs, lastYardMovement, queuedForStartOrMerge, topCauseLine, yardAlertStep, yardAlertText, yardStop } from '../src/daemon/yard-alerts.js';
 import { loopAlerts, loopRegistry } from '../src/model/loop-presence.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { SessionHandle } from '../src/model/sessions.js';
 import type { Work } from '../src/model.js';
 import { masterStatusReport } from '../src/cli/master-status.js';

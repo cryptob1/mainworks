@@ -12,7 +12,7 @@ import { mergeRecordFingerprint } from '../src/server/merge-record.js';
 import { openPreview, previewCheckoutPrefix, previewRecordAttempts, previewSlots, type ItemPreviewPorts, type OpenedPreview } from '../src/merge-writer/preview.js';
 import { applyPreviewRecord, previewHistoryLimit, previewRecordBodySchema, type ItemPreview } from '../src/project-previews.js';
 import type { ProjectDelivery } from '../src/project-applications.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import type { ChildRun } from '../src/child-runner.js';
 import type { StaticBuildShell } from '../src/release-project.js';

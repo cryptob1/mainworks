@@ -1,7 +1,9 @@
 // Concern: `mainworks master` intent subcommands — autonomy, promote, adopt, close — applied at once with the master's identity.
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { agentToken, intentInput, autonomySubcommands, runAutonomyCommand, listHerdrAgents, promoteToAutonomy, assertPromotionRoute } from '../../master.js';
+import { agentToken, intentInput, autonomySubcommands, runAutonomyCommand } from '../../master/autonomy.js';
+import { listHerdrAgents } from '../../master/herdr.js';
+import { promoteToAutonomy, assertPromotionRoute } from '../../master/promotion.js';
 import { readDaemonState } from '../../daemon/state.js';
 import { wholeDocument } from '../../model/work-summary.js';
 import { postDeployCriterionRefusal, postDeployOnlyRefusal, type Work } from '../../model/work.js';

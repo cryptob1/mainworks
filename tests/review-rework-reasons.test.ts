@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { useTestStore } from './helpers/test-store.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Engine } from '../src/engine.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { flowNumbers, type FlowItem } from '../src/flow-numbers.js';

@@ -267,7 +267,7 @@ test('hard math fixture polling waits for authoritative offers, stops at its pol
 
 test('hard math real cycle cannot merge a final candidate arriving after the certified snapshot and repairs rejection before retry',async()=>{
   const {runCertifiedCycle}=await import('../benchmarks/hard-math/cycle.js');
-  const {masterConfigSchema}=await import('../src/master.js');
+  const {masterConfigSchema}=await import('../src/master/profiles.js');
   const {emptyDaemonState}=await import('../src/daemon/state.js');
   const {mergeWriterIdle}=await import('../src/daemon/cycle-merge-writer.js');
   const {nextToMerge}=await import('../src/merge-writer/executor.js');

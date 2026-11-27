@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { Observation, Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import type { SessionHandleInput } from '../src/model/sessions.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';

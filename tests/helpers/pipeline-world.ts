@@ -20,7 +20,7 @@ import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../../src/d
 import { Engine } from '../../src/engine.js';
 import { mergeCandidateHold, mergeOpeningHold, openFlakyItem, runMergeTrial, trialAheadOfReviewPrefix } from '../../src/merge-writer/executor.js';
 import { gitRunnerFor } from '../../src/merge-writer/local-observation.js';
-import { masterConfigSchema, type MasterConfig } from '../../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../../src/master/profiles.js';
 import type { Principal, Work } from '../../src/model.js';
 import { server } from '../../src/server.js';
 import { Store } from '../../src/store.js';

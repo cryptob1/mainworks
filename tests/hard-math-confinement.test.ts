@@ -81,7 +81,7 @@ test('integration:hard-math-smoke — non-CLI native launch denies oracle and au
 // credential selection, review binding, confinement and filesystem probes are real.
 test('integration:hard-math-smoke — embedded daemon worker and review dispatch enforce the native read boundary', async t => {
   const { daemonEffects } = await import('../src/daemon/effects-production.js');
-  const { setupMaster, loadMasterConfig, saveWorkerProfile } = await import('../src/master.js');
+  const { setupMaster, loadMasterConfig, saveWorkerProfile } = await import('../src/master/config.js');
   const { saveReviewerProfile, readReviewLedger } = await import('../src/reviewer.js');
   const { requested } = await import('./helpers/review-fleet.js');
   const { registryFixture } = await import('./helpers/registry-fixture.js');

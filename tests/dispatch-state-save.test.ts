@@ -7,7 +7,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { emptyDispatchCursor, readDispatchCursor, writeDispatchCursor } from '../src/dispatch/cursor.js';
 import { sessionHandleKey } from '../src/dispatch/session-sweep.js';
 import { runCycle, standingStepFailures, stepFailureThreshold } from '../src/daemon/cycle.js';

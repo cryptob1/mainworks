@@ -10,7 +10,7 @@ import { mergeTrialKind } from '../src/model/merge-ledger.js';
 import { mergeWriterIdle, mergeWriterInFlight, mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model/work.js';
 import { observationFixture } from './helpers/observation-fixture.js';

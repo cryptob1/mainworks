@@ -9,7 +9,7 @@ import { loopLiveness, watchdogPlan } from '../src/daemon/liveness.js';
 import { neededRework, standingVerdict } from '../src/daemon/rework.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): the 2031-03-01 clockStart is the loop's injected now and every verdict/lease instant and loopLiveness call takes it explicitly; new Date() only stamps an empty snapshot for a lockless status.

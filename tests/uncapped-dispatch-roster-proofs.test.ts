@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import { authorizedForProof, unauthorizedProofs, type Principal, type Work } from '../src/model.js';
 import { apiRoutes } from '../src/server/index.js';
 import { signInDatabase } from './helpers/sign-in-database.js';

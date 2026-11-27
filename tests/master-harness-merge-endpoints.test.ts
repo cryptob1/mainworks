@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { masterConfigSchema, masterHarness, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { masterHarness } from '../src/master/harness.js';
 import { harnessDecision, retiredMasterRules, writeHarnessPermissions } from '../src/harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

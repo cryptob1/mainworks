@@ -8,7 +8,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { emptyDispatchCursor, readDispatchCursor, writeDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { runCycle } from '../src/daemon/cycle.js';

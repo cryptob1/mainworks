@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import type { DeployUnitProcess } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3136: a deploy watch running code older than the commit it serves never runs the newer watch's

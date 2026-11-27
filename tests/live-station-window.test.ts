@@ -9,7 +9,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { forgetFlow } from '../src/server/flow.js';
 import { server } from '../src/server.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/deploy-watch.js';

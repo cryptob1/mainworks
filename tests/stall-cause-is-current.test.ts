@@ -7,7 +7,7 @@ import { emptyDaemonState, daemonStatePath, type DaemonState } from '../src/daem
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
-import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Work } from '../src/model.js';

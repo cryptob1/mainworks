@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mergeWriterIdle, mergeWriterReads, mergeWriterStep } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { baseFailureReason, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { ChildRun } from '../src/child-runner.js';
 import type { Cycle } from '../src/daemon/cycle.js';

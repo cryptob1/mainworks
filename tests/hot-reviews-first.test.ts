@@ -13,7 +13,8 @@ import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merg
 import { cpuCelsius } from '../src/daemon/cpu-pressure.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema, type HerdrAgent, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
+import { type HerdrAgent } from '../src/master/herdr.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { MergePorts } from '../src/merge-writer/executor.js';

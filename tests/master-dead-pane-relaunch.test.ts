@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { emptyDaemonState, masterSummary } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const clock = Date.parse('2026-10-24T07:00:00Z');

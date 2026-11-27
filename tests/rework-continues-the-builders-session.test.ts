@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { dispatchWork } from '../src/master.js';
+import { dispatchWork } from '../src/master/dispatch.js';
 import { headlessArgs } from '../src/headless-argv.js';
 import { runtimeSessionId } from '../src/model/token-costs.js';
 import { attemptLabel, readAttemptLaunch } from '../src/master/session-resume.js';

@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Work } from '../src/model.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { launchReview, saveReviewerProfile } from '../src/reviewer.js';
 import type { UpDependencies, UpEvent, UpRequest } from '../src/up.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

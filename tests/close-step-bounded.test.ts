@@ -7,7 +7,7 @@ import { save } from '../src/store.js';
 import { runCycle, stepTimeoutMs } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });

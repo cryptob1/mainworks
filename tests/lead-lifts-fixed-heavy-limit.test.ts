@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { fleetCommand } from '../src/cli/master/fleet.js';

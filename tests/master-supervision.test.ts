@@ -6,7 +6,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentRuntimeRun, agentRuntimeTimeoutMs, listHerdrAgents, masterConfigSchema, observeHerdrAgents, setupMaster, type MasterConfig } from '../src/master.js';
+import { agentRuntimeRun, agentRuntimeTimeoutMs, listHerdrAgents, observeHerdrAgents } from '../src/master/herdr.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { setupMaster } from '../src/master/config.js';
 import { daemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
@@ -33,7 +35,7 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
 const source = (name: string) => readFileSync(fileURLToPath(new URL(`../src/${name}`, import.meta.url)), 'utf8');
-// src/master.ts re-exports the modules under src/master/ (GY-177); its source is theirs.
+// The master's source: every module under src/master/ (GY-177).
 const masterSource = () => readdirSync(fileURLToPath(new URL('../src/master', import.meta.url))).filter(name => name.endsWith('.ts')).sort().map(name => source(`master/${name}`)).join('\n');
 /** A new install names its loop for its repository (GY-1441); a unit placed by hand under the legacy name is an older install's. */
 const loopUnit = perInstallUnits('owner/project').master;

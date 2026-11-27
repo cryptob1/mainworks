@@ -11,10 +11,9 @@ import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { profileHealth } from '../src/daemon/sessions.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import {
-  masterConfigSchema, observedExhaustions, recordObservedExhaustion,
-  selectAccount, type HerdrAgent, type MasterConfig,
-} from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { observedExhaustions, recordObservedExhaustion, selectAccount } from '../src/master/environments.js';
+import { type HerdrAgent } from '../src/master/herdr.js';
 import type { Principal, Work } from '../src/model.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

@@ -11,7 +11,7 @@ import { operationsCommand } from '../src/cli/master/operations.js';
 import type { MasterSession } from '../src/cli/master/session.js';
 import type { MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { acquireVerificationSlot, readHeavyDrain, requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable } from '../src/master/verification-slots.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';

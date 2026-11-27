@@ -8,7 +8,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { mergeRecordKey, mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { MergePorts, MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 

@@ -12,7 +12,7 @@ import type { Cycle } from '../src/daemon/cycle.js';
 import { trialRefusalHeld } from '../src/model/merge-queue.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';

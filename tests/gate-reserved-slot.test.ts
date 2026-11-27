@@ -12,7 +12,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { acquireVerificationSlot, declarationSlot, gateSlot, heldSlots, readHeavyDrain, requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable } from '../src/master/verification-slots.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { until } from './helpers/until.js';

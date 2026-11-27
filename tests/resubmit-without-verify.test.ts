@@ -12,7 +12,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { acquireVerificationSlot, heldSlots, setStrictCap, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { trialHotCelsius } from '../src/merge-writer/trial-load.js';
 import type { Principal, Work } from '../src/model.js';

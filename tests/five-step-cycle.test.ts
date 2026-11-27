@@ -7,7 +7,7 @@ import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { mergeWriterIdle, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { MergePorts, MergeRecordEvent } from '../src/merge-writer/executor.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 

@@ -6,7 +6,7 @@ import { trialContainerWords } from '../src/merge-writer/trial-container.js';
 import { trialEnvironment, trialHomeVariables } from '../src/merge-writer/trial.js';
 import { command, git } from '../benchmarks/hard-math/process.js';
 import { prepareWorkerLaunch } from '../src/master/dispatch.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { atomicPrivateWrite } from '../src/master/config.js';
 import { discover } from '../src/onboarding.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

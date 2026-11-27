@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { defaultWorktreeRoot, sessionCheckout } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

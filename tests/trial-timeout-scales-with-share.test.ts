@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { availableParallelism } from 'node:os';
 import { mergeWriterReads, trialShareAllowance } from '../src/daemon/cycle-merge-writer.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { trialTimeoutMinutes } from '../src/master/merge-writer-settings.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 

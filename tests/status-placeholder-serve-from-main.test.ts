@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { applyDelivery, onboardingServe } from '../src/repository-setup.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 

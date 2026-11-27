@@ -7,7 +7,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { controlPlaneRecordPath, writeControlPlaneRecord } from '../src/deploy-watch.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Principal, Work } from '../src/model.js';
 import { mainworksRepository } from '../src/scenarios.js';

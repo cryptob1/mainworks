@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { runPlanner } from '../src/master/planner.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

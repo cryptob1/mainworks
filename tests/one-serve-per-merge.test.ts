@@ -8,7 +8,7 @@ import { mergeOne, type MergePorts, type MergeRecordEvent, type MergeTrialRun } 
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 

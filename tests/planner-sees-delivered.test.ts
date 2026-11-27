@@ -6,7 +6,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { plannerPrompt } from '../src/daemon/planner.js';
-import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { runPlanner } from '../src/master/planner.js';
 import { recordTestSelection, readTestSelections, testSelectionSummary } from '../src/merge-writer/test-selection.js';
 import type { Work } from '../src/model.js';

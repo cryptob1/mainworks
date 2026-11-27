@@ -6,7 +6,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { managedServePorts } from '../src/cli/upgrade.js';
 import { readServeRecord, serveOnce, serveRecordPath } from '../src/serve-app.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 

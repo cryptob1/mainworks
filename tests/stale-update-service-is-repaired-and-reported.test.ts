@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { publishCliRelease, resolvedLauncher } from '../src/install/cli-release.js';
 import { systemdCommandLineWords } from '../src/install/units.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

@@ -12,7 +12,7 @@ import { mergeWriterIdle, mergeWriterReads, type MergeWriterReads } from '../src
 import { runMergeTrial, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 import { completionBody } from '../src/cli/complete.js';

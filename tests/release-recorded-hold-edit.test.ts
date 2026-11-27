@@ -6,7 +6,7 @@ import type { Store } from '../src/store.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';

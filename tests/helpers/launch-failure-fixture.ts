@@ -5,7 +5,7 @@ import { masterStatusReport } from '../../src/cli/master-status.js';
 import { runCycle } from '../../src/daemon/cycle.js';
 import type { DaemonEffects } from '../../src/daemon/effects.js';
 import { daemonStatePath, emptyDaemonState } from '../../src/daemon/state.js';
-import { masterConfigSchema, type WorkerProfile } from '../../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../../src/master/herdr.js';
 import type { AgentRegistry, FleetRuntime } from '../../src/model/registry.js';
 import { temporaryDirectory } from './temp-dirs.js';

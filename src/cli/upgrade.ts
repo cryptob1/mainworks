@@ -22,7 +22,7 @@ import { checkServedApp } from '../app-feature-check.js';
 import { installCommand, readServeRecord, serveBaselineCheckoutPath, serveCheckoutPath, servedApplication, serveEnvironment, serveRecordPath, watchServe, type ServeDeclaration, type ServePorts } from '../serve-app.js';
 import { defaultChildRun } from '../child-runner.js';
 import { migrateHerdr } from '../herdr-migration.js';
-import { loadMasterConfig } from '../master.js';
+import { loadMasterConfig } from '../master/config.js';
 import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease, writeUserLauncher } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { heavyJobsDirectory, joinHostHeavyBudget, liveSlots, withHeavyJob } from '../master/verification-slots.js';

@@ -13,7 +13,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { cliReleasePath, currentCliPath, repairCliStamp } from '../src/install/cli-release.js';
 import { recordedCommit, releaseIdentityPath } from '../src/release.js';
-import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
 
 // GY-3553: the loop clears an environment blocker itself once its cause is gone. A worker blocked

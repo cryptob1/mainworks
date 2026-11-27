@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { availableRuntimes, buildProposal, collectScanInput, detectDeploy, detectStack, environmentTopology, hasNoCi, hasSharedDatabase, workflowCheckNames } from '../src/onboarding.js';
 import * as onboarding from '../src/onboarding.js';
 import { applyProposal, loadAppliedSetup, loadProposal, proposalDigest, readSetupStatus, saveProposal, scanProposal, setupDrift } from '../src/repository-setup.js';
-import { workerProfileSchema } from '../src/master.js';
+import { workerProfileSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // Read through the namespace, with the shipped values as the fallback, so the proofs also load (and judge their cases) on a base that does not export the bound.

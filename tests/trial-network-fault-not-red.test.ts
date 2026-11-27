@@ -14,7 +14,7 @@ import { reportTrialHostFault } from '../src/daemon/control-plane.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';

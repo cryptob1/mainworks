@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { mergeWriterIdle, mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { runChild } from '../src/child-runner.js';
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Cycle } from '../src/daemon/cycle.js';

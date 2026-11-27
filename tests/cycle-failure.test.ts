@@ -9,7 +9,7 @@ import { cycleFailureCeiling, cycleFailureCeilingMs, cycleFailureDelay, loopLive
 import { daemonStateSchema, emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { daemonSummary, runDaemon } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 // Time-bomb allowance (GY-1694): the 2030-01-01 iso() values are the stub snapshot's own now and deployment stamp handed back to the daemon; Date.now() only measures how long the loop waited between retries, or offsets it by the stall hold the backoff test skips.
 

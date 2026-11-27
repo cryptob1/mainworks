@@ -10,7 +10,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { mergeWriterIdle, mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { releaseAdoptionBoundMs, runDaemon } from '../src/daemon/run.js';
 import type { MergeRecordEvent } from '../src/merge-writer/executor.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
 import type { Work } from '../src/model.js';
 import { gitRepo } from './helpers/git-repo.js';

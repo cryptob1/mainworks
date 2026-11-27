@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import type { MasterConfig } from '../master.js';
+import type { MasterConfig } from '../master/profiles.js';
 import { discoverHostLogins, installDirectory, probeRegistryAccount, proposeFleet, type FleetLaunchAccount } from '../fleet.js';
 import { smokePiWorker } from '../runner/pi-launch.js';
 import type { SmokeResult } from '../runner/pi.js';

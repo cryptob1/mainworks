@@ -14,7 +14,7 @@ import { ghConfigDirectory, trialHiddenPaths } from '../src/merge-writer/trial.j
 import { installDirectory, readInstallRecord } from '../src/install/secrets.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { recordedUp, runUp, upRequestFromArgs, type UpDependencies } from '../src/up.js';
 
 // GY-3269 AC-1: `install --push-auth gh` makes the operator's gh login the merge writer's

@@ -8,7 +8,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes } from '../src/model/registry.js';
-import { recordObservedExhaustion, selectAccount, masterConfigSchema, readEnvironmentLog } from '../src/master.js';
+import { recordObservedExhaustion, selectAccount, readEnvironmentLog } from '../src/master/environments.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { FleetClient } from '../src/fleet.js';
 import { listen } from './helpers/http-server.js';
 

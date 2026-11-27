@@ -1,4 +1,4 @@
-import type { MasterConfig } from '../master.js';
+import type { MasterConfig } from '../master/profiles.js';
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';

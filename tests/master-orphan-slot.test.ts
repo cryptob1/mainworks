@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { selectFleetSession, type FleetClient, type FleetSelection } from '../src/fleet.js';
 import { masterProfile } from '../src/master/master-session.js';
 import { chooseSession, emptyRegistry, proposedRuntimes, unobservedQuota, type AgentRegistry, type FleetSession } from '../src/model/registry.js';

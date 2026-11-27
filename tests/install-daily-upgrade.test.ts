@@ -10,7 +10,7 @@ import { controlPlaneRecordPath, controlPlaneStaleLines, controlPlaneSummary, co
 import { controlPlaneStep } from '../src/daemon/control-plane.js';
 import { emptyDaemonState, daemonStatePath } from '../src/daemon/state.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { gateRecordPath, readGateRecord } from '../src/batch-gate.js';
 import { cycleUntil, git, pipelineWorld, rollout, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

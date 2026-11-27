@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultChildRun } from '../src/child-runner.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { attributeFailures, baseFailurePrefix, baseFailureReason, baseTipCheckCacheLimit, baseTipCheckCacheSize, clearBaseTipCheckCache, failureIsBase, mergeOne, runMergeTrial, trialFailureReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';

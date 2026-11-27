@@ -5,7 +5,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { setupMaster } from '../src/master.js';
+import { setupMaster } from '../src/master/config.js';
 import { managedInstructions } from '../src/repository-setup.js';
 import { agentsRenderers } from '../src/cli/workspace-generated.js';
 import { regenerateManagedBlocks } from '../src/sync.js';
@@ -21,7 +21,7 @@ const url = 'https://graphyard.example';
 const legacyBlock = '<!-- graphyard-master -->\n## Mainworks master agent\n\nRules an earlier master init wrote.\n<!-- /graphyard-master -->';
 const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
 // Imported per test, so a tree without the GY-1493 exports fails each case rather than the file.
-const master = async () => await import('../src/master.js') as unknown as { masterInstructions: string; withoutMasterInstructions: (existing: string) => string };
+const master = async () => await import('../src/master/instructions.js') as unknown as { masterInstructions: string; withoutMasterInstructions: (existing: string) => string };
 
 async function repository() {
   const root = await temporaryDirectory('role-instructions');
@@ -77,7 +77,7 @@ test('unit:agents-md-worker-block-only — sync regeneration renders the worker 
   assert.equal(regenerateManagedBlocks(`${clean}${legacyBlock}${legacyBlock}`, text => renderers.managedInstructions(renderers.withoutMasterInstructions(text))), null, 'duplicate master markers are left for the worker');
   // A CLI released before GY-1493 probes the merged tree for managedMasterInstructions and runs it on
   // a conflicted AGENTS.md that still carries the block: the tree's export drops that block only.
-  const { managedMasterInstructions } = await import('../src/master.js') as unknown as { managedMasterInstructions: (existing: string) => string };
+  const { managedMasterInstructions } = await import('../src/master/instructions.js') as unknown as { managedMasterInstructions: (existing: string) => string };
   const earlierCli = (text: string) => { const worker = renderers.managedInstructions(text); return worker.includes('<!-- graphyard-master -->') ? managedMasterInstructions(worker) : worker; };
   assert.equal(regenerateManagedBlocks(conflicted, earlierCli), `${clean}\n\n`, 'an earlier CLI never turns AGENTS.md into the master text alone');
   const own = await readFile(join(repositoryRoot, 'AGENTS.md'), 'utf8');

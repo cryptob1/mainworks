@@ -12,7 +12,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { runCaretaker } from '../src/master/caretaker.js';
 import { caretakerPrompt } from '../src/master/caretaker-prompt.js';
 import { checkAccountLive } from '../src/fleet.js';

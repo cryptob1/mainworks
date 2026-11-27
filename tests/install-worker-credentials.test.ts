@@ -6,7 +6,8 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type UpDependencies, type UpEvent, type UpRequest } from '../src/up.js';
-import { loadMasterConfig, setupAgentEnvironments, setupMaster, type EnvironmentProbe } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
+import { setupAgentEnvironments, type EnvironmentProbe } from '../src/master/environments.js';
 import { Vault, writeInstallRecord } from '../src/install/secrets.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

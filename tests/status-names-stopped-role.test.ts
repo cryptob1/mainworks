@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { isHerdrCommand, herdrSubcommand } from '../src/master/herdr.js';
 import { chooseSession, emptyRegistry, fleetView, proposedRuntimes, unobservedQuota, type AgentRegistry, type FleetSession } from '../src/model/registry.js';

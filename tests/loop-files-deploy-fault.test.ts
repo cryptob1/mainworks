@@ -12,7 +12,7 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { gateFiledItem } from '../src/daemon/cycle-batch-gate.js';
 import { controlPlaneUpgradeItem, stepStallItem, trialHostFaultItem, trialImageFaultItem, trialNetworkFaultItem, trialSandboxFaultItem, upstreamFiler } from '../src/daemon/control-plane.js';
 import { controlPlaneRecordPath, writeControlPlaneRecord } from '../src/deploy-watch.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import type { Principal, Work } from '../src/model.js';
 

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, sep } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { heavyTrial } from '../src/daemon/cycle-merge-writer.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { acquireVerificationSlot, slotHolders, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

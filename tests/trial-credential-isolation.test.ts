@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { buildStaticSite, groupBuildShell } from '../src/release-project.js';
 import { confinedSession } from '../src/e2e/steps.js';

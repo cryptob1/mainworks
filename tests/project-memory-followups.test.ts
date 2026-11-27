@@ -4,7 +4,8 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { daemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { checkAgentEnvironment, masterConfigSchema, type AgentEnvironment } from '../src/master.js';
+import { checkAgentEnvironment } from '../src/master/environments.js';
+import { masterConfigSchema, type AgentEnvironment } from '../src/master/profiles.js';
 import { clearPlanUsageCache } from '../src/provider-usage.js';
 import { docsWords } from '../src/model/documentation.js';
 import {

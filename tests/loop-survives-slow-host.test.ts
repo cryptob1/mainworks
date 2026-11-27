@@ -8,7 +8,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Work } from '../src/model.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { loopLiveness } from '../src/daemon/liveness.js';

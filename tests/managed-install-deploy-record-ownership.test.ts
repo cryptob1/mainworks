@@ -8,7 +8,7 @@ import { defaultChildRun } from '../src/child-runner.js';
 import { restartCause } from '../src/daemon/run.js';
 import { daemonStatePath } from '../src/daemon/state.js';
 import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 

@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { closeHerdrPane, herdrJson } from '../../src/master.js';
+import { closeHerdrPane, herdrJson } from '../../src/master/herdr.js';
 import { liveRun, listRunDirectories, runsDirectory } from '../../src/runner/registry.js';
 import type { RunContext } from './runner.js';
 import { childRunner, type ChildRun } from '../../src/child-runner.js';

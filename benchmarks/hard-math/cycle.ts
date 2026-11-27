@@ -1,5 +1,5 @@
 import type { Work } from '../../src/model.js';
-import type { MasterConfig } from '../../src/master.js';
+import type { MasterConfig } from '../../src/master/profiles.js';
 import type { DaemonEffects } from '../../src/daemon/effects.js';
 import type { DaemonState } from '../../src/daemon/state.js';
 import { runCycle, type Launcher } from '../../src/daemon/cycle.js';

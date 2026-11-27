@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { credentialMaskFor, coordinatorConfinement, sessionMountNamespaceWorks } from '../src/master/confinement.js';
-import { LauncherUnavailableError, loadMasterConfig, setupMaster } from '../src/master.js';
+import { LauncherUnavailableError, loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Work } from '../src/model.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';

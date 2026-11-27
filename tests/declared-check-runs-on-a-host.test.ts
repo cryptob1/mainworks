@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
 import { trialRunFiles, trialRunsDirectory, lastHostFallbacks } from '../src/merge-writer/trial-run.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';

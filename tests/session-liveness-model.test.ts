@@ -14,7 +14,7 @@ import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { herdrSessionListing } from '../src/dispatch/session-sweep.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { runtimeEndedStates } from '../src/harness.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });

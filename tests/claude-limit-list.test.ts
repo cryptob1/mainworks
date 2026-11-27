@@ -5,7 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { useTestStore } from './helpers/test-store.js';
-import { checkAgentEnvironment } from '../src/master.js';
+import { checkAgentEnvironment } from '../src/master/environments.js';
 import { observeAccount } from '../src/fleet.js';
 import { hostAccountsVariable } from '../src/host-accounts.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';

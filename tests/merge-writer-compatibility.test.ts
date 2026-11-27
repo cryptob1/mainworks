@@ -22,7 +22,7 @@ import type { MergePorts, MergeTrialRun, runMergeTrial } from '../src/merge-writ
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { completionBody } from '../src/cli/complete.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { reconcileReviews, saveReviewLedger } from '../src/reviewer.js';
 import { neededRework } from '../src/daemon/rework.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

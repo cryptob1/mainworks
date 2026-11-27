@@ -5,7 +5,7 @@ import { lstat, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LaunchRefusedError, launchPlan } from '../src/harness.js';
 import { runtimeAdapters } from '../src/master/runtimes.js';
-import { startAgentSession } from '../src/master.js';
+import { startAgentSession } from '../src/master/launch.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

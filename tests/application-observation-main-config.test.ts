@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listen } from './helpers/http-server.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { previewDemand } from '../src/project-previews.js';
 import { declaredServe } from '../src/merge-writer/e2e-trial.js';
 import { parseProjectDelivery } from '../src/model-boundary/project-applications.js';

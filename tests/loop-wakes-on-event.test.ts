@@ -7,7 +7,7 @@ import { writeFile } from 'node:fs/promises';
 import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // The loop waits out its interval only when nothing happened: an event another actor writes to the

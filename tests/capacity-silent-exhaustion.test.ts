@@ -2,10 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  holdRepeatedLimitAccount, masterConfigSchema, recordEnvironmentLog,
-  repeatedLimitAccount, selectAccount, selectionKey, sessionAccount, type MasterConfig,
-} from '../src/master.js';
+import { holdRepeatedLimitAccount, repeatedLimitAccount, sessionAccount } from '../src/master/launch-account.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { recordEnvironmentLog, selectAccount, selectionKey } from '../src/master/environments.js';
 import type { FleetClient } from '../src/fleet.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, foldObservations, proposedRuntimes, type AgentRegistry, type FleetRoleName, type FleetSession } from '../src/model/registry.js';

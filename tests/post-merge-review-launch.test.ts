@@ -18,7 +18,7 @@ import { unknownParent } from '../src/dispatch/post-merge.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { owedPostMergeReviews, postMergeRequestId, postMergeRefusalProbeMs } from '../src/model/post-merge-review.js';
 import { readReviewLedger, saveReviewerProfile, reviewRetryPrompt } from '../src/reviewer.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { readReviewBinding } from '../src/review-post.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

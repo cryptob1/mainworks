@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { deployOnce, deployRecordPath, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2957: the watch's first pass names the repository in a deploy record an older watcher left

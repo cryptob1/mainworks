@@ -12,7 +12,7 @@ import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
 import type { Principal } from '../src/model.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { runCaretaker } from '../src/master/caretaker.js';
 import { fleetRoleHealth } from '../src/fleet.js';
 import { hostAccountsVariable, recordHostAccountCheck } from '../src/host-accounts.js';

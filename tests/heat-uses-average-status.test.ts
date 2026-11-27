@@ -7,7 +7,7 @@ import { cpuCelsius, cpuPressureStep } from '../src/daemon/cpu-pressure.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

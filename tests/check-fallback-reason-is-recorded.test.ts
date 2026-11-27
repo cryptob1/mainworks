@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
 import type { ShardSshSession } from '../src/merge-writer/remote-shards.js';
 import { trialRunFiles, trialRunsDirectory } from '../src/merge-writer/trial-run.js';

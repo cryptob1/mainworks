@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { Work } from '../src/model.js';
 import { liveReviewRequest } from '../src/model/dispatch.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { launchReview, readReviewLedger, reconcileReviews, reviewCommand, saveReviewerProfile } from '../src/reviewer.js';
 import { sessionRetry, sessionRetryBaseMs, sessionRetryLimit } from '../src/producer.js';

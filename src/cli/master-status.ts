@@ -1,7 +1,9 @@
 // Concern: `mainworks master status` — one page: the managed repository's served commit against its base tip (only what a deployment provider records; unconfigured when none does), each open item, the merge writer, live sessions and free worker profiles.
 import type { pendingWorkerVerifications } from '../server/worker-verification-queue.js';
 import { latestReleaseNote, releaseNotesPath } from '../release-notes.js';
-import { type MasterConfig, inspectWorkerCredentials, observeHerdrAgents } from '../master.js';
+import { type MasterConfig } from '../master/profiles.js';
+import { inspectWorkerCredentials } from '../master/config.js';
+import { observeHerdrAgents } from '../master/herdr.js';
 import { readSessionScreenOrError } from '../master/prompt-delivery.js';
 import type { Work } from '../model/work.js';
 import { type ChildRun, defaultChildRun } from '../child-runner.js';

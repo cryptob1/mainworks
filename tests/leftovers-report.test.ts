@@ -11,7 +11,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 
 // GY-3190: the loop reports once a UTC day what its sweeps stopped or removed and the disk Mainworks's leftovers hold.

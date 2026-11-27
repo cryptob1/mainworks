@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { readReviewLedger, reconcileReviews, saveReviewerProfile, type ReviewRecord } from '../src/reviewer.js';
 import { readProducerLedger, reconcileProducers, saveProducerLedger, type ProducerRecord } from '../src/producer.js';
