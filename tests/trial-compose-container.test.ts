@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { containerTrialE2e, trialContainerWords } from '../src/merge-writer/trial-container.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { trialEnvironment, trialHomeVariables } from '../src/merge-writer/trial.js';
@@ -43,8 +44,7 @@ http.createServer((req, res) => { res.setHeader('Content-Type', 'application/jso
       { kind: 'command', name: 'Private root and writable checkout', run: `node -e 'const fs=require("node:fs"),a=require("node:assert/strict");a.equal(fs.existsSync("/var/run/docker.sock"),false);a.equal(fs.existsSync(${JSON.stringify(join(home, 'sentinel'))}),false);fs.writeFileSync("edited", "allowed")'` },
     ],
   }));
-  const git = (...args: string[]) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Fixture', GIT_COMMITTER_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid', GIT_COMMITTER_EMAIL: 'fixture@example.invalid' } }).trim();
-  git('init', '-q'); git('add', '.'); git('commit', '-qm', 'fixture');
+  const { git } = await gitRepo({ root: worktree, message: 'fixture', files: {} });
   const wrapper = (network = 'bridge') => trialContainerWords([worktree, scratch], [], undefined, network);
   const run = () => containerTrialE2e({ worktree, scratch, mergeSha: git('rev-parse', 'HEAD'), proofs: ['e2e:compose-bound'],
     env: environment, wrapper: wrapper(), networkWrapper: wrapper, budgetMs: 60_000, run: defaultChildRun, log: () => {} });

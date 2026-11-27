@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { acquireVerificationSlot, gateSlot, heldSlots, hostHeavyJobsDirectory, slotsDirectoryVariable, type HeldSlot } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
@@ -64,13 +64,12 @@ test('e2e:heavy-slot-fairness — two installs\' loops on one host submit merge 
   const directory = hostHeavyJobsDirectory(base);
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, 'limit'), '2\n');
-  const installs = ['acme/app', 'acme/site'].map(project => {
+  const installs = await Promise.all(['acme/app', 'acme/site'].map(async project => {
     const root = join(scratch, project.replace('/', '-')), managed = `${root}-managed`;
-    mkdirSync(root); mkdirSync(managed);
-    writeFileSync(join(root, 'README.md'), project);
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'fixture');
+    mkdirSync(managed);
+    await gitRepo({ root, message: 'fixture', files: { 'README.md': project } });
     return { project, root, managed };
-  });
+  }));
   const children: ChildProcess[] = [];
   after(() => { for (const child of children) child.kill('SIGKILL'); });
   const waiting = /waits for a host heavy-job slot|waiting for a host heavy-job slot/;

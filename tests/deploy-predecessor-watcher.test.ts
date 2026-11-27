@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { credentialMaskFor, readOnlyMountWrapper } from '../src/master/confinement.js';
 import { createRequire } from 'node:module';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { watchPorts, deployHealth } from '../src/cli/upgrade.js';
 import { deployOnce, deployRecordPath, readDeployRecord } from '../src/deploy-watch.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -128,9 +129,7 @@ test('integration:deploy-predecessor-watcher — a running predecessor watcher u
       const id = ++sequence; pending.set(id, { resolve, reject }); process.send({ kind: 'run', id, command, args, options });
     });
   `);
-  await writeFile(join(checkout, '.gitignore'), 'node_modules/\n.graphyard/\n');
-  git(checkout, 'init', '-q', '-b', 'main'); git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'A');
-  const a = git(checkout, 'rev-parse', 'HEAD');
+  const { head: a } = await gitRepo({ root: checkout, message: 'A', files: { '.gitignore': 'node_modules/\n.graphyard/\n' } });
   const origin = join(base, 'origin.git'); git(base, 'clone', '-q', '--bare', checkout, origin); git(checkout, 'remote', 'add', 'origin', origin);
   await dependencies(checkout);
   // Also retain a legacy deploy/build CLI, the path workers used before this change.
