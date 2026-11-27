@@ -197,3 +197,23 @@ test('integration:e2e-catalog-fits-bound — the shards a test machine runs at o
     'the checkout the shards were given holds only what the caller put there');
   assert.equal(git(root, 'worktree', 'list', '--porcelain').split('\n\n').filter(Boolean).length, 1, 'and no worktree of theirs stays registered in it');
 });
+
+test('integration:e2e-catalog-fits-bound — a shard that cannot make its worktree fails each of its cases, naming why', { timeout: 120_000 }, async () => {
+  const caseFile = (id: string) => JSON.stringify({ id, title: `Case ${id}`, tags: ['api'], target: 'any', required: false, steps: [{ kind: 'command', name: 'nothing to do', run: 'true' }] });
+  const { root } = await gitRepo({ label: 'e2e-catalog-worktree-refused', files: {
+    'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'site' }], cases: { first: 'site', second: 'site' } } }),
+    'site/index.html': '<h1>fixture</h1>\n',
+    'e2e/cases/first.json': caseFile('first'), 'e2e/cases/second.json': caseFile('second'),
+  } });
+  writeFileSync(join(root, 'list'), 'e2e/cases/first.json\ne2e/cases/second.json\n');
+  // A clone whose git directory takes no new worktree.
+  writeFileSync(join(root, '.git', 'worktrees'), 'not a directory\n');
+  const script = fileURLToPath(new URL('../scripts/e2e-shard.mjs', import.meta.url));
+  const ended = await promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script, 'list', 'records', '60000'], { cwd: root })
+    .then(() => null, (error: Error & { code?: number; stderr?: string }) => error);
+  assert.ok(ended && ended.code === 1, `the shard ends with its own exit code, not a pass: ${ended?.code}`);
+  assert.doesNotMatch(String(ended?.stderr), /\bReferenceError\b/, 'and cleanly, not on an uncaught error of its own');
+  const entries = (await readFile(join(root, 'records'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(entries.map(entry => [entry.proof, entry.executed, entry.failed]), [['e2e:first', 0, 1], ['e2e:second', 0, 1]], `every case fails, none as a pass: ${JSON.stringify(entries)}`);
+  for (const entry of entries) assert.match(entry.failingStep, /^the shard's worktree of [0-9a-f]{12} failed: .*fatal: could not create leading directories of '\.git\/worktrees\/checkout': Not a directory$/);
+});

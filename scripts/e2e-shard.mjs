@@ -13,27 +13,27 @@ const [list, records, budget] = process.argv.slice(2), written = resolve(records
 const proofs = readFileSync(resolve(list), 'utf8').split('\n').map(line => line.match(/^e2e\/cases\/(.+)\.json$/)?.[1]).filter(Boolean).map(id => `e2e:${id}`);
 const mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 writeFileSync(written, '');
-/** Every case of the shard fails with one step when its checkout or build fails, so the day's filing names why. */
-const refuse = (step, error) => {
-  const failingStep = `${step} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
-  for (const proof of proofs) appendFileSync(written, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
-  finish(1);
-};
 // GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
 // where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in its
 // own worktree of the commit, as a trial's checkout is one: its own files and index, the clone's objects and packages.
 const checkout = process.cwd(), scratch = mkdtempSync(join(tmpdir(), 'e2e-shard-')), worktree = join(scratch, 'checkout');
 const git = args => execFileSync('git', args, { stdio: 'pipe' });
-try {
-  git(['worktree', 'add', '--detach', worktree, mergeSha]);
-  if (existsSync(join(checkout, 'node_modules'))) symlinkSync(join(checkout, 'node_modules'), join(worktree, 'node_modules'));
-  process.chdir(worktree);
-} catch (error) { refuse(`the shard's worktree of ${mergeSha.slice(0, 12)}`, error); }
 /** The shard ends with its worktree, as a trial does, leaving the clone as the shim made it. */
 const finish = code => {
   try { git(['-C', checkout, 'worktree', 'remove', '--force', worktree]); } catch { /* never registered, or already gone */ }
   process.exit(code);
 };
+/** Every case of the shard fails with one step when its worktree or build fails, so the day's filing names why. */
+const refuse = (step, error) => {
+  const failingStep = `${step} failed: ${String(error.stderr || error.stdout || error.message).trim().split('\n').slice(-5).join(' | ')}`;
+  for (const proof of proofs) appendFileSync(written, `${JSON.stringify({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep })}\n`);
+  finish(1);
+};
+try {
+  git(['worktree', 'add', '--detach', worktree, mergeSha]);
+  if (existsSync(join(checkout, 'node_modules'))) symlinkSync(join(checkout, 'node_modules'), join(worktree, 'node_modules'));
+  process.chdir(worktree);
+} catch (error) { refuse(`the shard's worktree of ${mergeSha.slice(0, 12)}`, error); }
 // GY-3968: the shard's checkout is a fresh clone, so build it first as a trial does: a served dashboard needs dist/.
 const scripts = existsSync('package.json') ? JSON.parse(readFileSync('package.json', 'utf8')).scripts : undefined;
 const build = scripts?.build ? buildArgv(packageManager(worktree), null) : null;
