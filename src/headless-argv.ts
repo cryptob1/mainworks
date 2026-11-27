@@ -60,9 +60,10 @@ export function headlessArgs(kind: string, args: readonly string[], prompt: stri
 }
 
 /** The headless command line of one run: the installed runtime, asked once which of its form's optional flags it takes. */
-export async function headlessArgv(launch: { kind: string; args: readonly string[]; contract?: RegisteredLaunch | null; session?: string | null; promptFile?: string }, request: string, env: NodeJS.ProcessEnv): Promise<string[]> {
+export async function headlessArgv(launch: { kind: string; args: readonly string[]; contract?: RegisteredLaunch | null; session?: string | null; promptFile?: string; remote?: boolean }, request: string, env: NodeJS.ProcessEnv): Promise<string[]> {
   const form = runtimeAdapter(launch.kind)?.headless;
   const program = realRuntimeBinary(form?.program ?? (launchRecipe(launch.kind)?.program ?? launch.kind), env);
-  const accepted = launch.contract?.headlessArgs || !form ? [] : await acceptedFlags(program, form.before, form.optional ?? [], env);
+  // GY-4034: never probe the coordinator's binary for optional flags (such as OpenCode's `--standalone`) when the session runs inside a remote container with its own runtime version and no host background service.
+  const accepted = launch.contract?.headlessArgs || !form || launch.remote ? [] : await acceptedFlags(program, form.before, form.optional ?? [], env);
   return [program, ...headlessArgs(launch.kind, launch.args, request, launch.contract, accepted, launch.session, launch.promptFile)];
 }

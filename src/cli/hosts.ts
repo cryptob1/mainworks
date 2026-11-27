@@ -17,11 +17,11 @@ export const hostCommands = defineCommands([{
     '                                Builders start there first; each login is handed over per session',
     '                                in memory and never written to the host\'s disk',
     '  host remove USER@HOST         Stop reading the host',
-    '  host list                     The recorded hosts',
+    '  host list                     The recorded hosts, and whether turbo or boost is off on each',
   ],
   readsConnection: () => false,
   async run(context) {
-    const [{ addHost, hostPrepareScript, localPublicKey, readHosts, removeHost, sessionHelperProblem, setHostSessions, shareHost }, { runRemoteSession }] = await Promise.all([
+    const [{ addHost, hostPrepareScript, localPublicKey, probeHost, readHosts, removeHost, sessionHelperProblem, setHostSessions, shareHost }, { runRemoteSession }] = await Promise.all([
       import('../hosts.js'), import('../remote-session.js'),
     ]);
     const [target] = context.args;
@@ -59,8 +59,10 @@ export const hostCommands = defineCommands([{
     } else if (context.id === 'list' || !context.id) {
       const hosts = await readHosts();
       const lines = await Promise.all(hosts.map(async host => {
-        const problem = host.sessions ? await sessionHelperProblem(host.target) : null;
-        return `${host.target}  added ${host.addedAt}${host.sessions ? (problem ? `, set to ${host.sessions} sessions but takes none: ${problem}` : `, takes ${host.sessions} sessions`) : ''}`;
+        const [problem, probe] = await Promise.all([host.sessions ? sessionHelperProblem(host.target) : null, probeHost(host.target)]);
+        // GY-4008: whether turbo or boost is off there now; nothing on a CPU with neither or a host not answering.
+        const turbo = probe.ok && probe.turboOff !== null ? `, turbo ${probe.turboOff ? 'off' : 'on'}` : '';
+        return `${host.target}  added ${host.addedAt}${turbo}${host.sessions ? (problem ? `, set to ${host.sessions} sessions but takes none: ${problem}` : `, takes ${host.sessions} sessions`) : ''}`;
       }));
       console.log(hosts.length ? lines.join('\n') : 'No host added: this machine runs all work. Add one with mainworks host add YOU@HOST in a terminal.');
     } else throw new Error('Usage: mainworks host add USER@HOST[:PORT] | host add ALIAS | host share HOST PUBLIC-KEY | host unshare HOST PUBLIC-KEY | host prepare | host sessions USER@HOST N | host remove USER@HOST | host list');

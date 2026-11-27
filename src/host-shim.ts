@@ -34,6 +34,9 @@ import { trialLauncher } from './merge-writer/trial-container.js';
 import { trialAppArmorProfile } from './merge-writer/trial-apparmor.js';
 import { cpuSensorNames, defaultDiskFloorGb, minimumTrialContainers, trialHotCelsius, trialPressureBoundSeconds, trialStartOrder } from './merge-writer/trial-load.js';
 
+/** GY-4008: the CPU's sysfs directory; the fixture points it elsewhere. */
+export const cpuSysfs = '${GRAPHYARD_CPU_SYSFS:-/sys/devices/system/cpu}';
+const turboProbeLine = `_c=${cpuSysfs}; if [ -r "$_c/intel_pstate/no_turbo" ]; then echo "turbo-off $(cat "$_c/intel_pstate/no_turbo")"; elif [ -r "$_c/cpufreq/boost" ]; then [ "$(cat "$_c/cpufreq/boost")" = 0 ] && echo "turbo-off 1" || echo "turbo-off 0"; fi`;
 /** Read-only: Docker's answer, cores, load, the /proc/stat cpu line, CPU sensors (with GY-3948 5-sample median over ~2s) and the trial containers running now. */
 export const hostProbeScript = [
   // GY-3697: without Docker, one line says whether its user unit is enabled and active.
@@ -43,6 +46,8 @@ export const hostProbeScript = [
   'head -n 1 /proc/stat',
   `_s=; _i=0; while [ $_i -lt 5 ]; do _m=; for d in /sys/class/hwmon/hwmon*; do n=$(cat "$d/name" 2>/dev/null); for t in "$d"/temp*_input; do [ -r "$t" ] || continue; v=$(cat "$t" 2>/dev/null); [ $_i -eq 0 ] && echo "temp $n $v"; case "$n" in ${cpuSensorNames.join('|')}) case "$v" in ''|*[!0-9]*) ;; *) v=$((v / 1000)); [ -z "$_m" ] || [ "$v" -gt "$_m" ] && _m=$v ;; esac ;; esac; done; done; [ -n "$_m" ] || break; _s="$_s$_m\\n"; _i=$((_i + 1)); [ $_i -lt 5 ] && sleep "\${GRAPHYARD_PROBE_SAMPLE_SECONDS:-0.5}"; done; [ -n "$_s" ] && echo "temp-median $(printf "$_s" | sort -n | sed -n "$(((_i + 1) / 2))p")"`,
   'echo "runs $(docker ps -q --filter name=^mainworks-trial- | wc -l)"',
+  // GY-4008: whether turbo (intel_pstate) or boost (cpufreq) is off now; no line on a CPU with neither.
+  turboProbeLine,
 ].join('\n');
 
 /** The warm image a host runs shards in: the trial image's digest, the lockfile's hash (`none` without one), and the commit it was built from (optional for older tags). */
@@ -454,7 +459,8 @@ else:
     if verb in ('run-shard', 'run-check'):
         name_image(open(os.path.join(run, 'image')).read().strip())
     def launch(network, command, variables={}, **options):
-        cores = os.cpu_count() or 1
+        # The CPUs this process may use, as the probe's nproc counts them: a shim kept off some of the host's CPUs (GY-4006) clamps a shard to the rest.
+        cores = len(os.sched_getaffinity(0))
         cap = max(2, max(${minimumTrialContainers}, cores // 2))
         memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // cap
         spec = {'image': open(os.path.join(run, 'image')).read().strip(), 'mounts': [[run, run, False]], 'network': network,

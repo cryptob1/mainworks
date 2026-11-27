@@ -116,9 +116,10 @@ test('integration:blocker-escalates — however long the blocker waits it never 
   assert.deepEqual(dashboard.rows, [], 'a 35-minute-old blocker still raises nothing on Needs you');
   assert.equal(dashboard.board.groups['needs-you'].some(entry => entry.key === 'GY-1'), false, 'never grouped under Needs you');
   assert.equal(dashboard.board.groups.blocked.find(entry => entry.key === 'GY-1') !== undefined, true, 'it stays Blocked');
-  // GY-3962: the Lead page names the task by its title; its key stays off the owner's view.
-  assert.ok(dashboard.master.includes('Fix the export') && !dashboard.master.includes('>GY-1 '), 'the Master page lists it');
-  assert.ok(dashboard.master.includes('blocked 35m'), `the Master page says how long it has stood: ${dashboard.master}`);
+  // GY-4000 AC-5: Not moving replaces Blocked on the Lead page, listing the item once with age and blocker reason.
+  assert.ok(dashboard.master.includes('Not moving (1)') && dashboard.master.includes('Fix the export'), 'the Master page lists it in Not moving');
+  assert.ok(dashboard.master.includes('35m in ready, next: nobody'), `the Master page says how long it has stood: ${dashboard.master}`);
+  assert.ok(dashboard.master.includes(blocker), 'the Master page carries the blocker reason');
 });
 
 test('integration:blocker-escalates — a blocker with no recorded instant (a record older than blockedAt) never reads as freshly raised', async () => {
@@ -134,7 +135,7 @@ test('integration:blocker-escalates — unblocking clears the attention line, th
   const f = await fixture();
   await f.cycle();
   f.advance(35);
-  assert.ok(f.dashboard().master.includes('Blocked (1)'), 'the Lead page row stands before the unblock');
+  assert.ok(f.dashboard().master.includes('Not moving (1)'), 'the Lead page row stands before the unblock');
   // `mainworks master unblock GY-1 REASON` clears the blocker and its stamp in one write.
   f.work([{ ...blockedItem(), blocker: null, blockedAt: null, gates: [{ name: 'ready', passed: false, reasons: [] }] }]);
   f.restart();
@@ -143,8 +144,8 @@ test('integration:blocker-escalates — unblocking clears the attention line, th
   assert.equal(status.attention.find((entry: { subject?: string }) => entry.subject === 'GY-1'), undefined, 'the attention line is gone');
   const dashboard = f.dashboard();
   assert.deepEqual(dashboard.rows, [], 'Needs you stays clear of it');
-  // GY-1 stays listed as a goal in the conversation's side rail; the blocker row itself is gone.
-  assert.equal(dashboard.master.includes('Blocked'), false, 'the Lead page row is gone');
+  // GY-1 stays listed as a goal in the conversation's side rail; the Not moving row itself is gone.
+  assert.equal(dashboard.master.includes('Not moving'), false, 'the Lead page row is gone');
   assert.equal(dashboard.board.groups['up-next'].some(entry => entry.key === 'GY-1'), true, 'the item waits for a worker again');
   assert.equal(f.prompts.length, 1, 'no new prompt for a cleared blocker');
 });

@@ -14,6 +14,7 @@ import type { ProfileAccountHealth } from '../master/environments.js';
 import type { CheckoutTrustFleet, CheckoutTrustRefusal } from '../harness.js';
 import type { MasterSessionEffects } from '../master/master-session.js';
 import type { MasterMessage } from './master-stalled-delivery.js';
+import type { NotMovingItem } from './stall-alarm.js';
 import { type DaemonState, type DiskKind, type LeftoverDisk, type LoopRelease, record } from './state.js';
 import type { MergeWriterReads } from './cycle-merge-writer.js';
 import type { AdoptedRun } from './run-adoption.js';
@@ -179,12 +180,16 @@ export interface DaemonEffects {
   servingCommit?: () => string | null;
   /** The loop's own master session (GY-898): absent, none is launched. */
   masterSession?: MasterSessionEffects;
+  /** GY-4029: record that no account can serve a role on an item (`POST work/:id/capacity`). */
+  reportCapacity?: (work: Work, event: { event: 'spent'; role: 'master'; accounts: { account: string; profile: string; resetsAt: string | null; reason: string }[] }) => Promise<unknown>;
   /** GY-3593: one caretaker pass on the caretaker role's first available account, settled with its result line or why it was skipped. */
   caretaker?: () => Promise<import('./caretaker.js').CaretakerOutcome>;
   /** GY-3835: one headless planner run when the empty-board alarm holds for 30 minutes, drafting at most three unreleased items. */
   planner?: (input: import('./planner.js').PlannerInput) => Promise<import('./planner.js').PlannerOutcome>;
   /** GY-3345: the messages to this install's Master (`GET master/messages`); each unanswered one from another install wakes the session once. Absent, none is read. */
   masterMessages?: () => Promise<MasterMessage[]>;
+  /** GY-4000: the control plane's flow read (`GET flow`), carrying not-moving open items. Absent, none are read. */
+  flow?: () => Promise<{ notMoving?: NotMovingItem[] } | null>;
   personalMasterSession?: (config: MasterConfig) => MasterSessionEffects;
   /** The control-plane merge executor's reads (cycle-merge-writer.ts); absent, the merge writer does nothing. */
   mergeWriter?: MergeWriterReads | null;

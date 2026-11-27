@@ -4,18 +4,23 @@
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
+import { allowedCpus } from '../reserved-cpus.js';
 import { probeShimVerbs, supportsCheckImages, supportsRunShardNonce, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { generateTrialVerdictNonce, harnessModules, parseTrialVerdict, trialImage, trialVerdictMissingNonce } from './trial-container.js';
 import { fileURLToPath } from 'node:url';
 import { trialContainerFault, trialHotCelsius } from './trial-load.js';
 import { stateDirectory } from '../install/layout.js';
+import { declaredServe, type TrialE2eCase } from './e2e-trial.js';
+import { parseCase } from '../e2e/case.js';
+import { localEnvironment } from '../app-environments.js';
+import { featureMapCaseId } from '../app-feature-check.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
 export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean; /** GY-3804: the verbs this host's shim probe listed, so trials choose v1 or v2 calls per host. */ verbs?: readonly string[] }
@@ -74,8 +79,10 @@ export async function rereadHotHosts(
  * loopback work on a host, so their words do not keep a file local.
  */
 export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|delivery-pipeline|npm exec|\/var\/tmp|npm_config_cache|worktreeRoot/i;
-/** Whether a test file's text may run on a remote shard: it names none of the local-only words. */
-export const remoteableTestFile = (text: string) => !localOnlyTestPattern.test(text);
+/** GY-4002: a test file that names local-only words only as text (approved prose, fixtures) says so with this line, and runs on a host. */
+export const hostSafeMarker = '// mainworks: runs on a test machine; its local-only words are text, not use.';
+/** Whether a test file's text may run on a remote shard: it names none of the local-only words, or carries hostSafeMarker. */
+export const remoteableTestFile = (text: string) => text.includes(hostSafeMarker) || !localOnlyTestPattern.test(text);
 
 /** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
 const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
@@ -272,7 +279,10 @@ export const mirrorName = (root: string) => `${createHash('sha1').update(root).d
 /** GY-3627: where the warm image stores its filled Node compile cache. */
 const warmCompileCacheDirectory = '/warm/compile-cache';
 /** GY-3914: warm-image builds run dependency installation and build steps unprivileged with all capabilities dropped. */
-const warmBuildDockerFlags = '--user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges';
+const warmBuildDockerFlags = () => {
+  const cpus = allowedCpus();
+  return `--user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges${cpus ? ` --cpuset-cpus=${cpus}` : ''}`;
+};
 /** GY-3936: the test database checks a new warm image must pass before it is tagged; an image without the package passes. */
 const warmDatabaseChecks = [
   { command: 'postgres --version', script: '"$bin/postgres" --version' },
@@ -289,7 +299,7 @@ async function commitCheckedWarmImage(local: (command: string, args: string[]) =
   try {
     for (const check of warmDatabaseChecks) {
       const runner = `${name}-check`;
-      try { await local('docker', ['run', '--rm', '--name', runner, ...warmBuildDockerFlags.split(' '), '--entrypoint', '/bin/sh', candidate, '-c', check.script]); }
+      try { await local('docker', ['run', '--rm', '--name', runner, ...warmBuildDockerFlags().split(' '), '--entrypoint', '/bin/sh', candidate, '-c', check.script]); }
       catch (error) {
         const failed = error as { stderr?: unknown; message?: string };
         throw new Error(`the new warm image failed \`${check.command}\`, so it was not used: ${(String(failed.stderr ?? '').trim() || String(failed.message ?? error)).slice(-300)}`);
@@ -368,7 +378,7 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
     const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ' + linkNativeLibraries;
     try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.sha)} package.json package-lock.json | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(install)}`]);
       await commitCheckedWarmImage(local, name, tag);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return tag;
@@ -405,7 +415,7 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       'rm -rf /warm/build',
     ].join(' && ');
     try {
-      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
       await commitCheckedWarmImage(local, name, tag, ['--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return { tag, built: true };
@@ -495,7 +505,7 @@ export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard',
  * lacks, or the warm image, sent once per tag — then clones the commit into a run directory. Shards run
  * there through the shim's `run-shard`; `close` cleans every run directory.
  */
-export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[]; /** GY-3907: the image every host runs, in place of the trial's warm image. */ warm?: () => Promise<string> }) {
+export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[]; /** GY-3907: the image every host runs, in place of the trial's warm image, in the form the host's helper takes. */ warm?: (version: 'v1' | 'v2') => Promise<string> }) {
   const repo = mirrorName(input.root);
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
@@ -517,7 +527,7 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
   const warmImage = (version: 'v1' | 'v2') => {
     let pending = warmByVersion.get(version);
     if (!pending) {
-      pending = (input.warm ? input.warm() : version === 'v2'
+      pending = (input.warm ? input.warm(version) : version === 'v2'
         ? selectWarmImage({ root: input.root, sha: input.sha, baseTip: input.baseTip, image: input.image, run: input.run, deadline: input.deadline })
         : ensureWarmImageV1({ root: input.root, sha: input.sha, image: input.image, run: input.run, deadline: input.deadline })
       ).then(async tag => {
@@ -678,7 +688,7 @@ export function remoteCheckEnd(target: string, out: string): RemoteCheckEnd {
 }
 
 /** One trial's shard record, for master status: what ran them, wall time, shards run and run remotely, waits while a host idled, and each host's reading. */
-export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
+export interface RemoteShardRun { /** GY-3526: the worker verification that ran them; absent for a merge trial. */ label?: string; at: string; wallMs: number; shards: number; remote: number; /** GY-4002: the trial's e2e cases, and those run on a test machine. */ e2e?: { cases: number; remote: number }; queuedWhileIdle: number; host: string; celsius: number | null; hosts: { name: string; away: boolean; reason?: string; celsius: number | null; freeCores: number }[] }
 const remoteShardRecordPath = (root: string) => join(stateDirectory(root), 'remote-shards.json');
 const keptRuns = 20;
 
@@ -725,7 +735,8 @@ export function heatFallbacksInLastHour(entries: readonly HeatFallbackRecord[], 
  */
 export function remoteShardSummary(runs: readonly RemoteShardRun[], probes?: readonly HostProbe[]) {
   if (!runs.length) return null;
-  const shards = runs.reduce((sum, run) => sum + run.shards, 0), remote = runs.reduce((sum, run) => sum + run.remote, 0);
+  // GY-4002: the share counts a trial's e2e cases beside its test shards.
+  const shards = runs.reduce((sum, run) => sum + run.shards + (run.e2e?.cases ?? 0), 0), remote = runs.reduce((sum, run) => sum + run.remote + (run.e2e?.remote ?? 0), 0);
   const walls = runs.map(run => run.wallMs).sort((a, b) => a - b), latest = runs.at(-1)!;
   const peaks = runs.map(run => run.celsius).filter((value): value is number => value !== null);
   return {
@@ -788,21 +799,26 @@ export function zeroRemoteShareAttention(
 const catalogHarness = '${GRAPHYARD_WARM_DIR:-/warm}/harness';
 
 /**
- * GY-3907: the image a remote catalog shard runs: the commit's warm image (the project's locked packages
- * in /deps) with this release's E2E runner, sources and modules added, built once per commit and release.
+ * GY-3907: the image a remote catalog shard runs: a warm image (the project's locked packages in /deps)
+ * with this release's E2E runner, sources and modules added, built once per warm image and release.
+ * GY-4002: a trial's cases start from the warm image its test shards use (`baseTip`); a helper on the
+ * older `receive-image:1`/`prepare-run:1` form takes the two-part tag it accepts.
  */
-async function catalogImage(input: { root: string; commit: string; image: string; run: ChildRun; deadline: number }): Promise<string> {
+async function catalogImage(input: { root: string; commit: string; baseTip?: string; image: string; run: ChildRun; deadline: number; version: 'v1' | 'v2' }): Promise<string> {
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
-  const warm = (await ensureWarmImage(input)).tag, source = fileURLToPath(new URL('../..', import.meta.url));
+  const warm = input.version === 'v1' ? await ensureWarmImageV1({ ...input, sha: input.commit })
+    : input.baseTip ? await selectWarmImage({ ...input, sha: input.commit }) : (await ensureWarmImage(input)).tag;
+  const source = fileURLToPath(new URL('../..', import.meta.url));
   const release = await local('git', ['-C', source, 'rev-parse', 'HEAD']).catch(() => randomUUID());
-  // Keyed by trial image and release, so the commit is the tag's last part and each release keeps its two newest.
+  // Keyed by trial image and release only, so a release's catalog images are one family its prune keeps to the two newest;
+  // the tag's last part is the warm image's commit (v2), and a v1 warm image is fixed per lockfile.
   const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}`).digest('hex');
-  const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.commit);
+  const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.version === 'v1' ? undefined : parseWarmImageTag(warm)?.commit ?? input.commit);
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
   const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
   try {
-    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
+    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
     await local('docker', ['commit', name, tag]);
   } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
   await pruneWarmImageFamily(tag, local);
@@ -813,25 +829,85 @@ async function catalogImage(input: { root: string; commit: string; image: string
  * GY-3874: the ready test machines the daily e2e catalog's shards go to, read once, with a way to run
  * one shard of cases on one of them: the commit sent as a trial shard's is, this release's
  * scripts/e2e-shard.mjs run there from the catalog image over the case files (GY-3907), and each
- * case's result brought back as the trial's own e2e entries.
+ * case's result brought back as the trial's own e2e entries. GY-4002: a merge trial passes its own
+ * host list and reads, and keeps each case's screenshot.
  */
-export async function catalogHosts(input: { root: string; commit: string; run: ChildRun; deadline: number }) {
-  const targets = await shardHosts();
+export async function catalogHosts(input: { root: string; commit: string; baseTip?: string; run: ChildRun; deadline: number; screenshots?: boolean; image?: string;
+  hosts?: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; signal?: AbortSignal }) {
+  const targets = input.hosts ?? await shardHosts();
   const transport = shardSshSession(input.run);
-  const initial = targets.length ? (await readShardHosts(targets, input.run, availableParallelism(), transport)).slice(1) : [];
-  const readings = await rereadHotHosts(initial, async named => (await readShardHosts(named, input.run, availableParallelism(), transport)).slice(1));
-  const image = trialImage();
-  const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, transport, hosts: readings,
-    warm: () => catalogImage({ root: input.root, commit: input.commit, image, run: input.run, deadline: input.deadline }) });
+  const read = async (named: readonly string[]) => (await (input.read ?? ((names, shared) => readShardHosts(names, input.run, availableParallelism(), shared)))(named, transport)).slice(1);
+  const readings = targets.length ? await rereadHotHosts(await read(targets), read, { signal: input.signal }) : [];
+  const image = input.image ?? trialImage();
+  const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, signal: input.signal, transport, hosts: readings,
+    warm: version => catalogImage({ root: input.root, commit: input.commit, baseTip: input.baseTip, image, run: input.run, deadline: input.deadline, version }) });
   return {
-    // GY-3907: the catalog image is a warm image of the current helper's form, so only hosts that take one run shards.
-    hosts: readings.filter(reading => underHeatLimit(reading) && supportsWarmImageV2(reading.verbs)),
-    run: async (host: string, index: number, cases: readonly string[]): Promise<import('./e2e-trial.js').TrialE2eCase[]> => {
+    readings,
+    hosts: readings.filter(underHeatLimit),
+    run: async (host: string, index: number, cases: readonly string[]): Promise<TrialE2eCase[]> => {
       const files = cases.map(proof => `e2e/cases/${proof.slice(4)}.json`), reading = readings.find(entry => entry.name === host);
-      const ended = await session.run(host, index, files, (list, records) => ['sh', '-c', `exec node --import "${catalogHarness}/node_modules/tsx/dist/loader.mjs" "${catalogHarness}/scripts/e2e-shard.mjs" "$@"`, 'sh', list, records, String(Math.max(1_000, input.deadline - Date.now()))], Math.max(1, Math.floor(reading?.cores ?? 1)));
+      const ended = await session.run(host, index, files, (list, records) => ['sh', '-c', `exec node --import "${catalogHarness}/node_modules/tsx/dist/loader.mjs" "${catalogHarness}/scripts/e2e-shard.mjs" "$@"`, 'sh', list, records, String(Math.max(1_000, input.deadline - Date.now())), ...(input.screenshots ? ['screenshots'] : [])], Math.max(1, Math.floor(reading?.cores ?? 1)));
       if (ended.verdictError) return cases.map(proof => ({ proof, case: proof.slice(4), executed: 0, failed: 1, failingStep: ended.verdictError! }));
-      return ended.records.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as import('./e2e-trial.js').TrialE2eCase);
+      return ended.records.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as TrialE2eCase);
     },
     close: () => session.close(),
   };
+}
+
+/**
+ * GY-4002: whether a trial's case may run on a test machine: its file is on the head, it runs in the
+ * local environment, declares no secrets (the trial withholds them from hosts), is bound to no Compose
+ * application (only this machine gives it Docker), and neither it nor a test it names needs what
+ * only this machine has (localOnlyTestPattern, as the daily catalog splits its cases).
+ */
+export async function hostableTrialCase(worktree: string, name: string): Promise<boolean> {
+  if (name === featureMapCaseId) return false;
+  let text: string;
+  try { text = await readFile(join(worktree, 'e2e/cases', `${name}.json`), 'utf8'); } catch { return false; }
+  let definition: ReturnType<typeof parseCase>;
+  try { definition = parseCase(`e2e/cases/${name}.json`, text); } catch { return false; }
+  if (definition.environment !== localEnvironment || definition.secrets.length || definition.tags.some(tag => tag === 'compose' || tag === 'fixture')) return false;
+  const declared = declaredServe(worktree);
+  const application = declared.applications.find(entry => entry.id === declared.bindings[name]) ?? (declared.serve ? null : declared.applications.length === 1 ? declared.applications[0]! : null);
+  if (application?.kind === 'compose') return false;
+  // What the case runs decides, not its prose: a step's name or the description may say Docker.
+  const runs = definition.steps.flatMap(step => step.kind === 'command' ? [step.run] : []).join('\n');
+  const named = [...new Set(runs.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
+  const tests = await Promise.all(named.map(file => readFile(join(worktree, file), 'utf8').catch(() => '')));
+  return !localOnlyTestPattern.test(runs) && tests.every(remoteableTestFile);
+}
+
+/**
+ * GY-4002: a merge trial's hostable e2e cases run on test machines through the daily catalog's path,
+ * one shard per ready host under its heat limit, the cases dealt across them. With no host ready,
+ * every case, and otherwise every case of a shard a host dropped and every case a host could not
+ * start, comes back in `here`, for the coordinator to run once as it always has; `faults` names each host fault.
+ */
+export async function trialE2eOnHosts(input: { root: string; commit: string; baseTip?: string; proofs: readonly string[]; run: ChildRun; deadline: number; image?: string;
+  hosts: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; signal?: AbortSignal }) {
+  const here: string[] = [], faults: string[] = [], cases: TrialE2eCase[] = [];
+  const remote = await catalogHosts({ ...input, screenshots: true });
+  try {
+    const ready = [...remote.hosts].sort((a, b) => realFreeCores(b) - realFreeCores(a));
+    if (!ready.length) return { cases, here: [...input.proofs], faults };
+    const groups = ready.map(() => [] as string[]);
+    input.proofs.forEach((proof, index) => groups[index % ready.length]!.push(proof));
+    await Promise.all(groups.map(async (group, index) => {
+      if (!group.length) return;
+      const host = ready[index]!.name;
+      try {
+        const ran = await remote.run(host, index + 1, group);
+        for (const proof of group) {
+          const entry = ran.find(result => result.proof === proof);
+          // A case the host could not start, or one it never answered for, runs here once.
+          if (!entry || entry.hostFailure) { here.push(proof); faults.push(`${proof} on ${host}: ${entry?.failingStep ?? 'no result came back'}`); }
+          else cases.push({ ...entry, host });
+        }
+      } catch (error) {
+        here.push(...group);
+        faults.push(`${group.join(', ')} on ${host}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }));
+    return { cases, here, faults };
+  } finally { await remote.close().catch(() => {}); }
 }

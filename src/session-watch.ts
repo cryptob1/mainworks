@@ -1,3 +1,4 @@
+import { reservedCpuPrefix, reservedCpuProperties } from './reserved-cpus.js';
 // Concern: `mainworks watch`'s worker supervision — the systemd scope a session runs in, process-tree
 // signalling, lease renewal through control-plane restarts, the headless run log and surrender.
 import { execFileSync, spawn } from 'node:child_process';
@@ -27,7 +28,7 @@ export function systemdContainment(command: string, args: string[], run: typeof 
   const unit = `graphyard-watch-${process.pid}-${randomUUID()}.scope`;
   return {
     command: 'systemd-run', unit,
-    args: ['--user', '--scope', '--quiet', `--unit=${unit}`, ...properties, '--', command, ...args],
+    args: ['--user', '--scope', '--quiet', `--unit=${unit}`, ...properties, ...reservedCpuProperties(), '--', ...reservedCpuPrefix(), command, ...args],
     signal: signal => { run('systemctl', ['--user', 'kill', '--kill-whom=all', `--signal=${signal}`, unit], { stdio: 'ignore' }); },
     empty: () => {
       const query = ['--user', 'show', '--property=LoadState', '--property=ActiveState', unit];
@@ -532,8 +533,10 @@ export async function supervise(command: string, args: string[], epoch: number, 
         // GY-4018: a resume the runtime cannot find the conversation for starts the same attempt fresh, under this lease.
         let fresh = options.log ? freshCommand(options.log) : null;
         const launch = (file: string, words: string[]) => {
+          // GY-4006: a start with no scope of its own begins under the reserved CPUs' affinity, as every launch does; a scope's own launch already carries it.
+          const started = file === containment?.command ? [file, ...words] : [...reservedCpuPrefix(), file, ...words];
           const logStart = options.log ? fileSize(options.log) : 0;
-          child = spawn(file, words, { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
+          child = spawn(started[0]!, started.slice(1), { stdio: options.log ? ['inherit', 'pipe', 'pipe'] : 'inherit', detached, env });
           if (options.log) for (const stream of ['stdout', 'stderr'] as const) runLogLines(child[stream]!, stream, options.log);
           child.on('error', error => { console.error(error.message); stop(1); });
           child.on('exit', async (code, signal) => {

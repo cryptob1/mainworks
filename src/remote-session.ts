@@ -13,10 +13,10 @@
 // runtime exits and its `watch` supervisor releases the lease: the item returns to the queue.
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { defaultChildRun, type ChildRun } from './child-runner.js';
 import { probeHost, readHosts, type HostRecord } from './hosts.js';
@@ -198,6 +198,21 @@ export interface RemoteSession {
 /** The exit code a dropped host gives: SSH's own. */
 const droppedExit = 255;
 
+/** Host-side `--settings` harness files outside the worktree: handed into the container's tmpfs, never written back. */
+function remoteSettingsFiles(argv: readonly string[], worktree: string): string[] {
+  const root = resolve(worktree);
+  const paths: string[] = [];
+  for (let index = 1; index < argv.length; index++) {
+    const word = argv[index]!;
+    const value = word === '--settings' ? argv[++index] : word.startsWith('--settings=') ? word.slice('--settings='.length) : undefined;
+    if (!value || !isAbsolute(value)) continue;
+    const target = resolve(value);
+    if (target === root || target.startsWith(`${root}/`)) continue;
+    try { if (statSync(target).isFile()) paths.push(value); } catch {}
+  }
+  return [...new Set(paths)];
+}
+
 /** Run one agent session on `target` and return its exit code; the commits it made are in the worktree after. */
 export async function runRemoteSession(input: RemoteSession): Promise<number> {
   const run = input.run ?? defaultChildRun, output = input.output ?? process.stdout, errors = input.errors ?? process.stderr;
@@ -212,7 +227,12 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
     try { runName = await shards.ready(input.target); }
     catch (error) { errors.write(`The session could not start on ${input.target}: ${error instanceof Error ? error.message : String(error)}\n`); return droppedExit; }
     const login = input.homes.flatMap(home => loginFiles.map(name => join(home, name)).filter(path => existsSync(path)));
-    const files = Object.fromEntries([...login.map(path => [path, readFileSync(path).toString('base64')]), [input.cli, Buffer.from(sessionRelay).toString('base64')]]);
+    const harness = remoteSettingsFiles(input.argv, input.worktree);
+    const files = Object.fromEntries([
+      ...login.map(path => [path, readFileSync(path).toString('base64')]),
+      ...harness.map(path => [path, readFileSync(path).toString('base64')]),
+      [input.cli, Buffer.from(sessionRelay).toString('base64')],
+    ]);
     // The session commits under this machine's Git identity: its home there is empty.
     const setting = (key: string) => git('config', key).catch(() => '');
     const [name, email] = [await setting('user.name'), await setting('user.email')];
@@ -220,7 +240,7 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
     const request = {
       argv: ['python3', '-I', '-c', sessionBoot, basename(input.argv[0]!), ...input.argv.slice(1)],
       env: { ...identity, ...input.env, HOME: '/tmp/mainworks-home', GRAPHYARD_CLI: input.cli, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' },
-      cwd: input.worktree, homes: [...new Set([...input.homes, dirname(input.cli)])],
+      cwd: input.worktree, homes: [...new Set([...input.homes, ...harness.map(path => dirname(path)), dirname(input.cli)])],
     };
     /** Make the worktree what the session's checkout is: its HEAD, with the snapshot's changes uncommitted on top, as a local session's would be. */
     const mirror = async (body: string) => {

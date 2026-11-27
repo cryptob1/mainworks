@@ -18,7 +18,7 @@ import { detectRuntimeExhaustion } from '../master/runtime-prompt.js';
 import { dispatchSort, inPipeline, resourceConflicts, sharedPlannedTestFiles, sharedResources } from '../coordination.js';
 import { capacityRefusal } from '../fleet.js';
 import type { CoordinationRounds } from '../server/work-view.js';
-import { masterCauses, masterCausePrompt, messageCauses } from './master-stalled-delivery.js';
+import { masterCauses, masterCausePrompt, messageCauses, unclaimedAttention } from './master-stalled-delivery.js';
 import { accountNames, advanceFailureRuns, diagnosisSection, failureHeld, normalizeFailureReason, repeatingItems } from './repeated-failure.js';
 import { reworkCapHeld, reworkCapLabel } from '../model/rework-ground.js';
 import { captureConversation } from '../master/conversation.js';
@@ -829,8 +829,7 @@ async function dispatchStep(cycle: Cycle) {
     const identity = config.operatorAgent ? { id: config.operatorAgent.id, role: 'operator-agent' as const } : undefined;
     const releasable = releasableBacklog(snapshot.work, identity).filter(item => (item.owner ?? null) === null);
     const alarm = stallAlarm({ now: clock, open: open.filter(unheld), ready: claimable.filter(unheld), releasable,
-      released: open.filter(item => item.ready && item.stage !== 'done').length, freeSlots: allowed - running, holds, gates,
-      state, registry, serving: await Promise.resolve(effects.servingCommit?.()).catch(() => null) ?? null });
+      released: open.filter(item => item.ready && item.stage !== 'done').length, freeSlots: allowed - running, state });
     if (recordStallAlarm(state, alarm, clock)) { cycle.log(`[mainworks-master] cycle ${state.cycle}: ${alarm ?? 'the stall alarm cleared'}`); await effects.persist(state); }
     // GY-3835, GY-3865: when ready work is at or below the low-water mark with free builder slots
     // (or after 30 minutes of empty-board alarm), launch one headless planner session to draft up to three unreleased items.
@@ -1094,7 +1093,8 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   // GY-3345: and each unanswered message another install's Master sent this one. An unreadable list
   // keeps the messages already delivered, so none is delivered twice.
   const messages = config.forPerson ? [] : await Promise.resolve(effects.masterMessages?.() ?? []).catch(() => null);
-  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
+  const notMoving = config.forPerson ? [] : (await Promise.resolve(effects.flow?.() ?? null).catch(() => null))?.notMoving ?? [];
+  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
   const current = new Set(causes.map(cause => cause.key));
   if (!messages) for (const key of Object.keys(state.master.subjects)) if (key.startsWith('message:')) current.add(key);
   // A retrial temporarily replaces its refusal with an intent. Keep the same base's wake
@@ -1131,6 +1131,13 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   if (handle.pane_id) state.master.pane = handle.pane_id;
   if (!state.master.startedAt) state.master.startedAt = cycle.snapshot.now;
   if (!recoveryFailed && await masterPaneFailover(cycle, handle, open)) return;
+  // GY-4029: an attention action unclaimed past 30 minutes while the registry holds no live master
+  // session: the pane is not a working master, so it is closed and the master launches bound to the action.
+  if (unclaimedAttention(open, cycle.now()).length && sessions.live && !(await sessions.live()).length) {
+    if (handle.pane_id) await Promise.resolve(effects.closeSession(handle.pane_id)).catch(error => { if (!paneAlreadyGone(error)) throw error; });
+    submitMasterLaunch(cycle, open, undefined, handle.pane_id ?? null);
+    return;
+  }
   const repeatDue = (cause: { key: string; repeatMs?: number }) => {
     if (!cause.repeatMs) return false;
     const last = Date.parse(state.master.subjectWakes[cause.key] ?? '');
@@ -1231,7 +1238,8 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
       const exclude = Object.keys(unusable);
       try {
         await endPreviousMasterSessions(cycle, closedPane);
-        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now()), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const notMoving = config.forPerson ? [] : (await Promise.resolve(effects.flow?.() ?? null).catch(() => null))?.notMoving ?? [];
+        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving), ...(await sessions.pendingCauses?.(open) ?? [])];
         const { recoveryFailures, ...oldMaster } = state.master;
         const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
         const previous = recoveryError ? null : state.master.continuity;
@@ -1297,10 +1305,24 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
           ? `The master session's launch failed the same way ${attempts} times, so the loop backs off and retries it at ${retried} instead of opening a pane each cycle: ${message(reportError)}`
           : `The master session could not be launched; the next cycle tries again: ${message(reportError)}`;
         sink.push(await record(state, launchKey, { kind: 'session', work: null, principal: null, state: 'failed', detail: detail.slice(0, actionDetailMax), attempts, cycle: state.cycle }, cycle.now(), effects.persist));
+        if ((reportError as { accountsExhausted?: unknown })?.accountsExhausted === true && !capacityRefusal(reportError)) await reportUnservedAttention(cycle, open, reportError);
         return;
       }
     }
   });
+}
+
+/**
+ * GY-4029: no account can run the master, so an attention action only it answers waits on the owner:
+ * each such item records the master role as spent, which lists it under humanOnly with the action's detail.
+ */
+async function reportUnservedAttention(cycle: Cycle, open: Work[], error: unknown) {
+  const skipped = ((error as { skipped?: { environment: string; profile: string; reason: string }[] })?.skipped ?? []).slice(0, 40);
+  const accounts = skipped.length ? skipped.map(skip => ({ account: skip.environment.slice(0, 80), profile: skip.profile.slice(0, 80), resetsAt: null, reason: skip.reason.slice(0, 500) }))
+    : [{ account: 'none', profile: 'master', resetsAt: null, reason: message(error).slice(0, 500) || 'no account can run the master' }];
+  const items = new Map(unclaimedAttention(open, cycle.now()).map(({ item }) => [item.id, item]));
+  for (const item of items.values()) await Promise.resolve(cycle.effects.reportCapacity?.(item, { event: 'spent', role: 'master', accounts }))
+    .catch(failure => cycle.log(`[mainworks-master] could not list ${item.key} for the owner: ${message(failure)}`));
 }
 
 /**

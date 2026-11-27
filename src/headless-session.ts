@@ -398,11 +398,11 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const remote = input.remote && stdin === undefined && !promptFile ? (launch.wrapper.length ? [...input.remote.words.slice(0, -1), '--confine', JSON.stringify(launch.wrapper), '--'] : input.remote.words) : undefined;
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(remote && input.remote ? { host: input.remote.host } : {}) };
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
-  const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv({ ...launch, session: input.session, promptFile }, request, env)];
+  const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv({ ...launch, session: input.session, promptFile, ...(remote ? { remote: true } : {}) }, request, env)];
   // GY-4018: the supervisor starts this fresh command line, under the same lease, when the resume cannot find its conversation.
   const fresh = input.session && input.freshPrompt ? carriedRequest(input.freshPrompt, input.role) : null;
   if (fresh && headlessPromptInput(launch.kind, fresh, launch.contract) === undefined && !headlessPromptNeedsFile(launch.kind, fresh, launch.contract))
-    writeFileSync(join(directory, 'fresh.json'), JSON.stringify([...remote ?? launch.wrapper, ...await headlessArgv(launch, fresh, env)]), { mode: 0o600 });
+    writeFileSync(join(directory, 'fresh.json'), JSON.stringify([...remote ?? launch.wrapper, ...await headlessArgv({ ...launch, ...(remote ? { remote: true } : {}) }, fresh, env)]), { mode: 0o600 });
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal, ...(stdin !== undefined ? { stdin } : {}) });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);
