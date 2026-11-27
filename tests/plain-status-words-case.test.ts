@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import pg from 'pg';
 import { databaseUrl } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -25,7 +26,6 @@ import { workFixture } from './helpers/work-fixture.js';
 // serve record into the control plane it runs against. Cases before it in the catalog merge items of
 // their own on the same control plane (delivery-pipeline does), so such a merge lands before each run.
 
-const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 // The case signs in to the served dashboard: a fresh checkout (a worker's private verification) has none built yet.
 before(() => { if (!existsSync('dist/index.html')) execFileSync(process.execPath, [join(dirname(createRequire(import.meta.url).resolve('vite/package.json')), 'bin', 'vite.js'), 'build', '--configLoader', 'runner'], { stdio: 'ignore' }); });
@@ -45,10 +45,7 @@ function earlierMerge(n: number) {
 /** Runs the case `runs` times in a row on one control plane, an earlier case's merge landing before each run; each run's verdict, up to the first failure. */
 async function runCase(runs: number) {
   const operator: Principal = { id: 'e2e-operator', role: 'admin' }, token = `trial-${randomUUID()}`;
-  const root = await temporaryDirectory('plain-status-words-root');
-  git(['init', '-q', '-b', 'main'], root);
-  await writeFile(join(root, 'README.md'), 'plain status words\n');
-  git(['add', '.'], root); git(['commit', '-q', '-m', 'fixture'], root);
+  const { root } = await gitRepo({ label: 'plain-status-words-root', message: 'fixture', files: { 'README.md': 'plain status words\n' } });
   let close: (() => Promise<void>) | undefined, store: Store | null = null;
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;
   try {

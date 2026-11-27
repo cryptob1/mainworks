@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
 import { knownGoodDirectory, pinKnownGood, recordRunningPin } from '../src/master/known-good.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 /** GY-2760: pinning newer releases never prunes the pin the running loop loaded its modules from. */
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
@@ -17,7 +18,7 @@ const run: ChildRun = (command, args, options) => {
 async function world() {
   const base = await temporaryDirectory('known-good-prune');
   const repository = join(base, 'repo'), installDir = join(base, 'install');
-  mkdirSync(repository); git(repository, 'init', '-q', '-b', 'main');
+  await gitRepo({ root: repository });
   const shas: string[] = [];
   for (const name of ['a', 'b', 'c']) { writeFileSync(join(repository, `${name}.txt`), name); git(repository, 'add', '.'); git(repository, 'commit', '-q', '-m', name); shas.push(git(repository, 'rev-parse', 'HEAD')); }
   return { repository, installDir, shas, pins: knownGoodDirectory(installDir) };

@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +11,7 @@ import { serveCheckoutPath } from '../src/serve-app.js';
 import { runTrial, trialMerge } from '../src/merge-writer/trial.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { writePnpmWorkspace } from './helpers/pnpm-workspace-fixture.js';
 
 // GY-3200: one helper reads the lockfile; npm checkouts keep today's commands, pnpm ones run
@@ -60,8 +60,8 @@ test('unit:tests/package-manager.test.ts — pnpm install paths: a pnpm checkout
   assert.deepEqual(served, [[...pnpm10, 'install', '--frozen-lockfile']]);
 
   // The trial: installs afresh even though the root holds a node_modules, then builds and tests through pnpm.
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@a', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@a' } }).trim();
-  git('init', '-q', '-b', 'main'); write(root, { '.gitignore': 'node_modules\n.graphyard\n' }); git('add', '-A'); git('commit', '-q', '-m', 'base');
+  const { git } = await gitRepo({ root });
+  write(root, { '.gitignore': 'node_modules\n.graphyard\n' }); git('add', '-A'); git('commit', '-q', '-m', 'base');
   mkdirSync(join(root, 'node_modules'));
   const base = git('rev-parse', 'HEAD');
   write(root, { 'apps/one/build.mjs': '// changed\n' }); git('commit', '-q', '-am', 'change');
