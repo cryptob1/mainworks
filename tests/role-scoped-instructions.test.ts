@@ -35,7 +35,7 @@ test('unit:master-block-migrated — master init writes the worker block only an
   const pre = '# Local rules\n\nKeep this text.\n\n', post = '\n\n## After\nAnd this.\n';
   assert.equal(withoutMasterInstructions(`${pre}${legacyBlock}${post}`), `${pre}${post}`, 'every byte outside the block is kept');
   assert.equal(withoutMasterInstructions(`${pre}${post}`), `${pre}${post}`, 'a file without the block is unchanged');
-  for (const malformed of [`${legacyBlock}\n${legacyBlock}`, '<!-- graphyard-master -->\nopen only\n', '<!-- /graphyard-master -->\n<!-- graphyard-master -->\n']) assert.throws(() => withoutMasterInstructions(malformed), /master markers.*AGENTS\.md/);
+  for (const malformed of [`${legacyBlock}\n${legacyBlock}`, '<!-- graphyard-master -->\nopen only\n', '<!-- /graphyard-master -->\n<!-- graphyard-master -->\n']) assert.throws(() => withoutMasterInstructions(malformed), /lead markers.*AGENTS\.md/);
 
   const fresh = await repository(), migrated = await repository(), refused = await repository(), credentialDirectory = await temporaryDirectory('role-instructions-credentials');
   const setup = (root: string) => setupMaster(root, { url, token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch);
@@ -53,7 +53,7 @@ test('unit:master-block-migrated — master init writes the worker block only an
 
     const duplicate = `${pre}${legacyBlock}\n${legacyBlock}\n`;
     await writeFile(join(refused, 'AGENTS.md'), duplicate);
-    await assert.rejects(setup(refused), /Malformed or duplicate Mainworks master markers; resolve them before updating AGENTS\.md/);
+    await assert.rejects(setup(refused), /Malformed or duplicate Mainworks lead markers; resolve them before updating AGENTS\.md/);
     assert.equal(await readFile(join(refused, 'AGENTS.md'), 'utf8'), duplicate, 'a refused file is left as it was');
   } finally { for (const root of [fresh, migrated, refused, credentialDirectory]) await rm(root, { recursive: true, force: true }); }
 });
@@ -64,7 +64,7 @@ test('unit:master-guide-carries-role-instructions — mainworks master guide pri
   assert.ok(stdout.startsWith(masterInstructions), 'the role instructions lead the guide');
   assert.equal(stdout, `${masterInstructions}\n${masterGuide}\n`);
   // Every rule the AGENTS.md block carried is in the text the master now reads.
-  for (const rule of ['Autonomy is the default: act without asking.', 'mainworks master create|release|unblock|requirements|rework|attest|close', 'Keep cycling: status, dispatch ready work', 'An item is delivered at merge', 'GitHub merges nothing and no pull request is opened.', 'Never use an administrative merge bypass']) assert.ok(stdout.replace(/\s+/g, ' ').includes(rule), `master guide states: ${rule}`);
+  for (const rule of ['Autonomy is the default: act without asking.', 'mainworks lead create|release|unblock|requirements|rework|attest|close', 'Keep cycling: status, dispatch ready work', 'An item is delivered at merge', 'GitHub merges nothing and no pull request is opened.', 'Never use an administrative merge bypass']) assert.ok(stdout.replace(/\s+/g, ' ').includes(rule), `master guide states: ${rule}`);
 });
 
 test('unit:agents-md-worker-block-only — sync regeneration renders the worker block and drops a master block; Mainworks\'s own AGENTS.md has none', async () => {

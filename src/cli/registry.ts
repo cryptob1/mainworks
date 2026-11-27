@@ -9,6 +9,8 @@ import type { CliContext } from './context.js';
 export interface CliCommand {
   /** The first argv word this entry answers to. */
   name: string;
+  /** Older words that still run this command; help never lists them (`master` for `lead`, GY-4042). */
+  aliases?: string[];
   /** Help lines exactly as `mainworks help` prints them, in registry order. */
   help: string[];
   /**
@@ -17,7 +19,7 @@ export interface CliCommand {
    */
   scope?: 'work';
   unscoped?(context: CliContext): Promise<void>;
-  /** The master and the host attestor never read the repository connection file. */
+  /** The lead and the host attestor never read the repository connection file. */
   readsConnection?(id: string | undefined): boolean;
   run(context: CliContext, work: any): Promise<void>;
 }

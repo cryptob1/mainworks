@@ -27,7 +27,7 @@ async function act(context: CliContext, body: Record<string, unknown>) {
 export const infraCommands = defineCommands([{
   name: 'infra',
   help: ['  infra approve OWNER/NAME --project NAME [--from OLD]  The owner approves one repository and one hosting project',
-    '  infra take                    The master takes a credential limited to the approved names',
+    '  infra take                    The lead takes a credential limited to the approved names',
     '  infra repo create|push OWNER/NAME [DIR] · infra project create NAME · infra env create PROJECT ENV · infra log'],
   async run(context) {
     const { values, positionals } = parseArgs({ args: [context.id ?? '', ...context.args].filter(Boolean), allowPositionals: true, options: { project: { type: 'string' }, from: { type: 'string' } } });

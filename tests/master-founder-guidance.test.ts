@@ -24,7 +24,7 @@ const texts = () => ({ prompt: masterPrompt(config), guideTopic: guideText('mast
 test('unit:tests/master-founder-guidance.test.ts — the master prompt and guide master name the master responsible for the product succeeding', () => {
   const { prompt, guideTopic } = texts();
   assert.match(prompt, /master agent for owner\/project, responsible for the product succeeding/);
-  assert.match(guideTopic, /The master is responsible for the product succeeding/);
+  assert.match(guideTopic, /The Lead is responsible for the product succeeding/);
   // GY-3307: the guidance names the master Master, never chief.
   for (const text of Object.values(texts())) assert.doesNotMatch(text, /chief/i);
 });
@@ -38,7 +38,7 @@ test('unit:tests/master-founder-guidance.test.ts — it first learns the problem
 test('unit:tests/master-founder-guidance.test.ts — it writes and revises the product brief, and the guide names the command and the brief\'s shape', () => {
   const { prompt, guideTopic } = texts();
   assert.match(prompt, /write and revise the product brief/);
-  assert.match(guideTopic, /writes the product brief with `master brief set FILE REASON`/);
+  assert.match(guideTopic, /writes the product brief with `lead brief set FILE REASON`/);
   assert.match(guideTopic, /at most 800 words, with the sections problem, users, what success looks like with measurable signals, current bets and open questions/);
   assert.match(guideTopic, /revises the brief/);
 });
@@ -52,7 +52,7 @@ test('unit:tests/master-founder-guidance.test.ts — it turns the brief into goa
 test('unit:tests/master-founder-guidance.test.ts — it records what it learned as lessons', () => {
   const { prompt, guideTopic } = texts();
   assert.match(prompt, /record lessons/);
-  assert.match(guideTopic, /records what it learned as lessons \(`master lesson add`\)/);
+  assert.match(guideTopic, /records what it learned as lessons \(`lead lesson add`\)/);
 });
 
 test('unit:tests/master-founder-guidance.test.ts — the owner\'s stated mission and priorities override its ranking, and money, accounts and credentials stay with the owner', () => {
@@ -65,6 +65,6 @@ test('unit:tests/master-founder-guidance.test.ts — the owner\'s stated mission
 // GY-3491: the founder guidance lives in the prompt alone; the guide keeps only the brief command and shape.
 test('unit:tests/master-founder-guidance.test.ts — the master guide, which `master guide` prints at launch, names the brief command and its shape without repeating the founder guidance', () => {
   const { masterGuide: guide } = texts();
-  assert.match(guide, /`master brief set FILE REASON`: at most 800 words/);
+  assert.match(guide, /`lead brief set FILE REASON`: at most 800 words/);
   assert.doesNotMatch(guide, /responsible for the product succeeding/);
 });

@@ -12,8 +12,8 @@ export const guideCommands = defineCommands([
     readsConnection: () => false,
     help: [
       '  guide TOPIC                   Print one procedure topic',
-      '                                (topics: claim, sync, complete, park, blocked, review, proof, upgrade, master, setup, infra, publishing, runtimes);',
-      '                                guide with no topic lists them; guide master says how',
+      '                                (topics: claim, sync, complete, park, blocked, review, proof, upgrade, lead, setup, infra, publishing, runtimes);',
+      '                                guide with no topic lists them; guide lead says how',
       `                                Railway deploys apps from git and ${PRODUCT_NAME} observes each versionUrl`,
     ],
     async run(context) {

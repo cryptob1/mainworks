@@ -36,7 +36,7 @@ test('unit:readme-guide-details — guide publishing prints the publishing accou
   for (const detail of [
     'vYYYY.M.D-<sha12>', 'GitHub Actions', '@cryptob1/graphyard', 'npm OIDC provenance',
     'both GHCR images (`mainworks`, `mainworks-trial`)', 'GITHUB_TOKEN', 'the host holds no publish token',
-    'Publishing runs apart from merge and deploy', "npm's latest version", 'mainworks master status',
+    'Publishing runs apart from merge and deploy', "npm's latest version", 'mainworks lead status',
     'placeholder `0.0.0`', 'npm publish --access public', 'Trusted Publisher', 'cryptob1/graphyard',
     'workflow **publish.yml**', 'grant **cryptob1/graphyard** Actions write access',
   ]) assert.ok(publishing.includes(detail), `guide publishing carries ${detail}`);

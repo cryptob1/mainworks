@@ -295,7 +295,7 @@ test('integration:master-profile-management — producer profiles can be replace
     await assert.rejects(removeReviewerProfile(root, 'claude-reviewer'), /Unknown reviewer profile/);
     // The commands are part of the CLI and the guide.
     const help = await readFile(new URL('../src/cli/master.ts', import.meta.url), 'utf8');
-    for (const command of ['master producer add FILE | replace FILE | remove NAME', 'master reviewer add FILE | remove NAME']) assert.ok(help.includes(command), `${command} is in CLI help`);
+    for (const command of ['lead producer add FILE | replace FILE | remove NAME', 'lead reviewer add FILE | remove NAME']) assert.ok(help.includes(command), `${command} is in CLI help`);
   } finally { await cleanup(); }
 });
 

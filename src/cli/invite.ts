@@ -9,7 +9,7 @@ import { asRecordedOperator } from './session-commands.js';
 export const inviteCommand: CliCommand = {
   name: 'invite',
   help: ['  invite NAME --role ROLE [--days 1|7|30]  Print one link that signs NAME in once (7 days by default);',
-    '                                ROLE viewer reads everything; maintainer also files work and types into the master',
+    '                                ROLE viewer reads everything; maintainer also files work and types into the lead',
     '  invite revoke NAME           End teammate NAME\'s sessions at once and remove them'],
   async run(context) {
     const { values, positionals } = parseArgs({ args: [context.id ?? '', ...context.args].filter(Boolean), allowPositionals: true, options: { role: { type: 'string' }, days: { type: 'string' } } });

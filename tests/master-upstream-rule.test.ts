@@ -17,6 +17,6 @@ test('unit:tests/master-upstream-rule.test.ts — the master prompt names trial-
 });
 
 test('unit:tests/master-upstream-rule.test.ts — guide master names trial-host faults and forbids changing the managed repository around them', () => {
-  assert.match(guideTopics.master, /trial-host fault: the trial host's network, disk or a tool missing from the trial image\) on an install for another repository belongs to Mainworks/);
-  assert.match(guideTopics.master, /never file it as work in the managed repository or change that repository to work around it\./);
+  assert.match(guideTopics.lead, /trial-host fault: the trial host's network, disk or a tool missing from the trial image\) on an install for another repository belongs to Mainworks/);
+  assert.match(guideTopics.lead, /never file it as work in the managed repository or change that repository to work around it\./);
 });

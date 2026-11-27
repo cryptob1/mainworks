@@ -23,7 +23,7 @@ test('unit:guides-without-docs — guide TOPIC and master guide print complete p
   }
   const master = execFileSync(process.execPath, ['bin/graphyard.mjs', 'master', 'guide'], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   assert.equal(master, `${masterInstructions}\n${masterGuide}\n`);
-  for (const section of ['## The loop', '## Automatic dispatch at submit', 'master status', 'e2e:NAME']) assert.ok(master.includes(section), `master guide carries ${section}`);
+  for (const section of ['## The loop', '## Automatic dispatch at submit', 'lead status', 'e2e:NAME']) assert.ok(master.includes(section), `master guide carries ${section}`);
   assert.doesNotMatch(master, /docs\/|\]\([^)]*\.md\)/, 'master guide names no docs page');
 
   for (const file of [...files('src'), ...files('web')]) {

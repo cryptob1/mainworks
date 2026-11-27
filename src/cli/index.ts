@@ -47,7 +47,7 @@ export async function main(argv = process.argv.slice(2)) {
   try { process.loadEnvFile(); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
   const [command, id, ...args] = argv;
   if (!command || command === 'help' || command === '--help') { console.log(renderHelp()); return; }
-  const selected = commands.find(entry => entry.name === command);
+  const selected = commands.find(entry => entry.name === command || entry.aliases?.includes(command));
   // A subcommand's help flag is answered by the launcher before any command runs, so
   // `mainworks login --help` prints login's help instead of minting a sign-in link (GY-3172).
   if (selected && [id, ...args].some(word => word === '--help' || word === '-h')) { console.log(selected.help.join('\n')); return; }
