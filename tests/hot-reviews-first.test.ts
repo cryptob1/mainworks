@@ -25,10 +25,10 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 
 // GY-3437 filed the heat tiers (reviews and trials first from 80C, nothing new at 85C); GY-3501
 // deleted them: a hot sensor holds no launch at all, because holding workers for heat they do not
-// cause left ready work idle for hours while the hot work ran on. What stays is the ordering
-// within a cycle: with free capacity and both kinds ready, the reviews and trials that finish work
-// launch before its workers — the fixture is GY-3373's hot host (a sensor at 86C with CPU
-// pressure near 20 percent), read through the production reader against a temporary control plane.
+// cause left ready work idle for hours while the hot work ran on. GY-3965: nor does a worker launch
+// wait for the cycle's reviews and trials; all three launch in the one cycle — the fixture is GY-3373's
+// hot host (a sensor at 86C with CPU pressure near 20 percent), read through the production reader
+// against a temporary control plane.
 
 const proof = 'integration:hot-reviews-first';
 const repository = 'owner/hot-reviews-first';
@@ -150,7 +150,7 @@ test(`${proof} — at 86C the worker, the review and the queued trial all launch
   await mergeWriterIdle(state);
   assert.deepEqual(seen.dispatched, [readyItem.key], 'at 86C the implementation session starts: heat holds no worker');
   assert.equal(seen.trials, 1, 'at 86C the queued trial starts');
-  assert.deepEqual(seen.order, ['review', 'trial', 'implementation'], 'the review and the trial launch before the worker, hot or not');
+  assert.deepEqual([...seen.order].sort(), ['implementation', 'review', 'trial'], 'the review, the trial and the worker launch in the one cycle, hot or not');
   assert.deepEqual(seen.ticks, [undefined], 'no launch waits at 86C');
   assert.equal(state.cpuPressure?.celsius, 86);
   assert.equal((await status(config, state)).cpuPressure?.waiting, null, 'master status shows no waiting line');
@@ -164,14 +164,4 @@ test(`${proof} — at 86C the worker, the review and the queued trial all launch
   assert.deepEqual(seen.dispatched, [readyItem.key, readyLater.key], 'below 80C implementation launches again, exactly the same');
   assert.deepEqual(seen.ticks, [undefined, undefined]);
   assert.equal((await status(config, state)).cpuPressure?.waiting, null);
-});
-
-test(`${proof} — with free slots and both kinds ready, the review and the trial launch before the implementation session`, async () => {
-  const { config, state, readyItem } = await fixture();
-  const sensors = await hwmon(60);
-  const { daemon, seen } = effects(config, { agents: [] }, async () => ({ ...calm(1000), celsius: await cpuCelsius(sensors) }));
-  await runCycle(config, state, daemon);
-  await mergeWriterIdle(state);
-  assert.deepEqual(seen.dispatched, [readyItem.key]);
-  assert.deepEqual(seen.order, ['review', 'trial', 'implementation'], 'reviews and trials take free capacity first');
 });
