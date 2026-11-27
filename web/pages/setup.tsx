@@ -92,7 +92,7 @@ export function AlertsLine({ status }: { status: any }) {
   const on = typeof alerts === 'number' && alerts > 0;
   return <div data-alerts={on ? 'on' : alerts === false ? 'off' : 'unknown'}>
     <p title={on ? `When queued work has neither started nor merged for ${alerts} minutes, the loop posts to your webhook URL, repeats at most hourly, and posts an all-clear when work moves again.` : undefined}>
-      {on ? <span className="green">Stall alerts: on (after {alerts} min)</span> : alerts === false ? <span className="amber">Stall alerts: off</span> : 'Stall alerts: not known yet'}
+      {on ? <span className="green">Stall alerts: on (after {alerts} min)</span> : alerts === false ? <span className="amber">Stall alerts: off</span> : 'Stall alerts show here once the loop reports them.'}
     </p>
     {alerts === false && <MoreDetails summary="Turn them on">To be told when queued work cannot start or merge, set <code>run.alertUrl</code> in <code>.graphyard/master.json</code> on the host that runs the master loop to a webhook URL that takes a POST, such as an ntfy topic (<code>https://ntfy.sh/your-topic</code>); <code>run.alertMinutes</code> sets the stall window (default 20).</MoreDetails>}
     {!on && alerts !== false && <MoreDetails summary="Why">The dashboard learns it from a running master loop. Start the loop on the host with <code>mainworks master run</code>, or check it with <code>mainworks master status</code>.</MoreDetails>}
@@ -149,7 +149,7 @@ export function SetupView({ status, work, workUnread, now, onConnect, infra }: {
     {supervised && <p className="notice" data-supervised>An agent reviews each change and {PRODUCT_NAME} merges it; no agent approves decisions on your behalf, so you answer each one.</p>}
     <PageSection title="Checklist" label="Setup checklist"><SetupChecklist items={items} onConnect={onConnect} onboarding={onboarding}/></PageSection>
     {!!infra?.length && <PageSection title="Repository and hosting changes" label="Repository and hosting changes"><InfraActionsPanel actions={infra}/></PageSection>}
-    <PageSection title="Be told when the yard stops" label="Be told when the yard stops"><AlertsLine status={status}/></PageSection>
+    <PageSection title="Be told when work stops" label="Be told when work stops"><AlertsLine status={status}/></PageSection>
     <section className="panel" aria-label="Watch agents in a terminal"><MoreDetails summary="Watch agents in a terminal"><HerdrConnect watch={paneServer(status)}/></MoreDetails></section>
     <section className="panel" aria-label="Where things run"><MoreDetails summary="Where things run"><WhereThingsRunPanel where={status?.setup?.where ?? null} panes={status?.setup?.panes ?? null}/></MoreDetails></section>
   </>;
