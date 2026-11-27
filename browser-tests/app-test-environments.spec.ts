@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { withDatabase } from '../tests/helpers/postgres';
 import { Engine } from '../src/engine';
+import { pointRepositoryRoot } from '../tests/helpers/repository-root';
 import { server } from '../src/server';
 import { bootstrapGate, gateRecordPath } from '../src/batch-gate';
 import { environmentStatePath } from '../src/app-environments';
@@ -42,8 +43,7 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
   }));
   const gate = { ...bootstrapGate('fixture/shop', commit), lastOutcome: { tip: commit, outcome: 'verified' as const, reason: null, finishedAt: at } };
   writeFileSync(gateRecordPath(checkout), JSON.stringify(gate));
-  const previous = process.env.GRAPHYARD_REPOSITORY_ROOT;
-  process.env.GRAPHYARD_REPOSITORY_ROOT = checkout;
+  const restoreRoot = pointRepositoryRoot(checkout);
   try {
     const { code } = await (await fetch(`${url}/api/sign-in-links`, { method: 'POST', headers: { Authorization: 'Bearer test-human-operator' } })).json() as { code: string };
     await page.goto(`${baseURL}/#sign-in=${code}&work`);
@@ -91,7 +91,7 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
     await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help']);
   } finally {
-    if (previous === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = previous;
+    restoreRoot();
     http.closeAllConnections();
     await new Promise<void>(resolve => http.close(() => resolve()));
     await store.close();
