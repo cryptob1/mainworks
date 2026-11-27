@@ -71,7 +71,7 @@ test(`${proof} — a migrated copy stores the signer and the next release's sign
   assert.equal((await readFile(`${path}.signers`, 'utf8')).trim(), `mainworks-helper namespaces="mainworks-helper" ${helperSigner(config)}`, 'the signer is stored in the compute user\'s state at migration');
 
   // The next release ships a copy that carries no signer of its own: the stored one is what verifies it.
-  await writeFile(path, hostShimScript.replace(hostShimDigest, 'c'.repeat(64)));
+  await writeFile(path, hostShimScript.replace(hostShimDigest, 'c'.repeat(64)).replace(' receive-image:4', ''));
   const next = (await readHostReadings([migrated], { file: hostsJson, run, local: 'here', update: true })).find(reading => reading.host === target)!;
   assert.equal(next.updateError, undefined, next.updateError);
   assert.equal(next.away, false);

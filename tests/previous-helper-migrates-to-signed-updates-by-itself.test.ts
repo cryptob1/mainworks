@@ -170,7 +170,7 @@ test(`${proof} — loop migrates an update-shim:1 host without sudo, migrated co
 
   // 4. Later releases update the migrated copy through the signed form (update-shim:2), still without sudo.
   const copyBefore = await readFile(copiedPath, 'utf8');
-  await writeFile(copiedPath, copyBefore.replace(hostShimDigest, 'c'.repeat(64)));
+  await writeFile(copiedPath, copyBefore.replace(hostShimDigest, 'c'.repeat(64)).replace(' receive-image:4', ''));
   const laterReadings = await readHostReadings(readings, { file: hostsJson, run, local: 'here', update: true });
   const later = laterReadings.find(entry => entry.host === target)!;
   assert.equal(later.away, false, `later signed update should succeed: ${later.reason}`);

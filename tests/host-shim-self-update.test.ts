@@ -38,6 +38,8 @@ const run: ChildRun = async (command, args, options) => {
   if (command === 'node' && args[0] === 'scripts/select.mjs') return files.join('\n');
   return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` }, ...(command === 'node' ? { wrapper: undefined } : {}) });
 };
+// GY-3952: an older release's helper lacks a verb this release speaks (receive-image:4); only that makes the loop update it.
+const lacking = hostShimVerbs.filter(verb => verb !== 'receive-image:4').join(' ');
 const shims = () => join(hosts.home('box'), '.graphyard', 'shims');
 /** The host as prepared by an older release: another digest, and a run-shard revision this release's trials cannot use. */
 const installOlder = async (verbs = hostShimVerbs.join(' ').replace(/run-shard:\d+/, 'run-shard:1'), edit = (script: string) => script) => {
@@ -48,7 +50,7 @@ const loop = async () => (await readHostReadings([], { file, run, local: 'here',
 const shim = (command: string, input: string) => spawnSync(hosts.shim, [], { input, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: hosts.home('box'), SSH_ORIGINAL_COMMAND: command } });
 
 test(`${proof} — the loop updates a host on an older shim, its line clears and shards go there`, { timeout: 300_000 }, async () => {
-  for (const verbs of [hostShimVerbs.join(' '), undefined]) {
+  for (const verbs of [lacking, undefined]) {
     await installOlder(verbs);
     const updated = await loop();
     assert.equal(updated.away, false, updated.reason);
@@ -62,7 +64,7 @@ test(`${proof} — the loop updates a host on an older shim, its line clears and
 
   // The next release updates the updated copy in its place.
   const [copy] = await readdir(shims());
-  await writeFile(join(shims(), copy!), hostShimScript.replace(hostShimDigest, 'c'.repeat(64)));
+  await writeFile(join(shims(), copy!), hostShimScript.replace(hostShimDigest, 'c'.repeat(64)).replace(' receive-image:4', ''));
   assert.equal((await loop()).older, undefined);
   assert.deepEqual(await readdir(shims()), [copy], 'one copy');
 });
@@ -84,20 +86,20 @@ test(`${proof} — a shim with a wrong digest is refused and the host keeps its 
 });
 
 test(`${proof} — a host whose update fails stays ready, for trials too, with the reason in its attention line (GY-3896)`, async () => {
-  await installOlder(hostShimVerbs.join(' '), script => script.replace('os.replace(file.name, own)', "sys.exit('No space left on device')"));
+  await installOlder(lacking, script => script.replace('os.replace(file.name, own)', "sys.exit('No space left on device')"));
   const failed = await loop();
   assert.equal(failed.away, false);
   const [line] = outdatedShimAttention([failed]);
   assert.match(line!.text, /did not take this release's helper: No space left on device/);
   const trial = async () => (await readShardHosts([target], run, 2)).find(reading => reading.name === target)!;
   assert.equal((await trial()).away, false);
-  await installOlder(hostShimVerbs.join(' '));
+  await installOlder(lacking);
   assert.equal((await loop()).updateError, undefined, 'it clears with the next update that works');
 });
 
 test(`${proof} — a host prepared by the printed script takes the update as gy-compute, and preparing it again runs the installed helper`, async () => {
   const prepared = await fakeHosts('host-shim-self-update-prepared', [{ name: 'box' }]);
-  const older = { script: hostShimScript.replace(hostShimDigest, 'a'.repeat(64)), digest: 'a'.repeat(64) };
+  const older = { script: hostShimScript.replace(hostShimDigest, 'a'.repeat(64)).replace(' receive-image:4', ''), digest: 'a'.repeat(64) };
   await prepared.prepare('box', { shim: older });
   const hostRun: ChildRun = (command, args, options) => defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${prepared.bin}:${process.env.PATH}` } });
   const read = async (update: boolean) => (await readHostReadings([], { file, run: hostRun, local: 'here', update })).find(reading => reading.host === target)!;

@@ -53,8 +53,8 @@ exec /usr/bin/env -i HOME="$HOME" PATH="$PATH" SSH_ORIGINAL_COMMAND="$SSH_ORIGIN
     const accepted = call(`update-shim ${digest}`, signed + hostShimScript);
     assert.equal(accepted.status, 0, accepted.stderr);
     assert.equal(await readFile(own, 'utf8'), hostShimScript);
-    // A running install's next loop sees an older digest and sends the next signed helper.
-    await writeFile(own, installed.replace(hostShimDigest, 'a'.repeat(64)));
+    // A running install's next loop sees an older helper lacking a verb (GY-3952) and sends the next signed helper.
+    await writeFile(own, installed.replace(hostShimDigest, 'a'.repeat(64)).replace(' receive-image:4', ''));
     const [{ withDatabase }, { Engine }, { server }, presence] = await Promise.all([
       import('./helpers/postgres.js'), import('../src/engine.js'), import('../src/server.js'), import('../src/model/loop-presence.js'),
     ]);
