@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
@@ -64,6 +65,16 @@ await record(sixth.id, { id: 'producer-a:1', kind: 'proof', role: 'proof:e2e', p
   transcript: runTranscript(openRun(sixth.key, 1, 'producer-a', 'proof', ['running the bound e2e cases'])), subject: `${sixth.key}: proofs` });
 await record(sixth.id, { id: 'master-1:1', kind: 'coordination', role: 'master', principal: 'graphyard-master-1', agentName: 'master-1', subject: 'Coordinate the cycle' });
 
+// GY-3998 test seam: with WORKERS_PAGE_HOLD_POLL set, once the run ends the dashboard's background poll (a
+// work snapshot read since its cursor) gets no answer, so only a read the end itself prompts can show the move.
+let ended = false;
+const [handle] = http.listeners('request') as ((request: IncomingMessage, response: ServerResponse) => void)[];
+http.removeAllListeners('request');
+http.on('request', (request, response) => {
+  if (ended && process.env.WORKERS_PAGE_HOLD_POLL && request.url?.startsWith('/api/work-snapshot?since=')) return;
+  handle!(request, response);
+});
+
 // The dashboard is served from ./dist, as an install serves it.
 process.chdir(site);
 const stop = new AbortController();
@@ -75,6 +86,7 @@ http.listen(0, '127.0.0.1', () => {
 process.on('message', async message => {
   if (message === 'end') {
     writeFileSync(runFiles(runs[0]!.directory).exit, '0');
+    ended = true;
     await record(items[0]!.id, { ...handles[0], state: 'finished', observed: 'ended' });
     process.send!('ended');
     return;
