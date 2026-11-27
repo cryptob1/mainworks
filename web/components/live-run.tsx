@@ -11,7 +11,7 @@ type RunLogChunk = { run: { account: string | null; kind: string }; lines: { at:
  * scroll the earlier output back; scrolling away from the bottom stops the following until the
  * reader returns to it. It is read-only: nothing here writes to the run, and no control can type.
  */
-export default function LiveRun({ workId, run, token }: { workId: string; run: string; token: string }) {
+export default function LiveRun({ workId, run, token, onEnded }: { workId: string; run: string; token: string; onEnded?: () => void }) {
   const [lines, setLines] = useState<RunLogChunk['lines'] | null>(null);
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
@@ -37,6 +37,9 @@ export default function LiveRun({ workId, run, token }: { workId: string; run: s
         if (!response.ok) { setError(body.error ?? `The log could not be read (${response.status})`); return; }
         const chunk = body as RunLogChunk;
         setAccount(chunk.run.account); fresh.push(...chunk.lines);
+        // GY-3998: the moment the log says the run ended, the page that holds this view re-reads, so the session's own
+        // record (its row moving to Ended) follows at once instead of on the next background poll.
+        if (chunk.ended && !endedRef.current) onEnded?.();
         setEnded(chunk.ended); endedRef.current = chunk.ended;
         if (chunk.cursor === cursor.current || !chunk.lines.length) break;
         cursor.current = chunk.cursor;
