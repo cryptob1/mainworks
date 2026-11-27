@@ -13,6 +13,7 @@ import { eventHistorySql, parseEventHistoryQuery, routineEventKinds } from '../s
 import { boundedHistoryRead, historyReadSlots } from '../src/server/history-reads.js';
 import { coordinationViewHeader } from '../src/server/work-view.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-3757: on an install with history, watching one item — `status GY-N`, the item page — took the
 // line's database away. The per-item reads answer from indexes, at most four history reads run at
@@ -37,9 +38,7 @@ before(async () => {
   store = await withDatabase('item-status-read-is-indexed-and-bounded'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }, { id: 'master', role: 'coordinator', token: coordinatorToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Watched item', why: 'Many readers watch it.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  ({ id, key } = await created.json() as { id: string; key: string });
+  ({ id, key } = (await api(url, adminToken, 'work', { body: { title: 'Watched item', why: 'Many readers watch it.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } })).body as { id: string; key: string });
   // A long-lived document carrying evidence, as status reads it.
   // Kept at 20 kB so the test process's own JSON work never stalls the server it shares an event loop with.
   await store.pool.query(`UPDATE work_items SET document = document || jsonb_build_object('padding', repeat('x', 20000)) WHERE id=$1`, [id]);

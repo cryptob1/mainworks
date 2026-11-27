@@ -14,6 +14,7 @@ import { masterLessons, readProjectMemory, writeProjectMemory } from '../src/pro
 import type { Principal, Work } from '../src/model.js';
 import TopBar from '../web/components/top-bar';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 // GY-3399: after a lesson-to-code item is delivered and its lesson removed, the dashboard header
 // shows gates removed this week beside reverts this week, each count linking to its items — read
@@ -31,19 +32,14 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); delete process.env.GRAPHYARD_REPOSITORY_ROOT; });
 
-const api = async (path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` }, body: body ? JSON.stringify(body) : undefined });
-  const json = await response.json() as any;
-  assert.ok(response.ok, `${path}: ${json?.error}`);
-  return json;
-};
+const call = (path: string, body?: unknown) => apiOk(url, token, path, { body });
 const header = (status: unknown, work: Work[], opened: string[] = []) =>
   renderToStaticMarkup(createElement(TopBar, { view: 'work', setView: () => {}, setSelected: (id: string) => opened.push(id), status, selected: null, features: {}, work, observedAt: Date.now() } as unknown as Parameters<typeof TopBar>[0]));
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 test('e2e:gates-removed-this-week — a delivered lesson-to-code item removes its lesson and the header shows gates removed this week beside reverts this week, linking to the items', async () => {
   // Before anything: both counts read zero, and the header shows no week line (GY-3483).
-  let status = await api('status');
+  let status = await call('status');
   assert.deepEqual(status.thisWeek, { reverts: 0, revertedItems: [], gatesRemoved: 0, gatesRemovedItems: [] });
   assert.ok(!header(status, []).includes('week-line'), 'no week line while both counts are zero');
 
@@ -51,15 +47,12 @@ test('e2e:gates-removed-this-week — a delivered lesson-to-code item removes it
   const deps = { status: async () => ({ actor: { id: 'graphyard-master', role: 'coordinator' } }) };
   const lesson = (await lessonCommand(root, 'graphyard-master', ['add', 'Never import from src/server inside src/model', '--enforceable'], deps) as { recorded: { id: string } }).recorded;
   const memory = await readProjectMemory(root);
-  await lessonsToCode(memory, [], Date.now(), async (input, key) => {
-    const response = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(input) });
-    return response.json() as Promise<{ key?: string }>;
-  }, () => {});
+  await lessonsToCode(memory, [], Date.now(), async (input, key) => (await api(url, token, 'work', { body: input, key })).body as { key?: string }, () => {});
   const filed = masterLessons(memory).find(entry => entry.id === lesson.id)!.filedAs!;
   assert.match(filed, /^GY-\d+$/, 'the pass filed a real item');
 
   // A batch-gate revert this week, of another real item.
-  const culprit = await api('work', { type: 'chore', why: 'w', simplest: 's', title: 'A change the batch gate reverted', criteria: [{ id: 'AC-1', text: 'Kept', proofs: ['unit:kept', 'e2e:smoke'] }] });
+  const culprit = await call('work', { type: 'chore', why: 'w', simplest: 's', title: 'A change the batch gate reverted', criteria: [{ id: 'AC-1', text: 'Kept', proofs: ['unit:kept', 'e2e:smoke'] }] });
   await writeGateRecord(gateRecordPath(root), { ...bootstrapGate('owner/game', 'c'.repeat(40)), reverts: [{ item: culprit.key, at: new Date().toISOString() }] });
 
   // The item is delivered: the next pass removes the lesson, and the loop mirrors its memory to the file.
@@ -68,9 +61,9 @@ test('e2e:gates-removed-this-week — a delivered lesson-to-code item removes it
   assert.equal(masterLessons(memory).length, 0, 'the lesson left memory');
   await writeProjectMemory(root, memory);
 
-  status = await api('status');
+  status = await call('status');
   assert.deepEqual(status.thisWeek, { reverts: 1, revertedItems: [culprit.key], gatesRemoved: 1, gatesRemovedItems: [filed] });
-  const work = (await api('work-snapshot')).work as Work[];
+  const work = (await call('work-snapshot')).work as Work[];
   const html = header(status, work);
   assert.match(text(html), new RegExp(`This week: 1 revert ${culprit.key} · 1 gate removed ${filed}`), 'one line: the two counts side by side, each naming its items');
   const line = /<p class="week-line" data-reverts="1" data-gates-removed="1">(.*?)<\/p>/.exec(html);

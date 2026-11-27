@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +24,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3336: three faults that left the lumina-investor install failing every cycle. (1) A remote
 // that refuses the fetch of the base branch — a SAML organization that has not authorised the
@@ -198,8 +198,7 @@ test('e2e:onboard-new-repository-faults — master status shows one attention li
     assert.equal(items[0]!.human, true, 'only the owner can authorise the key');
 
     // A loop that names none (the fetch recovered, or an older loop) shows no item.
-    const clear = await fetch(`${url}/api/work-snapshot`, { headers: { Authorization: `Bearer ${credentials[1]!.token}`, 'x-graphyard-loop-interval': '20', [loopFetchRefusalHeader]: 'off', 'Idempotency-Key': randomUUID() } });
-    assert.equal(clear.status, 200);
+    await apiOk(url, credentials[1]!.token, 'work-snapshot', { headers: { 'x-graphyard-loop-interval': '20', [loopFetchRefusalHeader]: 'off' } });
     const after = await (await fetch(`${url}/api/status`, { headers: { Authorization: `Bearer ${credentials[0]!.token}` } })).json() as any;
     assert.equal(after.setup.fetchRefusal, null);
     assert.ok(!setupChecklist(after).some(item => item.id === 'fetch-refusal'));

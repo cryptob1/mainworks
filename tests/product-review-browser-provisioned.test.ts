@@ -29,6 +29,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { until } from './helpers/until.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3370: a host without the browser tool is set up for product reviews. When a feature item
 // reaches product review and agent-browser is absent, the loop installs it once into the install's
@@ -123,10 +124,7 @@ async function cycle(items: Work[], exec: HeadlessExec) {
   const config = await loadMasterConfig(root);
   const effects = dispatchEffects(root, config, {
     snapshot: async () => ({ work: await Promise.all(items.map(item => stored(item.id))), now: now() }),
-    mutate: async (path: string, body: unknown) => {
-      const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-      const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
-    },
+    mutate: (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body }),
     run, headless: exec,
   });
   effects.inventory = async () => headlessInventory();

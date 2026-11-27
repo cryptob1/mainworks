@@ -16,6 +16,7 @@ import { groupRepeatedFailures, incidentsFromStatus, normaliseFailureLine, repea
 import { HomeStatus } from '../web/components/home.js';
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3626: the same failure in three sessions within 30 minutes is one incident,
 // found from session results without any agent reporting it.
@@ -160,16 +161,7 @@ test('e2e:repeated-failure-incident — three ended sessions with the same error
   store = await withDatabase('repeated-failure-incident');
   await store.init();
   const { url, close: stop } = await listen(server(new Engine(store, 120, 'owner/game'), [{ ...operator, token }])); close = stop;
-  const api = async (path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, {
-      method: body ? 'POST' : 'GET',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': `${path}-${Math.random()}` },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const json = await response.json() as any;
-    if (!response.ok) throw new Error(`${path}: ${json?.error}`);
-    return json;
-  };
+  const api = (path: string, body?: unknown) => apiOk(url, token, path, { body });
   const hashes = [['a1b2', 'c3d4'], ['e5f6', '7890'], ['12ab', '34cd']] as const;
   const items: Work[] = [];
   for (const [index, [cliSha, serverSha]] of hashes.entries()) {

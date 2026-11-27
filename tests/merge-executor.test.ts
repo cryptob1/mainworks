@@ -36,6 +36,7 @@ import { runCommandStep, runProcess } from '../src/e2e/steps.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-1524: the control-plane merge executor — one serial queue, intent before push, the trial on the
@@ -529,10 +530,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true }); });
 
-async function request(credential: string, path: string, body?: unknown, key: string = randomUUID(), method = 'POST') {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() as any };
-}
+const request = (credential: string, path: string, body?: unknown, key?: string, method = 'POST') => api(url, credential, path, { method, body, key });
 /** An item the worker claimed, registered on its branch and submitted with `complete --head`, as GY-1523 submits it. */
 async function submittedItem(n: number, proofs = ['unit:app-works', 'e2e:fixture'], workspace = n) {
   let w = await engine.execute(admin, 'create', null, { type: 'chore',  title: `Executor fixture ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs }] }, randomUUID());

@@ -25,6 +25,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { until } from './helpers/until.js';
+import { api as request } from './helpers/api.js';
 
 // GY-3302: hwd-backend retried accounts across six items after `429 FreeUsageLimitError`. A
 // free-usage notice is the account's exhaustion like any limit notice: held at once, before any
@@ -63,10 +64,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); });
 
-const api = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method, headers: { Authorization: `Bearer ${token(coordinator)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() as any };
-};
+const api = (method: 'GET' | 'POST', path: string, body?: unknown) => request(url, token(coordinator), path, { method, body });
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 async function readyItem(key: string): Promise<Work> {
   const at = now();

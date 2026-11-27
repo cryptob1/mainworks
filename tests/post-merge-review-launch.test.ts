@@ -25,6 +25,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { api } from './helpers/api.js';
 // Every instant this file holds is derived from the run's own clock (GY-1694): a base reading taken
 // at load and offsets from it. No calendar literal is constructed, so no wall-clock reading here is
 // judged against a fixed date.
@@ -81,10 +82,7 @@ after(async () => { await close?.(); if (store) await store.close(); });
 
 const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
 const insert = async (work: Work) => { await store.pool.query('INSERT INTO work_items(id, document) VALUES ($1,$2)', [work.id, JSON.stringify(work)]); return work; };
-const request = async (credential: string, path: string, body?: unknown, key: string = randomUUID()) => {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as any };
-};
+const request = (credential: string, path: string, body?: unknown, key?: string) => api(url, credential, path, { method: 'POST', body, key });
 const verdictBody = 'AC-1 met after the merge.\nResolved threads: none\nFollow-up threads: none\nOverridden threads: none';
 
 const herdr = (_command: string, args: string[]) => { herdrCalls.push(args); return startedAtOnce(args) ?? JSON.stringify({ result: args[0] === 'tab' ? { type: 'tab_created', root_pane: { pane_id: 'pane-review', tab_id: 'tab-review' }, tab: { tab_id: 'tab-review' } } : args[0] === 'pane' && args[1] === 'list' ? { panes: [] } : {} }); };

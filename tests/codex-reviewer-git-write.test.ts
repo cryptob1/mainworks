@@ -23,6 +23,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3235: on Huck's install the served repository is not the checkout the CLI release runs from.
 // Reviewer launches were confined against the launcher's checkout, so the whole served repository,
@@ -82,9 +83,7 @@ test(`e2e:codex-reviewer-git-write — ${layout}: a codex reviewer launched for 
     assert.equal(calls.some(args => args[0] === 'tab'), false);
     const record = (await readReviewLedger(root)).reviews.find(record => record.key === work.key)!;
     const binding = JSON.parse(await readFile(join(record.sessionDirectory, reviewBindingFile), 'utf8')) as ReviewPostBinding;
-    const response = await fetch(`${url}/api/work/${work.id}/review-verdict`, { method: 'POST', headers: { Authorization: `Bearer ${binding.verdictToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      body: JSON.stringify({ event: 'APPROVE', body: 'AC-1 met.\nResolved threads: none\nFollow-up threads: none\nOverridden threads: none', sha: head, token: binding.verdictToken }) });
-    assert.equal(response.status, 200, await response.text());
+    await apiOk(url, binding.verdictToken!, `work/${work.id}/review-verdict`, { body: { event: 'APPROVE', body: 'AC-1 met.\nResolved threads: none\nFollow-up threads: none\nOverridden threads: none', sha: head, token: binding.verdictToken } });
     const stored = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [work.id])).rows[0].document as Work;
     assert.deepEqual(stored.observation!.reviews.map(review => [review.reviewer, review.sha, review.state]), [['review-codex-1', head, 'APPROVED']]);
   } finally { await rm(base, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); }

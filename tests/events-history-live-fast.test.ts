@@ -8,6 +8,7 @@ import { server } from '../src/server.js';
 import { itemLedger, slowQueryAttention } from '../src/cli/master-status.js';
 import { deliverySpeed, type MergedItem } from '../src/pipeline-speed.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3762: master status reads the whole ledger of the last 50 merged items, all at once, every few minutes. It
 // asked for each event's resolved work document only to read its stage: on the live install that was 580 MB a run,
@@ -21,12 +22,7 @@ const start = Date.parse('2026-11-20T00:00:00Z');
 let store: Store, close: (() => Promise<void>) | undefined, url: string;
 let items: { id: string; key: string; rows: number }[] = [];
 
-const api = (headers: Record<string, string> = {}) => async (path: string) => {
-  const response = await fetch(`${url}/api/${path}`, { headers: { ...headers, Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(120_000) });
-  const body = await response.json();
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(body).slice(0, 300)}`);
-  return body;
-};
+const api = (headers: Record<string, string> = {}) => (path: string) => apiOk(url, adminToken, path, { headers, signal: AbortSignal.timeout(120_000) });
 /** Row r (1-based) of an item: a full snapshot opens each run of EVERY rows with the next stage; the rest are deltas on it. */
 const stageAt = (r: number) => stages[Math.floor((r - 1) / EVERY) % stages.length];
 const minuteAt = (r: number) => new Date(start + r * 60_000).toISOString();
@@ -35,9 +31,7 @@ before(async () => {
   store = await withDatabase('events-history-live-fast'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Template', why: 'Its document seeds the ledger.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  const { id: templateId } = await created.json() as { id: string };
+  const { id: templateId } = await apiOk(url, adminToken, 'work', { body: { title: 'Template', why: 'Its document seeds the ledger.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } }) as { id: string };
   await store.pool.query('ALTER TABLE events SET UNLOGGED');
   // Each item: a `ready` full snapshot, then runs of EVERY rows, a full snapshot opening each with the next stage and
   // deltas on it after, as appendSave writes them; its document carries kb kilobytes of history that compresses like the live one.

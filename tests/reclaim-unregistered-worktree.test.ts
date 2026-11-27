@@ -1,7 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -17,6 +16,7 @@ import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3227: an ended attempt's directory that Git no longer registers as a worktree is removed by the
 // loop's reclaim step; a live attempt's directory and a path outside the worktree root are left alone.
@@ -28,13 +28,7 @@ const credentials = [operator, coordinator, worker].map(principal => ({ ...princ
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 
 let store: Store, close: (() => Promise<void>) | undefined, url: string, install: string;
-const ok = async (principal: Principal, path: string, body: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: 'POST', body: JSON.stringify(body),
-    headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() } });
-  const text = await response.text();
-  assert.equal(response.status, 200, `${path}: ${text}`);
-  return JSON.parse(text);
-};
+const ok = (principal: Principal, path: string, body: unknown) => apiOk(url, token(principal), path, { body });
 const git = (args: string[], cwd = install) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 before(async () => {

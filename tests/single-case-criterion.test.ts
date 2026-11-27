@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 
@@ -9,6 +8,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 import { reviewPrompt, reviewStandard } from '../src/reviewer.js';
 import { pinnedCases, singleCaseWarnings } from '../src/model.js';
 import type { Principal } from '../src/model.js';
+import { api as request } from './helpers/api.js';
 
 /**
  * GY-2975: a criterion whose proof pins one seed, fixture or input is flagged when the item is
@@ -25,12 +25,9 @@ let url: string, token: string;
 
 useTestStore('single-case-criterion', { credentials: [{ ...operator, token: token = `${operator.id}-${'t'.repeat(32)}` }] }, ctx => { ({ url } = ctx); });
 
-const api = async (path: string, data?: unknown, key: string = randomUUID()) => {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data) });
-  const body = await response.json() as any;
-  if (!response.ok) throw Object.assign(new Error(body?.error ?? `HTTP ${response.status}`), { status: response.status });
+const api = async (path: string, data?: unknown, key?: string) => {
+  const { status, body } = await request(url, token, path, { body: data, key });
+  if (status >= 300) throw Object.assign(new Error(body?.error ?? `HTTP ${status}`), { status });
   return body;
 };
 

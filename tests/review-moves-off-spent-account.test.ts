@@ -25,6 +25,7 @@ import { dispatchEffects } from '../src/dispatch/effects.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { listen } from './helpers/http-server.js';
 import { observationFixture } from './helpers/observation-fixture.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3748 AC-2: marks the first reviewer account exhausted after its launch was requested
 // and asserts another account posts the verdict within the case.
@@ -138,16 +139,7 @@ test('e2e:review-moves-off-spent-account — marks first reviewer exhausted afte
   }, randomUUID());
 
   const config = await loadMasterConfig(root) as MasterConfig;
-  const mutate = async (path: string, body: unknown) => {
-    const res = await fetch(`${url}/api/${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      body: JSON.stringify(body),
-    });
-    const parsed = await res.json();
-    if (!res.ok) throw new Error(JSON.stringify(parsed));
-    return parsed;
-  };
+  const mutate = (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body });
   const loadItem = async () => (await store.pool.query('SELECT document FROM work_items WHERE id = $1', [work.id])).rows[0].document as Work;
   const baseEffects = dispatchEffects(root, () => config, {
     snapshot: async () => ({ work: [await loadItem()], now: now() }),

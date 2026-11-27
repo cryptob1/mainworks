@@ -34,6 +34,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { dispatchKey } from '../src/daemon/reconcile.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { api, apiOk } from './helpers/api.js';
 // Time-bomb allowance (GY-1694): the 2026-09-20 at/now/resetsAt trio is the fixed clock handed to fleetView, chooseSession and sessionEnded; Date.now() only builds relative expiries and reset times.
 
 const operator: Principal = { id: 'operator', role: 'admin' };
@@ -61,11 +62,8 @@ before(async () => {
 });
 after(async () => { if (inheritedCodexHome !== undefined) process.env.CODEX_HOME = inheritedCodexHome; await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
-async function call(path: string, actor: Principal, data?: unknown, key: string = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
-const ok = async (path: string, actor: Principal, data?: unknown) => { const result = await call(path, actor, data); assert.equal(result.status, 200, `${path}: ${JSON.stringify(result.body)}`); return result.body; };
+const call = (path: string, actor: Principal, data?: unknown, key?: string) => api(url, tokens.get(actor.id)!, path, { body: data, key });
+const ok = (path: string, actor: Principal, data?: unknown) => apiOk(url, tokens.get(actor.id)!, path, { body: data });
 /** Every test starts from an empty fleet: whatever a previous test registered is removed through the API. */
 async function reset() {
   const document: Registry = await ok('agent-registry/document', operator);

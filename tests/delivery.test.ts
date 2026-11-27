@@ -16,6 +16,7 @@ import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { itemObservation } from './helpers/observation-fixture.js';
+import { api } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -367,10 +368,7 @@ test('deployment identity registrations are service-scoped and carry no executio
 
 test('HTTP delivery routes derive authority from the credential', async () => {
   const f = await environment(); const r = await release(f); await select(f, r);
-  const call = async (path: string, actor: Principal | null, data?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { ...(actor ? { Authorization: `Bearer ${actor.id}-token-${'x'.repeat(32)}` } : {}), 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: data === undefined ? undefined : JSON.stringify(data) });
-    return { status: response.status, body: await response.json() };
-  };
+  const call = (path: string, actor: Principal, data?: unknown) => api(url, `${actor.id}-token-${'x'.repeat(32)}`, path, { body: data });
   assert.equal((await localRequest(url, '/api/delivery', { headers: { Host: 'graphyard.example' } })).status, 401);
   const status = await call('delivery', reader); assert.equal(status.status, 200); assert.ok(status.body.environments.some((e: EnvironmentDelivery) => e.environmentId === f.env.id)); assert.ok(status.body.releases.some((x: Release) => x.id === r.id));
   assert.equal((await call('delivery/release', worker, {})).status, 400);

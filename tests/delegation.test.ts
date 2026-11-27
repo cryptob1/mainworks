@@ -21,6 +21,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { itemObservation } from './helpers/observation-fixture.js';
+import { api, apiOk } from './helpers/api.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // The merge writer merges (GY-1524, GY-2010): what it may push is a head its trial passed with every
@@ -172,10 +173,9 @@ test('integration:lead-enforcement — violating lead actions are refused server
   // Nor can a producer bound to the item's slice.
   await assert.rejects(engine.execute({ id: 'product-proofs', role: 'producer', slice: 'product', proofs: ['unit:works'] }, 'evidence', item.id, proof(), id()), /independent of that slice/);
   // Over HTTP the refusal is recorded against the item it targeted.
-  const response = await fetch(`${url}/api/work/${item.id}/claim`, { method: 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(c => c.id === lead.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: '{}' });
+  const response = await api(url, credentials.find(c => c.id === lead.id)!.token, `work/${item.id}/claim`, { body: {} });
   assert.equal(response.status, 403);
-  assert.match((await response.json()).error, /Slice leads cannot perform lifecycle mutations/);
+  assert.match(response.body.error, /Slice leads cannot perform lifecycle mutations/);
   const refusal = (await store.events(item.id)).find(event => event.kind === 'lead.action.refused');
   assert.equal(refusal.actor, lead.id);
   assert.equal(refusal.payload.attemptedAction, 'claim');
@@ -187,8 +187,7 @@ test('integration:lead-enforcement — violating lead actions are refused server
   // slice's own ledger and aggregate stay untouched.
   const foreign = await engine.execute(admin, 'create', null, input('lead-enforcement-foreign', 'infrastructure'), id());
   const ledgerBefore = (await store.events(foreign.id)).length;
-  const crossed = await fetch(`${url}/api/work/${foreign.id}/claim`, { method: 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(c => c.id === lead.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: '{}' });
+  const crossed = await api(url, credentials.find(c => c.id === lead.id)!.token, `work/${foreign.id}/claim`, { body: {} });
   assert.equal(crossed.status, 403);
   assert.equal((await store.events(foreign.id)).length, ledgerBefore, 'a lead cannot append to another slice ledger');
   assert.equal((await reload(foreign)).revision, foreign.revision);
@@ -199,17 +198,16 @@ test('integration:lead-enforcement — violating lead actions are refused server
   assert.equal(unscoped.payload.slice, 'product');
   assert.equal(unscoped.payload.targetSlice, 'infrastructure');
   assert.match(unscoped.payload.reason, /targets another slice/);
-  const asLead = (path: string, payload: unknown) => fetch(`${url}${path}`, { method: 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(c => c.id === lead.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: JSON.stringify(payload) });
+  const asLead = (path: string, payload: unknown) => api(url, credentials.find(c => c.id === lead.id)!.token, path, { body: payload });
   // GitHub merges (GY-1235): Mainworks serves no merge route a lead could try.
-  const mergeRoute = await asLead(`/api/work/${item.id}/merge-acquire`, { enqueue: true });
+  const mergeRoute = await asLead(`work/${item.id}/merge-acquire`, { enqueue: true });
   assert.equal(mergeRoute.status, 404, 'the guarded merge route is gone');
   assert.equal((await reload(item)).mergeExecution ?? null, null, 'no merge call left execution state behind');
   // Creating work names no existing item, so there is no ledger to append to.
   // The attempt is still history: it is recorded unscoped, with a null target.
-  const creation = await asLead('/api/work', input('lead-creates-work', 'product'));
+  const creation = await asLead('work', input('lead-creates-work', 'product'));
   assert.equal(creation.status, 403);
-  assert.match((await creation.json()).error, /Slice leads cannot perform lifecycle mutations/);
+  assert.match(creation.body.error, /Slice leads cannot perform lifecycle mutations/);
   assert.equal((await store.list()).some(work => work.title === 'lead-creates-work'), false, 'the refused creation never reaches the backlog');
   const attempted = (await store.events()).filter(event => event.kind === 'lead.action.refused' && event.payload.attemptedAction === 'create');
   assert.equal(attempted.length, 1);
@@ -369,9 +367,7 @@ test('integration:ownership-and-delivery-invariants — Mainworks owns leases, w
   }
   held[0] = await engine.execute(workerA, 'claim', held[0].id, {}, id());
   // The second claim by the same engineer is accepted by the server, not merely by a client.
-  const second = await fetch(`${url}/api/work/${held[1].id}/claim`, { method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: '{}' });
-  assert.equal(second.status, 200, await second.text());
+  await apiOk(url, token, `work/${held[1].id}/claim`, { body: {} });
   held[1] = await reload(held[1]);
   for (const work of held) {
     assert.equal(work.lease!.owner, workerA.id);
@@ -458,11 +454,9 @@ test('integration:exact-candidate-validation — trusted evidence binds the exac
   let coLocated = await engine.execute(admin, 'create', null, input('co-located-producer', 'docs-experience'), id());
   coLocated = await engine.execute(admin, 'ready', coLocated.id, {}, id());
   coLocated = await engine.execute({ id: reviewer.id, role: 'worker' }, 'claim', coLocated.id, {}, id());
-  const response = await fetch(`${url}/api/work/${coLocated.id}/evidence`, { method: 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(c => c.id === reviewer.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() },
-    body: JSON.stringify(proof()) });
+  const response = await api(url, credentials.find(c => c.id === reviewer.id)!.token, `work/${coLocated.id}/evidence`, { body: proof() });
   assert.equal(response.status, 403);
-  assert.match((await response.json()).error, /distinct from its implementers/);
+  assert.match(response.body.error, /distinct from its implementers/);
   const recorded = (await store.events(coLocated.id)).find(event => event.kind === 'evidence.producer.refused');
   assert.equal(recorded.actor, reviewer.id);
   assert.equal(recorded.payload.proof, 'unit:works');
@@ -540,16 +534,12 @@ test('integration:intake-authority-routing — routine intake is autonomous, hum
     assert.equal(routine.submittedBy, actor.id);
   }
   // Over HTTP a real AI-declared admin credential is refused the same way.
-  const aiIntake = await fetch(`${url}/api/intake`, { method: 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(c => c.id === aiAdmin.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() },
-    body: JSON.stringify({ origin: 'waiver', title: 'AI waiver over HTTP', description: '' }) });
+  const aiIntake = await api(url, credentials.find(c => c.id === aiAdmin.id)!.token, 'intake', { body: { origin: 'waiver', title: 'AI waiver over HTTP', description: '' } });
   assert.equal(aiIntake.status, 403);
-  assert.match((await aiIntake.json()).error, /waiver intake requires a declared human session/);
-  const humanIntake = await fetch(`${url}/api/intake`, { method: 'POST',
-    headers: { Authorization: `Bearer ${credentials.find(c => c.id === admin.id)!.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() },
-    body: JSON.stringify({ origin: 'waiver', title: 'Human waiver over HTTP', description: '' }) });
+  assert.match(aiIntake.body.error, /waiver intake requires a declared human session/);
+  const humanIntake = await api(url, credentials.find(c => c.id === admin.id)!.token, 'intake', { body: { origin: 'waiver', title: 'Human waiver over HTTP', description: '' } });
   assert.equal(humanIntake.status, 200);
-  assert.equal((await humanIntake.json()).origin, 'waiver');
+  assert.equal(humanIntake.body.origin, 'waiver');
   await assert.rejects(recordIntake(store, workerA, { origin: 'defect', title: 'Worker intake', description: '' }, id()), /Intake permission required/);
   await assert.rejects(recordIntake(store, reviewer, { origin: 'defect', title: 'Producer intake', description: '' }, id()), /Intake permission required/);
   const rows = await store.pool.query('SELECT origin FROM intake_items');
@@ -585,8 +575,7 @@ test('integration:intake-authority-routing — routine intake is autonomous, hum
     let outOfScope = await lifecycle(scopedEngine, admin, input('scoped-hidden', 'infrastructure'), { claim: workerB });
     const setup = { id: `intake-agent-${randomUUID()}`, displayName: 'Intake agent', capabilities: [],
       scope: { repositories: ['owner/delegation'], workItems: [inScope.id] }, token: agentToken, reason: 'Human enabled scoped intake' };
-    const registered = await fetch(`${scopedUrl}/api/operator-agents`, { method: 'POST',
-      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: JSON.stringify(setup) });
+    const registered = await api(scopedUrl, adminToken, 'operator-agents', { body: setup });
     assert.equal(registered.status, 200);
     const asAgent = (path: string) => fetch(`${scopedUrl}/api/${path}`, { headers: { Authorization: `Bearer ${agentToken}` } });
     // Delegation reads are filtered by the same scope rule as every other read.
@@ -607,16 +596,15 @@ test('integration:intake-authority-routing — routine intake is autonomous, hum
     const full: any = await (await fetch(`${scopedUrl}/api/delegation`, { headers: { Authorization: `Bearer ${adminToken}` } })).json();
     assert.ok(JSON.stringify(full).includes(outOfScope.key));
     // Citing out-of-scope work is refused, and appends nothing to its history.
-    const intake = (value: unknown) => fetch(`${scopedUrl}/api/intake`, { method: 'POST',
-      headers: { Authorization: `Bearer ${agentToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': id() }, body: JSON.stringify(value) });
+    const intake = (value: unknown) => api(scopedUrl, agentToken, 'intake', { body: value });
     const refused = await intake({ origin: 'defect', title: 'Out-of-scope citation', description: '', sourceWorkId: outOfScope.id });
     assert.equal(refused.status, 403);
-    assert.match((await refused.json()).error, /outside this operator-agent scope/);
+    assert.match(refused.body.error, /outside this operator-agent scope/);
     assert.equal((await store.pool.query('SELECT 1 FROM intake_items WHERE source_work_id=$1', [outOfScope.id])).rowCount, 0);
     assert.equal((await store.events(outOfScope.id)).filter(event => event.kind === 'intake.created').length, 0);
     const permitted = await intake({ origin: 'defect', title: 'In-scope citation', description: '', sourceWorkId: inScope.id });
     assert.equal(permitted.status, 200);
-    assert.equal((await permitted.json()).sourceWorkId, inScope.id);
+    assert.equal(permitted.body.sourceWorkId, inScope.id);
   } finally {
     await close();
     await engine.execute(workerA, 'release', (await store.list()).find(w => w.title === 'scoped-visible')!.id, { epoch: 1 }, id());

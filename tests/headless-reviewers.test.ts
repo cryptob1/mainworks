@@ -25,6 +25,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { apiOk } from './helpers/api.js';
 
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
 const coordinatorToken = `${coordinator.id}-token-${'x'.repeat(32)}`;
@@ -111,10 +112,7 @@ async function dispatch(work: Work, confined = false) {
   const request = { id: randomUUID(), kind: 'review' as const, provider: 'github' as const, reason: 'fixture needs independent review', pr: 7, sha: head, baseSha: base, policyRevision: 1, state: 'requested' as const, requestedAt: now(), requestedBy: 'graphyard', attempts: 0 };
   work.autoDispatch = { review: request, producers: [], history: [] };
   await insert(work);
-  const mutate = async (path: string, body: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
-  };
+  const mutate = (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body });
   if (confined) {
     process.env.GRAPHYARD_CONFINEMENT = 'master';
     try {

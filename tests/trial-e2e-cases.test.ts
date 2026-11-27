@@ -25,6 +25,7 @@ import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { linkedCases } from '../src/model/test-cases.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { api } from './helpers/api.js';
 
 // GY-2965 AC-2: the merge trial serves the head and runs its bound case. A head carrying
 // e2e:home-shows-change is refused when e2e/cases/home-shows-change.json is absent, naming the
@@ -95,12 +96,7 @@ const trial = async (mergeSha: string, changed: string[]) => runMergeTrial({
   timeoutMs: 120_000, key: 'GY-2965', environment: { PATH: process.env.PATH!, HOME: process.env.HOME! }, retries: 0,
 });
 
-async function call(path: string, actor: Principal, data?: unknown, key = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
+const call = (path: string, actor: Principal, data?: unknown, key = randomUUID()) => api(url, tokens.get(actor.id)!, path, { body: data, key });
 
 describe('unit:trial-e2e-cases — declared serving and case verdicts survive the trial phases', () => {
 test('unit:trial-serves-head-and-runs-bound-cases — a head whose bound case is absent is refused naming the missing path', async () => {

@@ -16,6 +16,7 @@ import { readProjectMemory, recordedMasterMemory } from '../src/project-memory.j
 import { ProductView } from '../web/pages/product';
 import type { MasterConfig } from '../src/master/profiles.js';
 import type { Principal } from '../src/model.js';
+import { api } from './helpers/api.js';
 
 // GY-3274 AC-2: `master brief set FILE REASON` and `master brief show` keep one product brief per
 // install in project memory (Markdown, at most 800 words, the five sections), each change kept in
@@ -131,10 +132,7 @@ const tokens = new Map(principals.map(p => [p.id, `${p.id}-${'t'.repeat(32)}`]))
 useTestStore('product-brief', { credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ url } = ctx); });
 
 test('e2e:product-brief — the control plane serves the mirrored brief and the Product page shows it read-only', async () => {
-  const call = async (actor: Principal, method: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/product-brief`, { method, headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, ...(body ? { 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    return { status: response.status, body: await response.json() as any };
-  };
+  const call = (actor: Principal, method: string, body?: unknown) => api(url, tokens.get(actor.id)!, 'product-brief', { method, body });
   assert.deepEqual(await call(admin, 'GET'), { status: 200, body: { brief: null } }, 'no brief yet is an honest empty page');
 
   const brief = { markdown: briefMarkdown(''), updatedAt: '2026-11-13T08:00:00Z', by: 'graphyard-master', why: 'the standing brief', history: [{ at: '2026-11-13T08:00:00Z', by: 'graphyard-master', why: 'the standing brief', words: 80 }] };
@@ -164,11 +162,8 @@ test('e2e:product-brief — the CLI publishes through the control-plane route th
   await writeFile(file, briefMarkdown(''));
   await runBriefCommand(root, 'graphyard-master', ['set', file, 'through', 'the', 'route'], {
     status: async () => ({ actor: { id: 'graphyard-master', role: 'coordinator' } }),
-    publish: async (published: unknown) => {
-      const response = await fetch(`${url}/api/product-brief`, { method: 'POST', headers: { Authorization: `Bearer ${tokens.get(coordinator.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(published) });
-      assert.equal(response.status, 200);
-    },
+    publish: async (published: unknown) => { assert.equal((await api(url, tokens.get(coordinator.id)!, 'product-brief', { body: published })).status, 200); },
   });
-  const read = await (await fetch(`${url}/api/product-brief`, { headers: { Authorization: `Bearer ${tokens.get(admin.id)}` } })).json() as { brief: { markdown: string } };
+  const read = (await api(url, tokens.get(admin.id)!, 'product-brief')).body as { brief: { markdown: string } };
   assert.match(read.brief.markdown, /^## Problem$/m, 'what the master set is what the Product page shows');
 });

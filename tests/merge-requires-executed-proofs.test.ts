@@ -5,7 +5,6 @@ import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
@@ -22,6 +21,7 @@ import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js'
 import type { Principal, Work } from '../src/model.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { apiOk } from './helpers/api.js';
 
 const operator: Principal = { id: 'operator', role: 'admin' };
 const worker: Principal = { id: 'worker', role: 'worker' };
@@ -94,8 +94,7 @@ test('unit:tests/merge-requires-executed-proofs.test.ts integration:merge-requir
           trial: input => runMergeTrial({ ...input, retries: 0, attribute: false }),
           record: async (work, event) => {
             records.push({ key: work.key, event });
-            const answer = await fetch(`${url}/api/work/${work.id}/merge-record`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(event) });
-            assert.equal(answer.status, 200, await answer.text());
+            await apiOk(url, token, `work/${work.id}/merge-record`, { body: event });
           },
         });
       const results = [{ work: works[0]!, outcome: await mergeOne(reads, works[0]!) }];

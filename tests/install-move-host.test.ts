@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -20,6 +19,7 @@ import { moveInstall } from '../src/install/move.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const tokens = { operator: `operator-${'o'.repeat(40)}`, master: `master-${'m'.repeat(40)}`, worker: `worker-${'w'.repeat(40)}` };
@@ -33,10 +33,7 @@ async function controlPlane(data: string, port: number) {
     { id: 'master', role: 'coordinator', token: tokens.master },
     { id: 'worker', role: 'worker', token: tokens.worker },
   ]));
-  const ok = async (path: string, body?: unknown, token = tokens.operator) => {
-    const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json() as any; assert.equal(response.status, 200, `${path}: ${JSON.stringify(result)}`); return result;
-  };
+  const ok = (path: string, body?: unknown, token = tokens.operator) => apiOk(url, token, path, { body });
   const stop = async () => { await close(); await store.close(); await cluster.stop(); };
   return { url, ok, stop };
 }

@@ -1,7 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +22,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterCredentialMask, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { masterSessionConfinement } from '../src/master/launch.js';
 import { listen } from './helpers/http-server.js';
+import { apiOk } from './helpers/api.js';
 
 // GY-3806: live checks of agy and Pi accounts get a writable account home and a scratch home they
 // can create, returning a login verdict (available, exhausted or not logged in) instead of a check
@@ -311,14 +311,7 @@ test('e2e:account-check-writable-home — on a running test install an agy accou
   const { url, close } = await listen(server(new Engine(store, 7200, 'owner/e2e-agy-check'), credentials));
   servers.push(close);
 
-  const apiCall = async (bearer: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, body === undefined
-      ? { headers: { Authorization: `Bearer ${bearer}` } }
-      : { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const parsed = await response.json() as any;
-    assert.equal(response.status, 200, `${path}: ${JSON.stringify(parsed)}`);
-    return parsed;
-  };
+  const apiCall = (bearer: string, path: string, body?: unknown) => apiOk(url, bearer, path, { body });
 
   const agyRuntime = structuredClone(proposedRuntimes.find(entry => entry.name === 'agy') ?? {
     name: 'agy',

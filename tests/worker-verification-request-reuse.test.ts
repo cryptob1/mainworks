@@ -1,6 +1,5 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -19,6 +18,7 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { until } from './helpers/until.js';
+import { api } from './helpers/api.js';
 
 setRepositoryPolicy({ ...repositoryPolicy(), risk: { sensitive: [{ glob: 'app.js', rule: 'fixture requires independent review' }], declared: true }, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -46,19 +46,16 @@ test('integration:reuse-required', () => assert.equal(answer, 42));
   const { url: serverUrl, close } = await listen(server(engine, [worker, host]));
   t.after(close);
   const url = serverUrl;
-  const api = async (path: string, body?: unknown, token = host.token, signal?: AbortSignal) => {
-    const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', signal,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(result)}`);
-    return result;
+  const call = async (path: string, body?: unknown, token = host.token, signal?: AbortSignal) => {
+    const result = await api(url, token, path, { body, signal });
+    if (result.status !== 200) throw new Error(`${result.status}: ${JSON.stringify(result.body)}`);
+    return result.body;
   };
-  const start = (input: Record<string, unknown> = {}, signal?: AbortSignal) => api(`work/${work.id}/worker-verification`, { mode: 'verify', head, epoch: 1, ...input }, worker.token, signal)
+  const start = (input: Record<string, unknown> = {}, signal?: AbortSignal) => call(`work/${work.id}/worker-verification`, { mode: 'verify', head, epoch: 1, ...input }, worker.token, signal)
     .then(value => ({ value, error: null }), error => ({ value: null, error }));
-  const pending = async () => (await api('work-snapshot')).workerVerifications as any[];
+  const pending = async () => (await call('work-snapshot')).workerVerifications as any[];
   const result = { record: { key: work.key, head, clean: true, at: new Date().toISOString(), ran: [], outstanding: [] }, rerun: { flaked: [], baseFailures: [] } };
-  return { root, git, head, work, store, api, start, pending, result, worker };
+  return { root, git, head, work, store, api: call, start, pending, result, worker };
 }
 
 test('integration:worker-verification-request-reuse — identical repeats share one host verification; changed inputs and stale epochs do not', async t => {

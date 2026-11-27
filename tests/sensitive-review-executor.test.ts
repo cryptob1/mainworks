@@ -24,6 +24,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { apiOk } from './helpers/api.js';
 
 /**
  * GY-3421: a sensitive delta (a dependency manifest) implemented on a claude account owes one
@@ -102,10 +103,7 @@ console.log(JSON.stringify({ verdict: 'APPROVE', body: 'Reviewed head ${head} ag
 
 async function tick(work: Work) {
   const config = await loadMasterConfig(root);
-  const mutate = async (path: string, body: unknown) => {
-    const response = await fetch(`${url}/api/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${coordinatorToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body) });
-    const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
-  };
+  const mutate = (path: string, body: unknown) => apiOk(url, coordinatorToken, path, { body });
   const run = (command: string, args: string[], options?: { cwd?: string }) => execFileSync(command, args, { encoding: 'utf8', cwd: options?.cwd });
   const effects = dispatchEffects(root, config, { snapshot: async () => ({ work: [await stored(work.id)], now: now() }), mutate, run, headless: spawnHeadless });
   effects.inventory = async () => headlessInventory();

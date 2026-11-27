@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
+import { api, apiOk } from './helpers/api.js';
 import { Store } from '../src/store.js';
 import { isDelivered, type Principal, type Work } from '../src/model.js';
 
@@ -20,15 +21,8 @@ const credentials = [operator, worker].map(principal => ({ ...principal, token: 
 const token = (principal: Principal) => credentials.find(credential => credential.id === principal.id)!.token;
 let store: Store, url: string;
 
-const call = async (principal: Principal, path: string, body?: unknown) => {
-  const response = await fetch(`${url}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token(principal)}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { status: response.status, body: await response.json() as any };
-};
-const ok = async (principal: Principal, path: string, body?: unknown) => {
-  const result = await call(principal, path, body);
-  assert.equal(result.status, 200, JSON.stringify(result.body));
-  return result.body;
-};
+const call = (principal: Principal, path: string, body?: unknown) => api(url, token(principal), path, { body });
+const ok = (principal: Principal, path: string, body?: unknown) => apiOk(url, token(principal), path, { body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 const snapshot = async (): Promise<Work[]> => (await ok(operator, 'work-snapshot')).work;
 

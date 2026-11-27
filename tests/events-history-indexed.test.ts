@@ -1,12 +1,12 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { planAsRows, withDatabase } from './helpers/postgres.js';
 import type { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';
 import { listen } from './helpers/http-server.js';
+import { api, apiOk } from './helpers/api.js';
 
 // GY-3760: the events history page left the routine kinds out by scanning backward through every
 // newer row, so on a ledger of millions of heartbeats it took 17 s. Two partial indexes on the
@@ -18,9 +18,7 @@ let kept: string[] = [];
 
 const get = async (path: string) => {
   const started = performance.now();
-  const response = await fetch(`${url}/api/${path}`, { headers: { Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(60_000) });
-  const body = await response.json();
-  assert.equal(response.status, 200, `${path}: ${JSON.stringify(body).slice(0, 300)}`);
+  const body = await apiOk(url, adminToken, path, { signal: AbortSignal.timeout(60_000) });
   return { body, ms: performance.now() - started };
 };
 
@@ -28,9 +26,7 @@ before(async () => {
   store = await withDatabase('events-history-indexed'); await store.init();
   const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ id: 'operator', role: 'admin', sessionKind: 'human', token: adminToken }])));
-  const created = await fetch(`${url}/api/work`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
-    body: JSON.stringify({ title: 'Watched item', why: 'Its history is mostly heartbeats.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] }) });
-  ({ id } = await created.json() as { id: string });
+  ({ id } = (await api(url, adminToken, 'work', { body: { title: 'Watched item', why: 'Its history is mostly heartbeats.', simplest: 'Read it.', type: 'feature', criteria: [{ id: 'AC-1', text: 'It works', proofs: ['e2e:fixture'] }] } })).body as { id: string });
   const template = (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document;
   await store.pool.query(`INSERT INTO work_items(id, document) SELECT g.id, $1::jsonb || jsonb_build_object('id', g.id::text, 'key', 'GY-' || (g.n + 100))
     FROM (SELECT gen_random_uuid() AS id, n FROM generate_series(1, ${ITEMS - 1}) n) g`, [template]);

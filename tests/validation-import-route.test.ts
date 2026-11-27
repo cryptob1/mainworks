@@ -10,6 +10,7 @@ import type { Principal } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { releaseLedgerGit } from './helpers/release-ledger-git.js';
 import { listen } from './helpers/http-server.js';
+import { api } from './helpers/api.js';
 
 // GY-1860: a producer imports an external run through POST /api/validation/import. The plane binds
 // it to the release candidate whose head is exactly the run's sha (read from the `rc/` tags through
@@ -53,10 +54,7 @@ before(async () => {
 });
 after(async () => { await close?.(); if (store) await store.close(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
 
-async function call(path: string, actor: Principal, data?: unknown, key = randomUUID()) {
-  const response = await fetch(`${url}/api/${path}`, { method: data === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${tokens.get(actor.id)}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: data === undefined ? undefined : JSON.stringify(data) });
-  return { status: response.status, body: await response.json() as any };
-}
+const call = (path: string, actor: Principal, data?: unknown, key?: string) => api(url, tokens.get(actor.id)!, path, { body: data, key });
 const imported = async (data: unknown, actor = producer) => { const result = await call('validation/import', actor, data); assert.equal(result.status, 200, JSON.stringify(result.body)); return result.body; };
 const hold = async (sha: string) => (await call(`validation/import/${sha}`, reader)).body.hold;
 const run = (sha: string, runId: string, cases: readonly Record<string, unknown>[], over: Record<string, unknown> = {}) =>
