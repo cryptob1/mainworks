@@ -1,5 +1,5 @@
 // Real loop and detached-run processes; only the trial's commands are fixture stubs. The slow tests
-// command runs until the unit writes `release` beside commands.jsonl, once its restarts are done (GY-3715).
+// command runs until the unit writes `release` (or `release-KEY` for one item's trial) beside commands.jsonl, once its restarts are done (GY-3715).
 import { spawn } from 'node:child_process';
 import { appendFile, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,8 +18,8 @@ if (process.argv[2] === 'trial') {
   for (const step of ['install', 'build', 'tests']) {
     await appendFile(files.steps, JSON.stringify({ step, at: new Date().toISOString() }) + '\n');
     await defaultChildRun(process.execPath, ['--input-type=module', '-e',
-      `import { appendFileSync, existsSync } from 'node:fs'; appendFileSync(process.argv[1], JSON.stringify({step: process.argv[2], at: Date.now(), pid: process.pid})+'\\n'); if(process.argv[2]==='tests') while(!existsSync(process.argv[3])) await new Promise(r=>setTimeout(r,50));`,
-      join(spec.base, 'commands.jsonl'), step, join(spec.base, 'release')]);
+      `import { appendFileSync, existsSync } from 'node:fs'; appendFileSync(process.argv[1], JSON.stringify({step: process.argv[2], key: process.argv[5], at: Date.now(), pid: process.pid})+'\\n'); if(process.argv[2]==='tests') while(!existsSync(process.argv[3]) && !existsSync(process.argv[4])) await new Promise(r=>setTimeout(r,50));`,
+      join(spec.base, 'commands.jsonl'), step, join(spec.base, 'release'), join(spec.base, `release-${spec.key}`), spec.key]);
   }
   await writeFile(files.result + '.tmp', JSON.stringify({ ok: true, run: {
     build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 25000, logTail: '', files: ['proof.cjs'],
@@ -33,6 +33,8 @@ if (process.argv[2] === 'trial') {
   let state = emptyDaemonState(where.config);
   try { state = JSON.parse(await readFile(where.cursor, 'utf8')); } catch {}
   const reads = loopReads({ ...where, snapshot }, { gate: false });
+  // GY-3965: `cores` narrows the host to fewer trial slots (two cores a slot).
+  if (where.cores) reads.cores = where.cores;
   reads.adoptTrialRun = adoptTrialRun;
   reads.stopTrialRun = stopTrialRun;
   reads.launchTrialRun = request => launchTrialRun({
@@ -59,9 +61,12 @@ if (process.argv[2] === 'trial') {
   const stopping = exitWhenStopped(process, { graceMs: 10, boundMs: 1000 });
   let stopped = false;
   process.once('SIGTERM', () => { stopped = true; void writing.then(() => stopping.stopped()); });
+  // One instant per cycle, as a cycle reads its snapshot clock: what one cycle records carries the same time (GY-3965).
+  let cycleAt = Date.now();
   while (!stopped) {
+    cycleAt = Date.now();
     await mergeWriterStep({ state, effects: { mergeWriter: reads, persist, rework: async () => {} },
-      now: Date.now, snapshot: { work: await snapshot(), now: new Date().toISOString() }, performed: [] } as never);
+      now: () => cycleAt, snapshot: { work: await snapshot(), now: new Date().toISOString() }, performed: [] } as never);
     await persist();
     await delay(100);
   }
