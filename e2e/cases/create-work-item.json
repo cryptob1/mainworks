@@ -1,7 +1,7 @@
 {
   "id": "create-work-item",
   "title": "An operator creates a work item, finds it in the work list and releases it",
-  "description": "POST /api/work creates an item with its criteria, replaying the create under the same idempotency key returns the same item, GET /api/work lists it, and POST /api/work/:id/ready releases it from the backlog. When the target is a checkout's e2e serve, its seed file is keyed by its own port, so another serve in the checkout never overwrites or removes it (GY-3666). A waiter for a host heavy-job slot names who holds it (GY-3773). A second holder takes a free slot without waiting while the first holder's ticket is still in queue/ (GY-3868).",
+  "description": "POST /api/work creates an item with its criteria, replaying the create under the same idempotency key returns the same item, GET /api/work lists it, and POST /api/work/:id/ready releases it from the backlog. When the target is a checkout's e2e serve, its seed file is keyed by its own port, so another serve in the checkout never overwrites or removes it (GY-3666). A waiter for a host heavy-job slot names who holds it (GY-3773). A second holder takes a free slot without waiting while the first holder's ticket is still in queue/ (GY-3868). Once startup has completed, the board master status reads lists the new item (GY-4001).",
   "tags": ["api", "work"],
   "target": "uat",
   "required": true,
@@ -20,6 +20,7 @@
       "save": { "id": "id", "key": "key" }
     },
     { "kind": "http", "name": "list the work", "method": "GET", "path": "/api/work", "status": 200, "expect": [{ "path": "", "includes": { "id": "{{id}}", "key": "{{key}}" } }] },
+    { "kind": "http", "name": "read the board once startup has completed", "method": "GET", "path": "/api/work-snapshot", "status": 200, "expect": [{ "path": "work", "includes": { "id": "{{id}}", "key": "{{key}}" } }] },
     {
       "kind": "http", "name": "release the item", "method": "POST", "path": "/api/work/{{id}}/ready",
       "body": { "reason": "Released by the create-work-item E2E case." },

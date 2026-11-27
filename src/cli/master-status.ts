@@ -104,6 +104,13 @@ export async function npmPublishedVersion(run: ChildRun): Promise<string> {
 /** GY-3704: each machine's load line, a compute host's with its last check fallback until a check next runs there. */
 const hostFallbackLines = (root: string) => { const fallbacks = lastHostFallbacks(root); return (readMachines(heavyJobsDirectory()) ?? []).map(read => read.local ? read : { ...read, shards: shardsOnHost(heavyJobsDirectory(), read.name) }).map(machine => { const fallback = fallbacks.get(machine.name); return fallback ? `${machineLine(machine)} · ${fallbackLine(fallback)}` : machineLine(machine); }); };
 
+/** GY-4001: `master status` — while the control plane's startup runs it answers that it is starting, never an empty board. */
+export const masterStatus = (root: string, master: MasterConfig, masterApi: (path: string) => Promise<any>, run: ChildRun = defaultChildRun) =>
+  masterStatusReport(root, master, masterApi, run).catch(error => {
+    if (error?.status === 503 && /"starting":true/.test(String(error.message))) return { starting: true, detail: 'The control plane is starting; status shows the board once startup completes' };
+    throw error;
+  });
+
 export async function masterStatusReport(root: string, master: MasterConfig, masterApi: (path: string) => Promise<any>, run: ChildRun = defaultChildRun) {
   // An unreachable control plane (GY-2966) is reported, not thrown: since when, the server's last exit and the free disk space, as the loop recorded them.
   let unreachable: string | null = null;

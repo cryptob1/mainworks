@@ -107,7 +107,7 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
 
       // Product: when and by whom in plain words; reasons only in the Changes fold.
       await page.goto(`${url}/#product`);
-      await expect(page.getByText('Updated Nov 13 by the master.')).toBeVisible(settled);
+      await expect(page.getByText('Updated Nov 13 by the Lead.')).toBeVisible(settled);
       const product = await page.evaluate(() => document.body.innerText);
       expect(product).not.toContain('graphyard-master'); expect(product).not.toContain('the standing brief');
       expect(product).not.toContain('Kept by the master');

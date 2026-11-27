@@ -34,7 +34,7 @@ test('e2e:real-app-onboarding — Setup names the placeholder fault and recogniz
     await page.goto(`${baseURL}/#sign-in=${code}&setup`);
     // GY-3724: the item's text comes from /api/status after sign-in; a loaded gate host spends past the 5 s expect default, so wait as long as the page allows.
     const item = page.locator('[data-setup-item="real-app"]');
-    await expect(item).toContainText('Master fault: owner/Lumina is not onboarded', { timeout: VERIFY_TIMEOUT_MS });
+    await expect(item).toContainText('owner/Lumina is not onboarded yet', { timeout: VERIFY_TIMEOUT_MS });
     await expect(item).toContainText('Placeholder serve');
     await expect(item).toHaveAttribute('data-done', 'no');
     await expect(item).not.toContainText('Needs you');
@@ -45,7 +45,7 @@ test('e2e:real-app-onboarding — Setup names the placeholder fault and recogniz
     await page.reload();
     await expect(item).toContainText('Project onboarded', { timeout: VERIFY_TIMEOUT_MS });
     await expect(item).toHaveAttribute('data-done', 'yes');
-    await expect(item).not.toContainText('Master fault');
+    await expect(item).not.toContainText('not onboarded');
   } finally {
     http.closeAllConnections();
     await new Promise<void>(resolve => http.close(() => resolve()));

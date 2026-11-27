@@ -1,7 +1,7 @@
 {
   "id": "real-app-onboarding",
   "title": "Only a real app with a feature map is onboarded",
-  "description": "Setup reports a placeholder project as not onboarded with a Master fault; committing its real application serve and feature map on main makes it onboarded. Integration checks exercise the mapped feature against both the batch app and deployed app.",
+  "description": "Setup reports a placeholder project as not onboarded yet, for the Lead to fix; committing its real application serve and feature map on main makes it onboarded. Integration checks exercise the mapped feature against both the batch app and deployed app.",
   "tags": ["onboarding", "serve"],
   "target": "any",
   "required": true,

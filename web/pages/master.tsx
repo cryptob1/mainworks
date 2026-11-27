@@ -6,7 +6,7 @@ import { parkedOnHuman, humanOnlyRefusal, openHumanOnly, recommendedFirst, type 
 import { formatAge } from '../../src/model/duration';
 import { humanAsk } from '../../src/model/human-ask';
 import LiveTerminal, { type TerminalHandle } from '../components/live-terminal';
-import { PageHeader } from '../components/page-layout';
+import { MoreDetails, PageHeader } from '../components/page-layout';
 import { goalOrder, leadFeed, ledgerKinds, notMovingLines, steerers, type FeedDecision, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
 
 type Message = { id: number; from: string; to?: string; thread: string; text: string; at: string; replies: { id: number; by: string; text: string; at: string }[] };
@@ -243,7 +243,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
                 {entry.kind === 'decision' && <article className="lead-card decision">
                   <div className="lead-kind">Decision</div>
                   <p className="lead-what">{entry.what}</p>
-                  {entry.why && <p className="lead-why">Why: {entry.why}</p>}
+                  {entry.why && <MoreDetails className="lead-why" summary="Why">{entry.why}</MoreDetails>}
                   <div className="lead-actions">
                     <button type="button" disabled={!maySteer || busy} title={!maySteer ? watchNote : undefined} onClick={() => prefill(`Why: ${entry.what}`)}>Ask why</button>
                     <button type="button" disabled={!maySteer || busy} title={!maySteer ? watchNote : undefined} onClick={() => prefill(`Do it differently: ${entry.what}`)}>Do it differently</button>
