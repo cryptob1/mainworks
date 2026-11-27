@@ -10,6 +10,8 @@ import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const previous = 'a'.repeat(40), next = 'b'.repeat(40), blob = `sha256:1766afdf${'d'.repeat(56)}`;
+// GY-4052: isolate the image lock from the host's real lock.
+process.env.MAINWORKS_LOCK_ROOT = await temporaryDirectory('retry-slot-locks');
 
 test('integration:deploy-retry-holds-slot — a reclaim pass during a lease-error retry skips while the deploy holds its slot, and the retry runs without cache', { timeout: 30_000 }, async () => {
   const [root, slots, warmInUse] = await Promise.all([temporaryDirectory('retry-slot'), temporaryDirectory('retry-slot-slots'), temporaryDirectory('retry-slot-warm')]);

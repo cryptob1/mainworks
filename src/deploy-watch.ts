@@ -381,10 +381,11 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     await noteControl({ waiting: null });
     return ports.restart(commit, { noCache });
   }, {
-    holder: ports.install ?? owner ?? 'another install',
+    // GY-4053: the holder names its work, since an image send to a test machine takes this lock too.
+    holder: `${ports.install ?? owner ?? 'another install'}'s image build`,
     onWait: holder => {
-      log(`[mainworks-deploy] waits for ${holder}'s image build to finish`);
-      return noteControl({ waiting: { tip: commit, reason: `Waits for ${holder}'s image build to finish`, since: new Date().toISOString() } });
+      log(`[mainworks-deploy] waits for ${holder} to finish`);
+      return noteControl({ waiting: { tip: commit, reason: `Waits for ${holder} to finish`, since: new Date().toISOString() } });
     },
   }).finally(() => noteControl({ waiting: null }));
   // GY-4047: a BuildKit lease or ingest error, on any blob, retries this build once without its build cache.
