@@ -66,7 +66,7 @@ test('integration:revert-lands-before-merges — merges that would push while th
     trial: async (_sha: string, _files: readonly string[], _item: unknown, _base?: string, onStep?: (step: string) => void) => {
       onStep?.('install');
       // The base tip exports no shared push: the writer's pushes there go straight to the remote.
-      const shared = (writer as { sharedTurns?: (state: object, reads: unknown) => { push: typeof reads.push } }).sharedTurns?.(state, reads) ?? reads;
+      const shared = (writer as { sharedTurns?: (state: object, reads: unknown) => { push(sha: string, baseTip: string): Promise<'pushed' | 'rejected'> } }).sharedTurns?.(state, reads) ?? reads;
       const queued = shared.push(first, tip);
       writerPushes = Promise.all([queued, shared.push(second, tip)]);
       await Promise.race([writerPushes, delay(1_500)]);
