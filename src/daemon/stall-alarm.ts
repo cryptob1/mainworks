@@ -73,7 +73,9 @@ function lastMovedAt(item: Work, events: readonly FlowEvent[], now: number): num
 
 /** Who owns the next step on an open item. */
 function nextStepOwner(item: Work, all: readonly Work[], now: number): NextStepOwner {
-  if (parkedOnHuman(item)) return 'a person';
+  const asks = (item.agentRequests ?? []).filter(request => request.state === 'open');
+  if (parkedOnHuman(item) || asks.some(request => !!request.humanDecision || request.decider?.kind === 'human')) return 'a person';
+  if (asks.some(request => (request.type as string) === 'scope-request')) return 'the Lead';
   const awaitingSignoff = item.stage === 'acceptance' && Array.isArray(item.gates) && Array.isArray(item.criteria) && Array.isArray(item.violations) && unproducedManualProofs(item, [...all], new Date(now)).length > 0;
   if (!item.criteria?.length || item.hold || reworkCapHeld(item) || awaitingSignoff) return 'the Lead';
   const sessions = (item.sessions ?? []).filter(s => s.state === 'running');

@@ -112,10 +112,16 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
   // 8. Ready work waiting on an open dependency is not stalled itself: the dependency is.
   const waitsOnDep = workFixture({ id: 'w-dep', key: 'GY-109', title: 'Waits on GY-106', stage: 'ready', ready: true, stageEnteredAt: at(-3 * hr), sessions: [], dependencies: ['w-build-cap'] });
 
-  const result = deriveNotMoving([...finished, staleBlocker, reviewOk, reviewSlow, backedOff, humanWait, buildCapped, queuedFresh, queuedOld, waitsOnDep], now, events);
+  // 9. A blocker waiting on a request a person decides is listed apart; one waiting on a scope request is the Lead's.
+  const humanDecided = workFixture({ id: 'w-hd', key: 'GY-110', title: 'Blocker a person decides', stage: 'ready', ready: true, stageEnteredAt: at(-2 * hr), blocker: 'pick a goal', blockedAt: at(-2 * hr), sessions: [],
+    agentRequests: [{ id: 'br-1', type: 'blocker', epoch: 1, requestedBy: 'worker-a', at: at(-2 * hr), reason: 'pick a goal', humanDecision: 'goals-and-priorities', decider: { kind: 'human', who: 'the owner', command: null }, releasedLease: true, state: 'open' }] as never });
+  const scopeAsk = workFixture({ id: 'w-sr', key: 'GY-111', title: 'Blocker on a scope request', stage: 'ready', ready: true, stageEnteredAt: at(-35 * min), blocker: 'needs a file', blockedAt: at(-35 * min), sessions: [],
+    agentRequests: [{ id: 'sr-1', type: 'scope-request', epoch: 1, requestedBy: 'worker-a', at: at(-35 * min), reason: 'Need extra file', decider: { kind: 'rule', who: 'master', command: null }, releasedLease: true, state: 'open' }] as never });
+
+  const result = deriveNotMoving([...finished, staleBlocker, reviewOk, reviewSlow, backedOff, humanWait, buildCapped, queuedFresh, queuedOld, waitsOnDep, humanDecided, scopeAsk], now, events);
 
   // Waiting on a person is separate and never in notMoving.
-  assert.deepEqual(result.waitingOnPerson.map(i => i.key), ['GY-105']);
+  assert.deepEqual(result.waitingOnPerson.map(i => i.key), ['GY-105', 'GY-110']);
   assert.equal(result.waitingOnPerson[0]!.owner, 'a person');
   assert.equal(result.notMoving.some(i => i.key === 'GY-105'), false, 'human wait is never counted as system stall');
 
@@ -123,7 +129,8 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
   assert.equal(result.notMoving.some(i => i.key === 'GY-102'), false, 'live review inside usual time is not reported');
 
   // Oldest first: GY-106 (250m), GY-103 (80m), GY-104 (50m), GY-101 (45m), GY-108 (40m); never GY-107 or GY-109.
-  assert.deepEqual(result.notMoving.map(i => i.key), ['GY-106', 'GY-103', 'GY-104', 'GY-101', 'GY-108']);
+  assert.deepEqual(result.notMoving.map(i => i.key), ['GY-106', 'GY-103', 'GY-104', 'GY-101', 'GY-108', 'GY-111']);
+  assert.equal(result.notMoving.find(i => i.key === 'GY-111')!.owner, 'the Lead', 'a scope request is the Lead\'s to decide, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-108')!.owner, 'a builder', 'queued ready work waits on a builder, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-101')!.owner, 'nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-103')!.owner, 'a reviewer');
