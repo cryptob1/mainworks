@@ -71,8 +71,6 @@ function ledgerItem(index: number, now: Date): Work {
 
 before(async () => {
   store = await withDatabase('work-snapshot-latency'); await store.init();
-  // The hot-path ledger is a database of its own: seeded beside this one, so the file waits for the longer seed, not both.
-  const hot = hotPaths();
   const now = new Date();
   for (let index = 0; index < ITEMS; index++) {
     const item = ledgerItem(index, now);
@@ -80,16 +78,13 @@ before(async () => {
     await store.pool.query('INSERT INTO jobs(work_id) VALUES($1)', [item.id]);
   }
   // Thousands of observations, each appending the whole document as save() does and rewriting
-  // the row, so the tables carry the churn a live ledger does. Compressing 4,000 whole documents is
-  // most of the seed, so four statements share it across the cluster's cores.
-  const parts = 4, perPart = OBSERVATIONS_PER_ITEM / parts;
-  await Promise.all(Array.from({ length: parts }, (_, part) => store.pool.query(`INSERT INTO events(work_id,actor,kind,payload) SELECT id,'github','github.observed',jsonb_build_object('work',document,'details',jsonb_build_object('observation',n)) FROM work_items, generate_series($1::int,$2::int) AS n`, [part * perPart + 1, (part + 1) * perPart])));
+  // the row, so the tables carry the churn a live ledger does.
+  await store.pool.query(`INSERT INTO events(work_id,actor,kind,payload) SELECT id,'github','github.observed',jsonb_build_object('work',document,'details',jsonb_build_object('observation',n)) FROM work_items, generate_series(1,$1::int) AS n`, [OBSERVATIONS_PER_ITEM]);
   for (let round = 0; round < 5; round++) await store.pool.query("UPDATE work_items SET document=jsonb_set(document,'{revision}',to_jsonb((document->>'revision')::int+1))");
   ({ url: origin, close } = await listen(server(new Engine(store, 120, 'owner/project'), [{ id: 'coordinator', role: 'coordinator', token: coordinatorToken }])));
   directory = await temporaryDirectory('snapshot-master');
   const credentialFile = join(directory, 'coordinator.token'); await writeFile(credentialFile, coordinatorToken, { mode: 0o600 });
   config = masterConfigSchema.parse({ version: 1, url: origin, credentialFile, cliPath: launcher, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', autoMerge: true, mergeMethod: 'merge', workers: [] });
-  await hot;
 });
 after(async () => {
   await closeHot?.();
@@ -288,7 +283,7 @@ function openItem(index: number, now: Date): Work {
   return work;
 }
 
-// Seeded beside the snapshot ledger in `before`, and on demand when a hot-path test runs alone.
+// Seeded on the first hot-path test's demand, so the snapshot tests above never wait on it.
 let seeded: Promise<void> | null = null;
 const hotPaths = () => seeded ??= (async () => {
   watchResults((store.pool as any).Client);
