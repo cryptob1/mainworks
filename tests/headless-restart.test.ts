@@ -18,6 +18,8 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { EventEmitter } from 'node:events';
 import type { RunResult } from '../src/runner/types.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+// GY-4006: the launch words these tests pin are the ones with no reserved CPUs, whatever the host reserves.
+delete process.env.MAINWORKS_RESERVED_CPUS; delete process.env.GRAPHYARD_RESERVED_CPUS;
 // Time-bomb allowance (GY-1694): the 2030-01-01 records are sessionRetry fixtures judged on the now handed beside them; Date.now() stamps only real-clock records.
 
 // GY-453. Headless Pi runs are detached from the process that launched them: a restart of the loop
