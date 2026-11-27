@@ -862,6 +862,8 @@ export interface RunTrialInput {
    * candidate is run against the base tip and keeps its before screenshot.
    */
   e2eFrom?: string;
+  /** GY-3982: the proof files the base-tip run takes from `e2eFrom` where the candidate edited them, so a case it adds to an existing file runs there. */
+  candidateProofFiles?: readonly string[];
   /** GY-3296: case id → URL of the named app environment the batch gate provisioned for it; such a case runs against that URL. */
   e2eOrigins?: Record<string, string>;
   /** GY-3170: called once the repository's checks have answered, whatever they said, with the checkout still in place, so a caller can count proofs with the repository's own runner. */
@@ -1137,7 +1139,10 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const keptSha = input.caches ? input.mergeSha.toLowerCase() : null;
   const keptEntry = keptSha ? keptBaseBuild(input.base, keptSha) : null;
   let kept: string | null = null, keptLock: string | null = null, keptUse: string | null = null, reused = false;
-  let e2eOverlay: string[] = [], needsExclusive = false;
+  let e2eOverlay: string[] = [], proofOverlay: string[] = [], needsExclusive = false;
+  const editedProofFiles = async (cwd: string) => input.e2eFrom && input.candidateProofFiles?.length
+    ? String(await run('git', ['-C', cwd, 'diff', '--name-only', '-z', '--diff-filter=M', input.mergeSha, input.e2eFrom, '--', ...input.candidateProofFiles], { timeoutMs: remaining() })).split('\0').filter(Boolean)
+    : [];
   const dropOwned = async (directory: string) => { await rm(directory, { recursive: true, force: true }).catch(() => {}); await rm(tempOwnerMarker(directory), { force: true }).catch(() => {}); };
   const claimKeptUse = async () => {
     keptUse = `${keptEntry}.use-${randomUUID()}`;
@@ -1197,7 +1202,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     e2eOverlay = input.e2eProofs?.length && input.e2eFrom
       ? String(await run('git', ['-C', input.root, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean)
       : [];
-    needsExclusive = e2eOverlay.length > 0;
+    proofOverlay = await editedProofFiles(input.root);
+    needsExclusive = e2eOverlay.length > 0 || proofOverlay.length > 0;
     await reclaimKeptTrees();
     const lock = `${keptEntry!}.lock`;
     for (;;) {
@@ -1208,7 +1214,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
       if (await takeKeptLock()) {
         // A tree another pass or a preview still uses is never rebuilt or mutated: this pass builds its own checkout instead.
-        if ((await keptBuildUses(keptEntry!)).length) { await releaseKeptLock(); needsExclusive = false; e2eOverlay = []; return false; }
+        if ((await keptBuildUses(keptEntry!)).length) { await releaseKeptLock(); needsExclusive = false; e2eOverlay = []; proofOverlay = []; return false; }
         await claimKeptUse();
         if (await keptTreeReady()) {
           if (!needsExclusive) await releaseKeptLock();
@@ -1637,7 +1643,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }).catch(async error => { throw await networkPoolFault(error, env) ?? error; }).finally(async () => {
         // Restore both edited and added proof files before any later base checks or concurrent passes.
         try { if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() }); }
-        finally { if (needsExclusive) await releaseKeptLock(); }
+        finally { if (needsExclusive && !proofOverlay.length) await releaseKeptLock(); }
       });
       const failures = ran.filter(entry => entry.failed);
       cpu.finish(stepLabel, cpuBefore, failures.length > 0 && failures.every(entry => /timed?\s*out|did not answer .* within \d+s|timeout/i.test(entry.failingStep ?? '')), line => log.push(line));
@@ -1647,6 +1653,16 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       // Bounded so the trial record the merge writer posts stays within its schema.
       e2e.push(...ran.filter(entry => !entry.hostFailure).map(entry => entry.failingStep ? { ...entry, failingStep: entry.failingStep.slice(0, 1000) } : entry));
     }
+    const edited = kept ? proofOverlay : await editedProofFiles(worktree);
+    if (!edited.length) return testChecks(checks);
+    await run('git', ['-C', worktree, 'restore', '--source', input.e2eFrom!, '--staged', '--worktree', '--', ...edited], { timeoutMs: remaining() });
+    try { return await testChecks(checks, true); }
+    finally {
+      try { await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...edited], { timeoutMs: remaining() }); }
+      finally { if (needsExclusive) await releaseKeptLock(); }
+    }
+  };
+  const testChecks = async (checks: RepositoryTrialCheck[], localOnly = false): Promise<TrialRun> => {
     if (!checks.length) {
       if (!nodePackage) return finishTests('pass', { passed: 0, failed: [], files: 0 });
       enter('tests');
@@ -1677,7 +1693,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       // GY-3921: a bound-only run starts a check for a check: proof or to run its bound test files, never one nobody reads.
       if (input.boundOnly && !requestedChecks.has(check.check) && !covers(check) && !(viaRunner && !check.selection && (check.check === 'test' || check.argv.includes('test')))) continue;
       if (check.selection) {
-        const selected = await withServices(check, () => runSelected(check));
+        const selected = await withServices(check, () => runSelected(check, localOnly));
         if ('services' in selected) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }
         passed += selected.tests.passed; files += selected.tests.files;
         failed.push(...selected.tests.failed); groups.push(...(selected.groups ?? []));
@@ -1689,7 +1705,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
       files++;
       enterStep(`tests: ${check.check}`);
-      const ran = (check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
+      const ran = (!localOnly && check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
       if ('services' in ran) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {
@@ -1708,7 +1724,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const logTail = failingOutput && log.join('\n').length > tailLength ? failureTail([failingOutput]) : tail();
     return withMeta(await finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail));
   };
-  const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
+  const runSelected = async (check: RepositoryTrialCheck, localOnly = false): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });
     const strategy = check.selection!;
     const selector = checkCommandArgv(strategy.command)!, pattern = new RegExp(strategy.pattern);
@@ -1811,7 +1827,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const cores = cpu.cores();
     // GY-3412: with added hosts, every host is read once and the selection is cut for this machine's
     // lanes plus the real free cores of every remote host under its heat limit.
-    const hosts = input.remote?.hosts ?? await shardHosts();
+    const hosts = localOnly ? [] : (input.remote?.hosts ?? await shardHosts());
     // GY-3534: one SSH transport carries the probe and every shard, over a few multiplexed connections per host.
     const transport = hosts.length ? shardSshSession(run) : undefined;
     const readHosts = (named: readonly string[]) => (input.remote?.read ?? ((targets, shared) => readShardHosts(targets, run, cores, shared)))(named, transport!);
