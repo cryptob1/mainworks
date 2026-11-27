@@ -17,7 +17,7 @@ test('integration:loop-reclaims-own-images — low Docker space removes only sta
   await writeFile(join(warmInUse, `${flight.slice('graphyard-warm:'.length)}.${process.pid}.12345678`), '');
   const current = trialImage(), stale = ['graphyard-warm:stale', 'graphyard-trial:stale'];
   const images = new Set([current, ...stale, 'huck-engineer:latest', flight, 'mainworks-trial:container-used']);
-  const removed: string[] = [], prunes: string[][] = [];
+  const removed: string[] = [], removalAttempts: string[][] = [], prunes: string[][] = [];
   const cache = [{ builder: trialBuilder, age: 48 }, { builder: trialBuilder, age: 12 }, { builder: 'huck', age: 48 }];
   let free = 58 * GB;
   const run: ChildRun = async (command, args) => {
@@ -27,6 +27,7 @@ test('integration:loop-reclaims-own-images — low Docker space removes only sta
     if (args[0] === 'image' && args[1] === 'inspect') return args.at(-1) === 'mainworks-trial:container-used' ? 'sha256:container-image' : '';
     if (args[0] === 'images') return [...images].filter(image => image.startsWith(`${args[1]}:`)).map(image => args.at(-1)?.includes('CreatedAt') ? `2026-11-27\t${image}` : image).join('\n');
     if (args[0] === 'image' && args[1] === 'rm') {
+      removalAttempts.push(args);
       const image = args[2]!;
       assert.equal(args.length, 3, 'never force removal');
       assert.notEqual(image, 'mainworks-trial:container-used', 'do not even untag a container image');
@@ -54,6 +55,7 @@ test('integration:loop-reclaims-own-images — low Docker space removes only sta
   await diskHeadroomStep(cycle);
   await sample!(); // A slow hourly sample must not replace the post-reclaim free-space reading.
   assert.deepEqual(removed.sort(), stale.sort());
+  assert.deepEqual(removalAttempts.map(args => args.join(' ')).sort(), stale.map(image => `image rm ${image}`).sort(), 'only stale images are even offered for deletion');
   assert.deepEqual([...images].sort(), [current, 'huck-engineer:latest', flight, 'mainworks-trial:container-used'].sort());
   assert.equal(prunes.length, 1, 'only the dedicated builder cache is pruned');
   assert.deepEqual(cache, [{ builder: trialBuilder, age: 12 }, { builder: 'huck', age: 48 }], 'recent cache and every other builder remain');
