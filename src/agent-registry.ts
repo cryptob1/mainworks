@@ -6,7 +6,7 @@ import { demand, type Principal } from './model.js';
 import type { Store } from './store.js';
 import { advisoryLocks } from './store/locks.js';
 import { unownedFamilySql } from './store/tables/work.js';
-import { fleetRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
+import { accountIneligibility, fleetRoles, RegistryError, chooseSession, emptyRegistry, fleetView, foldObservations, liveSessions, endRegistrySession, runOutcomes, refusalHistoryLimit, settleSessions, type AgentRegistry as RegistryDocument, type FleetSession, type RegistryMutation } from './model/registry.js';
 import { applyRegistryMutation, registryMutationSchemas, observationRequestSchema, selectionRequestSchema } from './model-boundary/registry.js';
 import { implementerAccount, implementerProvider, type ReviewDiversity } from './model/review-diversity.js';
 import { recordSessionModel, requestLimitNoticeCheck } from './model/account-quota.js';
@@ -141,6 +141,55 @@ export class AgentRegistry {
   async document(actor: Principal) {
     demand((configurators as readonly string[]).includes(actor.role), 'Launch contracts and credential references are read by admin and coordinator identities', 403);
     return (await this.settled()).registry;
+  }
+  /**
+   * GY-4033: registered runtimes and accounts that `mainworks ask` may launch as a read-only
+   * investigator, in role preference order (worker first, then reviewer and master), carrying only
+   * the launch environment and login-home reference needed to resolve the runtime like a worker launch.
+   */
+  async investigatorCandidates(actor: Principal, host: string | null = null) {
+    demand(!['reader', 'reporter'].includes(actor.role) || actor.team === 'maintainer', 'A viewer reads items; ask a maintainer, a worker or the master to ask', 403);
+    const { registry, at } = await this.settled();
+    const now = Date.parse(at);
+    const investigatorKinds = new Set(['claude', 'codex']);
+    const roleOrder = ['worker', 'reviewer', 'master', 'producer', 'caretaker'] as const;
+    const orderedNames: string[] = [];
+    for (const roleName of roleOrder) {
+      const role = registry.roles.find(entry => entry.name === roleName);
+      if (role) for (const name of role.accounts) if (!orderedNames.includes(name)) orderedNames.push(name);
+    }
+    for (const account of registry.accounts) if (!orderedNames.includes(account.name)) orderedNames.push(account.name);
+
+    const candidates: { account: string | null; runtime: string; kind: string; home: string | null; homeVariable: string | null; environment: Record<string, string> }[] = [];
+    const coveredRuntimes = new Set<string>();
+    for (const name of orderedNames) {
+      const account = registry.accounts.find(entry => entry.name === name);
+      if (!account) continue;
+      const runtime = registry.runtimes.find(entry => entry.name === account.runtime);
+      if (!runtime || !investigatorKinds.has(runtime.launch.kind)) continue;
+      if (accountIneligibility(registry, account, now, host)) continue;
+      coveredRuntimes.add(runtime.name);
+      candidates.push({
+        account: account.name,
+        runtime: runtime.name,
+        kind: runtime.launch.kind,
+        home: account.credential.home,
+        homeVariable: runtime.launch.homeVariable,
+        environment: runtime.launch.environment,
+      });
+    }
+    for (const runtime of registry.runtimes) {
+      if (!investigatorKinds.has(runtime.launch.kind) || coveredRuntimes.has(runtime.name)) continue;
+      candidates.push({
+        account: null,
+        runtime: runtime.name,
+        kind: runtime.launch.kind,
+        home: null,
+        homeVariable: runtime.launch.homeVariable,
+        environment: runtime.launch.environment,
+      });
+    }
+    return { candidates };
   }
   /**
    * The registry with every session whose lease or request has gone read as ended (GY-974), so a
