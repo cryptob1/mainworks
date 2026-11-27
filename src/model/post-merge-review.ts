@@ -43,12 +43,22 @@ export interface ControlPlaneReviewLaunch {
   refused?: { at: string; reason: string };
 }
 
+/** The review kind a control-plane launch belongs to (GY-3963): one standing launch per kind per item. */
+export type ReviewLaunchKind = 'code' | 'product' | 'post-merge';
+export const reviewLaunchKind = (launch: Pick<ControlPlaneReviewLaunch, 'postMerge' | 'product'>): ReviewLaunchKind =>
+  launch.postMerge ? 'post-merge' : launch.product ? 'product' : 'code';
+export const reviewLaunchesOf = (work: Pick<Work, 'reviewLaunch' | 'reviewLaunches'>): ControlPlaneReviewLaunch[] =>
+  work.reviewLaunches ? Object.values(work.reviewLaunches).filter((entry): entry is ControlPlaneReviewLaunch => !!entry)
+    : work.reviewLaunch ? [work.reviewLaunch] : [];
+
 declare module './work.js' {
   interface Work {
     /** GY-1525: the post-merge review a normal control-plane delta owes, set by the review gate; `reviewed` once its verdict is recorded. */
     postMergeReview?: PostMergeReviewState | null;
-    /** GY-1525: the reviewer launch registered for this item in control-plane mode. */
+    /** GY-1525: the latest reviewer launch registered for this item in control-plane mode (legacy single-slot fallback). */
     reviewLaunch?: ControlPlaneReviewLaunch | null;
+    /** GY-3963: one standing reviewer launch per review kind (code, product, post-merge). */
+    reviewLaunches?: Partial<Record<ReviewLaunchKind, ControlPlaneReviewLaunch>> | null;
   }
 }
 
@@ -78,7 +88,7 @@ export const deliveredByMergeWriter = (work: Pick<Work, 'stage' | 'delivery' | '
 /** The delivered items whose post-merge review is still owed: delivered by the merge writer, `postMergeReview === 'owed'`, no verdict recorded for the merge commit. */
 export function owedPostMergeReviews(work: readonly Work[]): Work[] {
   return work.filter(item => deliveredByMergeWriter(item) && item.postMergeReview === 'owed'
-    && !(item.reviewLaunch?.postMerge && item.reviewLaunch.head === item.delivery!.mergeSha && item.reviewLaunch.verdict));
+    && !reviewLaunchesOf(item).some(launch => launch.postMerge && launch.head === item.delivery!.mergeSha && launch.verdict));
 }
 
 /** The dispatch request id a post-merge review is launched under: one per delivered merge commit, so the ledger keeps one session per attempt. */

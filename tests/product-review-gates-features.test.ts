@@ -166,19 +166,13 @@ test('unit:product-review-gates-features — the loop launches the product revie
       launchProductReview: async (work: Work, request: { sha: string }, profile: { name: string }) => { await selectAccount(config, 'reviewer', profile, { ...fleet.probe, work: work.key }); launches.push({ work: work.key, sha: request.sha }); agents.push({ name: 'product-reviewer' }); return { agentName: 'product-reviewer', pane: null }; },
       persist: async () => {},
     };
-    // While a code-review session is still judging the head, the launch waits for it — one session
-    // per head in the review ledger — and the wait is never counted as a launch refusal.
-    const codeReviewRecord = { id: randomUUID(), key: 'GY-20', pr: 0, sha: H, baseSha: B, policyRevision: 1, profile: 'code-reviewer', agentName: 'code-reviewer', pane: null, sessionDirectory: '/s', requestedAt: at, tokenExpiresAt: at, requestId: 'code-review-request', state: 'pending' };
-    const heldTick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, reconcileReviews: async () => ({ reviews: [codeReviewRecord] }) } as never, Date.now);
-    assert.deepEqual(heldTick.launched, []);
-    assert.equal(heldTick.refused.length, 0, 'a pending session on the head is a wait, never a refusal');
-    assert.ok(heldTick.waiting.some(entry => /one session per head/.test(entry.reason)), 'the launch waits for the session already judging the head');
-    // A failed launch keeps its failure while the request stands, so its retry backs off and is
-    // bounded like a code review's — never relaunched every cycle as if fresh.
+    // GY-3963: a pending code-review session on the head no longer holds back the product review;
+    // both run side by side, while a failed launch still keeps its failure across the tick.
     const failing = emptyDispatchCursor(config);
     await runDispatchTick(config, failing, { ...effects, launchProductReview: async () => { throw new Error('reviewer runtime unavailable'); } } as never, Date.now);
     assert.ok(failing.failures[item.autoDispatch!.product!.id], 'the product request\'s launch failure is kept across the tick');
-    const tick = await runDispatchTick(config, emptyDispatchCursor(config), effects as never, Date.now);
+    const codeReviewRecord = { id: randomUUID(), key: 'GY-20', pr: 0, sha: H, baseSha: B, policyRevision: 1, profile: 'code-reviewer', agentName: 'code-reviewer', pane: null, sessionDirectory: '/s', requestedAt: at, tokenExpiresAt: at, requestId: 'code-review-request', state: 'pending' };
+    const tick = await runDispatchTick(config, emptyDispatchCursor(config), { ...effects, reconcileReviews: async () => ({ reviews: [codeReviewRecord] }) } as never, Date.now);
     assert.deepEqual(tick.launched.map(entry => [entry.work, entry.reason]), [['GY-20', 'product review']]);
     assert.deepEqual(launches, [{ work: 'GY-20', sha: H }]);
     // The request is that one session's: a second tick launches no second reviewer.

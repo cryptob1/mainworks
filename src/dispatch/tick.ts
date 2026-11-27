@@ -400,13 +400,6 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   /** The product reviewer's launch: the same session machinery as a code review, with the product prompt and a product launch registration. */
   const dispatchProductReview = async (item: Work, request: DispatchRequest) => {
     if (!session('review', item, request, reviews)) { /* settled, or waiting to relaunch */ }
-    // The review ledger starts one session per head: a code review still under way on this head is
-    // answered first, and the product review launches once it settles — its verdict, or the rework
-    // that replaces the head, settles this request beside it. GY-3580: product reviews also take
-    // turns on a served head's address, so the tick goes on while one serves. A repository with no
-    // previewable application never serves the head; the reviewer walks the app against its diff.
-    else if (reviews.some(record => record.state === 'pending' && record.key === item.key && record.sha === request.sha && record.requestId !== request.id))
-      wait('review', item, request, `the product review of ${item.key} waits for the reviewer session already judging ${request.sha.slice(0, 12)}; the ledger starts one session per head`);
     else if (servedReviewAddresses().length) wait('review', item, request, `the product review of ${item.key} takes its turn: another product review is serving its head on ${servedReviewAddresses()[0]}`);
     else if (spent('review')) wait('review', item, request, capacityWait('review'));
     else if (!effects.launchProductReview) wait('review', item, request, 'this dispatcher launches no product reviews');
@@ -447,20 +440,18 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       }
     }
   };
-  // Review and producer launches run side by side (GY-377, GY-3642), so the pass is bounded by the
-  // profiles' concurrency (reserveSlot) and not by the sum of every launch's duration. A product
-  // review waits for its head's code review launch and takes turns with the other product reviews,
-  // which serve their heads one at a time (GY-3580).
+  // Review, product review and producer launches run side by side (GY-377, GY-3642, GY-3963),
+  // bounded by the profiles' concurrency (reserveSlot); only fixed-port product serves take turns.
   const launches: Promise<{ error: unknown } | null>[] = [];
   const sideBySide = (launch: () => Promise<void>) => { const started = launch(); launches.push(started.then(() => null, (error: unknown) => ({ error }))); return started; };
-  let productTurn: Promise<unknown> = Promise.resolve(), outcomes: ({ error: unknown } | null)[] = [];
+  let outcomes: ({ error: unknown } | null)[] = [];
   await (async () => {
     try {
-      const productLaunches: { item: Work; product: DispatchRequest; code: Promise<void> | null }[] = [];
+      const productLaunches: { item: Work; product: DispatchRequest }[] = [];
       for (const item of snapshot.work.filter(work => work.stage !== 'done' && work.autoDispatch)) {
         const review = item.autoDispatch!.review, product = item.autoDispatch!.product;
-        const code = review?.state === 'requested' && review.provider === 'github' ? sideBySide(() => dispatchReview(item, review)) : null;
-        if (product?.state === 'requested' && product.kind === 'product') productLaunches.push({ item, product, code });
+        if (review?.state === 'requested' && review.provider === 'github') sideBySide(() => dispatchReview(item, review));
+        if (product?.state === 'requested' && product.kind === 'product') productLaunches.push({ item, product });
         for (const request of item.autoDispatch!.producers.filter(entry => entry.state === 'requested')) {
           // Evidence recorded as not exercising its criterion goes back to the worker as a rework the
           // loop requests (master-daemon.ts); no producer is launched for the head again (GY-193 AC-3).
@@ -508,10 +499,8 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       }
       // GY-3684: launch owed product reviews oldest request first so long-waiting heads are never starved.
       const requestedAt = (r: DispatchRequest) => { const t = Date.parse(r.requestedAt); return Number.isNaN(t) ? -Infinity : t; };
-      for (const { item, product, code } of productLaunches.sort((a, b) => requestedAt(a.product) - requestedAt(b.product) || (a.product.id < b.product.id ? -1 : a.product.id > b.product.id ? 1 : 0))) {
-        const turn = Promise.allSettled([productTurn, code]).then(() => dispatchReview(item, product));
-        productTurn = turn.catch(() => { /* the launch reports its own failure */ });
-        sideBySide(() => turn);
+      for (const { item, product } of productLaunches.sort((a, b) => requestedAt(a.product) - requestedAt(b.product) || (a.product.id < b.product.id ? -1 : a.product.id > b.product.id ? 1 : 0))) {
+        sideBySide(() => dispatchReview(item, product));
       }
     } finally { outcomes = await Promise.all(launches); }
   })();

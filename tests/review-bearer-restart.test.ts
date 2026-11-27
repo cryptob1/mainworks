@@ -72,7 +72,7 @@ test('integration:review-bearer-restart — original launch bearers survive a re
       const work = item(`GY-${kind}`); await put(work); const token = fresh();
       assert.equal((await post('restart-test-master', `${work.id}/review-launch`, launch(token, { ...(kind === 'expired' ? { expiresAt: new Date(Date.now() - 1000).toISOString() } : {}), ...(kind === 'implemented' ? { reviewer: 'implementer' } : {}), ...(kind === 'requested' ? { reviewer: 'master' } : {}) }))).status, 200);
       if (kind === 'replaced') assert.equal((await post('restart-test-master', `${work.id}/review-launch`, launch(fresh()))).status, 200);
-      if (kind === 'revoked') { const revoked = await read(work); revoked.reviewLaunch = null; await put(revoked); }
+      if (kind === 'revoked') { const revoked = await read(work); revoked.reviewLaunch = null; revoked.reviewLaunches = null; await put(revoked); }
       await stop(); await start();
       const response = await post(token, `${work.id}/review-verdict`, verdict(token));
       assert.equal(response.status, ['implemented', 'requested'].includes(kind) ? 403 : 401, `${kind}: ${JSON.stringify(response.body)}`);

@@ -49,7 +49,7 @@ import { readVerificationMaps, verificationMapDigest, type VerificationMap } fro
 import { namedPaths } from './model/documentation-glob.js';
 import { readProjectMemory } from './project-memory.js';
 import { conflictingVerdictStates } from './model/review-conflict.js';
-import type { ControlPlaneReviewLaunch } from './model/post-merge-review.js';
+import { reviewLaunchKind, reviewLaunchesOf, type ControlPlaneReviewLaunch } from './model/post-merge-review.js';
 import { LauncherUnavailableError } from './master/config.js';
 import { resolveRepositoryPolicy } from './model-boundary/repository-policy.js';
 import { type E2eServe, policySections } from './model/repository-policy.js';
@@ -975,7 +975,8 @@ export async function launchReview(root: string, work: Work, profileName: string
     // A record for a superseded head never blocks a review request for the current head: every
     // such record is closed as cancelled with the reason on the record, and this launch proceeds.
     // Only a record for the exact current candidate holds the key: one session per candidate.
-    const pendings = ledger.reviews.filter(record => record.state === 'pending' && record.key === work.key);
+    const kind = reviewLaunchKind({ postMerge: !!postMerge, product });
+    const pendings = ledger.reviews.filter(record => record.state === 'pending' && record.key === work.key && reviewLaunchKind({ postMerge: !!record.postMerge, product: !!record.product }) === kind);
     const current = pendings.find(pending => !staleReviewReason(pending, [work]));
     let replacedSession: string | undefined;
     if (current) {
@@ -1045,11 +1046,12 @@ export async function launchReview(root: string, work: Work, profileName: string
     // Before a token is minted: an exhausted or logged-out account is skipped for the profile's next.
     // GY-3748: prefer accounts that have not already failed on this request; fall back to them only if no other eligible account exists.
     let selected: Awaited<ReturnType<typeof selectAccount>>;
+    const reviewGroup = product ? 'product' : postMerge ? 'post-merge' : undefined;
     try {
-      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, ...(excludeAccounts.length ? { exclude: excludeAccounts } : {}), work: work.key });
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, ...(excludeAccounts.length ? { exclude: excludeAccounts } : {}), work: work.key, ...(reviewGroup ? { group: reviewGroup } : {}) });
     } catch (error) {
       if (!reservation.failedAccounts.length || !(error instanceof NoHealthyAccountError)) throw error;
-      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key });
+      selected = await selectAccount(config, 'reviewer', profile, { ...dependencies.probe, work: work.key, ...(reviewGroup ? { group: reviewGroup } : {}) });
     }
     // Everything past the choice can fail; the session it chose is given back at once when it does.
     return await onSelectedSession(selected, `reviewer launch for ${work.key} failed`, async () => {
@@ -1297,19 +1299,22 @@ export async function reviewCommand(root: string, args: string[], snapshot: { wo
  * needing the same review, and demanding a new head for it would cost a rework round for a
  * candidate nobody found fault with.
  */
-/** The launch the item registers for this control-plane record: the one the record names, or the item's standing launch for the record's head. */
-function controlPlaneLaunch(record: Pick<ReviewRecord, 'key' | 'sha' | 'launch'>, work: Work[] | undefined): ControlPlaneReviewLaunch | null {
-  const launch = work?.find(item => item.key === record.key)?.reviewLaunch;
-  if (!launch) return null;
-  return (record.launch ? launch.id === record.launch : launch.head === record.sha) ? launch : null;
+/** The launch the item registers for this control-plane record: the one the record names, or the item's standing launch for the record's head and kind. */
+function controlPlaneLaunch(record: Pick<ReviewRecord, 'key' | 'sha' | 'launch'> & Partial<Pick<ReviewRecord, 'postMerge' | 'product'>>, work: Work[] | undefined): ControlPlaneReviewLaunch | null {
+  const item = work?.find(candidate => candidate.key === record.key);
+  if (!item) return null;
+  const launches = reviewLaunchesOf(item);
+  if (record.launch) return launches.find(launch => launch.id === record.launch) ?? null;
+  const kind = reviewLaunchKind({ postMerge: !!record.postMerge, product: !!record.product });
+  return launches.find(launch => launch.head === record.sha && reviewLaunchKind(launch) === kind) ?? null;
 }
 /** A control-plane session's verdict (GY-1525), read from the item's registered launch; null while none is recorded. */
-export function controlPlaneVerdict(record: Pick<ReviewRecord, 'key' | 'sha' | 'launch'>, work: Work[] | undefined): ObservedVerdict {
+export function controlPlaneVerdict(record: Pick<ReviewRecord, 'key' | 'sha' | 'launch'> & Partial<Pick<ReviewRecord, 'postMerge' | 'product'>>, work: Work[] | undefined): ObservedVerdict {
   const verdict = controlPlaneLaunch(record, work)?.verdict;
   return verdict && verdict.sha === record.sha ? { state: verdict.state, reviewer: verdict.reviewer, reviewId: verdict.reviewId, submittedAt: verdict.submittedAt } : null;
 }
 /** Why a control-plane session's launch was refused by the control plane (independence), so the record settles failed with the reason. */
-export function controlPlaneRefusal(record: Pick<ReviewRecord, 'key' | 'sha' | 'launch'>, work: Work[] | undefined): string | null {
+export function controlPlaneRefusal(record: Pick<ReviewRecord, 'key' | 'sha' | 'launch'> & Partial<Pick<ReviewRecord, 'postMerge' | 'product'>>, work: Work[] | undefined): string | null {
   const launch = controlPlaneLaunch(record, work);
   return launch?.refused ? `the control plane refused the verdict: ${launch.refused.reason}`.slice(0, 900) : null;
 }

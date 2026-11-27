@@ -104,8 +104,8 @@ export async function startReviewServe(input: {
 
 /** GY-3580: the declared serve addresses product reviews on this host are serving, or waiting their turn on, each with the last turn taken. */
 const serveTurns = new Map<string, Promise<void>>();
-/** The addresses a product review is serving a head on now: another product review launches once its address is free. */
-export const servedReviewAddresses = () => [...serveTurns.keys()];
+/** The fixed-port addresses a product review is serving a head on now: another product review launches once its address is free. */
+export const servedReviewAddresses = () => [...serveTurns.keys()].filter(url => servePorts.get(url) === 'declared');
 /** Waits until no earlier review serves on `url`, then holds it until the returned release is called. */
 async function serveTurn(url: string): Promise<() => void> {
   const earlier = serveTurns.get(url) ?? Promise.resolve();

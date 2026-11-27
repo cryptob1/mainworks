@@ -91,7 +91,8 @@ export const liveSessions = (registry: Pick<AgentRegistry, 'sessions'>) => regis
 export function supersededByRequest(registry: Pick<AgentRegistry, 'sessions'>, request: Pick<SelectionRequest, 'role' | 'work' | 'group'>): FleetSession[] {
   if (!request.work) return [];
   return liveSessions(registry).filter(session => session.role === request.role && session.work === request.work
-    && (request.role !== 'producer' || (!!request.group && (session.group ?? null) === request.group)));
+    && (request.role !== 'producer' || (!!request.group && (session.group ?? null) === request.group))
+    && (request.role !== 'reviewer' || (session.group ?? null) === (request.group ?? null)));
 }
 
 /**
@@ -253,7 +254,7 @@ export function chooseSession(registry: AgentRegistry, request: Pick<SelectionRe
   if (running.length >= limit) return { account: null, skipped: [],
     reason: role.concurrency === 0 ? `role ${role.name} is paused (concurrency 0)` : `role ${role.name} is at its concurrency limit (${running.length} of ${limit} live: ${running.map(session => `${session.account}${session.work ? ` on ${session.work}` : ''}`).join(', ')})` };
   const occupied = running.find(session => request.work && session.work === request.work
-    && (request.role !== 'producer' || (session.group ?? null) === (request.group ?? null)));
+    && (request.role !== 'producer' && request.role !== 'reviewer' || (session.group ?? null) === (request.group ?? null)));
   if (occupied) return { account: null, skipped: [], reason: `role ${role.name} already reserved for ${occupied.work ?? occupied.principal}` };
   const skipped: SessionSkip[] = [], diverse = role.name === 'reviewer' ? diversity : null, others: SessionSkip[] = [], busy: SessionSkip[] = [], order = workerOrder(registry, role, request.prefer ?? null);
   let fallback: { account: FleetAccount; index: number; skip: SessionSkip } | null = null; const shared = new Set<SessionSkip>();
