@@ -421,6 +421,7 @@ tr.spent-summary td{padding:6px var(--space-4)}tr.spent-summary button{all:unset
 .lead-rail h3{margin:0 0 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
 .lead-rail p{margin:0;font-size:var(--type-small)}
 .lead-rail ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:var(--type-small)}
+.lead-rail ol .text-button{text-align:left}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media(max-width:1000px){.lead-body{flex-direction:column}.lead-rail{flex:0 0 auto;border-left:0;border-top:1px solid var(--border);padding:var(--space-3) 0 0;flex-direction:row;flex-wrap:wrap;gap:var(--space-4)}.lead-rail ol{gap:2px}.lead-card{max-width:92%}.lead-message{max-width:88%}}
 @media(max-width:1000px){.main:has(.master-tabs){padding:var(--space-3) var(--space-5) 24px}}

@@ -105,7 +105,7 @@ export default function FirstRunPage(dashboard: Dashboard) {
             : !state.builder.modelId
               ? <p role="alert" className="notice">Register a concrete model id on this Builder account so Mainworks knows which model answers.</p>
               : <p className="muted">Waiting for a live request to answer on <span className="mono">{state.builder.modelId}</span>…</p>}
-        </div> : <p className="muted">No Builder account is connected yet.</p>}
+        </div> : <p className="muted">No Builder account is connected yet; connect one below to start.</p>}
         <div className="first-run-actions">
           {(!state.builder || state.builder.error || !state.builder.modelId) ? <>
             <button type="button" className="first-run-cta" onClick={() => { location.hash = 'connect'; setView('agents'); }}>Connect Builder account</button>

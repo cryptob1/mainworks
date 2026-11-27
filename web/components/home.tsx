@@ -17,7 +17,7 @@ export function HomeStatus({ work, status, now, setView, setSelected }: HomeStat
     <p className="home-status-line" data-status-line={line.state}>
       <strong className={`status-state state-${line.state.toLowerCase()}`}>{line.state}</strong>
       <span>{line.builders.allowed === null ? plural(line.builders.working, 'Builder') : `${line.builders.working} of ${line.builders.allowed} Builders`} working</span>
-      <span>{line.machines.configured ? `${line.machines.ready} of ${line.machines.configured} test machines ready` : 'No test machines'}</span>
+      <span>{line.machines.configured ? `${line.machines.ready} of ${line.machines.configured} test machines ready` : 'Tests run on the main machine'}</span>
       <span>{line.lastLive === null ? 'Nothing live yet' : `Last live ${line.lastLive} ago`}</span>
       <span>{line.mergesPerHour.toFixed(1)} merges an hour today</span>
       {line.codeSize && <span>{line.codeSize}</span>}

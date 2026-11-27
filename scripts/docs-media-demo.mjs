@@ -291,9 +291,28 @@ export function buildDemoState(heroPhase = 'static') {
     });
   };
 
+  // A healthy line (GY-3962): sixteen more changes merged and live over the last six hours, so Work
+  // reads 3 merges an hour; they sit under their own goal, below the one the captures follow.
+  const polish = ['Show stock levels on product cards', 'Remember the last shipping address', 'Sort orders by newest first', 'Add alt text to product photos',
+    'Cache category pages for five minutes', 'Fix the cart badge count after removal', 'Trim whitespace in coupon codes', 'Show delivery estimates at checkout',
+    'Link order emails to the order page', 'Keep filters when paging results', 'Round prices the same way everywhere', 'Explain why a card was declined',
+    'Lazy-load images below the fold', 'Add a print view for receipts', 'Hide sold-out sizes by default', 'Speed up the account page'].map((title, n) => {
+    const merged = -(34 + n * 19) * min, head = sha(String.fromCharCode(102 + n));
+    return makeItem(110 + n, title, {
+      goal: 'Storefront polish', stage: 'done', stageEnteredAt: at(merged),
+      submission: { epoch: 1, pr: 60 + n },
+      candidate: makeObservation(60 + n, head, merged).candidate,
+      observation: makeObservation(60 + n, head, merged, { merged: true }),
+      delivery: { mergedAt: at(merged), mergeSha: sha(String((n % 9) + 1)), authorizationRevision: 1 },
+      releaseDeliveries: [{ environment: 'production', verifiedAt: at(merged + 4 * min), releaseId: `rel-${60 + n}`, releaseRevision: 1, generation: 1 }],
+      pipeline: { submittedAt: at(merged - 14 * min), attempts: [{ epoch: 1, claimedAt: at(merged - 30 * min) }] },
+      lastAssignment: { owner: `builder-${(n % 3) + 1}`, epoch: 1, runtime: n % 2 ? 'Codex' : 'Claude' },
+      reasons: {},
+    });
+  });
   const work = heroPhase === 'before-create'
-    ? [item104, item103, item102, item101]
-    : [makeItem105(heroPhase), item104, item103, item102, item101];
+    ? [item104, item103, item102, item101, ...polish]
+    : [makeItem105(heroPhase), item104, item103, item102, item101, ...polish];
 
   const movingEntries = [];
   if (heroPhase === 'static' || heroPhase === 'build') {
@@ -323,20 +342,26 @@ export function buildDemoState(heroPhase = 'static') {
       id: '00000000-0000-4000-8000-000000000106',
       key: 'DEMO-106',
       title: 'Add a second test machine for merge trials',
+      work: 'DEMO-106',
       waitedMs: 14 * min,
       rule: 'human-request',
+      decision: 'Money or accounts',
+      refusal: 'Only the owner decides spending.',
       request: {
         id: 'hr-demo-106',
         kind: 'money-or-accounts',
         ask: 'Approve adding one dedicated test machine (~$65/month) to keep merge-trial wait under 3 minutes?',
         recommendation: 'Approve — test queue peaked at 8 minutes this morning.',
+        needed: 'A yes or no on one more test machine.',
+        reason: 'Merge trials queued up to 8 minutes this morning.',
+        requestedBy: 'Lead',
         at: at(-14 * min),
       },
       choices: [
         { label: 'Approve spend', input: 'none', recommended: true, body: { decision: 'approve' } },
         { label: 'Keep current machines', input: 'none', recommended: false, body: { decision: 'decline' } },
       ],
-      answer: { post: { command: 'resolve', field: 'answer' } },
+      answer: { cli: 'mainworks answer DEMO-106 "yes"', decline: 'mainworks answer DEMO-106 --decline', dashboard: 'Work → Needs you → Answer', api: 'POST /api/work/DEMO-106/answer', post: { command: 'answer', body: { request: 'hr-demo-106', outcome: 'provided' }, field: 'answer', submit: 'Answer and resume DEMO-106' } },
     },
   ];
 
@@ -350,6 +375,7 @@ export function buildDemoState(heroPhase = 'static') {
     baseBranch: 'main',
     jobs: [],
     live: { commit: sha('9'), waiting: liveWaiting },
+    app: { deployedAt: at(-4 * min) },
     pipelineTime: { median: 24 },
     humanOnly,
     // The header: agents working are the live sessions above plus the Lead's pane; checks running are the rows testing.
@@ -360,7 +386,7 @@ export function buildDemoState(heroPhase = 'static') {
       serving: { onboarding: { onboarded: true } },
       fleet: {
         roles: [{ role: 'worker', accounts: ['claude-demo'] }, { role: 'reviewer', accounts: [] }],
-        accounts: [{ name: 'claude-demo', enabled: true, loggedIn: true, eligible: true }],
+        accounts: [{ name: 'claude-demo', enabled: true, loggedIn: true, eligible: true, roles: [{ role: 'worker' }] }],
       },
     } : {}),
     delegation: {
@@ -443,5 +469,36 @@ export function buildDemoState(heroPhase = 'static') {
     { who: 'You', at: at(-30 * min), text: 'Prioritize login rate limiting before dark mode.' },
   ];
 
+  if (heroPhase === 'empty') {
+    // A fresh install's first run: nothing filed, nothing waiting, no flow yet.
+    return {
+      work: [], board: { groups: { 'needs-you': [], blocked: [], moving: [], 'up-next': [], backlog: [] } },
+      status: { ...status, humanOnly: [], checksRunning: 0, live: { commit: null, waiting: [] } },
+      flow: null, item103, item103Timings, item103Diff, leadEvents: [], typed: [],
+    };
+  }
   return { work, board, status, flow, item103, item103Timings, item103Diff, leadEvents, typed };
+}
+
+/** What the demo control plane answers on GET /api/ROUTE: scripts/demo-server.mjs and the browser cases serve it. */
+export function demoAnswer(state, route, search = new URLSearchParams()) {
+  if (route === 'status') return state.status;
+  if (route === 'work-snapshot') return { work: state.work, jobs: [], now: at(0) };
+  if (route === 'board') return state.board;
+  if (route === 'flow') return state.flow;
+  if (route === 'work') return state.work;
+  if (route === `work/${state.item103.id}/timings`) return state.item103Timings;
+  if (route === `work/${state.item103.id}/diff`) return state.item103Diff;
+  if (route.startsWith('work/') && route.endsWith('/timings')) return { releasedAt: at(-10 * min), checkout: '/srv/acme-storefront', trial: null };
+  if (route.startsWith('work/') && route.endsWith('/diff')) return { files: [] };
+  if (route.startsWith('work/')) return state.work.find((w) => w.id === route.slice('work/'.length)) ?? state.work[0];
+  if (route === 'costs') return { builder: { model: 'claude-sonnet-4-6', accountModel: 'claude-sonnet-4-6', differs: false } };
+  // One task's history holds its own decisions only.
+  if (route === 'events') return search.get('work') ? state.leadEvents.filter((row) => row.work_id === search.get('work')) : state.leadEvents;
+  if (route === 'typed-input') return { typed: state.typed };
+  if (route === 'team-access') return { teammates: [] };
+  if (route === 'master/messages') return { messages: [] };
+  if (route === 'delivery') return { environments: [], releases: [], rollbacks: [], now: at(0) };
+  if (route.startsWith('validation')) return { requests: [], candidates: [], nextCursor: null };
+  return [];
 }

@@ -4,7 +4,6 @@ import { openHumanOnly } from '../../src/model/human-request';
 import { humanAsk } from '../../src/model/human-ask';
 import { formatDuration } from '../../src/model/duration';
 import { classify, summarySentence } from '../groups';
-import { masterOwes } from './master';
 import HomeBrief from '../components/home-brief';
 import { HomeStatus } from '../components/home';
 import { hasMergedWork } from '../../src/model/first-run';
@@ -15,7 +14,7 @@ import { machineName } from '../../src/model/machine-load';
 /**
  * The Home place (GY-3598) answers "is it OK" (GY-3601): the status line and
  * incident cards first, then what needs you, what changed since this person last
- * looked, active goals and a box to the Lead (GY-3671), and the summary.
+ * looked, and active goals and a box to the Lead (GY-3671); the top bar is the way to Work, Lead and Settings.
  * An install with no merged work opens on the four-step first-run page instead (GY-3603).
  */
 export default function HomePage(dashboard: Dashboard) {
@@ -40,7 +39,6 @@ export default function HomePage(dashboard: Dashboard) {
         'up-next': byGroup['up-next'].length,
         backlog: byGroup.backlog.length,
       };
-  const owes = masterOwes(work, now);
   const stall = typeof status?.setup?.stallAlarm === 'string' ? status.setup.stallAlarm : null;
   const admin = status?.actor?.role === 'admin';
   // GY-3827: each test machine whose helper is older than this release waits on its owner's one-time prepare.
@@ -59,7 +57,7 @@ export default function HomePage(dashboard: Dashboard) {
         <span>Takes no test work until a one-time update; updating it moves test work off {coordinator}.</span>
         <span>In a terminal here, run <span className="mono">{hostUpdateCommand(host)}</span>.</span>
       </li>)}{requests.slice(0, 5).map(row => <li key={row.request.id}>
-        <strong>{row.work}</strong>
+        <strong>{row.title}</strong>
         <span>{humanAsk(row.request)}</span>
         <span className="muted">waiting {formatDuration(row.waitedMs / 60000)}</span>
         <button type="button" className="decide push" onClick={() => setSelected(row.id)}>Review request</button>
@@ -69,24 +67,5 @@ export default function HomePage(dashboard: Dashboard) {
       <p className="stall-alarm" role="alert">{stall}</p>
     </PageSection>}
     <HomeBrief work={work} status={status} now={now} api={api}/>
-    <PageSection title="Summary">
-      <div className="home-summary-grid">
-        <div className="home-summary-card">
-          <strong>Work</strong>
-          <p>{counts.moving} moving · {counts.blocked} blocked · {counts['up-next']} up next</p>
-          <button type="button" className="text-button" onClick={() => setView('work')}>Open Work →</button>
-        </div>
-        <div className="home-summary-card">
-          <strong>Lead</strong>
-          <p>{owes.length ? `${owes.length} ${owes.length === 1 ? 'blocker' : 'blockers'} waiting on Lead` : 'No blockers waiting on Lead'}</p>
-          <button type="button" className="text-button" onClick={() => setView('lead')}>Open Lead →</button>
-        </div>
-        <div className="home-summary-card">
-          <strong>Settings</strong>
-          <p>Accounts, workers, costs, delivery and help</p>
-          <button type="button" className="text-button" onClick={() => setView('agents')}>Open Settings →</button>
-        </div>
-      </div>
-    </PageSection>
   </>;
 }
