@@ -57,7 +57,7 @@ function mp4Seconds(bytes: Buffer): number {
   return duration / scale;
 }
 
-test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, work.png, change.png, lead.png and pipeline.svg, referenced by README, within size/dimension limits and reproducible via npm run docs:media', () => {
+test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, work.png, change.png, lead.png and pipeline.svg, referenced by README with alt texts of six words or more, within size/dimension limits, reproducible via npm run docs:media from a healthy demo line', () => {
   const readme = readFileSync(pathOf('README.md'), 'utf8');
   const manifest = JSON.parse(readFileSync(pathOf('package.json'), 'utf8'));
   assert.ok(typeof manifest.scripts?.['docs:media'] === 'string' && manifest.scripts['docs:media'].length > 0, 'package.json defines npm run docs:media');
@@ -74,6 +74,16 @@ test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, wo
     assert.ok(existsSync(pathOf(rel)), `${rel} exists`);
     assert.ok(readme.includes(rel), `README.md references ${rel}`);
   }
+
+  // GY-3962: every image has a descriptive alt text of at least six words.
+  const images = [...readme.matchAll(/!\[([^\]]*)\]\((docs\/media\/[^)]+)\)/g)];
+  assert.ok(images.length >= 5, `README shows its media as images (${images.length})`);
+  for (const [, alt, src] of images) assert.ok(alt.trim().split(/\s+/).length >= 6, `${src} has an alt text of at least six words: "${alt}"`);
+
+  // GY-3962: the Work capture shows a healthy line: at least 3 merges an hour over the six hours its header counts.
+  const demo = buildDemoState('static');
+  const merges = demo.work.filter(item => item.delivery?.mergedAt && NOW - Date.parse(item.delivery.mergedAt) <= 6 * 3_600_000).length / 6;
+  assert.ok(merges >= 3, `the demo Work line reads ${merges.toFixed(1)} merges an hour`);
 
   // hero.gif: under 4 MB, at most 25 seconds.
   const gifBytes = readFileSync(pathOf('docs/media/hero.gif'));
