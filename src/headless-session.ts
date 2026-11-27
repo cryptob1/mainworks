@@ -198,9 +198,12 @@ async function prepareHeadlessRun(on: HeadlessAccountLaunch, prompt: string, dir
   if (trust) await launchRecipe(on.kind)?.verify?.(trust);
   const wrapper = confinement?.wrapper ?? [], args = wrapper.length ? confinedRuntimeArgs(on.kind, on.args) : on.args;
   // Every session carries the autonomy contract (GY-184), as a pane session's first request does.
-  const carried = withAutonomyContract(false, { request: prompt, role: on.role });
-  return { kind: on.kind, account: on.account ?? null, contract: on.contract, environment: on.environment, wrapper, args, request: carried.role ? `${carried.role} ${carried.request}` : carried.request };
+  return { kind: on.kind, account: on.account ?? null, contract: on.contract, environment: on.environment, wrapper, args, request: carriedRequest(prompt, on.role) };
 }
+const carriedRequest = (prompt: string, role: HeadlessAccountLaunch['role']) => {
+  const carried = withAutonomyContract(false, { request: prompt, role });
+  return carried.role ? `${carried.role} ${carried.request}` : carried.request;
+};
 
 /**
  * Start a headless session: refused before anything runs when the runtime has no launch contract,
@@ -361,6 +364,8 @@ export interface HeadlessWorker extends HeadlessAccountLaunch {
   root: string; exec: HeadlessExec; cores?: number;
   /** GY-3632: the runtime session this run continues; its request is then `prompt` alone, the session's next message. */
   session?: string | null;
+  /** GY-4018: the usual prompt a continued run starts fresh with when its runtime cannot find that session. */
+  freshPrompt?: string;
   /** The run's hard bound, the configured attempt ceiling; the loop's attempt bound stops a run without progress first. */
   timeoutMs: number;
   /** How long the start is watched; `workerStartupMs` by default. */
@@ -394,6 +399,10 @@ export async function startHeadlessWorker(input: HeadlessWorker): Promise<{ id: 
   const record: HeadlessWorkerRecord = { id, name: input.name, work: input.work, epoch: input.epoch, principal: input.principal, account: input.account, kind: launch.kind, subject: input.subject.slice(0, 300), startedAt: new Date().toISOString(), ...(remote && input.remote ? { host: input.remote.host } : {}) };
   writeFileSync(join(directory, sessionFile), JSON.stringify(record), { mode: 0o600 });
   const argv = [...input.supervisor, ...remote ?? launch.wrapper, ...await headlessArgv({ ...launch, session: input.session, promptFile }, request, env)];
+  // GY-4018: the supervisor starts this fresh command line, under the same lease, when the resume cannot find its conversation.
+  const fresh = input.session && input.freshPrompt ? carriedRequest(input.freshPrompt, input.role) : null;
+  if (fresh && headlessPromptInput(launch.kind, fresh, launch.contract) === undefined && !headlessPromptNeedsFile(launch.kind, fresh, launch.contract))
+    writeFileSync(join(directory, 'fresh.json'), JSON.stringify([...remote ?? launch.wrapper, ...await headlessArgv(launch, fresh, env)]), { mode: 0o600 });
   const stop = new AbortController(), detached = new AbortController();
   const running = input.exec(argv[0]!, argv.slice(1), { cwd: input.directory, env, timeoutMs: input.timeoutMs, signal: stop.signal, run: directory, detached: detached.signal, ...(stdin !== undefined ? { stdin } : {}) });
   const ended = await Promise.race([running.then(() => ({ ok: true }), () => ({ ok: false })), new Promise<null>(done => setTimeout(() => done(null), input.startupMs ?? workerStartupMs).unref())]);
