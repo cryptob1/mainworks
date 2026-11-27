@@ -65,7 +65,7 @@ export interface SessionSkip { account: string; reason: string }
 export interface FleetSession {
   id: string; role: FleetRoleName; account: string; runtime: string; model: string;
   host: string; work: string | null; principal: string | null;
-  /** A producer's proof group or a personal master's human owner. */
+  /** A producer's proof group, a reviewer's review kind (product, post-merge) or a personal master's human owner. */
   group?: string | null;
   selectedAt: string; selectedBy: string; reason: string; skipped: SessionSkip[];
   endedAt: string | null; endReason: string | null;

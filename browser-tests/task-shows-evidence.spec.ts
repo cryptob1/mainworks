@@ -5,7 +5,10 @@ import { friendlyName } from '../web/fun';
 // GY-3599: the Task page shows the evidence. A task whose merge trial failed on one slow file opens on its
 // title, state, pull request, Builder, model, diff stats and one action; a pipeline row says where the
 // time went; tabs hold the checks and diff, the Builder's read-only session, the Lead's decisions and the details.
-const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+// GY-3975: one instant, read once: every fixture time and the snapshot's now count from it, so a worker that spends
+// minutes in this file still sees the same times in state.
+const fixtureNow = Date.now();
+const at = (minutesAgo: number) => new Date(fixtureNow - minutesAgo * 60_000).toISOString();
 const head = 'a'.repeat(40), base = 'b'.repeat(40), merge = 'c'.repeat(40), run = '11111111-2222-4333-8444-555555555555';
 const builder = 'claude-builder-7', slow = 'tests/remote-shards.test.ts';
 const output = `trial failed: ${slow}\n  ✓ a hot local host keeps its room (412 ms)\n  × a remote host with a hot reading gets no shard\n    a CPU sensor reads 96C, at or over 85C`;
@@ -45,7 +48,7 @@ async function open(page: Page, width: number, task: typeof item = item, trialTi
   await page.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     if (request.method() !== 'GET') { writes.push(`${request.method()} ${path}`); return route.fulfill({ json: {} }); }
-    const now = new Date().toISOString();
+    const now = at(0);
     if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, repository: 'fixture/repository', jobs: [], pipelineTime: { merged24h: 31, median: 29, p90: 95, samples: 10, lastMergeAt: at(12), oldest: null } } });
     if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work: [task], now } });
     if (path.endsWith('/board')) return route.fulfill({ json: boardFromStatus([task] as never, Date.parse(now), null) });
