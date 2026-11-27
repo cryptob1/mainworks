@@ -290,10 +290,12 @@ const mergeWriterActionKey = (key: string, head: string) => `merge-writer:${key}
 /** The ledger states the snapshot carries, by item key: what `mergeQueue` and `reconcileIntents` read. */
 export const snapshotLedger = (work: readonly Work[]): Record<string, MergeLedgerState> => Object.fromEntries(work.flatMap(item => item.mergeLedger ? [[item.key, item.mergeLedger] as const] : []));
 /** The rework a failed trial grounds (AC-3): its binding names the head and the ground, as every loop rework does, so the server's lane rework finds it. */
+/** The start of a refusal whose trial merge conflicted with main. */
+const conflictRefusalPrefix = `${trialFailurePrefix}: the merge conflicts in `;
 export const trialFailureRework = (work: Work, head: string, reason: string) => {
   // GY-3150: the refusal may fill its 2,000 characters with the failing tests and log tail; the rework cuts the tail's oldest lines to fit the engine's bound.
   // GY-3488: the tail names the next action: a conflict syncs, a failed test or e2e trial reproduces the files.
-  const lead = `${work.key}: the merge writer's trial of candidate ${head.slice(0, 12)} failed: `, tail = reason.startsWith(`${trialFailurePrefix}: the merge conflicts in `)
+  const lead = `${work.key}: the merge writer's trial of candidate ${head.slice(0, 12)} failed: `, tail = reason.startsWith(conflictRefusalPrefix)
     ? `. The base moved: run sync ${work.key}, resolve the files above keeping both sides' intent, rerun your bound tests, then complete ${work.key} EPOCH --head NEWSHA.`
     : `. Reproduce with node --import tsx tests/helpers/run-tests.ts FILES (the files named above), fix the cause rather than the test, then complete ${work.key} EPOCH --head NEWSHA.`;
   const room = reworkReasonMax - lead.length - tail.length, marker = '\nlog tail:\n', at = reason.indexOf(marker) + marker.length;
@@ -492,7 +494,7 @@ export const mergeWriterReworkKey = (key: string, head: string) => `${mergeWrite
  * transient failure never loses the rework. Without the decision effects the record waits, named
  * for the operator. Answers whether the state changed.
  */
-async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>): Promise<boolean> {
+async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | 'performed'>, reads: MergeWriterReads): Promise<boolean> {
   const { state, effects, now, snapshot, performed } = cycle;
   const writer = state.mergeWriter;
   const at = () => new Date(now()).toISOString();
@@ -519,6 +521,20 @@ async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'n
     const action = (actionState: 'done' | 'failed', detail: string) => performed.push(storeAction(state, key, { kind: 'judgement', work: pending.key, principal: null, state: actionState, detail: detail.slice(0, 1900), attempts: pending.attempts + 1, epoch: null, cycle: state.cycle, at: at() }));
     if (applied) { action('done', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds is applied: the snapshot shows the item ${!item || item.stage === 'done' ? 'done' : item.reworkRequested ? 'returned to a worker' : 'on a new head'}`); continue; }
     if (!effects.rework) { kept.push({ ...pending, attempts: pending.attempts + 1, lastError: 'this loop runs without the master identity' }); action('failed', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds waits: this loop runs without the master identity, so apply it with mainworks master rework ${pending.key} REASON`); continue; }
+    // GY-4016: a merge conflict is judged again on main as it is now; a head that merges onto it cleanly is queued for its trial there, not returned.
+    if (pending.reason.startsWith(conflictRefusalPrefix)) {
+      try {
+        const tip = await reads.fetch(), merged = await reads.merge(pending.head, tip, item);
+        if (!('conflict' in merged)) {
+          await reads.record(item, { kind: 'refused', head: pending.head, reason: `${reads.baseBranch} moved to ${tip.slice(0, 12)}, onto which head ${pending.head.slice(0, 12)} merges without conflict, so the head is queued again for its trial there` });
+          action('done', `${pending.key} head ${pending.head.slice(0, 12)} now merges cleanly onto ${reads.baseBranch} ${tip.slice(0, 12)}: it is trialled there instead of returned to a worker`);
+          continue;
+        }
+      } catch (error) {
+        kept.push({ ...pending, attempts: pending.attempts + 1, lastError: (error instanceof Error ? error.message : String(error)).slice(0, 2000) });
+        continue;
+      }
+    }
     const rework = trialFailureRework(item, pending.head, pending.reason);
     try {
       await effects.rework(item, rework.reason, rework.input.binding);
@@ -1073,7 +1089,7 @@ export async function mergeWriterStep(cycle: Cycle) {
       changed = true;
     }
   }
-  if (await requestPendingReworks(cycle)) changed = true;
+  if (await requestPendingReworks(cycle, reads)) changed = true;
   // GY-2990: a served commit that fails live verification reverts only the item that broke it.
   // The attempt runs beside the cycle like a merge (its trial and leased push), so once one is
   // in flight the merges below wait; one owed behind running flights holds new ones until they settle (GY-3182).
