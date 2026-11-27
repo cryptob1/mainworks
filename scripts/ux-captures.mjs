@@ -1,7 +1,8 @@
 // GY-3962: every dashboard page and state, captured at 390 and 1280 px from the demo data
 // (scripts/docs-media-demo.mjs), for the newcomer pass in docs/ux-findings.md.
 //
-// Usage: npm run ux:captures [-- OUT_DIR]   (default .graphyard/ux-captures, not committed)
+// Usage: npm run ux:captures [-- OUT_DIR]   (default .graphyard/ux-captures, not committed; the
+// ux-rules-hold-at-390-and-1280 case writes them to its E2E_SCREENSHOTS_DIR, so they attach to the run)
 // Each capture is a full-page PNG named WIDTH-PAGE.png with its visible text beside it as WIDTH-PAGE.txt; a page that scrolls sideways is listed at the end.
 
 import { execFileSync } from 'node:child_process';
@@ -47,7 +48,7 @@ const shots = [
 ];
 
 async function main() {
-  if (!existsSync(join(dist, 'index.html'))) execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
+  if (!existsSync(join(dist, 'index.html'))) execFileSync('npx', ['vite', 'build', '--configLoader', 'runner'], { cwd: root, stdio: 'inherit' });
   await mkdir(outDir, { recursive: true });
   const { server, setPhase } = startDemoServer(dist);
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
