@@ -1,7 +1,7 @@
 # UX findings: the dashboard as a newcomer sees it
 
 Captured with `npm run ux:captures` (every page and state below, 390 and 1280 px, from the README's demo data).
-Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, the Settings rows of severity 2 in GY-3995; the rest are for follow-up items.
+Severity: 1 blocks understanding, 2 confuses, 3 polish. **Fixed** rows were fixed in GY-3962, the Work and change rows of severity 2 in GY-3987, seven Settings rows in GY-3995; the rest are for follow-up items.
 Rules: *plain* (one plain sentence per idea, owner first), *next* (state, numbers and the one next action),
 *internal* (no ids, hashes, model ids, jargon or agent chatter outside Details), *error* (says what to do, never false),
 *twice* (show nothing twice), *fit* (390 and 1280 px, no sideways scroll).
