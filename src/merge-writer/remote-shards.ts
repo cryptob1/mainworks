@@ -3,6 +3,7 @@
 // once, places each shard on the host with the most real free CPU under its heat limit, and runs it
 // there through graphyard-host-shim (src/host-shim.ts), whose fixed verbs are all this machine's key
 // may run. A host that drops or turns away a shard has it re-queued on another host: capacity, never a fault.
+import { imageLock, withHostLock } from '../host-lock.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -483,7 +484,7 @@ export async function warmCommitOnHosts(input: {
         const tag = supportsWarmImageV2(reading.verbs)
           ? built.tag
           : await (v1Tag ??= ensureWarmImageV1({ root: input.root, sha: input.commit, image, run: input.run, deadline }));
-        await transport.session(reading.name, words => input.run('sh', ['-c', `set -o pipefail 2>/dev/null; docker save ${shellQuote(tag)} | ${['ssh', ...words, `receive-image ${tag}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining() }));
+        await transport.session(reading.name, words => sendInTurn(reading.name, () => input.run('sh', ['-c', `set -o pipefail 2>/dev/null; docker save ${shellQuote(tag)} | ${['ssh', ...words, `receive-image ${tag}`].map(shellQuote).join(' ')}`], { timeoutMs: remaining() })));
         pushed.push(reading.name);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -493,6 +494,19 @@ export async function warmCommitOnHosts(input: {
   } finally { await transport.close(); }
   return { ...built, pushed, failed };
 }
+
+/**
+ * GY-4053: an image's `docker save` to a host, and the host's `docker load` (the coordinator's own when it is a host),
+ * hold the host's image lock for that command only, so a deploy build's export and an image send take turns on one Docker.
+ * Waiting is no host fault: the send's timeout starts once it holds the lock.
+ */
+const sendInTurn = <T>(target: string, work: () => T | Promise<T>, onWait?: (reason: string | null) => unknown) => {
+  let waited = false;
+  return withHostLock(imageLock, async () => { if (waited) await onWait?.(null); return work(); }, {
+    holder: `a warm image send to ${target}`,
+    onWait: holder => { waited = true; return onWait?.(`Sending the warm image to ${target} waits for ${holder} to finish`); },
+  });
+};
 
 /** GY-3745: where a running trial marks the warm image it uses (`TAG.PID.ID`, removed when it ends): the leftovers sweep keeps those images while PID lives. */
 export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard', 'warm-in-use');
@@ -505,7 +519,8 @@ export const warmInUseDirectory = (home = homedir()) => join(home, '.graphyard',
  * lacks, or the warm image, sent once per tag — then clones the commit into a run directory. Shards run
  * there through the shim's `run-shard`; `close` cleans every run directory.
  */
-export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[]; /** GY-3907: the image every host runs, in place of the trial's warm image, in the form the host's helper takes. */ warm?: (version: 'v1' | 'v2') => Promise<string> }) {
+export function remoteShardSession(input: { root: string; sha: string; baseTip?: string; image: string; run: ChildRun; deadline: number; signal?: AbortSignal; transport?: ShardSshSession; hosts?: readonly Pick<HostReading, 'name' | 'verbs'>[]; /** GY-3907: the image every host runs, in place of the trial's warm image, in the form the host's helper takes. */ warm?: (version: 'v1' | 'v2') => Promise<string>;
+  /** GY-4053: hears what an image send waits for when it starts waiting for the host's image lock, and null once it holds it. */ onWait?: (reason: string | null) => unknown }) {
   const repo = mirrorName(input.root);
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
   const local = async (command: string, args: string[]) => String(await input.run(command, args, { timeoutMs: remaining() })).trim();
@@ -514,9 +529,11 @@ export function remoteShardSession(input: { root: string; sha: string; baseTip?:
   /** One shim verb on `target`, with `source`'s output as its input; any failure turns the host away. */
   const shim = async (target: string, verb: string, source?: string) => {
     try {
-      return await transport.session(target, async words => String(source
-        ? await input.run('sh', ['-c', `set -o pipefail 2>/dev/null; ${source} | ${['ssh', ...words, verb].map(shellQuote).join(' ')}`], { timeoutMs: remaining() })
-        : await input.run('ssh', [...words, verb], { timeoutMs: remaining() })));
+      return await transport.session(target, async words => {
+        const piped = () => input.run('sh', ['-c', `set -o pipefail 2>/dev/null; ${source} | ${['ssh', ...words, verb].map(shellQuote).join(' ')}`], { timeoutMs: remaining() });
+        return String(!source ? await input.run('ssh', [...words, verb], { timeoutMs: remaining() })
+          : source.startsWith('docker save ') ? await sendInTurn(target, piped, input.onWait) : await piped());
+      });
     } catch (error) {
       const failed = error as { stderr?: unknown; message?: string; timedOut?: boolean };
       if (failed.timedOut && verb.startsWith('run-check ')) throw error;

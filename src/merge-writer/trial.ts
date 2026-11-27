@@ -1118,6 +1118,11 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   };
   const stepSeconds = (ms: number) => `${Math.round(ms / 100) / 10}s`;
   input.onStep?.(stepLabel);
+  // GY-4053: an image send waiting for the host's image lock says so in the trial's status, then the step resumes.
+  const imageWait = (reason: string | null) => {
+    if (reason) log.push(`[remote] ${reason}`);
+    input.onStep?.(reason ?? stepLabel);
+  };
   const enterStep = (label: string) => {
     const at = now();
     log.push(`[step] ${stepLabel} took ${stepSeconds(at - stepAt)}`);
@@ -1602,7 +1607,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         eligible: reading => Boolean(reading.compose),
         signal: input.signal,
       });
-      session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings });
+      session = remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings, onWait: imageWait });
       const host = readings.filter(reading => underHeatLimit(reading) && reading.compose)
         .sort((a, b) => Number(supportsCheckImages(b.verbs)) - Number(supportsCheckImages(a.verbs)) || realFreeCores(b) - realFreeCores(a))[0];
       if (!host) {
@@ -1878,7 +1883,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     let outputShown = false;
     // A shard a host turned away is noted after every shard's output, so the note stays in the log tail kept on the item.
     const dropped = new Map<string, HostDroppedError>();
-    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings }) : null;
+    const session = hosts.length ? remoteShardSession({ root: input.root, sha: input.mergeSha, baseTip: input.baseTip, image: runImage ?? trialImage(), run, deadline, signal: input.signal, transport, hosts: readings, onWait: imageWait }) : null;
     // One shard on this machine, or on `remote`; a remote host that turned it away rethrows, so it runs elsewhere.
     const shard = async (index: number, remote?: string) => {
       const group = shards[index]!, entries: string[] = [];
