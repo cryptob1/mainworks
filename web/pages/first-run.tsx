@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { firstRunState, firstTaskInput, type FirstRunIssue } from '../../src/model/first-run';
 import { prSteps } from '../../src/model/pr-steps';
 import { releaseView } from '../../src/model/release';
@@ -10,6 +10,10 @@ import { COMMAND_NAME } from '../../src/model/product';
 import { friendlyName } from '../fun';
 import type { Dashboard } from './dashboard';
 import { PageHeader } from '../components/page-layout';
+
+/** A step's terminal equivalent, folded so the first screen needs no terminal (GY-3989). */
+const Terminal = ({ children }: { children: ReactNode }) =>
+  <details className="first-run-terminal" data-terminal-equivalent><summary>Prefer a terminal?</summary><p>{children}</p></details>;
 
 /**
  * First-run page (GY-3603): shown instead of an empty Home when an install has no merged work.
@@ -87,13 +91,11 @@ export default function FirstRunPage(dashboard: Dashboard) {
           </button>
           <span className="muted">First merged PR in about 10 minutes.</span>
         </div>
-        <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>{COMMAND_NAME} up --repo {state.repository ?? 'OWNER/NAME'}</code> connects this repository and configures its deploy key or scoped token.
-        </div>
+        <Terminal><code>{COMMAND_NAME} up --repo {state.repository ?? 'OWNER/NAME'}</code> connects this repository and configures its deploy key or scoped token.</Terminal>
       </>}
 
       {state.currentStep === 2 && <>
-        <p className="first-run-lead">A live request checks that your Builder account answers on its registered model before it starts work.</p>
+        <p className="first-run-lead">Mainworks sends your Builder account one test request to check it answers before it starts work.</p>
         {state.builder ? <div className="first-run-builder-card">
           <dl className="facts">
             <div><dt>Builder</dt><dd>{builderName} <span className="muted mono">({state.builder.name})</span></dd></div>
@@ -119,9 +121,7 @@ export default function FirstRunPage(dashboard: Dashboard) {
             <button type="button" className="first-run-secondary" onClick={() => { location.hash = 'connect'; setView('agents'); }}>Connect Builder account</button>
           </>}
         </div>
-        <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>{COMMAND_NAME} master registry propose --apply</code> registers your host's logged-in Builder accounts in the control plane.
-        </div>
+        <Terminal><code>{COMMAND_NAME} master registry propose --apply</code> registers your host's logged-in Builder accounts in the control plane.</Terminal>
       </>}
 
       {state.currentStep === 3 && <>
@@ -137,9 +137,7 @@ export default function FirstRunPage(dashboard: Dashboard) {
           <button type="submit" className="first-run-cta" disabled={starting || !typed.trim()}>{starting ? 'Starting…' : 'Start task'}</button>
         </form>
         {startError && <p role="alert" className="notice danger">{startError}</p>}
-        <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>{COMMAND_NAME} create task.json</code> files a task and <code>{COMMAND_NAME} ready GY-1 "First run"</code> dispatches it.
-        </div>
+        <Terminal><code>{COMMAND_NAME} create task.json</code> files a task and <code>{COMMAND_NAME} ready GY-1 "First run"</code> dispatches it.</Terminal>
       </>}
 
       {state.currentStep === 4 && task && <>
@@ -152,9 +150,7 @@ export default function FirstRunPage(dashboard: Dashboard) {
         <div className="first-run-actions">
           <button type="button" className="first-run-cta" onClick={() => setSelected(task.id)}>Open the task</button>
         </div>
-        <div className="first-run-terminal" data-terminal-equivalent>
-          Prefer a terminal? <code>{COMMAND_NAME} status {task.key}</code> shows this task's gates and merge pipeline.
-        </div>
+        <Terminal><code>{COMMAND_NAME} status {task.key}</code> shows this task's gates and merge pipeline.</Terminal>
       </>}
     </div>
   </div>

@@ -214,7 +214,7 @@ test('e2e:clean-host-npx-up — a fresh account runs npx @cryptob1/graphyard up 
   assert.deepEqual(result.completed, ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'master-autonomy', 'onboarding'], `${up.stderr.slice(-4000)}\n${result.next}`);
   // A fresh account has signed in to no AI coding account yet: that is the one step left to its person, at the Setup link.
   assert.equal(up.code, 3, result.next);
-  assert.match(result.next, /Still waiting on An agent account that writes code/);
+  assert.match(result.next, /Still waiting on Connect an AI coding account/);
 
   // The code it runs is a Git clone of the upstream at the published commit, under the install — so the loop, upgrade and the deploy watch move it with Git.
   const release = join(home, '.config', 'mainworks', 'owner-scratch', 'deploy', 'build', '.graphyard', 'cli-releases', commit);
