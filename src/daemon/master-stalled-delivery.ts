@@ -17,6 +17,15 @@ const signoffWakeRepeatMs = 30 * 60_000;
 const emptyBoardWakeRepeatMs = 30 * 60_000;
 /** GY-3996: repeat a stale-blocker stall wake once per hour while it lasts. */
 const staleBlockerWakeRepeatMs = 60 * 60_000;
+/** GY-4029: an attention action no one has claimed for this long launches or wakes the master, which answers it. */
+export const unclaimedAttentionMs = 30 * 60_000;
+
+/** GY-4029: open items' pending attention actions no executor claimed for over 30 minutes. */
+export function unclaimedAttention(work: readonly Work[], now: number) {
+  return work.filter(item => item.stage !== 'done').flatMap(item => (item.actionQueue?.actions ?? [])
+    .filter(action => action.kind === 'attention' && action.state === 'pending' && !action.claim && now - Date.parse(action.requestedAt) > unclaimedAttentionMs)
+    .map(action => ({ item, action, detail: action.inputs.kind === 'attention' ? action.inputs.detail : action.reason })));
+}
 
 /**
  * GY-3770: open items whose passed trial leaves only `manual:` proofs unpassed that the Lead
@@ -91,6 +100,8 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
       if (last?.event === 'failed') causes.push(quiet(item, cause(subject('operation', action.id), `${item.key} ${action.kind}: ${last.reason}${last.result ? `; ${last.result}` : ''}`)));
     }
   }
+  for (const { item, action, detail } of unclaimedAttention(open, now))
+    causes.push(quiet(item, cause(subject('attention', action.id), `${item.key} attention ${action.id.slice(0, 8)} has waited unclaimed since ${action.requestedAt}: ${detail}`)));
   for (const [key, action] of Object.entries(actions)) {
     // GY-3122: a disk shortage the loop could not reclaim names no item, and holds every trial and worker.
     if (key === 'disk-headroom') { if (action.state === 'failed') causes.push(cause('disk-headroom', action.detail)); continue; }

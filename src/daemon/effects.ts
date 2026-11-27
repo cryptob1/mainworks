@@ -179,6 +179,8 @@ export interface DaemonEffects {
   servingCommit?: () => string | null;
   /** The loop's own master session (GY-898): absent, none is launched. */
   masterSession?: MasterSessionEffects;
+  /** GY-4029: record that no account can serve a role on an item (`POST work/:id/capacity`). */
+  reportCapacity?: (work: Work, event: { event: 'spent'; role: 'master'; accounts: { account: string; profile: string; resetsAt: string | null; reason: string }[] }) => Promise<unknown>;
   /** GY-3593: one caretaker pass on the caretaker role's first available account, settled with its result line or why it was skipped. */
   caretaker?: () => Promise<import('./caretaker.js').CaretakerOutcome>;
   /** GY-3835: one headless planner run when the empty-board alarm holds for 30 minutes, drafting at most three unreleased items. */
