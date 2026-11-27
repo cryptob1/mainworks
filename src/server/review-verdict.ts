@@ -125,8 +125,6 @@ export async function launchTokenActor(services: Services, tokenHash: string): P
   const launch = rows.rows[0]?.launch;
   return launch ? { id: launch.reviewer, role: 'reader' } : null;
 }
-/** Whether a standing launch still authorizes this bearer. */
-export const tokenRegistered = async (services: Services, tokenHash: string) => !!await launchTokenActor(services, tokenHash);
 
 
 export async function recordReviewLaunch(services: Services, actor: Principal, id: string, body: unknown, key: string) {

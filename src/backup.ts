@@ -48,42 +48,6 @@ export const backupDigest = (backup: Omit<Backup, 'digest'>) => {
   return `sha256:${createHash('sha256').update(canonical(rest)).digest('hex')}`;
 };
 
-/**
- * Read every ledger table from one repeatable-read snapshot. Rows are exported through
- * `row_to_json`, which is what `json_populate_recordset` reads back on restore, so
- * `jsonb`, `bytea`, `uuid` and timestamps round-trip through PostgreSQL's own encoders
- * rather than through a hand-written type map.
- */
-export async function createBackup(pool: pg.Pool): Promise<Backup> {
-  const db = await pool.connect();
-  try {
-    await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    // GY-3538: a whole-ledger read outlasts any request's statement timeout, the pool's or the role's.
-    await db.query('SET LOCAL statement_timeout = 0');
-    // The backup lock, shared: backups run beside each other and beside coordination work, and
-    // only a restore excludes them. Never the coordination lock (GY-203).
-    await db.query('SELECT pg_advisory_xact_lock_shared($1)', [advisoryLocks.backup]);
-    const current = Number((await db.query('SELECT COALESCE(MAX(version),0) AS version FROM graphyard_schema')).rows[0].version);
-    if (current !== schemaVersion) throw new Error(`Database schema generation ${current} differs from this release (${schemaVersion}); run the migration first, then back up`);
-    const takenAt = (await db.query('SELECT clock_timestamp() AS now')).rows[0].now.toISOString();
-    const tables: Backup['tables'] = [];
-    for (const name of ledgerTables) {
-      const rows = (await db.query(`SELECT row_to_json(t) AS row FROM ${name} t ORDER BY ${ledgerOrder[name]}`)).rows.map(r => r.row);
-      tables.push({ name, rows });
-    }
-    const exported: Backup['sequences'] = [];
-    for (const { table, column } of ledgerSequences) {
-      const sequence = (await db.query('SELECT pg_get_serial_sequence($1,$2) AS name', [table, column])).rows[0].name as string;
-      const state = (await db.query(`SELECT last_value, is_called FROM ${sequence}`)).rows[0];
-      exported.push({ name: sequence, value: Number(state.last_value), called: state.is_called });
-    }
-    await db.query('COMMIT');
-    const body = { format: backupFormat, takenAt, graphyardVersion: releaseInfo().version, schemaVersion, tables, sequences: exported } as const;
-    return backupSchema.parse({ ...body, digest: backupDigest(body) });
-  } catch (error) { await db.query('ROLLBACK').catch(() => {}); throw error; }
-  finally { db.release(); }
-}
-
 /** Verify a backup document without touching any database. */
 export function verifyBackup(input: unknown): Backup {
   const backup = backupSchema.parse(input);
@@ -95,8 +59,8 @@ export function verifyBackup(input: unknown): Backup {
 }
 
 /*
- * GY-3538: the backup file, streamed. The same graphyard-backup-v1 document and digest as
- * createBackup, laid out one row per line, so neither the backup, its verification nor its restore
+ * GY-3538: the backup file, streamed. The graphyard-backup-v1 document `verifyBackup` reads,
+ * laid out one row per line, so neither the backup, its verification nor its restore
  * holds the ledger in memory, and a ledger of many gigabytes backs up and restores:
  *
  *   {"format":…,"takenAt":…,"graphyardVersion":…,"schemaVersion":…,"sequences":[…],"tables":[
@@ -108,7 +72,7 @@ export function verifyBackup(input: unknown): Backup {
  *   ]}
  *   ],"digest":"sha256:…"}
  *
- * The digest hashes the canonical form createBackup's digest hashes, row by row. A file older
+ * The digest hashes the canonical form `backupDigest` hashes, row by row. A file older
  * releases wrote, one line, is read whole as before.
  */
 const tablesOpen = '"tables":[';

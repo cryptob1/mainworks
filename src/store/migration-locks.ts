@@ -42,7 +42,7 @@ export interface SchemaCode { generation: number; release: string; prelude: stri
 export const currentSchemaCode = (): SchemaCode => ({ generation: schemaVersion, release: releaseInfo().version, prelude: migrationPrelude, tables });
 
 const sha256 = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
-/** The migration digests `code` records: for this process's code, exactly `migrationDigests()`. */
+/** The migration digests `code` records: the whole migration, its prelude, and each table's own DDL. */
 const schemaCodeDigests = (code: SchemaCode): MigrationDigests => ({
   migration: `migration ${sha256(`${code.prelude}${code.tables.map(table => table.ddl).join('\n')}\n`)}`,
   prelude: sha256(code.prelude),

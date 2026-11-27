@@ -53,7 +53,7 @@ export const effectivePriority = (priority: number, waitingMs: number) => priori
 const createdAtOf = (item: Pick<Work, 'createdAt'>) => Date.parse(item.createdAt) || 0;
 /** A hotfix (an item titled `Hotfix: …`) is merged before every other queued head, so a fix to a bottleneck never waits out the queue. */
 export const isHotfix = (item: Pick<Work, 'title'>) => /^hotfix:/i.test(item.title ?? '');
-/** The item the loop's base-failure step files for a failing base test (`baseFailureItem`'s title): it unblocks every held head, so it goes first too. */
+/** A base-failure repair, titled `Base branch B fails CHECK test: T`: it unblocks every held head, so it goes first too. */
 export const isBaseRepair = (item: Pick<Work, 'title'>) => /^base branch \S+ fails .+ test: /i.test(item.title ?? '');
 const mergesFirst = (item: Pick<Work, 'title' | 'yardRepair'>) => isHotfix(item) || isBaseRepair(item) || !!item.yardRepair;
 /**

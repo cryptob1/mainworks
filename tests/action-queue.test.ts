@@ -8,15 +8,14 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { type Principal, type Work } from '../src/model.js';
-import { actionClaimMs, claimAction, idleActionable, openActions, queueSnapshot, settleAction } from '../src/model/actions.js';
+import { actionClaimMs, claimAction, openActions, settleAction } from '../src/model/actions.js';
 import { reconcileActions } from '../src/model-boundary/actions.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import { refusalAction, type NextActionKind } from '../src/model/next-action.js';
-import { actionJudgment, executorRunnableKinds, llmRoles, mechanicalActionKinds, nextActionKinds, nextActionLlmRoles } from '../src/model/action-kinds.js';
+import { actionJudgment, nextActionKinds, nextActionLlmRoles } from '../src/model/action-kinds.js';
 import { agentRequestLimit, agentRequestTypes, deciderFor, humanDecisions, leaseHeldRequestTypes, openAgentRequests, requestResolutionRefusal } from '../src/model/agent-requests.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { attachCommand, sessionHandleLimit, sessionSummary } from '../src/model/sessions.js';
-import { runningSessions } from '../src/model/session-state.js';
 import { dispatchEffects, type DispatchEffects } from '../src/dispatch/effects.js';
 import { launchedSessionHandle } from '../src/dispatch/session-sweep.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
@@ -361,14 +360,11 @@ test('integration:no-llm-in-critical-path — every judgment has one action that
   // step that starts it. Four kinds name a judgment; the other three are mechanical.
   assert.deepEqual(Object.entries(nextActionLlmRoles).filter(([, role]) => role !== null).map(([kind]) => kind).sort(),
     ['dispatch', 'attention', 'request-review', 'request-rework'].sort());
-  assert.deepEqual([...mechanicalActionKinds].sort(), ['merge', 'reclaim', 'resync'].sort());
-  assert.deepEqual([...llmRoles].sort(), ['attend', 'implement', 'judge-rework', 'produce-evidence', 'review']);
   // Every judgment the project names has exactly one action that starts it, and nothing else does.
   assert.deepEqual([...new Set(Object.values(nextActionLlmRoles))].filter(Boolean).sort(), ['attend', 'implement', 'judge-rework', 'review'],
     'produce-evidence is the dispatch of a producer session, which the computed action names on the row');
 
   // A kind whose judgment happens in the step itself is never mechanical.
-  assert.deepEqual([...executorRunnableKinds].sort(), ['dispatch', 'merge', 'reclaim', 'request-review', 'resync'].sort());
   assert.equal(actionJudgment.attention, 'in-step');
   assert.equal(actionJudgment['request-rework'], 'in-step');
 
@@ -556,9 +552,7 @@ test('integration:session-handles-visible — every launched session records a d
   assert.equal(attachCommand(worked), 'herdr pane attach pane-42 --workspace wE', 'with the command that attaches to it');
   assert.ok(!survivors.some(entry => entry.id === 'sweep-0'), 'a finished handle is what makes room');
   assert.ok(survivors.every(entry => entry.state === 'running'), 'and nothing running was retired');
-
   const snapshot = { work: await store.list(), now: new Date().toISOString() };
-  assert.ok(runningSessions(snapshot.work, new Date()).length >= 2);
 
   // A finished session keeps its handle and links its transcript, so its work stays readable.
   item = await engine.execute(worker, 'session', item.id, { ...handle, state: 'finished', outcome: 'submitted PR 41' }, randomUUID());
@@ -681,14 +675,11 @@ test('integration:typed-next-action — the queue is pure over the snapshot: the
   assert.equal(claimed.row.state, 'claimed');
   assert.equal(claimAction([first], { id: 'executor-b', host: 'host-2', principal: 'executor-b' }, new Date(clock + 2001)), null);
   assert.deepEqual(openActions([first], new Date(clock + 3000)).map(entry => entry.row.id), []);
-  assert.equal(queueSnapshot([first], new Date(clock + 3000)).claimed, 1);
 
-  // The claim expires: the row returns to the queue, and the idle report names it.
+  // The claim expires: the row returns to the queue.
   const later = new Date(clock + 2000 + actionClaimMs + 1);
   assert.deepEqual(reconcileActions(first, [first], later).map(entry => entry.event), ['reclaimed']);
   assert.equal(first.actionQueue!.actions[0].state, 'pending');
-  assert.equal(idleActionable([first], new Date(clock + 6 * 60_000)).length, 1);
-  assert.equal(idleActionable([first], new Date(clock + 60_000)).length, 0);
 
   // The situation changes: the row that no longer applies is retired, naming what replaced it.
   first.blocker = 'the provider account has no quota left';

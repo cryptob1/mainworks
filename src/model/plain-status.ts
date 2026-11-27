@@ -3,7 +3,7 @@ import { observationWindowHold, type Gate, type Work } from './work.js';
 import type { PipelineTimeline } from '../pipeline-speed.js';
 import { assignment } from './assignment.js';
 import { ciCheckRefusalPattern, mergeWriterPushPattern, mergeWriterTrialPattern } from './gates.js';
-import { formatAge, statusDuration, type StatusDuration } from './duration.js';
+import { formatAge } from './duration.js';
 import { humanRequestBlocker } from './human-request.js';
 // GY-3280: the escalation clock of a recorded blocker (model/work.ts `blockedAt`), re-exported
 // beside the blocker's own plain sentences — the one blocker concern readers import.
@@ -14,18 +14,13 @@ import { isFilingRefusal } from './user-facing.js';
 /**
  * Plain-English status for people who have never read the Mainworks docs. Every sentence is
  * derived from the first refusing gate (the same order the control plane evaluates), so the
- * dashboard never says anything the gates do not. Internal vocabulary stays out of this copy;
- * `jargon` lists the words a test keeps out of every generated sentence.
+ * dashboard never says anything the gates do not. Internal vocabulary stays out of this copy
+ * (tests/dashboard-simplification.test.ts).
  */
-export const jargon = ['epoch', 'lease', 'candidate', 'policy revision', 'producer', 'attestation', 'trusted evidence'] as const;
 
 /** Where an item is, in the order work moves. Delivered work is `shipped`. */
 const phases = ['not-started', 'needs-worker', 'building', 'review', 'checks', 'proof', 'merging', 'shipped'] as const;
 export type Phase = typeof phases[number];
-export const phaseLabel: Record<Phase, string> = {
-  'not-started': 'Not started', 'needs-worker': 'Needs a worker', building: 'Being built', review: 'In review',
-  checks: 'Automated checks', proof: 'Proving it works', merging: 'Merging', shipped: 'Shipped',
-};
 type Tone = 'stuck' | 'waiting' | 'working' | 'shipped';
 export interface PlainStatus { sentence: string; tone: Tone; phase: Phase; who: string | null; blocking: string | null
   /**
@@ -303,12 +298,4 @@ export function statusSince(work: Work, now: number): string {
   return instants.length ? new Date(Math.max(...instants)).toISOString() : work.stageEnteredAt;
 }
 
-/**
- * How long this item has held the status its card names, and whether that is past the one
- * configured threshold. Every view — the list, the board, the item view — draws from this call,
- * so the number and the verdict cannot differ between two places that show the same item.
- */
-export function statusHeld(work: Work, now: number): StatusDuration {
-  return statusDuration(statusSince(work, now), now, phaseOf(work, now) === 'shipped');
-}
 

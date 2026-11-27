@@ -9,7 +9,7 @@ import { apiRoutes } from '../src/server/index.js';
 // @ts-expect-error Dependency-free fixture and screenshot script.
 import { fixtureApi, fixtureStatus, fixtureWork as auditWork, NOW, unexplainedWords, visibleWords } from '../scripts/dashboard-fixture.mjs';
 import { live } from '../browser-tests/ui-board.js';
-import { jargon, phaseOf, plainReason, plainStatus } from '../src/model/plain-status.js';
+import { phaseOf, plainReason, plainStatus } from '../src/model/plain-status.js';
 import { classify } from '../web/groups.js';
 import WorkersPage from '../web/pages/workers.js';
 import { glossary } from '../web/glossary.js';
@@ -55,6 +55,8 @@ const words = (html: string): string[] => visibleWords(html);
 const text = (html: string) => words(html).join(' ');
 const home = (d = dashboard()) => markup(createElement('div', null, createElement(MainTopBar, d), createElement(TopBar, d), createElement(WorkPage, d)));
 const itemView = (key: string, role = 'admin') => markup(createElement(WorkDetails, { ...dashboard({}, role), item: find(key) }));
+/** Internal vocabulary kept out of every generated sentence. */
+const jargon = ['epoch', 'lease', 'candidate', 'policy revision', 'producer', 'attestation', 'trusted evidence'];
 const jargonIn = (sentence: string) => jargon.filter(term => new RegExp(`\\b${term}`, 'i').test(sentence));
 
 /** A work item in a given shape, evaluated by the real gate evaluator so its reasons are the control plane's own. */

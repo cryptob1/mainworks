@@ -12,7 +12,6 @@ import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { workerPrompt } from '../src/master/dispatch.js';
-import { redispatchPreservesAttempt } from '../src/model/capacity.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
@@ -150,7 +149,6 @@ test('integration:expired-worker-partial-work-handoff — a worker attempt ended
   // The old lease authority ended with the attempt, released once, ready to be redispatched; the
   // open epoch-2 row beside it is the redispatch's own claim, landed in the same cycle.
   assert.deepEqual(resumed.pipeline?.attempts?.map(attempt => [attempt.epoch, attempt.end]), [[1, 'released'], [2, null]]);
-  assert.ok(redispatchPreservesAttempt(resumed, 1).ok, 'the ended attempt is on the record exactly as the redispatch reads it');
 
   // And the redispatch happened: the next worker claimed epoch 2, and its handoff names the commit.
   assert.deepEqual(launched, [{ key: filed.key, epoch: 2 }]);

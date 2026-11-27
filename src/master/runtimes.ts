@@ -338,10 +338,8 @@ export const piModelArgs = (modelId: string) => {
 /** The adapter for `kind`, or undefined for a kind Mainworks knows nothing of. */
 /** The remedy for a session stuck on its runtime's first-run screen, or null when the screen is not one. */
 export const runtimeAdapter = (kind: string | null | undefined): RuntimeAdapter | undefined => kind ? adapters.get(kind) : undefined;
-/** Every adapter, built-in and registered. */
+/** Every adapter. */
 export const runtimeAdapters = (): RuntimeAdapter[] => [...adapters.values()];
-/** Adds or replaces one runtime's adapter: every launch, resume and usage lookup reads it from then on. */
-export function registerRuntimeAdapter(adapter: RuntimeAdapter) { adapters.set(adapter.kind, adapter); }
 /**
  * GY-3303: where a confined session of `kind` keeps its own state: each XDG base directory its
  * adapter names, from the launch environment or under HOME, and the runtime's own directory in

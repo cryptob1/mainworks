@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { adoptConversation, assertConversationRuntime, captureConversation, conversationArgs, conversationEvents, continuationContext, mainworksInput, masterInputs, masterRecords, type Conversation } from '../src/master/conversation.js';
+import { adoptConversation, assertConversationRuntime, captureConversation, conversationArgs, continuationContext, mainworksInput, masterInputs, masterRecords, type Conversation } from '../src/master/conversation.js';
 import { emptyDaemonState, emptyMasterSession, readDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 
@@ -42,12 +42,6 @@ test('unit:master-session-resumes — native event metadata distinguishes person
   // A final belongs to its response branch, not a newer user input on another branch.
   await appendFile(conversation.transcript, JSON.stringify({ type: 'assistant', uuid: 'old-final', parentUuid: 'person-1', message: { stop_reason: 'end_turn' } }) + '\n');
   assert.equal(await captureConversation(conversation), `Why did you send this? ${automated}`);
-  assert.deepEqual(conversationEvents('codex', [
-    { type: 'event_msg', payload: { type: 'user_message', message: 'Question' } },
-    { type: 'response_item', payload: { type: 'function_call_output', output: 'Tool output' } },
-    { type: 'event_msg', payload: { type: 'agent_message', message: 'Partial' } },
-    { type: 'event_msg', payload: { type: 'task_complete' } },
-  ].map(row => JSON.stringify(row)).join('\n')).map(event => event.type), ['input', 'final']);
   const codex = { ...conversation, runtime: 'codex', transcript: join(root, 'codex.jsonl') };
   await writeFile(codex.transcript, [
     { type: 'event_msg', payload: { type: 'item_completed', turn_id: 'turn-b', item: { type: 'UserMessage', id: 'person-b', content: [{ type: 'text', text: 'New turn question' }] } } },

@@ -35,7 +35,7 @@ import { cycleBaseTip, dependencyDirectories, failureText, preservedWorkNote, sh
 import { humanOnlyDecisions, installWorkerHarness, prepareSessionHarness, sandboxFailureRule, sessionSlotsGrant, submissionPolicyRule } from './harness.js';
 import { withVerificationPath } from './verification-slots.js';
 import { holdRepeatedLimitAccount, repeatedLimitAccount } from './launch-account.js';
-import { dispatchedFile, DispatchReservedError, profileLaunchedFile } from './dispatch-reservation.js';
+import { dispatchedFile, DispatchReservedError } from './dispatch-reservation.js';
 import { projectMemoryDigest, type ProjectMemory } from '../model/project-memory.js';
 import { readProjectMemory } from '../project-memory.js';
 import { readVerificationMaps, verificationMapDigest, type VerificationMap } from '../verification-maps.js';
@@ -263,10 +263,6 @@ export async function dispatchWork(root: string, work: Work, profile: WorkerProf
     await mkdir(resolve(stateDirectory(root), 'dispatch'), { recursive: true }).catch(() => {});
     await writeFile(dispatchedFile(root, work.key), JSON.stringify({ epoch: result.epoch, at, runtime: launch.kind ?? null, account: chosen.account?.name ?? null, run: result.run, path: result.path,
       ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(fresh ? { fresh } : {}) }), { mode: 0o600 }).catch(() => {});
-    // The dispatch record names the runtime and account the session runs on, the preference
-    // that ordered the accounts (GY-1772), and every account whose run failed first (GY-417).
-    await writeFile(profileLaunchedFile(root, profile.name), JSON.stringify({ key: work.key, epoch: result.epoch, agentName: profile.agentName, at,
-      runtime: launch.kind ?? null, account: chosen.account?.name ?? null, prefer, ...(result.resumedFrom ? { resumedFrom: result.resumedFrom } : {}), ...(startFailures.length ? { failedAccounts: startFailures } : {}) }), { mode: 0o600 }).catch(() => {});
     // A start on the account clears its own run of consecutive start failures.
     if (chosen.account) await clearAccountStartFailures(config, chosen.account.name).catch(() => {});
     break;
@@ -324,24 +320,6 @@ export async function clearAccountStartFailures(config: Pick<MasterConfig, 'cred
 /** The fallback line a dispatch that fell forward reads as: every account that failed, then the one launched on. */
 export const describeStartFailures = (failures: readonly AccountStartFailure[], launchedOn: string | null) =>
   `${failures.map(failure => `${failure.account} failed to start: ${failure.reason}`).join('; ')}; launched on ${launchedOn ?? 'no named account'}`;
-/** What a profile's last worker dispatch recorded, as master status reads it (GY-417). */
-export interface ProfileLaunchRecord { key: string; epoch: number; agentName: string; at: string; runtime: string | null; account: string | null; /** Which runtimes the dispatch tried first (GY-1772); null on a record written before the preference was recorded. */ prefer: 'fast' | 'strong' | null; failedAccounts: AccountStartFailure[]; /** The attempt whose runtime session this launch resumed (GY-2971). */ resumedFrom?: number }
-const profileLaunchRecordSchema = z.object({
-  key: z.string().min(1), epoch: z.number().int().min(1), agentName: z.string().min(1), at: z.string().min(1),
-  runtime: z.string().nullable().default(null), account: z.string().nullable().default(null), prefer: z.enum(['fast', 'strong']).nullable().default(null),
-  resumedFrom: z.number().int().min(1).optional(),
-  prepareMs: z.unknown().optional().transform(() => undefined), // retired (GY-2876): a record written before parses
-  failedAccounts: z.array(z.object({ account: z.string().min(1), kind: z.string().min(1), reason: z.string().min(1), at: z.string().min(1) }).strict()).default([]),
-}).strict();
-/** The last dispatch record of each launch profile; a profile never dispatched reads as absent. */
-export async function readProfileLaunchRecords(root: string, profiles: { name: string }[]): Promise<Record<string, ProfileLaunchRecord>> {
-  const records: Record<string, ProfileLaunchRecord> = {};
-  for (const profile of profiles) {
-    try { records[profile.name] = profileLaunchRecordSchema.parse(JSON.parse(await readFile(profileLaunchedFile(root, profile.name), 'utf8'))); }
-    catch { /* no launch of this profile has been recorded yet */ }
-  }
-  return records;
-}
 
 
 interface WorkerLaunchOptions { probe?: FleetProbe; settleReservation?: (reason: string) => Promise<unknown>; onRun?: DispatchOptions['onRun']; sandboxProbe: SandboxExec | 'host' | null; claimBy?: number; coordinatorRoot?: string; renew: LeaseRenewer | null; renewIntervalMs?: number; verificationMaps: NonNullable<DispatchOptions['verificationMaps']>; rework: AppliedRework | null; cycle?: string; diagnosis: string; maskProbe?: MaskProbe; headless: HeadlessExec; startupMs?: number; capacity?: DispatchOptions['capacity']; continuing?: Builder | null }

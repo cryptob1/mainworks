@@ -4,9 +4,9 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { detectExhaustion, providerLimit } from '../src/model/capacity.js';
 import { detectRuntimeExhaustion } from '../src/master/runtime-prompt.js';
-import { observedExhaustions, recordEnvironmentLog, recordObservedExhaustion, selectionKey } from '../src/master/environments.js';
+import { observedExhaustions, recordObservedExhaustion } from '../src/master/environments.js';
 import type { MasterConfig } from '../src/master/profiles.js';
-import { holdRepeatedLimitAccount, sessionAccount } from '../src/master/launch-account.js';
+import { holdRepeatedLimitAccount } from '../src/master/launch-account.js';
 import { proposedRuntimes, type AgentRegistry } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -22,12 +22,6 @@ test('unit:limit-notice-charged-to-session-account — a notice holds only its s
   const now = Date.now(), iso = (at: number) => new Date(at).toISOString();
   // Imported here so the file loads on a tree without it, failing as this test case.
   const { releasedSince } = await import('../src/master/environments.js') as unknown as Record<string, (...args: any[]) => Promise<any>>;
-
-  // The profile launched GY-1 on claude-c, then GY-2 on opencode-c: GY-1's notice is claude-c's.
-  await recordEnvironmentLog(config, [], [], { key: selectionKey('worker', 'builder'), environment: 'claude-c', kind: 'claude', at: iso(now - 60_000), work: 'GY-1' });
-  await recordEnvironmentLog(config, [], [], { key: selectionKey('worker', 'builder'), environment: 'opencode-c', kind: 'opencode', at: iso(now - 30_000), work: 'GY-2' });
-  assert.equal((await sessionAccount(root, config, 'worker', 'builder', { work: 'GY-1', epoch: 27 }))?.environment, 'claude-c');
-  assert.equal(await sessionAccount(root, config, 'worker', 'builder', { work: 'GY-9', epoch: 1 }), null, 'a session with no selection of its own is charged to no other launch\'s account');
 
   // The hold stands until an operator sets the account available after it in the registry; a notice printed before that is never re-applied.
   const registry = (state: 'available' | 'exhausted', observedAt: number, source: 'operator' | 'probe' = 'operator') => ({ runtimes: proposedRuntimes, models: [], accounts: [{ name: 'opencode-c', runtime: 'opencode', credential: { host: 'host-a', home: null },

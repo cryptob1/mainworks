@@ -81,10 +81,6 @@ function eventReader(kind: string) {
   };
 }
 
-export function conversationEvents(kind: string, transcript: string): ConversationEvent[] {
-  return jsonLines(transcript).flatMap(eventReader(kind));
-}
-
 /** Native JSONL is consumed one row at a time, including an unfinished last row. Bytes are split at
  * newlines and only a line holding `{` is decoded, so megabytes of padding cost one scan (GY-3637). */
 async function* nativeRows(path: string) {

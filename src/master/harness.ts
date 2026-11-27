@@ -8,9 +8,8 @@ import { dirname, resolve, basename } from 'node:path';
 import { type ChildRun, defaultChildRun } from '../child-runner.js';
 import { nameForLaunch } from '../session-name.js';
 import { launchAuthorization } from '../repository-setup.js';
-import { type HarnessPlan, type HarnessRule, repositoryClaudeConfig, writeHarnessPermissions, masterHarnessPlan, harnessDecision, claudeRuleProblem, bashRuleMatches } from '../harness.js';
+import { type HarnessPlan, type HarnessRule, repositoryClaudeConfig, writeHarnessPermissions, masterHarnessPlan, claudeRuleProblem, bashRuleMatches } from '../harness.js';
 import { userUnitDirectory, legacyLoopUnit, readInstallUnits } from '../install/units.js';
-import type { Work } from '../model.js';
 import type { MasterConfig, WorkerProfile } from './profiles.js';
 import { coordinatorCheckoutRoot, promotionCommand, runtimeLoginHomes, workerConfinementRefusal } from './profiles.js';
 import { masterCredentialMask, preparePeerExchange } from './confinement.js';
@@ -422,62 +421,6 @@ export function workerHarnessPlan(input: { cliPath: string; branch: string; base
     { rule: 'Read(**/*.token)', why: 'Token files are never read into a session transcript.' },
   ];
   return { harness: 'claude', file: '.claude/settings.local.json', allow, deny, manual: null, note: 'Worker rules for one assigned worktree: its own commands and its own branch. A harness rule is a prompt policy; branch protection, leases and the merge gate remain the enforcement.' };
-}
-/**
- * How a worker restores its assigned branch after it was contaminated, as the exact
- * commands a rework reason carries: fetch, reset to the item's reviewed head, sync onto the base,
- * restore-branch (the lease push of the leased branch), complete. Every one is permitted by the
- * worker's own harness, so the rework the control plane authorizes is carried out by the attempt it
- * dispatches, with no human shell.
- */
-export function branchRestoration(input: { cliPath: string; key: string; epoch: number; reviewedHead: string }) {
-  const cli = `node ${input.cliPath}`;
-  return ['git fetch origin', `git reset --hard ${input.reviewedHead}`, `${cli} sync ${input.key}`, `${cli} restore-branch ${input.key} ${input.epoch}`, `${cli} complete ${input.key} ${input.epoch} --head`];
-}
-/**
- * The shell commands a blocker names: each backtick-quoted command line, or, in a blocker that
- * quotes none, each `git push …` clause. The worker's blocker instruction asks for the exact
- * command that was refused, so this is where it is written.
- */
-export function blockerCommands(text: string) {
-  const quoted = [...text.matchAll(/`([^`\n]+)`/g)].map(match => match[1].trim()).filter(command => /^[a-z][\w.-]*\s+\S/.test(command));
-  const found = quoted.length ? quoted : [...text.matchAll(/\bgit push\b[^\n;,'"]*/g)].map(match => match[0].replace(/\s+(?:was|were|is|failed|fails|because|but)\b.*$/, '').trim().replace(/[.:]$/, ''));
-  return [...new Set(found)];
-}
-export interface UnrunnableRemedy { key: string; epoch: number; command: string; role: 'worker'; rule: string; why: string; deniedBy: { role: string; rule: string }[]; text: string }
-/**
- * A blocker whose remedy no session Mainworks launches may run is a defect of Mainworks, not a
- * wait on a human shell (GY-128): Mainworks authorized work that none of its own sessions can
- * carry out. Every command a blocker names is judged against each launched role's harness —
- * the item's worker on its assigned branch, reviewer, producer and master — and reported when
- * every one of them denies it, naming the command, the role that would need it (the worker that
- * raised the blocker) and the rule in that role's harness that denies it.
- */
-export function unrunnableRemedies(work: Work[], input: { cliPath: string; baseBranch: string; repository?: string; workerKinds?: string[] }): UnrunnableRemedy[] {
-  const shared = { cliPath: input.cliPath, repository: input.repository ?? 'OWNER/REPOSITORY', baseBranch: input.baseBranch, credentialHome: '/mainworks-credentials', credentialDirectories: [] as string[] };
-  const others = [
-    { role: 'reviewer', plan: sessionHarnessPlan({ ...shared, role: 'reviewer', kind: 'claude' }) },
-    { role: 'producer', plan: sessionHarnessPlan({ ...shared, role: 'producer', kind: 'claude' }) },
-    { role: 'master', plan: masterHarnessPlan({ ...shared, harness: 'claude', root: '/repository' }) },
-  ];
-  // A worker runtime other than Claude loads no generated rules, so a rework dispatched to it may
-  // run the command: only when every configured worker runtime denies it is the remedy unrunnable.
-  const workerKinds = [...new Set(input.workerKinds?.length ? input.workerKinds : ['claude'])];
-  if (workerKinds.some(kind => kind !== 'claude')) return [];
-  return work.filter(item => item.stage !== 'done' && item.blocker).flatMap(item => {
-    const epoch = item.workspaces.at(-1)?.epoch ?? item.epoch;
-    const branch = item.workspaces.at(-1)?.branch ?? `graphyard/${item.key.toLowerCase()}-${epoch}`;
-    const worker = sessionHarnessPlan({ ...shared, role: 'worker', kind: 'claude', branch });
-    return blockerCommands(item.blocker!).flatMap(command => {
-      const own = harnessDecision(worker, command);
-      if (own.decision !== 'deny') return [];
-      const deniedBy = others.map(({ role, plan }) => ({ role, judged: harnessDecision(plan, command) }));
-      if (deniedBy.some(entry => entry.judged.decision !== 'deny')) return [];
-      return [{ key: item.key, epoch, command, role: 'worker' as const, rule: own.rule!.rule, why: own.rule!.why,
-        deniedBy: deniedBy.map(entry => ({ role: entry.role, rule: entry.judged.rule!.rule })),
-        text: `${item.key}'s blocker names \`${command}\`, which no session Mainworks launches may run: the worker that needs it is denied by its harness rule ${own.rule!.rule} (${own.rule!.why}), and ${deniedBy.map(entry => `the ${entry.role} by ${entry.judged.rule!.rule}`).join(', ')}. This is a Mainworks defect, not a wait on a human shell` }];
-    });
-  });
 }
 /** Install the worker rules in a freshly prepared worktree, only where Git already ignores them. */
 export async function installWorkerHarness(config: MasterConfig, profile: WorkerProfile, key: string, prepared: PreparedWorker) {

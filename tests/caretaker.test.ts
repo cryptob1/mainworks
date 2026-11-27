@@ -17,7 +17,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { Launcher, runCycle } from '../src/daemon/cycle.js';
 import { caretakerIntervalMs, caretakerStep, type CaretakerOutcome } from '../src/daemon/caretaker.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { caretakerChecks, caretakerCommands, caretakerPrompt, caretakerReads, caretakerRequestsFile } from '../src/master/caretaker-prompt.js';
+import { caretakerChecks, caretakerPrompt, caretakerReads, caretakerRequestsFile } from '../src/master/caretaker-prompt.js';
 import { serveCaretakerRequests } from '../src/master/caretaker.js';
 import { loopRestartRequestPath } from '../src/daemon/state.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
@@ -83,11 +83,12 @@ test('unit:caretaker-checklist-is-complete — the one prompt file holds all six
   assert.match(prompt, /no open item already names the fault/, 'it looks for an open item before filing one');
   const named = [...prompt.matchAll(/mainworks ((?:[a-z]+ ?)+)/g)].map(match => match[1]!.trim());
   assert.ok(named.length >= 8);
-  const allowed = [...caretakerCommands, ...caretakerReads];
+  const permitted = ['caretaker registry account quota', 'unblock', 'caretaker dispatch', 'caretaker restart', 'create', 'caretaker report'];
+  const allowed = [...permitted, ...caretakerReads];
   for (const command of named) assert.ok(allowed.some(entry => command === entry || command.startsWith(`${entry} `)), `${command} is a permitted command`);
   // A master command needs the coordinator identity: the caretaker's token runs none of them.
   assert.ok(!named.some(entry => entry.startsWith('master')), 'the prompt names no master command');
-  for (const command of ['caretaker registry account quota', 'unblock', 'caretaker dispatch', 'caretaker restart', 'create', 'caretaker report'])
+  for (const command of permitted)
     assert.ok(named.some(entry => entry.startsWith(command)), `the prompt names ${command}`);
   for (const forbidden of ['release', 'close', 'rework', 'requirements', 'answer', 'role set', 'priority', 'attest'])
     assert.ok(!named.some(entry => entry.split(' ').includes(forbidden.split(' ')[0]!) && !entry.startsWith('caretaker')), `the prompt never names ${forbidden}`);

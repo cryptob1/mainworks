@@ -452,8 +452,7 @@ export interface ImportedBlockingCase { id: string; verdict: ExternalVerdict; re
  * precondition is the producer's own record of why. A required `unrun` case blocks on its own
  * too: an import has no `stoppedBy` chain, so the run that stopped before reaching it would have
  * carried the required failure it stopped at, and either way the head is not releasable. A
- * `skipped` case (GY-1860) follows the required-case rule the runner's own inventory holds
- * (`verifyRunnerReport` fails a required inventory that skips): required and skipped blocks,
+ * `skipped` case (GY-1860) follows the required-case rule: required and skipped blocks,
  * optional and skipped does not, and the verdict stays skipped on the record either way. A case
  * bound to a still-pending outcome (`pendingCases`, GY-1802) is listed apart and never blocks, as in
  * `releaseVerdict`.

@@ -4,12 +4,10 @@ import type { ApprovalIdentity } from './carry.js';
 
 export const reviewProviders = ['github'] as const;
 export type ReviewProvider = typeof reviewProviders[number];
-export const distinct = (values: unknown[]) => new Set(values.map(value => JSON.stringify(value))).size === values.length;
 
 // `github` is the default provider: the reviewer session the loop launches, whose verdict the control plane records on the observation
 // (server/review-verdict.ts). The identifier predates the control-plane merger and is kept so stored policies still read.
 export const reviewProviderOf = (policy: Work['policy']): ReviewProvider => policy.reviewProvider ?? 'github';
-export const nativeReviewRequired = (policy: Work['policy']) => reviewProviderOf(policy) === 'github';
 /** The independent approval of the exact current candidate, after any requirement-review baseline. */
 export function exactApproval(work: Work): ApprovalIdentity | null {
   const candidate = work.candidate, obs = work.observation;

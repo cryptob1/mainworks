@@ -344,10 +344,6 @@ export function setCachedPlanUsage(planId: string, usage: ProviderUsageResult, n
   planUsageCache.set(planId, { at: now, usage });
 }
 
-export function clearPlanUsageCache(): void {
-  planUsageCache.clear();
-}
-
 function detectPlanKind(text: string, runtime = '', model = ''): ProviderPlanKind {
   const lower = `${text} ${runtime} ${model}`.toLowerCase();
   if (lower.includes('claude') || lower.includes('anthropic')) return 'claude';

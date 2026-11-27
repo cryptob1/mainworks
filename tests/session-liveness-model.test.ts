@@ -6,7 +6,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
 import { recordSession, type RuntimeSession, type SessionHandle, type SessionHandleInput } from '../src/model/sessions.js';
-import { endedByFact, lostAfterReports, observeSessions, observedRuntimeState, registeredLaunch, reportedHandle, sessionObservationFreshMs, sessionObservationRefreshMs, sessionView, settledPurpose, runningSessions } from '../src/model/session-state.js';
+import { endedByFact, lostAfterReports, observeSessions, observedRuntimeState, registeredLaunch, reportedHandle, sessionObservationFreshMs, sessionObservationRefreshMs, sessionView, settledPurpose } from '../src/model/session-state.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { reconciledClosure } from '../web/workers-view.js';
 import { dispatchEffects, type DispatchEffects } from '../src/dispatch/effects.js';
@@ -136,8 +136,7 @@ test('unit:session-liveness-model — the loop reports every session it sees on 
   // No further report — the loop stopped. Nothing is written, and past the freshness bound no reader shows it running.
   const quiet = new Date(clock + sessionObservationFreshMs + 1_000);
   assert.deepEqual([sessionView(seen, quiet).live, sessionView(seen, quiet).seenAt], [false, seen.observedAt]);
-  assert.ok(!runningSessions([await reload(item.id)], quiet).some(row => row.id === 'working'), 'a session not observed inside the bound is not shown running');
-  assert.ok(runningSessions([await reload(item.id)], new Date(clock)).some(row => row.id === 'working'), 'while one observed just now is');
+  assert.equal(sessionView(seen, new Date(clock)).live, true, 'while one observed just now is shown running');
 });
 
 test('unit:session-liveness-model — the rule itself: what a listed entry says, the launch grace, and one reading for every reader', () => {

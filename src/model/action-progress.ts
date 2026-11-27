@@ -1,5 +1,4 @@
 import type { Work } from './work.js';
-import type { NextActionKind } from './next-action.js';
 import type { ActionRecord, ActionRow } from './actions.js';
 import { handoffWaitBound, waitReason } from './action-kinds.js';
 
@@ -30,7 +29,7 @@ const actionRetryMinMs = 30_000;
 const actionRetryMaxMs = 10 * 60_000;
 /** How many records one row keeps of its own history, newest last (`actions.ts` trims to it on every write). */
 export const actionRecordLimit = 20;
-/** A row nobody has claimed for longer than this is idle while it is actionable; see `idleActionable`. */
+/** A row nobody has claimed for longer than this is idle while it is actionable. */
 export const actionIdleMs = 5 * 60_000;
 /**
  * How many consecutive failures with an unchanged reason make a row a stall rather than a retry.
@@ -169,87 +168,3 @@ export const settling = (row: ActionRow, now: Date) => row.state === 'done' && !
 export const waitingToRetry = (row: ActionRow, now: Date) => !!row.retryAt && Date.parse(row.retryAt) > now.getTime();
 /** A row an executor may take now: open, out of backoff, and not inside a completed action's settle window. */
 export const claimable = (row: ActionRow, now: Date) => !settling(row, now) && !waitingToRetry(row, now) && (row.state === 'pending' || !claimLive(row, now));
-
-/** One row as a reader sees it: what it is for, how long it has waited, and what it last did. */
-interface QueueEntry {
-  key: string; work: string; id: string; kind: NextActionKind; reason: string;
-  /** How long since the row was requested, and what its attempts have come to. */
-  waitedMs: number; attempts: number; lastFailure: string | null;
-  /** When the row is offered again, while it is inside a failure backoff; null when it is not. */
-  retryAt: string | null;
-  /** Why the row is making no progress, once its failures stopped changing; null when they have not. */
-  stall: ActionStall | null;
-}
-export interface QueueSnapshot {
-  /**
-   * Every open row on the queue — `pending + claimed + settling + backingOff` — so the count a
-   * reader sees accounts for every row that is owed, whether or not it can be claimed this instant.
-   * A row inside a backoff used to be counted by none of the four and listed by none of the lists,
-   * which is how three reviews nobody could launch read as a fleet with nothing to do.
-   */
-  open: number;
-  pending: number; claimed: number; settling: number;
-  /** Open rows waiting out a failure backoff: not claimable this instant, still owed. */
-  backingOff: number;
-  completed: number;
-  byKind: Record<string, number>;
-  /** Rows nobody is running and nothing is holding back, oldest first, with how long they have waited. */
-  waiting: QueueEntry[];
-  /** Rows inside a failure backoff, longest wait first, each with the instant it is offered again. */
-  backoff: QueueEntry[];
-  /**
-   * Every row that is stalling rather than retrying (`actionStall`), longest wait first, whatever
-   * else it is doing — being attempted again, or waiting out its recheck. Not a fifth bucket: a
-   * stalled row is already counted once above, and this names which of them are getting nowhere.
-   */
-  stalled: QueueEntry[];
-  /** The longest an open row has gone unclaimed; null when nothing is open. */
-  oldestPendingMs: number | null;
-  executors: { executor: string; host: string; actions: number }[];
-}
-
-/** What the queue holds right now, for master status and the dashboard. */
-export function queueSnapshot(all: Work[], now: Date): QueueSnapshot {
-  const rows = all.flatMap(work => (work.actionQueue?.actions ?? []).map(row => ({ work, row })));
-  const byKind: Record<string, number> = {};
-  for (const { row } of rows) byKind[row.kind] = (byKind[row.kind] ?? 0) + 1;
-  const view = (row: ActionRow): QueueEntry => ({ key: row.key, work: row.work, id: row.id, kind: row.kind, reason: row.reason,
-    waitedMs: Math.max(0, now.getTime() - Date.parse(row.requestedAt)), attempts: row.attempts,
-    lastFailure: row.result === 'failed' ? row.resolution ?? null : null,
-    retryAt: waitingToRetry(row, now) ? row.retryAt ?? null : null, stall: actionStall(row) });
-  const longestFirst = (a: QueueEntry, b: QueueEntry) => b.waitedMs - a.waitedMs;
-  const waiting = rows.filter(({ row }) => claimable(row, now)).map(({ row }) => view(row)).sort(longestFirst);
-  const backoff = rows.filter(({ row }) => waitingToRetry(row, now)).map(({ row }) => view(row)).sort(longestFirst);
-  const stalled = rows.filter(({ row }) => !!actionStall(row)).map(({ row }) => view(row)).sort(longestFirst);
-  const executors = new Map<string, { executor: string; host: string; actions: number }>();
-  for (const { row } of rows) {
-    if (!claimLive(row, now)) continue;
-    const key = `${row.claim!.executor}@${row.claim!.host}`;
-    const entry = executors.get(key) ?? { executor: row.claim!.executor, host: row.claim!.host, actions: 0 };
-    entry.actions += 1; executors.set(key, entry);
-  }
-  return {
-    open: rows.length,
-    pending: waiting.length,
-    claimed: rows.filter(({ row }) => claimLive(row, now)).length,
-    settling: rows.filter(({ row }) => settling(row, now)).length,
-    backingOff: backoff.length,
-    // A settled delivery's summary carries the count of its completed rows in place of the rows (GY-422).
-    completed: all.reduce((total, work) => total + (work.actionQueue?.history ?? []).filter(row => row.result === 'done').length + ((work as { completedActions?: number }).completedActions ?? 0), 0)
-      + rows.filter(({ row }) => row.state === 'done').length,
-    byKind, waiting, backoff, stalled, oldestPendingMs: waiting.length ? waiting[0].waitedMs : null,
-    executors: [...executors.values()].sort((a, b) => a.executor.localeCompare(b.executor)),
-  };
-}
-
-/**
- * Items that have something to do and nobody doing it, for longer than the bound.
- *
- * This is the measurement the inversion is for: under a master session an item sat idle whenever
- * the loop had no step for its situation. With the control plane naming the action, an idle item
- * is always an unclaimed row, and this reports exactly those.
- */
-export function idleActionable(all: Work[], now: Date, thresholdMs = actionIdleMs) {
-  return queueSnapshot(all, now).waiting.filter(entry => entry.waitedMs > thresholdMs);
-}
-

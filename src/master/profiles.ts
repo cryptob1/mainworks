@@ -10,7 +10,7 @@ import { temporaryDirectories, underTestRunner } from '../runtime-environment.js
 import { narrowRoleRuntimeSchema, piRuntimeSchema } from '../runner/payloads.js';
 import { maxMergeWriterParallel, mergeWriterSettingsSchema } from './merge-writer-settings.js';
 import { trialHotCelsius } from '../merge-writer/trial-load.js';
-import { sessionNameField, sessionNameLimit, assertSessionName, sessionNameDigestLength, SessionNameRefusedError } from '../session-name.js';
+import { sessionNameField, sessionNameLimit, assertSessionName, sessionNameDigestLength } from '../session-name.js';
 export { checkoutGitDirectory, checkoutGitProblem, checkoutWorktreeAdminDirectory } from './checkout-git.js';
 
 const safeEnvironment = z.record(
@@ -223,26 +223,6 @@ export function sessionAgentName(profile: { agentName: string; concurrency?: num
   const tag = (session.requestId ?? session.id).toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 8).padEnd(8, '0');
   return derivedSessionName(profile, tag, session.attempt ?? 1);
 }
-/**
- * Whether a Herdr agent name is one of the profile's sessions: its fixed name, or a name this
- * launcher derived from it. The tail is read from the end of the name and anchored there
- * (GY-122): a name that ends in eight hex characters ends in its tag, with no attempt; only a
- * name that does not is read as a tag and an attempt. One pattern with an optional attempt used
- * to match from the first eight hex characters it found, so an all-digit tag (12345678,
- * 00000000) after a digest or any other hex run was read as that run's attempt and the session
- * went uncounted — one more than the limit could launch on the account. A tag is never read as
- * an attempt: an attempt is a small count (the ledgers cap it at 50), never eight digits. The
- * reading is the profile's when rebuilding the name from it gives the name back; a tail that
- * cannot be rebuilt into a launchable name is nobody's session.
- */
-export function isProfileSession(profile: { agentName: string }, name: string | undefined) {
-  if (!name) return false;
-  if (name === profile.agentName) return true;
-  const reading = /-([0-9a-f]{8})$/.exec(name) ?? /-([0-9a-f]{8})-([1-9]\d*)$/.exec(name);
-  if (!reading) return false;
-  try { return derivedSessionName(profile, reading[1], Number(reading[2] ?? 1)) === name; }
-  catch (error) { if (error instanceof SessionNameRefusedError) return false; throw error; }
-}
 
 /** GY-3446: a run setting that holds until `until`, then reverts to its default on its own. */
 const temporaryLimit = <T extends z.ZodTypeAny>(value: T) => z.object({ value, until: z.string().datetime({ offset: true }) }).strict();
@@ -305,12 +285,11 @@ export const masterRunSchema = z.object({
   attemptBoundMinutes: z.number().int().min(10).max(1440).optional(),
   attemptCeilingMinutes: z.number().int().min(30).max(2880).optional(),
   // Managed worktree root for proof and review checkouts: absolute path outside worktrees,
-  // required free space, and max size before master status warns.
+  // and required free space.
   worktreeRoot: z.string().trim().min(1).max(1000).refine(isAbsolute, 'worktreeRoot must be an absolute path').optional(),
   worktreeRootMinFreeGb: z.number().min(0.1).max(10_000).optional(),
   // GY-3122: the free space every volume Mainworks writes keeps; below it the loop reclaims its own leftovers, then starts no trial or worker (default 30).
   diskFloorGb: z.number().min(0).max(100_000).optional(),
-  worktreeRootBudgetGb: z.number().min(0.1).max(10_000).optional(),
   // An account whose usage reached this percentage of any window is skipped at launch: a session started just below a hard limit would stall mid-task.
   quotaCeilingPercent: z.number().int().min(50).max(100).optional(),
   // GY-3446: temporary limits the master sets when another project on the host asks this install to
@@ -326,7 +305,7 @@ export const masterRunSchema = z.object({
   mergeWriter: mergeWriterSettingsSchema.optional(),
   // GY-3964: retired settings nothing read; an older master.json still carrying them loads and drops them.
 }).passthrough().transform(({ research, decomposition, doctor, diagnostician, candidates, awaitReviewers, awaitReviewersMinutes,
-  dispatchIntervalSeconds, deploymentUrl, deploymentShaField, deploymentReuseMinutes, proofDispatchGraceMinutes, promoteEveryMinutes, ...kept }) => kept);
+  dispatchIntervalSeconds, deploymentUrl, deploymentShaField, deploymentReuseMinutes, proofDispatchGraceMinutes, promoteEveryMinutes, worktreeRootBudgetGb, ...kept }) => kept);
 export type MasterRun = z.infer<typeof masterRunSchema>;
 
 export const agentIdentitySchema = z.object({ id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/), credentialFile: z.string().min(1).max(1000) }).strict();

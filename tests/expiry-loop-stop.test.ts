@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { dispatchable } from '../src/coordination.js';
 import { plainStatus } from '../src/model/plain-status.js';
 import type { Principal, Work } from '../src/model.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -65,7 +64,6 @@ test('integration:expiry-loop-stop — three consecutive claims expiring within 
   long = await diedAfter(long, minutes(2), 'exit 1');
   long = await diedAfter(long, minutes(2), 'exit 1');
   assert.equal(long.blocker, null, 'a claim that lasted longer than 5 minutes resets the count');
-  assert.equal(dispatchable(long, Date.now()), true);
 
   // Three short deaths in a row: dispatch stops and one blocker names the last exit reason.
   let dying = await filed('dies-at-startup');
@@ -76,7 +74,6 @@ test('integration:expiry-loop-stop — three consecutive claims expiring within 
   dying = await diedAfter(dying, minutes(2), 'claude exited with code 1: Invalid API key');
   assert.equal(dying.blocker, 'Workers keep failing to start: claude exited with code 1: Invalid API key');
   assert.ok(dying.blockedAt, 'the block is timed');
-  assert.equal(dispatchable(dying, Date.now()), false, 'dispatch stops for the item');
   await assert.rejects(engine.execute(worker, 'claim', dying.id, {}, id()), /blocker/);
   assert.equal(plainStatus(dying, Date.now()).sentence, 'Stuck: Workers keep failing to start: claude exited with code 1: Invalid API key');
   await engine.reconcile();
@@ -85,5 +82,4 @@ test('integration:expiry-loop-stop — three consecutive claims expiring within 
   // Other items are unaffected.
   const neighbour = await reload(other);
   assert.equal(neighbour.blocker, null);
-  assert.equal(dispatchable(neighbour, Date.now()), true);
 });

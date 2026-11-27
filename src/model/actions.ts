@@ -143,30 +143,6 @@ export function claimAction(all: Work[], executor: { id: string; host: string; p
 }
 
 /**
- * Extend the live claim of the executor that is still running the action.
- *
- * The same ownership rules as settling: only the executor named on the claim, holding the
- * credential the claim was made with, while the claim is still live. A renewal is a statement
- * that the handler has not finished, so it never changes the attempt, the state or the history —
- * the claim simply holds for another lease.
- */
-export function renewClaim(work: Work, id: string, renewer: { executor: string; principal: string }, now: Date, leaseMs = actionClaimMs): ActionRow {
-  const { executor, principal } = renewer;
-  const row = work.actionQueue?.actions.find(entry => entry.id === id);
-  demand(row, 'Action is not open on this work item', 404);
-  demand(row!.state === 'claimed' && row!.claim, 'Action is not claimed', 409);
-  demand(row!.claim!.executor === executor, `Action is claimed by ${row!.claim!.executor}; a superseded executor cannot renew it`, 409);
-  demand((row!.claim!.principal ?? principal) === principal, `Action was claimed with the credential of ${row!.claim!.principal}; another credential cannot renew it`, 409);
-  // A claim that already expired may have been taken by another executor; renewing it here would
-  // put two executors inside one action, which is the thing the lease exists to prevent.
-  demand(claimLive(row!, now), 'Action claim expired; another executor may already be running it', 409);
-  row!.claim!.expiresAt = new Date(now.getTime() + leaseMs).toISOString();
-  row!.claim!.renewedAt = now.toISOString();
-  row!.claim!.renewals = (row!.claim!.renewals ?? 0) + 1;
-  return row!;
-}
-
-/**
  * Record what an executor's attempt did. Only the live claim may settle its row: a claim that
  * expired and was taken by another executor can no longer report a result, so an executor that
  * comes back from the dead cannot overwrite the attempt that replaced it, and no action is

@@ -6,7 +6,6 @@ import { daemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { checkAgentEnvironment } from '../src/master/environments.js';
 import { masterConfigSchema, type AgentEnvironment } from '../src/master/profiles.js';
-import { clearPlanUsageCache } from '../src/provider-usage.js';
 import { docsWords } from '../src/model/documentation.js';
 import {
   emptyProjectMemory,
@@ -293,7 +292,6 @@ test('unit:review-followups-triaged — settled summary items preserve existing 
 });
 
 test('unit:review-followups-triaged — accounts on one shared provider plan read its quota endpoint once, not once per account (GY-1180)', async () => {
-  clearPlanUsageCache();
   const homes = await temporaryDirectory('shared-plan-accounts');
   try {
     let calls = 0;
@@ -309,7 +307,6 @@ test('unit:review-followups-triaged — accounts on one shared provider plan rea
     await checkAgentEnvironment({ ...accounts[0], name: 'opencode-d' } as AgentEnvironment, { fetch: fetcher, now: () => now + 31_000 });
     assert.equal(calls, 2);
   } finally {
-    clearPlanUsageCache();
     await rm(homes, { recursive: true, force: true });
   }
 });

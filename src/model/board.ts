@@ -37,11 +37,6 @@ export type Group = OpenGroup | 'shipped';
 export const groupLabel: Record<Group, string> = {
   'needs-you': 'Needs you', blocked: 'Blocked', moving: 'Moving', 'up-next': 'Up next', backlog: 'Backlog', shipped: 'Shipped',
 };
-/** What each group means, in the words a tile carries under its count. */
-export const groupMeaning: Record<Group, string> = {
-  'needs-you': 'Only you can decide', blocked: 'Agents fixing a fault', moving: 'Build to live',
-  'up-next': 'Waiting for a worker', backlog: 'Not released yet', shipped: 'Live once the release serves it',
-};
 
 /** The work ids waiting on the human, from the server's human-only rows or, before they load, the items' own parked requests. */
 export function humanOnlyIds(work: Work[], rows: HumanRequestRow[] | null | undefined): Set<string> {
@@ -164,15 +159,6 @@ export function upNextHold(work: Work, all: Work[], now: number): { kind: 'depen
   // A file another item holds is named by that item, never by its path (GY-3558).
   const files = held.every(entry => entry.resource.includes('/') || entry.resource.includes('.'));
   return { kind: 'resource', text: `Starts after ${[...new Set(held.map(entry => entry.key))].join(', ')} (${files ? 'same files' : `shares ${[...new Set(held.map(entry => entry.resource))].join(', ')}`})` };
-}
-/** What the Up next tile says under its count: waiting for a worker only when that is true of what it counts. */
-export function upNextMeaning(items: Work[], all: Work[], now: number): string {
-  return heldMeaning(items.length, items.flatMap(item => upNextHold(item, all, now)?.text ?? []));
-}
-function heldMeaning(total: number, held: string[]): string {
-  if (!held.length) return groupMeaning['up-next'];
-  if (held.length === total) return held.length === 1 ? held[0]! : 'Held behind other work';
-  return `${total - held.length} waiting for a worker · ${held.length} held`;
 }
 
 /**

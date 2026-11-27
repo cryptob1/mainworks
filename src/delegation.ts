@@ -5,7 +5,6 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { blockingRulingActions, demand, holdDelivery, implementerIdentities, releaseLeadHold, operatorScopeIncludes, leadHoldRefusal, sliceIds, type BlockingRulingAction, type Principal, type SliceId, type Work } from './model.js';
 import { save, wakeJob, type Store } from './store.js';
-import { fileConflicts, resourceConflicts } from './coordination.js';
 import { workIdByRef } from './store/locked-read.js';
 import { laneOnlyProducer } from './server/principals.js';
 
@@ -287,13 +286,3 @@ export async function recordIntake(store: Store, actor: Principal, input: unknow
   });
 }
 
-export function mergeOrder(work: Work[], now = Date.now()) {
-  const open = work.filter(w => w.stage !== 'done');
-  const depth = (w: Work, seen = new Set<string>()): number => seen.has(w.id) ? 0 : Math.max(0, ...w.dependencies.map(id => { const dep = work.find(x => x.id === id); return dep ? 1 + depth(dep, new Set([...seen, w.id])) : 0; }));
-  return [...open].sort((a, b) => {
-    const aBlocked = a.dependencies.some(id => work.find(w => w.id === id)?.stage !== 'done'), bBlocked = b.dependencies.some(id => work.find(w => w.id === id)?.stage !== 'done');
-    if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
-    const conflicts = (w: Work) => fileConflicts(w, work).length + resourceConflicts(w, work, now).length;
-    return depth(b) - depth(a) || conflicts(a) - conflicts(b) || a.priority - b.priority || a.key.localeCompare(b.key);
-  }).map(w => w.key);
-}

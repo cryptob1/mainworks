@@ -4,7 +4,7 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { hostShimScript } from '../src/host-shim.js';
-import { medianCelsius, parseHostProbe, readHostReadings } from '../src/hosts.js';
+import { parseHostProbe, readHostReadings } from '../src/hosts.js';
 import { heatRereadDelayMs, readShardHosts, rereadHotHosts, underHeatLimit, type HostReading } from '../src/merge-writer/remote-shards.js';
 import { trialHotCelsius } from '../src/merge-writer/trial-load.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -28,9 +28,8 @@ const host = (name: string, celsius: number | null, extra: Partial<HostReading> 
   ...extra,
 });
 
-test(`${proof} — samples 96, 69, 86, 88, 90 give 88 and the second read decides`, async () => {
-  const smoothed = medianCelsius([96, 69, 86, 88, 90]);
-  assert.equal(smoothed, 88);
+test(`${proof} — a smoothed 88 is re-read and the second read decides`, async () => {
+  const smoothed = 88;
 
   // Second read cool -> host is used.
   let sleptMs: number | null = null;

@@ -1,8 +1,10 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
+import { createHash } from 'node:crypto';
 import { databaseUrl } from './helpers/postgres.js';
-import { Store, migrationDigests, recordedMigrationDigests } from '../src/store.js';
+import { Store, recordedMigrationDigests } from '../src/store.js';
+import { migration, tables } from '../src/store/schema.js';
 import { migrationBackoffMs, retryLockFailures } from '../src/store/migration-locks.js';
 import { schemaVersion } from '../src/release.js';
 
@@ -18,7 +20,13 @@ before(async () => {
   for (const name of ['skips', 'upgrade', 'load']) urls.set(name, await databaseUrl('migration-under-load' + '-' + name));
 });
 
-const digests = migrationDigests();
+const sha256 = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
+/** This release's migration digests: the whole text, its prelude, and each table's own DDL. */
+const digests = {
+  migration: `migration ${sha256(migration)}`,
+  prelude: sha256(migration.slice(0, migration.indexOf(tables[0].ddl))),
+  tables: Object.fromEntries(tables.map(table => [table.name, sha256(table.ddl)])),
+};
 const recorded = async (store: Store) => recordedMigrationDigests((await store.pool.query("SELECT obj_description(to_regclass('graphyard_schema'),'pg_class') AS comment")).rows[0].comment);
 /** A utility statement takes no bind parameters: escape the comment into the statement itself. */
 const setComment = (store: Store, value: string) => store.pool.query(`COMMENT ON TABLE graphyard_schema IS '${value.replace(/'/g, "''")}'`);

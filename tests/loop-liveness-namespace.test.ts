@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { acquireDaemonLock, daemonStateSchema, emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { loopLiveness } from '../src/daemon/liveness.js';
-import { hostPidProbe } from '../src/daemon/liveness.js';
-import { pidNamespace, initialPidNamespace } from '../src/daemon/state.js';
+import { pidNamespace, initialPidNamespace, liveProcess } from '../src/daemon/state.js';
 import { pidProbeable } from '../src/daemon/liveness.js';
 // Time-bomb allowance (GY-1694): the 2026-10-06 instants are the explicit `now` of each loopLiveness call and a legacy lock the schema only parses; Date.now() just stamps the lock acquireDaemonLock writes.
 
@@ -14,7 +13,7 @@ const config = { url: 'http://127.0.0.1:1', repository: 'owner/repo' } as Parame
 const deadPid = () => { const child = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }); return Number(child.stdout); };
 const foreign = 'pid:[4026539999]';
 // A reader in the given PID namespace, as loopLiveness probes from it.
-const from = (namespace: string | null) => (pid: number, recorded?: string | null) => hostPidProbe(pid, () => namespace, recorded);
+const from = (namespace: string | null) => (pid: number, recorded?: string | null) => pidProbeable({ pidNamespace: recorded }, namespace) ? liveProcess(pid) : null;
 function cursor(lock: Partial<NonNullable<DaemonState['lock']>>, lastCycleAt: number) {
   const state = emptyDaemonState(config);
   state.lock = { id: 'lock', pid: deadPid(), host: 'machine-a', startedAt: new Date(lastCycleAt).toISOString(), heartbeatAt: new Date(lastCycleAt).toISOString(), ...lock };
@@ -84,11 +83,11 @@ const state = (lastCycleAt: string) => ({ cycle: 12712, lastCycleAt,
   lock: { id: 'lock', pid: unseen, host: 'vishrog', startedAt: '2026-10-06T11:13:53.515Z', heartbeatAt: lastCycleAt } });
 
 test('unit:loop-liveness-confined-reader — a pid outside the reader\'s own PID namespace is unknown, not gone, so a cycling loop reads running', () => {
-  assert.equal(hostPidProbe(process.pid, () => 'pid:[4026535170]'), null, 'a pid number names nothing outside the namespace it was taken in (GY-1370)');
-  assert.equal(hostPidProbe(process.pid, () => 'pid:[4026535170]', 'pid:[4026535170]'), true, 'a pid it sees in the lock\'s own namespace is alive');
-  assert.equal(hostPidProbe(unseen, () => 'pid:[4026531836]'), false, 'the host namespace sees every host pid');
-  assert.equal(hostPidProbe(unseen, () => null), false, 'without PID namespaces the probe is authoritative');
-  assert.equal(hostPidProbe(unseen, () => 'pid:[4026535170]'), null, 'a confined reader cannot tell');
+  assert.equal(from('pid:[4026535170]')(process.pid), null, 'a pid number names nothing outside the namespace it was taken in (GY-1370)');
+  assert.equal(from('pid:[4026535170]')(process.pid, 'pid:[4026535170]'), true, 'a pid it sees in the lock\'s own namespace is alive');
+  assert.equal(from('pid:[4026531836]')(unseen), false, 'the host namespace sees every host pid');
+  assert.equal(from(null)(unseen), false, 'without PID namespaces the probe is authoritative');
+  assert.equal(from('pid:[4026535170]')(unseen), null, 'a confined reader cannot tell');
 
   const confined = () => null;
   const cycling = loopLiveness(state('2026-10-06T11:14:50.470Z'), now, intervalMs, 'vishrog', confined);

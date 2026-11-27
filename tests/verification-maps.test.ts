@@ -17,9 +17,11 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
 // Imported per test, so a tree without the module fails each proof as a case rather than at load.
 const maps = () => import('../src/verification-maps.js');
+/** A checked-in map's own cap, outside the docs budget. */
+const verificationMapWordLimit = 250;
 
 test('unit:verification-maps-true — store, server and master maps each open with Paths:, hold the four sections, stay within 250 words, and name only globs and tests/ paths the tree holds', async () => {
-  const { parseVerificationMap, verificationMapWordLimit } = await maps();
+  const { parseVerificationMap } = await maps();
   const checkedIn = existsSync(join(root, 'verification')) ? readdirSync(join(root, 'verification')).filter(name => name.endsWith('.md')).map(name => `verification/${name}`) : [];
   for (const area of ['store', 'server', 'master']) assert.ok(checkedIn.includes(`verification/${area}.md`), `verification/${area}.md is checked in`);
   for (const path of checkedIn) {

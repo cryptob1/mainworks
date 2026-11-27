@@ -6,7 +6,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { masterHarness } from '../src/master/harness.js';
-import { harnessDecision, retiredMasterRules, writeHarnessPermissions } from '../src/harness.js';
+import { retiredMasterRules, writeHarnessPermissions } from '../src/harness.js';
+import { harnessDecision } from './helpers/harness-decision.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-1217: the master's denies name the endpoints that merge, enqueue or approve, not the word

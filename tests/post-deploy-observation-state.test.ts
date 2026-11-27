@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dispatchable } from '../src/coordination.js';
 import { upNextHold } from '../src/model/board.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import * as model from '../src/model.js';
@@ -26,11 +25,9 @@ const item = (n: number, extra: Partial<Work> = {}): Work => workFixture({
 
 test('unit:observation-item-not-dispatched — the dispatcher skips an all-manual post-deploy item and dispatches one with a code criterion or a hand-driven one', () => {
   const observing = item(1), withCode = item(2, { criteria: code }), handDriven = item(3, { systemDriven: false });
-  assert.equal(dispatchable(observing, now), false);
-  assert.equal(dispatchable(withCode, now), true);
-  assert.equal(dispatchable(handDriven, now), true);
   assert.notEqual(nextAction(observing, [observing], new Date(now))?.kind, 'dispatch');
   assert.equal(nextAction(withCode, [withCode], new Date(now))?.kind, 'dispatch');
+  assert.equal(nextAction(handDriven, [handDriven], new Date(now))?.kind, 'dispatch');
 });
 
 const reading = (extra: object = {}) => ({ proof: 'manual:post-deploy/rate-on-serving-release', trusted: true, result: 'pass', policyRevision: 1, sha: 'a'.repeat(40), baseSha: 'm'.repeat(40), executed: 1, skipped: 0, at: iso(now), ...extra });
@@ -42,7 +39,7 @@ test('unit:observation-class-needs-the-follow-up-reading — a head-anchored cod
   const read = (work: Work) => loopObservation(work, new Date(now), [parent]);
   const codeLike = item(7, { criteria: [{ id: 'AC-1', text: `From this head against the serving release aaaaaaaaaaaa that carries GY-9's merge bbbbbbbbbbbb: the dispatcher skips it`, proofs: ['manual:skip-on-serving-release'] }] });
   assert.equal(loopObservation(codeLike, new Date(now)), null);
-  assert.equal(dispatchable(codeLike, now), true);
+  assert.equal(nextAction(codeLike, [codeLike], new Date(now))?.kind, 'dispatch');
   assert.ok(read(follow()));
   for (const bad of [{ result: 'fail' }, { expiresAt: iso(now - hour) }, { sha: 'c'.repeat(40) }, { sha: `${'a'.repeat(12)}${'c'.repeat(28)}` }, { baseSha: 'n'.repeat(40) }, { skipped: 1 }, { policyRevision: 0 }, { revocation: { at: iso(now), actor: 'x', reason: 'y' } }]) {
     assert.ok(read(follow({ evidence: [reading({ proof, ...bad })] as never })), JSON.stringify(bad));
@@ -67,12 +64,10 @@ test('unit:observation-item-counted-waiting — it counts as waiting with what i
   const read = item(5, { evidence: [reading()] as never });
   assert.equal(loopObservation(read, new Date(now)), null);
   // The recorded reading ends the wait, never the exclusion: the still-open item is not handed to a worker.
-  assert.equal(dispatchable(read, now), false);
   assert.notEqual(nextAction(read, [read], new Date(now))?.kind, 'dispatch');
   assert.deepEqual((loopObservation(windowed, new Date(now + 7 * hour)) as { due: boolean }).due, true);
   assert.deepEqual((loopObservation(windowed, new Date(now)) as { due: boolean }).due, false);
   const later = new Date(now + 7 * hour);
-  assert.equal(dispatchable(windowed, later.getTime()), false);
   // GY-1779: a due reading is the loop's own to record, a wait on the loop, never an operator-proof escalation.
   assert.equal(nextAction(windowed, [windowed], later), null);
   assert.deepEqual([actionAccount(windowed, [windowed], later).wait?.kind, actionAccount(windowed, [windowed], later).wait?.on], ['window', 'loop']);

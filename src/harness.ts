@@ -553,17 +553,6 @@ export function claudeRuleProblem(rule: string): string | null {
   if (marker === 0) return `${rule}: prefix cannot be empty before :*`;
   return null;
 }
-export type HarnessDecision = { decision: 'allow' | 'deny' | 'ask'; rule: HarnessRule | null };
-const commandParts = (command: string) => command.split(/\s*(?:&&|\|\||;|\|)\s*/).map(part => part.trim()).filter(Boolean);
-export function harnessDecision(plan: Pick<HarnessPlan, 'allow' | 'deny'>, command: string): HarnessDecision {
-  const parts = commandParts(command);
-  for (const part of parts) {
-    const denied = plan.deny.find(entry => bashRuleMatches(entry.rule, part));
-    if (denied) return { decision: 'deny', rule: denied };
-  }
-  const allowed = parts.map(part => plan.allow.find(entry => bashRuleMatches(entry.rule, part)));
-  return parts.length && allowed.every(Boolean) ? { decision: 'allow', rule: allowed[0]! } : { decision: 'ask', rule: null };
-}
 
 // The master's own loop, and nothing else. A harness allowlist is a prompt policy, not an
 // authority boundary: branch protection and Mainworks's required check remain the enforcement.

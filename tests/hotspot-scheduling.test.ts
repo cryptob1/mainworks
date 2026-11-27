@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dispatchOrder, dispatchSort, dispatchStarvationMs, stageWaitMs } from '../src/coordination.js';
+import { dispatchSort, dispatchStarvationMs, stageWaitMs } from '../src/coordination.js';
 import { hotspots } from '../src/daemon/hotspots.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
@@ -56,24 +56,20 @@ test('unit:dispatch-prefers-non-overlapping — hotspots name the files two or m
   assert.deepEqual(hotspots([one, expired, delivered], clock), [], 'an expired lease and done work are not claimants');
 });
 
-test('unit:dispatch-prefers-non-overlapping — dispatchOrder offers items touching no hot file first within one priority; priority dominates; an empty hot set reproduces the old order', () => {
+test('unit:dispatch-prefers-non-overlapping — dispatchSort offers items touching no hot file first within one priority; priority dominates; an empty hot set reproduces the old order', () => {
   const heat = new Set(hotspots([claimed('GY-hotA', [hotFile]), claimed('GY-hotB', [hotFile])], clock).map(entry => entry.file));
   const coldOld = work('GY-coldOld', { createdAt: iso(-7_200_000), ...observed(['src/cold.ts']) });
   const coldNew = work('GY-coldNew', { createdAt: iso(-120_000) });
   const hotOld = work('GY-hotOld', { createdAt: iso(-3_600_000), ...observed([hotFile]) });
   const hotNew = work('GY-hotNew', { createdAt: iso(-60_000), ...observed([hotFile, 'src/other.ts']) });
-  const withoutHeat = [coldNew, hotOld, hotNew, coldOld].sort(dispatchOrder).map(item => item.key);
+  const withoutHeat = dispatchSort([coldNew, hotOld, hotNew, coldOld]).map(item => item.key);
   assert.deepEqual(withoutHeat, ['GY-coldOld', 'GY-hotOld', 'GY-coldNew', 'GY-hotNew'], 'the empty hot set is the age order');
-  const withHeat = [coldNew, hotOld, hotNew, coldOld].sort((a, b) => dispatchOrder(a, b, heat)).map(item => item.key);
+  const withHeat = dispatchSort([coldNew, hotOld, hotNew, coldOld], heat).map(item => item.key);
   assert.deepEqual(withHeat, ['GY-coldOld', 'GY-coldNew', 'GY-hotOld', 'GY-hotNew'], 'cold before hot within one priority; age within each group');
   const directory = work('GY-dir', { createdAt: iso(-7_200_000), ...observed(['src/daemon/']) });
-  assert.ok(dispatchOrder(coldOld, directory, heat) < 0, 'a directory scope that contains the hot file touches it, by scope overlap and not exact equality');
+  assert.equal(dispatchSort([directory, coldOld], heat)[0], coldOld, 'a directory scope that contains the hot file touches it, by scope overlap and not exact equality');
   const urgentHot = work('GY-urgentHot', { priority: 0, createdAt: iso(-60_000), ...observed([hotFile]) });
-  assert.ok(dispatchOrder(urgentHot, coldOld, heat) < 0, 'priority dominates: a hot P0 is still offered before a cold P2');
-  const rework = submitted('GY-rework', [hotFile], 'd'.repeat(40), { reworkRequested: true });
-  assert.ok(dispatchOrder(coldOld, rework, heat) < 0, 'a rework peer heats nothing but is still ordered after a cold item by others\' heat');
-  for (const [a, b] of [[coldOld, hotOld], [hotOld, directory], [rework, coldNew]] as [Work, Work][])
-    assert.equal(dispatchOrder(a, b, heat), -dispatchOrder(b, a, heat), `the comparator stays consistent for ${a.key} and ${b.key}`);
+  assert.equal(dispatchSort([coldOld, urgentHot], heat)[0], urgentHot, 'priority dominates: a hot P0 is still offered before a cold P2');
 });
 
 function daemonConfig(credentialFile: string, workers: WorkerProfile[]): MasterConfig {
@@ -121,17 +117,16 @@ test('unit:dispatch-ages-starving-items — a same-priority item waiting past th
   const smallFresh = item('GY-2001', ['src/one.ts'], 5);
   const hot = new Set(['docs/master-agent.md']);
   // Without a clock the old order holds: the cold item first.
-  assert.deepEqual([broadStarving, smallFresh].sort((a, b) => dispatchOrder(a, b, hot)).map(w => w.key), ['GY-2001', 'GY-1023']);
+  assert.deepEqual(dispatchSort([broadStarving, smallFresh], hot).map(w => w.key), ['GY-2001', 'GY-1023']);
   // With the clock, the item past the bound goes first even though it is hot.
-  assert.deepEqual([smallFresh, broadStarving].sort((a, b) => dispatchOrder(a, b, hot, now)).map(w => w.key), ['GY-1023', 'GY-2001']);
+  assert.deepEqual(dispatchSort([smallFresh, broadStarving], hot, now).map(w => w.key), ['GY-1023', 'GY-2001']);
   // Among starving items the usual order decides (the older, cold GY-0900 first); priority still outranks starvation.
   const olderStarving = item('GY-0900', ['src/two.ts'], 300);
   const urgentFresh = item('GY-3000', ['src/three.ts'], 1, -1);
-  assert.deepEqual([broadStarving, olderStarving, urgentFresh, smallFresh].sort((a, b) => dispatchOrder(a, b, hot, now)).map(w => w.key), ['GY-3000', 'GY-0900', 'GY-1023', 'GY-2001']);
+  assert.deepEqual(dispatchSort([broadStarving, olderStarving, urgentFresh, smallFresh], hot, now).map(w => w.key), ['GY-3000', 'GY-0900', 'GY-1023', 'GY-2001']);
   assert.equal(dispatchStarvationMs, 60 * 60_000);
-  // dispatchSort reads each wait once and gives the comparator's order.
   const all = [broadStarving, olderStarving, urgentFresh, smallFresh];
-  assert.deepEqual(dispatchSort(all, hot, now).map(w => w.key), [...all].sort((a, b) => dispatchOrder(a, b, hot, now)).map(w => w.key));
+  dispatchSort(all, hot, now);
   assert.deepEqual(all.map(w => w.key), ['GY-1023', 'GY-0900', 'GY-3000', 'GY-2001'], 'dispatchSort leaves its input in place');
 });
 
@@ -144,5 +139,4 @@ test('unit:dispatch-ages-malformed-rows — an item whose stage time is unreadab
   const fresh = { ...row('GY-fresh', new Date(now).toISOString(), new Date(now).toISOString()) } as Work;
   const malformed = row('GY-bad', 'garbage', 'garbage');
   assert.deepEqual(dispatchSort([fresh, malformed], new Set(), now).map(w => w.key), ['GY-bad', 'GY-fresh'], 'the malformed row is aged ahead of a fresh item');
-  assert.equal(dispatchOrder(malformed, malformed, new Set(), now), 0, 'the comparator stays defined (never NaN) on a malformed row');
 });

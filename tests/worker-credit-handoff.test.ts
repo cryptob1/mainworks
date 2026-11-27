@@ -12,7 +12,6 @@ import { dispatchWork } from '../src/master/dispatch.js';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { observedExhaustions } from '../src/master/environments.js';
-import { accountHeldForRole } from '../src/model/capacity.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -125,7 +124,7 @@ for (const shape of ['uncommitted', 'committed-and-uncommitted', 'clean', 'clean
     } else assert.equal(saved, committed, 'clean trees keep their existing HEAD without a synthetic commit');
     assert.equal(launched.account?.environment, 'claude-d', 'the successor runs on the next account in the same dispatch');
     assert.deepEqual(runs.map(run => run.account), [join(root, 'claude-c'), join(root, 'claude-d')]);
-    assert.equal(accountHeldForRole(await observedExhaustions(config, clock), 'claude-c', clock), true);
+    assert.ok((await observedExhaustions(config, clock))['claude-c'], 'the spent account is held');
     assert.equal(after.epoch, 2);
     assert.equal(after.lease?.owner, workerA.id);
     const handoff = runs[1]!.args.at(-1)!;

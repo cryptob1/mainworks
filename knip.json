@@ -1,31 +1,29 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  // GY-3964: tests are not entry points, so code only tests use is reported.
   "entry": [
     "bin/*.mjs",
-    "scripts/**/*.{mjs,ts}"
+    "scripts/**/*.{mjs,ts}",
+    // Built by scripts/build-publisher.mjs and loaded by scripts/graphyard-pull.mjs through tsImport, which knip does not follow.
+    "src/publish-verified.ts",
+    "src/dispatch/worker-pull.ts"
   ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "web/**/*.{ts,tsx}",
-    "bin/**/*.mjs",
-    "scripts/**/*.{mjs,ts}"
-  ],
-  "ignoreBinaries": [
-    "flock",
-    "tailscale",
-    "mise",
-    "bwrap",
-    "sha256sum",
-    "rg",
-    "opencode",
-    "codex",
-    "ffmpeg",
-    "uv"
-  ],
-  "ignoreDependencies": [
-    "esbuild",
-    "playwright",
-    "@xterm/xterm"
-  ],
-  "ignoreExportsUsedInFile": true
+  "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}"],
+  "ignoreExportsUsedInFile": true,
+  // Test seams kept for tests; each file's one kept export and why.
+  "ignoreIssues": {
+    "src/daemon/cycle-merge-writer.ts": ["exports"], // mergeWriterIdle: the idle writer state about 48 test files start from.
+    "src/install/transport.ts": ["exports"], // fakeTransport: the install tests' stand-in for SSH to a host.
+    "src/master/runtimes.ts": ["exports"], // opencodeAuthList, opencodeModels: the real opencode probes tests inject in place of the runner's null probe.
+    "src/merge-writer/executor.ts": ["exports"], // clearBaseTipCheckCache: resets the module cache between tests reusing one base tip.
+    "src/merge-writer/trial.ts": ["exports"], // trialConfinement: the trial sandbox wrapper, tested directly and used by the hard-math benchmark.
+    "src/model-boundary/project-applications.ts": ["exports"], // setProjectDelivery: pins the delivery config, as setRepositoryPolicy does.
+    "src/model/actions.ts": ["exports"], // claimAction, settleAction: how seven test files set up claimed action rows.
+    "src/model/registry-sessions.ts": ["exports"], // supersededByRequest: the in-memory registry fakes in four tests rely on it.
+    "src/runner/registry.ts": ["exports"], // clearRuns: resets the run registry between tests.
+    "src/server/flow.ts": ["exports"], // forgetFlow: resets the once-a-minute flow cache between tests.
+    "src/store/locked-read.ts": ["exports"] // boundLockedCache: tests eviction without filling the real 20,000-entry cache.
+  },
+  "ignoreBinaries": ["flock", "tailscale", "mise", "bwrap", "sha256sum", "rg", "opencode", "codex", "ffmpeg", "uv"],
+  "ignoreDependencies": ["esbuild", "playwright", "@xterm/xterm"]
 }

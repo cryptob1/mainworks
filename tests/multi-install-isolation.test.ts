@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { harnessDecision } from '../src/harness.js';
+import { harnessDecision } from './helpers/harness-decision.js';
 import * as herdrModule from '../src/master/herdr.js';
 import { closeHerdrPane, listHerdrAgents, observeHerdrAgents, stopCreatedHerdrTab } from '../src/master/herdr.js';
 import { liveMasterConfig, loadMasterConfig, setupMaster } from '../src/master/config.js';
@@ -26,7 +26,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // What GY-1441 adds is read when a test runs, never at load: a checkout without it fails each test, not the file.
 const units = () => import('../src/install/units.js');
 const loopUnitOf = (root: string, unitDirectory?: string, home?: string) => (supervisorModule as unknown as { loopUnitOf: (root: string, unitDirectory?: string, home?: string) => string }).loopUnitOf(root, unitDirectory, home);
-const scope = herdrModule as unknown as { scopeHerdr: (workspace: string | null) => void; herdrScope: () => string | null };
+const scope = herdrModule as unknown as { scopeHerdr: (workspace: string | null) => void };
 const legacyLoopUnit = 'graphyard-master.service';
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
@@ -203,7 +203,6 @@ test('unit:herdr-scope-per-install — the install\'s workspace scopes every inv
   await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'wA' }, status as typeof fetch);
   scope.scopeHerdr(null);
   await loadMasterConfig(root);
-  assert.equal(scope.herdrScope(), 'wA');
 
   // The inventories every sweep reads list only the install's own panes, though names and paths match.
   const herdr = sharedHerdr();
@@ -224,14 +223,13 @@ test('unit:herdr-scope-per-install — the install\'s workspace scopes every inv
   await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB', baseBranch: 'release' }));
   const refused = await live.reload();
   assert.match(refused.refused ?? '', /baseBranch/);
-  assert.equal(scope.herdrScope(), 'wA', 'a refused reload never moves the Herdr scope');
-  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wA:p1', 'wA:p2']);
+  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wA:p1', 'wA:p2'], 'a refused reload never moves the Herdr scope');
   await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB' }));
   assert.equal((await live.reload()).refused, null);
-  assert.equal(scope.herdrScope(), 'wB', 'an accepted reload adopts the new workspace');
+  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wB:p1', 'wB:p2'], 'an accepted reload adopts the new workspace');
   await writeFile(join(root, '.graphyard/master.json'), '{');
   assert.match((await live.reload()).refused ?? '', /could not be reloaded/);
-  assert.equal(scope.herdrScope(), 'wB');
+  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wB:p1', 'wB:p2']);
   scope.scopeHerdr(null);
 });
 

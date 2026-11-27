@@ -15,7 +15,6 @@ import { liveMasterConfig, loadMasterConfig, masterConfigChanges, removeProducer
 import { assertOutsideWorktrees } from '../src/private-file.js';
 import { autonomousSession, dispatchWork, workerPrompt } from '../src/master/dispatch.js';
 import { selectAccount } from '../src/master/environments.js';
-import { herdrWorkspaceHealth } from '../src/master/herdr.js';
 import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master/profiles.js';
 import { masterHarness, prepareSessionHarness, sessionHarnessFile, sessionHarnessPlan, workerHarnessPlan } from '../src/master/harness.js';
 import { sustainedActivityMs } from '../src/master/launch.js';
@@ -268,7 +267,7 @@ test('integration:master-config-reload — a running loop adopts master.json cha
 
 });
 
-test('integration:master-profile-management — producer profiles can be replaced and removed, reviewer profiles removed, and status flags an unbound reviewer App and a Herdr workspace that no longer exists', async () => {
+test('integration:master-profile-management — producer profiles can be replaced and removed, reviewer profiles removed, and status flags an unbound reviewer App', async () => {
   const { root, token, cleanup } = await installed({ herdrWorkspace: 'w1V' });
   try {
     const a = await token('producer-a'), b = await token('producer-b'), c = await token('producer-c');
@@ -294,16 +293,6 @@ test('integration:master-profile-management — producer profiles can be replace
     assert.deepEqual([reviewer.removed, reviewer.clearedAutomatic, reviewer.automatic], ['claude-reviewer', true, 'cursor-reviewer']);
     assert.equal((await loadMasterConfig(root)).run.reviewerProfile, undefined);
     await assert.rejects(removeReviewerProfile(root, 'claude-reviewer'), /Unknown reviewer profile/);
-
-    const master = await loadMasterConfig(root);
-
-    // The configured Herdr workspace is checked against Herdr's own inventory.
-    const workspaces = (ids: string[]) => (_command: string, args: string[]) => { assert.deepEqual(args, ['workspace', 'list']); return JSON.stringify({ result: { workspaces: ids.map(id => ({ workspace_id: id })) } }); };
-    assert.deepEqual(await herdrWorkspaceHealth(master, workspaces(['w1V', 'w3'])), { workspace: 'w1V', exists: true, reason: null });
-    const gone = await herdrWorkspaceHealth(master, workspaces(['w3', 'w5']));
-    assert.equal(gone.exists, false); assert.match(gone.reason!, /Herdr workspace w1V configured in \.graphyard\/master\.json no longer exists \(Herdr lists w3, w5\)/);
-    assert.equal((await herdrWorkspaceHealth(master, () => { throw new Error('no socket'); })).exists, null, 'an unreadable Herdr leaves the workspace unverified, not missing');
-    assert.equal((await herdrWorkspaceHealth({ herdrWorkspace: undefined })).exists, null);
     // The commands are part of the CLI and the guide.
     const help = await readFile(new URL('../src/cli/master.ts', import.meta.url), 'utf8');
     for (const command of ['master producer add FILE | replace FILE | remove NAME', 'master reviewer add FILE | remove NAME']) assert.ok(help.includes(command), `${command} is in CLI help`);

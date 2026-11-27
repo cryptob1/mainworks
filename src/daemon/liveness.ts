@@ -18,18 +18,6 @@ export function pidProbeable(lock: Pick<NonNullable<DaemonState['lock']>, 'pidNa
 }
 
 /**
- * Whether the lock's process is alive as this reader can tell: true when it sees it, false when it
- * can probe the lock's namespace and does not, and null when it cannot probe it (a confined agent
- * session, GY-1369), where a pid it cannot see says nothing about the host.
- */
-function lockPidProbe(pid: number, namespace: () => string | null = pidNamespace, recorded?: string | null): boolean | null {
-  return pidProbeable({ pidNamespace: recorded }, namespace()) ? liveProcess(pid) : null;
-}
-
-/** The probe's earlier name, kept for existing importers. */
-export const hostPidProbe = lockPidProbe;
-
-/**
  * Whether the loop is cycling, from its own cursor. Nothing else in the installation notices a
  * coordinator that stopped: the work simply stops moving. Two intervals without a completed cycle
  * is a stall, and no lock at all — or a lock whose process is gone on this host — is an absence. A reader that
@@ -39,7 +27,7 @@ export const hostPidProbe = lockPidProbe;
  * slow but progressing cycle is running however long its steps take, and only a loop with neither a
  * completed cycle nor progress inside one for the bound is stalled.
  */
-export function loopLiveness(state: Pick<DaemonState, 'lock' | 'cycle' | 'lastCycleAt'> & Partial<Pick<DaemonState, 'failures'>>, now: number, intervalMs: number, hostId?: string, probe: (pid: number, recorded?: string | null) => boolean | null = (pid, recorded) => lockPidProbe(pid, pidNamespace, recorded)): LoopLiveness {
+export function loopLiveness(state: Pick<DaemonState, 'lock' | 'cycle' | 'lastCycleAt'> & Partial<Pick<DaemonState, 'failures'>>, now: number, intervalMs: number, hostId?: string, probe: (pid: number, recorded?: string | null) => boolean | null = (pid, recorded) => pidProbeable({ pidNamespace: recorded }, pidNamespace()) ? liveProcess(pid) : null): LoopLiveness {
   const lastCycleAt = state.lastCycleAt ? Date.parse(state.lastCycleAt) : Number.NaN;
   const heartbeatAt = state.lock?.heartbeatAt ? Date.parse(state.lock.heartbeatAt) : Number.NaN;
   // Progress is the later of the two: a cycle that completed, or the heartbeat a long cycle's steps keep fresh.

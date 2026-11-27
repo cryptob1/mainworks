@@ -16,21 +16,6 @@ export const plainStages = [
 ] as const;
 export type PlainStage = typeof plainStages[number];
 
-/** The plain label and the derived stage it names. */
-export const plainStageLines: Record<PlainStage, string> = {
-  'Not started': 'Not started (backlog, ready) — nobody holds it yet.',
-  Waiting: 'Waiting (build) — no worker holds it and no session runs; master status names why when the reason is known (GY-3095).',
-  Building: 'Building (build) — a worker holds it and is writing the change.',
-  Testing: 'Testing (test, acceptance) — automated checks or proofs are running on the handed-in change.',
-  'In review': 'In review (review) — someone other than the builder is judging the change.',
-  Merging: 'Merging (merge) — the merge writer is queuing or trying the change onto main.',
-  'Merged, not live yet': 'Merged, not live yet (done) — merged; the app has not been seen serving it.',
-  Live: 'Live (done) — the app serves it; no verdict names this item.',
-  'Live and verified': 'Live and verified (done) — its own merge is served and the required cases passed (GY-2983).',
-  'Live and failing': 'Live and failing (done) — served, and a failing required case is its own merge\'s or proves it (GY-2983).',
-  Done: 'Done (done) — closed, or merged where the repository has no deployment.',
-};
-
 /** Whether the repository serves, the commit it serves, and GY-2983's verdict on that commit. */
 export interface ServeView { serves: boolean; commit: string | null; check: ServeCheck | null }
 export const noServe: ServeView = { serves: false, commit: null, check: null };
@@ -45,10 +30,6 @@ export function serveView(status: any): ServeView {
     : null;
   return { serves: true, commit: typeof serving.commit === 'string' ? serving.commit : null, check };
 }
-
-/** The release-level line when the served commit fails a required case, shown once rather than on every row. */
-export const liveFailingLine = (serve: ServeView) =>
-  serve.check?.verified === false ? `The live app is failing ${serve.check.case ?? 'a required case'}` : null;
 
 /** Whether anyone is building it: a live lease or a running session (GY-3095). An item at build with neither is waiting. */
 const building = (work: Work, now: number) =>

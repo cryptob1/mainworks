@@ -1,5 +1,5 @@
 import type { Principal, Work } from '../../src/model.js';
-import { claimAction, settleAction, renewClaim } from '../../src/model/actions.js';
+import { claimAction, settleAction } from '../../src/model/actions.js';
 import type { NextActionKind } from '../../src/model/next-action.js';
 import { Store, save } from '../../src/store.js';
 
@@ -19,13 +19,5 @@ export async function settleFixture(store: Store, actor: Principal, id: string, 
     const transition = settleAction(work, id, { executor: input.executor ?? actor.id, principal: actor.id }, input.result, input.reason, now);
     await save(db, work, actor.id, `test.action-${transition.event}`, now);
     return { action: transition.action };
-  });
-}
-
-export async function renewFixture(store: Store, actor: Principal, id: string) {
-  await store.transaction(async (db, now) => {
-    const work = (await db.query('SELECT document FROM work_items ORDER BY number')).rows.map(row => row.document as Work).find(item => item.actionQueue?.actions.some(row => row.id === id))!;
-    renewClaim(work, id, { executor: actor.id, principal: actor.id }, now);
-    await save(db, work, actor.id, 'test.action-renewed', now);
   });
 }

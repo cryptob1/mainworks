@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { nativeReviewRequired, reviewProviderOf } from '../src/model.js';
+import { reviewProviderOf } from '../src/model.js';
 import { policySchema } from '../src/model-boundary/policy.js';
 
 test('only the reviewer-session provider is accepted, including by default', () => {
@@ -9,6 +9,5 @@ test('only the reviewer-session provider is accepted, including by default', () 
   for (const input of [{}, { reviewProvider: 'github' }]) {
     const policy = policySchema.parse(input);
     assert.equal(reviewProviderOf(policy), 'github');
-    assert.equal(nativeReviewRequired(policy), true);
   }
 });

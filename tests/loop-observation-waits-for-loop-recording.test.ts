@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dispatchable } from '../src/coordination.js';
 import { actionAccount, nextAction } from '../src/model-boundary/next-action.js';
 import { reconcileActions } from '../src/model-boundary/actions.js';
 import { livenessFallback } from '../src/model-boundary/liveness.js';
@@ -40,7 +39,6 @@ test('unit:loop-observation-waits-for-loop-recording — a due reading is a wind
     assert.deepEqual([account.wait?.kind, account.wait?.on], ['window', 'loop'], `${work.key} waits on the loop`);
     assert.match(account.wait!.detail, /the loop records it in its deployment-verification step, and no worker is dispatched/);
     assert.equal(nextAction(work, all, new Date(now)), null);
-    assert.equal(dispatchable(work, now), false);
     const queued = { ...work, actionQueue: { actions: [], history: [] } } as Work;
     assert.ok(reconcileActions(queued, [parent, queued], new Date(now)).every(entry => entry.action.kind !== 'attention' && entry.action.kind !== 'dispatch'), `${work.key} queues no escalation and no dispatch`);
     // The liveness fallback owns the wait to the loop: it is due a bound ahead of every evaluation, never a stale wait.
@@ -58,7 +56,6 @@ test('unit:loop-observation-waits-for-loop-recording — a due reading is a wind
   assert.deepEqual([closing.action, closing.wait?.kind, closing.wait?.on], [null, 'window', 'loop']);
   assert.match(closing.wait!.detail, /GY-1726's reading of manual:github-budget-attention-row-clears-on-serving-release passed on release bbbbbbbbbbbb and the item is still open; the loop closes it as delivered-observation in its deployment-verification step, and no worker is dispatched/);
   assert.equal(nextAction(read, [parent, read], new Date(now)), null);
-  assert.equal(dispatchable(read, now), false);
   const queuedRead = { ...read, actionQueue: { actions: [], history: [] } } as Work;
   assert.ok(reconcileActions(queuedRead, [parent, queuedRead], new Date(now + 48 * hour)).every(entry => entry.action.kind !== 'attention' && entry.action.kind !== 'dispatch'), 'a recorded pass queues no escalation and no dispatch, however long it stays open');
   assert.equal(livenessFallback(read, [parent, read], new Date(now + 48 * hour)), null);

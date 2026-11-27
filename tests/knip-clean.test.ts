@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +17,8 @@ function knip() {
 
 // GY-3726: knip (knip.json names the entry points) finds unused files, exports and dependencies; any report fails.
 test('unit:knip-clean — knip reports no unused files, exports or dependencies', () => {
+  // GY-3964: tests are no entry points, so code only tests use is reported.
+  assert.doesNotMatch(readFileSync(join(root, 'knip.json'), 'utf8'), /"(?:browser-)?tests\//, 'knip.json names no test file');
   const { status, output } = knip();
   assert.equal(status, 0, `knip reported unused code:\n${output}`);
 });

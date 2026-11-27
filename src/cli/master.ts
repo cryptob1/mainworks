@@ -137,4 +137,3 @@ export const masterCommands = defineCommands([
 
 const masterInit: typeof import('./master-init.js').masterInit = async (...args) => (await import('./master-init.js')).masterInit(...args);
 
-export const derivedIntent: typeof import('./master/intent.js').derivedIntent = async (...args) => (await import('./master/intent.js')).derivedIntent(...args);

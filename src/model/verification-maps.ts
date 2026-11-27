@@ -9,8 +9,6 @@ export const verificationMapSections = ['Tests', 'Drive', 'Invariants', 'Gotchas
 export type VerificationMapSection = typeof verificationMapSections[number];
 export type VerificationMap = { path: string; paths: string[]; sections: Record<VerificationMapSection, string> };
 
-/** A checked-in map's own cap, outside the docs budget (tests/verification-maps.test.ts). */
-export const verificationMapWordLimit = 250;
 export const verificationDigestWordBudget = 600;
 export const verificationDigestMapLimit = 3;
 

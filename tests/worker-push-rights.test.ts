@@ -10,9 +10,9 @@ import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
-import { harnessDecision } from '../src/harness.js';
+import { harnessDecision } from './helpers/harness-decision.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
-import { blockerCommands, branchRestoration, sessionHarnessPlan, unrunnableRemedies, workerHarnessPlan } from '../src/master/harness.js';
+import { sessionHarnessPlan, workerHarnessPlan } from '../src/master/harness.js';
 import { parseLocalScopeDiff } from '../src/sync.js';
 import type { Observation, Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -30,6 +30,12 @@ const exec = promisify(execFile);
 const branch = 'graphyard/gy-9-4';
 const plan = workerHarnessPlan({ cliPath: launcher, branch, baseBranch: 'main', credentialHome: '/home/x/.config/graphyard' });
 const decision = (command: string, rules = plan) => harnessDecision(rules, command).decision;
+
+/** How a worker restores its contaminated branch: fetch, reset to the reviewed head, sync, restore-branch, complete. */
+const branchRestoration = (input: { cliPath: string; key: string; epoch: number; reviewedHead: string }) => {
+  const cli = `node ${input.cliPath}`;
+  return ['git fetch origin', `git reset --hard ${input.reviewedHead}`, `${cli} sync ${input.key}`, `${cli} restore-branch ${input.key} ${input.epoch}`, `${cli} complete ${input.key} ${input.epoch} --head`];
+};
 
 test('unit:worker-may-force-with-lease-its-own-branch — the worker restores its assigned branch with a lease push only through restore-branch; every raw force, lease, deletion and base-branch push is denied', () => {
   const cli = `node ${launcher}`;
@@ -219,41 +225,4 @@ test('integration:authorized-rework-is-executable — a rework over an ejected, 
   assert.equal(git(seed, 'show', `${head}:src-foreign.txt`), 'foreign v0');
   assert.equal(git(seed, 'show', `${head}:src-own.txt`), 'own v1');
   assert.deepEqual(work.observation?.scopeFiles?.map(file => file.path), ['src-own.txt']);
-});
-
-test('integration:unrunnable-remedy-reported — a blocker naming a command no launched session may run is reported in master status as a Mainworks defect', async () => {
-  const blocked = async (title: string, reason: (branch: string) => string) => {
-    let work: Work = await engine.execute(operator, 'create', null, { type: 'chore',  title, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works', 'e2e:fixture'] }] }, randomUUID());
-    work = await engine.execute(operator, 'ready', work.id, {}, randomUUID());
-    work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
-    const itemBranch = `graphyard/${work.key.toLowerCase()}-${work.epoch}`;
-    work = await engine.execute(worker, 'workspace', work.id, { epoch: work.epoch, host: 'push-rights-host', path: join(scratch, `blocked-${title}`), branch: itemBranch }, randomUUID());
-    // The worker records it through its own CLI, the way the launch instruction tells it to.
-    const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GRAPHYARD_')));
-    Object.assign(env, { GRAPHYARD_URL: url, GRAPHYARD_TOKEN: tokenOf(worker) });
-    await exec(process.execPath, [launcher, 'blocked', work.key, String(work.epoch), reason(itemBranch)], { cwd: scratch, env });
-    return { work: (await store.list()).find(item => item.id === work.id)!, branch: itemBranch };
-  };
-  const unrunnable = await blocked('force-refused', branch => `The command \`git push --force origin ${branch}\` was denied by the harness: Permission to use Bash has been denied`);
-  const runnable = await blocked('lease-available', () => `\`node ${launcher} restore-branch GY-1 2\` failed: stale info; the remote moved`);
-  const unquoted = await blocked('mirror-refused', () => 'git push --mirror origin was denied by the harness; nothing else can replace the refs');
-  assert.deepEqual(blockerCommands(unrunnable.work.blocker!), [`git push --force origin ${unrunnable.branch}`]);
-  assert.deepEqual(blockerCommands(unquoted.work.blocker!), ['git push --mirror origin']);
-
-  const all = await store.list();
-  const reported = unrunnableRemedies(all, { cliPath: launcher, baseBranch: 'main' }).filter(entry => [unrunnable.work.key, runnable.work.key, unquoted.work.key].includes(entry.key));
-  assert.deepEqual(reported.map(entry => entry.key), [unrunnable.work.key, unquoted.work.key], 'a blocker whose command the worker may run is an ordinary blocker');
-  const [defect] = reported;
-  assert.equal(defect.command, `git push --force origin ${unrunnable.branch}`);
-  assert.equal(defect.role, 'worker');
-  assert.equal(defect.rule, 'Bash(git push *--force*)');
-  assert.deepEqual(defect.deniedBy.map(entry => entry.role), ['reviewer', 'producer', 'master']);
-  assert.ok(defect.deniedBy.every(entry => entry.rule === 'Bash(git push:*)'));
-  assert.equal(reported[1].rule, 'Bash(git push *--mirror*)');
-  // The same judgement, pure: an unblocked or delivered item is never reported.
-  assert.deepEqual(unrunnableRemedies([{ ...unrunnable.work, blocker: null }], { cliPath: launcher, baseBranch: 'main' }), []);
-  assert.deepEqual(unrunnableRemedies([{ ...unrunnable.work, stage: 'done' }], { cliPath: launcher, baseBranch: 'main' }), []);
-  // A worker runtime that loads no generated rules could run it, so nothing is reported for it.
-  assert.equal(unrunnableRemedies([unrunnable.work], { cliPath: launcher, baseBranch: 'main', workerKinds: ['claude'] }).length, 1);
-  assert.deepEqual(unrunnableRemedies([unrunnable.work], { cliPath: launcher, baseBranch: 'main', workerKinds: ['claude', 'codex'] }), []);
 });

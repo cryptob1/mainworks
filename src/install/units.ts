@@ -154,8 +154,8 @@ export function readInstallUnits(root: string, unitDirectory = userUnitDirectory
  * needed nothing (GY-1880). Specifier and `$` expansions resolve in the manager's own environment,
  * which no unit reader sees, so a word still holding one is kept as written — it matches a launcher
  * path under no reading. An unquoted line splits on whitespace exactly as the readers before this
- * parser did. It is defined beside the ExecStart reader (`unitCheckout`) and exported by
- * `src/repository-setup.ts` beside its launcher reader, so every reader words the line one way.
+ * parser did. It is defined beside the ExecStart reader (`unitCheckout`), so every reader words
+ * the line one way.
  */
 export function systemdCommandLineWords(line: string): string[] {
   const words: string[] = [];

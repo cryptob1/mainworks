@@ -18,7 +18,7 @@ import { namedPaths } from './documentation-glob.js';
 const masterRoleObservation = (proof: string) => /checkout-restore|master[.-](status|role)|\.graphyard\/master\.json/i.test(proof);
 
 /** Whether nothing of the item is a worker's to do: no criterion names a file to change, and every proof it owes is recorded by the master side, so releasing it would only dispatch a worker that must block. An item with code work keeps its worker (GY-1762), and one criterion that a worker can serve keeps the whole item dispatchable. */
-export const loopOwned = (work: Pick<Work, 'criteria'>) => {
+const loopOwned = (work: Pick<Work, 'criteria'>) => {
   if (work.criteria.some(criterion => namedPaths(criterion.text).length)) return false;
   const proofs = work.criteria.flatMap(criterion => criterion.proofs);
   return proofs.length > 0 && proofs.every(proof => servingReleaseProof(proof) && masterRoleObservation(proof));

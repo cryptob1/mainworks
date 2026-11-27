@@ -5,14 +5,14 @@ import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import {
   activeEngineers, classifyIntake, defaultDelegationLimits, delegationLimits, delegationSnapshot, humanOnlyIntakeOrigins, implementerIdentities,
-  leadMay, leadPermittedActions, leadRulingActions, mergeOrder, producerIndependenceRefusal, recordIntake, recordLeadRuling,
+  leadMay, leadPermittedActions, leadRulingActions, producerIndependenceRefusal, recordIntake, recordLeadRuling,
   routineIntakeOrigins, sessionKind, slices, validateDelegationPrincipals,
 } from '../src/delegation.js';
 import { pushRefusal } from '../src/model/gates.js';
 import { evidenceProves } from '../src/model/mechanical-proofs.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { currentEvidence, sliceIds, type Observation, type Principal, type SliceId, type Work } from '../src/model.js';
+import { currentEvidence, sliceIds, type Principal, type SliceId, type Work } from '../src/model.js';
 import { Store } from '../src/store.js';
 import { mergeIntent } from './helpers/merge-ledger.js';
 
@@ -31,10 +31,8 @@ function mergeAuthorized(work: Work) {
   return work.stage === 'merge' && !!work.candidate && !work.violations.length && !work.leadHold
     && work.gates.every(gate => gate.name === 'merge' || gate.passed) && !!merge && merge.reasons.length === 1 && merge.reasons[0] === pushRefusal(work.candidate.sha);
 }
-function currentMergeCandidates(work: Work[], observedAt: string) {
-  const order = mergeOrder(work, Date.parse(observedAt));
-  const rank = (item: Work) => order.indexOf(item.key) + 1 || Number.MAX_SAFE_INTEGER;
-  return work.filter(mergeAuthorized).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
+function currentMergeCandidates(work: Work[], _observedAt: string) {
+  return work.filter(mergeAuthorized);
 }
 function assertMergeCandidate(work: Work, _observedAt: string) {
   if (!mergeAuthorized(work)) throw new Error(`${work.key} does not pass every gate for the merge writer to merge it`);
@@ -668,33 +666,6 @@ test('integration:lead-ruling-history — rulings cite a rule and a reason and c
   assert.equal(delivered.revision, deliveredRevision);
   assert.equal(delivered.leadHold ?? null, null);
   assert.equal((await store.pool.query('SELECT 1 FROM lead_rulings WHERE work_id=$1', [delivered.id])).rowCount, 0);
-});
-
-test('unit:dynamic-merge-ordering — order follows dependencies and current conflicts, not registration order', () => {
-  const work = (key: string, overrides: Partial<Work> = {}) => ({ id: key, key, stage: 'merge', priority: 2, dependencies: [], workspaces: [], evidence: [], criteria: [], scenarioRequirements: [], gates: [], violations: [], lease: null, submission: null, ready: true, ...overrides }) as unknown as Work;
-  const dependency = work('GY-2', { stage: 'done' });
-  const laterReady = work('GY-9', { dependencies: [dependency.id], priority: 0 });
-  const conflicted = work('GY-1', {  });
-  const peer = work('GY-3', { stage: 'build', lease: { owner: 'x', epoch: 1, expiresAt: new Date(Date.now() + 60_000).toISOString() } });
-  const registration = [conflicted, dependency, peer, laterReady];
-  const order = mergeOrder(registration);
-  assert.equal(order[0], 'GY-9');
-  assert.ok(order.indexOf('GY-1') > order.indexOf('GY-9'));
-  assert.notDeepEqual(order, registration.filter(w => w.stage !== 'done').map(w => w.key));
-  // Unfinished dependencies sort last however early the item was registered.
-  const blocked = work('GY-4', { dependencies: ['GY-5'], priority: 0 });
-  const blocker = work('GY-5', { stage: 'build' });
-  assert.equal(mergeOrder([blocked, blocker, laterReady, dependency]).at(-1), 'GY-4');
-  // The guarded broker's batch uses that dynamic order, not the snapshot order.
-  const observedAt = new Date().toISOString();
-  const mergeable = (key: string, overrides: Partial<Work> = {}) => work(key, {
-    candidate: { sha: head, baseSha: base, pr: 1, branch: `graphyard/${key}`, author: 'implementer' },
-    policyRevision: 1, gates: [{ name: 'merge', passed: false, reasons: [pushRefusal(head)] }],
-    observation: { at: observedAt } as Observation, ...overrides,
-  } as Partial<Work>);
-  const first = mergeable('GY-11', {  });
-  const second = mergeable('GY-12', { priority: 0 });
-  assert.deepEqual(currentMergeCandidates([first, second, peer], observedAt).map(item => item.key), ['GY-12', 'GY-11']);
 });
 
 test('unit:delegation-limits — configured capacity is server-enforced and refused with an explicit reason', () => {

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { Lease, Observation, Work } from '../model.js';
+import type { Lease, Work } from '../model.js';
 import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
 
 /**
@@ -12,7 +12,7 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
  * has a recent full snapshot: `base` (that snapshot's `seq`), the replay fields (`revision`,
  * `updatedAt`, `lease`, `submission`) and `ops`, the edits that turn the base into this
  * document. Deltas are always taken against the full snapshot, never chained, so any row is
- * one base lookup away from its document (`applyWorkDelta`, and `graphyard_event_work` in SQL).
+ * one base lookup away from its document (`graphyard_event_work` in SQL).
  *
  * A full snapshot is written for the first save, every `snapshotEvery` rows, when the delta
  * would exceed `deltaSizeFraction` of the document, when the stage or delivery changed (so
@@ -30,7 +30,7 @@ import { DELIVERY_EVENT_PREDICATE } from './tables/production.js';
  * A delta row also carries `stage`, the item's stage, so reading stages never resolves documents (GY-3766).
  *
  * Rows written before this generalisation carry a clock-only delta (`observation`, `lease`,
- * no `ops`); both readers still resolve them.
+ * no `ops`); `graphyard_event_work` still resolves them.
  */
 export const snapshotEvery = 50;
 const deltaSizeFraction = 0.25;
@@ -49,14 +49,6 @@ export interface WorkDelta {
   lease: Lease | null;
   submission: Work['submission'] | null;
   ops: DeltaOp[];
-}
-/** The clock-only delta rows written before `ops` existed. */
-export interface SnapshotDelta {
-  base: number;
-  revision: number;
-  updatedAt: string;
-  observation: { at: string; clockOffset: Observation['clockOffset'] | null } | null;
-  lease: Lease | null;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -96,33 +88,8 @@ function workDelta(baseSeq: number, base: Work, work: Work): WorkDelta {
   return { base: baseSeq, revision: work.revision, updatedAt: work.updatedAt, lease: work.lease ?? null, submission: work.submission ?? null, ops: workDiff(base, work) };
 }
 
-/** The full document a delta row stands for, given the full snapshot it names. Handles both delta formats. */
-export function applyWorkDelta(base: Work, delta: WorkDelta | SnapshotDelta): Work {
-  const work: any = structuredClone(base);
-  if ('ops' in delta) {
-    for (const op of delta.ops) {
-      const path = op[0];
-      let parent: any = work;
-      for (const key of path.slice(0, -1)) parent = parent?.[key];
-      if (!parent || typeof parent !== 'object') continue;
-      const key = path[path.length - 1];
-      if (op.length === 1) { if (!Array.isArray(parent)) delete parent[key]; continue; }
-      if (Array.isArray(parent)) { const index = Number(key); if (index >= parent.length) parent.push(op[1]); else parent[index] = op[1]; }
-      else parent[key] = op[1];
-    }
-    return work;
-  }
-  work.revision = delta.revision; work.updatedAt = delta.updatedAt;
-  if (work.observation && delta.observation) {
-    work.observation.at = delta.observation.at;
-    if (delta.observation.clockOffset) work.observation.clockOffset = delta.observation.clockOffset; else delete work.observation.clockOffset;
-  }
-  if (work.lease && delta.lease) work.lease = { ...work.lease, expiresAt: delta.lease.expiresAt };
-  return work;
-}
-
 /**
- * The SQL twin of `applyWorkDelta`, installed with the events table: an event's full document
+ * Installed with the events table: `graphyard_event_work` reads an event's full document
  * from its own `payload`, whether it carries the document whole or a delta on a full snapshot.
  * `graphyard_work_at_revision` finds the document an item held at a revision: the exact full
  * snapshot by index, else the delta row within `snapshotEvery` rows of its base, else — a routine
@@ -204,29 +171,3 @@ export async function appendSave(db: pg.PoolClient, work: Work, actor: string, k
   await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4)', [work.id, actor, kind, row]);
 }
 
-/**
- * The record as it stood at the newest ledger row before `before` that `keep` accepts, resolved
- * from a delta when the row is one. Rows are resolved newest first, a few at a time, and the walk
- * stops at the first accepted one.
- */
-export async function documentBefore(db: pg.PoolClient, workId: string, before: Date, keep: (work: Work) => boolean): Promise<Work | undefined> {
-  let below: string | null = null;
-  for (;;) {
-    const rows = (await db.query(`SELECT seq, ${eventWorkSql()} AS work FROM (SELECT seq, work_id, payload FROM events WHERE work_id=$1 AND created_at<$2 AND ($3::bigint IS NULL OR seq<$3)
-      AND (payload ? 'work' OR payload ? 'delta') ORDER BY seq DESC LIMIT 8) events ORDER BY seq DESC`, [workId, before, below])).rows as { seq: string; work: Work | null }[];
-    if (!rows.length) return undefined;
-    const kept = rows.find(row => row.work && keep(row.work));
-    if (kept) return kept.work!;
-    below = rows.at(-1)!.seq;
-  }
-}
-
-/** Event count and stored payload bytes by kind over the last `minutes`, from the created_at index. */
-export async function eventStats(db: Pick<pg.Pool, 'query'>, minutes = 60) {
-  const result = await db.query(`SELECT kind, count(*)::int AS count, COALESCE(sum(pg_column_size(payload)),0)::bigint AS bytes,
-      count(*) FILTER (WHERE payload ? 'delta')::int AS deltas, clock_timestamp() AS now
-    FROM events WHERE created_at > now() - make_interval(mins => $1::int) GROUP BY kind ORDER BY bytes DESC, kind`, [minutes]);
-  const kinds = result.rows.map(row => ({ kind: row.kind as string, count: Number(row.count), bytes: Number(row.bytes), deltas: Number(row.deltas) }));
-  return { windowMinutes: minutes, observedAt: ((result.rows[0]?.now as Date | undefined) ?? new Date()).toISOString(),
-    count: kinds.reduce((sum, entry) => sum + entry.count, 0), bytes: kinds.reduce((sum, entry) => sum + entry.bytes, 0), kinds };
-}

@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { createBackup } from '../backup.js';
+import { writeBackupFile } from '../backup.js';
 import { Store } from '../store.js';
 import { checkoutRelease, compareDateVersions, datedVersionPattern, graphyardBaseBranch, imageRepository, installationRoot, type Release } from '../release.js';
 import { repositoryFromRemote } from '../onboarding.js';
@@ -162,7 +162,7 @@ export function liveEffects(inputs: UpgradeInputs, recordFile: string, fetchHeal
       if (step.id === 'backup') {
         if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL to the Graphyard database so the upgrade can back it up before the server migrates it');
         const store = new Store(process.env.DATABASE_URL);
-        try { const backup = await createBackup(store.pool); await mkdir(resolve(inputs.backupFile, '..'), { recursive: true }); await writeFile(inputs.backupFile, JSON.stringify(backup), { flag: 'wx', mode: 0o600 }); }
+        try { await mkdir(resolve(inputs.backupFile, '..'), { recursive: true }); await writeBackupFile(store.pool, inputs.backupFile); }
         finally { await store.close(); }
       } else if (step.id === 'health') {
         if (!inputs.url) throw new Error('Set GRAPHYARD_URL so the upgrade can read /healthz');

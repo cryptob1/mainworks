@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
 import { join } from 'node:path';
 import { automaticReviewerConcurrency, profileConcurrency, sessionAgentName, withReviewerDefaults } from '../src/master/profiles.js';
 import { liveMasterConfig, loadMasterConfig, loadStoredMasterConfig, saveMasterSettings } from '../src/master/config.js';
-import { heldNameAttention, readReviewLedger, reconcileReviews, settledCloseAttempts } from '../src/reviewer.js';
+import { readReviewLedger, reconcileReviews, settledCloseAttempts } from '../src/reviewer.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { selectReviewerProfile } from '../src/dispatch/launch-failover.js';
@@ -140,7 +140,7 @@ test('unit:automatic-reviews-run-in-parallel — launches answering different re
   } finally { await host.cleanup(); }
 });
 
-test('unit:settled-reviewer-releases-name — a settled reviewer\'s pane Herdr keeps refusing to close is tried a bounded number of times, then reported naming the pane, and the ledger stops changing', async () => {
+test('unit:settled-reviewer-releases-name — a settled reviewer\'s pane Herdr keeps refusing to close is tried a bounded number of times, its failure recorded naming the pane, and the ledger stops changing', async () => {
   const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude', concurrency: 1 }, 'claude-reviewer');
   try {
     const config = await loadMasterConfig(host.root);
@@ -161,16 +161,13 @@ test('unit:settled-reviewer-releases-name — a settled reviewer\'s pane Herdr k
     assert.equal(new Set(passes.slice(settledCloseAttempts - 1).map(entry => entry.ledger)).size, 1, 'the ledger is not rewritten once the retries are spent');
     const record = (await readReviewLedger(host.root)).reviews.find(entry => entry.key === 'GY-501')!;
     assert.equal(record.closeAttempts, settledCloseAttempts);
-    const held = heldNameAttention([record]);
-    assert.equal(held.length, 1, 'the held name is reported, not left as a silent bound');
-    assert.match(held[0].text, new RegExp(`Settled reviewer session ${named(1)} on GY-501 .* still holds its agent name in pane ${pane}`));
-    assert.match(held[0].next, new RegExp(`herdr pane close ${pane}`));
+    assert.match(record.closeFailure ?? '', new RegExp(`^Herdr could not close pane ${pane} of the settled session holding ${named(1)}`), 'the held name is recorded, not left as a silent bound');
 
     // Once the pane is gone (closed by hand), the failure clears in one pass and nothing is reported.
     host.agents.splice(0, host.agents.length);
     const cleared = await reconcileReviews(host.root, config, { run: host.run, work: [first], agents: [], observe: () => null });
     assert.equal(cleared.changed, 1);
-    assert.deepEqual(heldNameAttention((await readReviewLedger(host.root)).reviews), []);
+    assert.equal((await readReviewLedger(host.root)).reviews.find(entry => entry.key === 'GY-501')!.closeFailure, undefined);
   } finally { await host.cleanup(); }
 });
 
@@ -216,7 +213,6 @@ test('unit:settled-reviewer-releases-name — a credential directory a forced se
     assert.deepEqual(swept.released, [{ pane, agentName: named(1) }]);
     assert.deepEqual(host.agents, []);
     assert.match((await record()).closeFailure ?? '', /^the reviewer credential directory .* could not be removed/);
-    assert.deepEqual(heldNameAttention([await record()]), [], 'no pane holds the name, so no held name is reported');
     // Retried while it fails, without rewriting the ledger; cleared on the pass it succeeds.
     assert.equal((await reconcileReviews(host.root, config, { run: host.run, work: [first], agents: [], observe: () => null })).changed, 0);
     assert.match((await record()).closeFailure ?? '', /credential directory/);

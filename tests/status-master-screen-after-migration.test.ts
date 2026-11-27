@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { migrateHerdr } from '../src/herdr-migration.js';
 import { applyHerdrConfig } from '../src/master/config.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
-import { herdrScope, herdrTarget, scopeHerdr, targetHerdr, isHerdrCommand } from '../src/master/herdr.js';
+import { herdrTarget, scopeHerdr, targetHerdr, isHerdrCommand } from '../src/master/herdr.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
@@ -30,7 +30,7 @@ test('e2e:status-master-screen-after-migration — status reads the live main-He
   const config = masterConfigSchema.parse(JSON.parse(await readFile(file, 'utf8')));
   assert.equal(config.herdrWorkspace, 'wMain');
   assert.deepEqual(config.herdrInstance, instance);
-  const previousTarget = herdrTarget(), previousScope = herdrScope();
+  const previousTarget = herdrTarget();
   const variables = ['HERDR_SOCKET_PATH', 'GRAPHYARD_HERDR_CONFIG_HOME', 'GRAPHYARD_HERDR_SESSION', 'XDG_CONFIG_HOME'] as const;
   const previous = Object.fromEntries(variables.map(key => [key, process.env[key]]));
   try {
@@ -81,6 +81,6 @@ test('e2e:status-master-screen-after-migration — status reads the live main-He
     assert.equal(reads.length, 8);
   } finally {
     for (const key of variables) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
-    targetHerdr(previousTarget); scopeHerdr(previousScope);
+    targetHerdr(previousTarget); scopeHerdr(null);
   }
 });

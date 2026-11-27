@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { concurrentOverlap, exclusionPaths } from '../src/coordination.js';
-import { dispatchHold } from '../src/model/concerns.js';
 import { assertDispatchable, dispatchWork } from '../src/master/dispatch.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { setupMaster } from '../src/master/config.js';
@@ -76,7 +75,6 @@ test('unit:optimistic-dispatch — two items overlapping on the same files both 
   const second = work('GY-191', { createdAt: iso(-2 * hour), stageEnteredAt: iso(-30 * 60_000) });
   const all = [building, building2, inReview, first, second];
   for (const item of [first, second]) assert.doesNotThrow(() => assertDispatchable(item, all, iso(0)), `${item.key} is dispatchable whatever it overlaps`);
-  assert.equal(dispatchHold(first, all, new Date(clock)), null, 'the concern layer holds nothing for overlap either');
   // The overlap is reported, for the record: the in-flight items whose candidates touch the same files.
   assert.deepEqual(concurrentOverlap(first, all, clock).map(entry => [entry.key, entry.state, entry.paths]), [['GY-166', 'submitted', [file]]]);
   assert.deepEqual(concurrentOverlap(first, [first, second], clock), [], 'two dispatchable peers are not in flight');
@@ -112,7 +110,6 @@ test('unit:exclusive-resources-hold — an exclusive resource still holds dispat
   const overlapping = work('GY-202');
   const all = [holder, wants, overlapping];
   assert.throws(() => assertDispatchable(wants, all, iso(0)), /Dispatch blocked by exclusive resources: staging-db held by GY-200/);
-  assert.equal(dispatchHold(wants, all, new Date(clock)), 'exclusive resources are held by GY-200 (staging-db)');
   assert.doesNotThrow(() => assertDispatchable(overlapping, all, iso(0)));
   const loop = await daemon(['one', 'two']);
   try {

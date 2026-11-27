@@ -8,16 +8,6 @@ import { dirname, join } from 'node:path';
  * control plane refuses the caretaker every other write (server/routes/caretaker.ts).
  */
 
-/** The only commands the caretaker runs, besides reads. */
-export const caretakerCommands = [
-  'caretaker registry account quota',
-  'unblock',
-  'caretaker dispatch',
-  'caretaker restart',
-  'create',
-  'caretaker report',
-] as const;
-
 /** What the caretaker reads; none of these changes anything. */
 export const caretakerReads = ['status', 'list', 'diagnose', 'caretaker registry', 'caretaker registry account probe'] as const;
 

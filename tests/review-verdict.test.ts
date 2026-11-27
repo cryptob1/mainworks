@@ -16,7 +16,9 @@ import { evaluate } from '../src/model-boundary/gates.js';
 import { neededRework } from '../src/daemon/rework.js';
 import { sensitiveReviewRefusal, postMergeReviewMark } from '../src/model/post-merge-review.js';
 import { postReview, readReviewBinding, reviewBindingFile, reviewBindingSchema, ReviewPostRefusal, screenshotUploads, writeReviewBinding, type ReviewPostBinding } from '../src/review-post.js';
-import { independenceRefusal, headRefusal, reviewLaunchBodySchema, secondVerdictRefusal, tokenRefusal, tokenRegistered } from '../src/server/review-verdict.js';
+import { independenceRefusal, headRefusal, reviewLaunchBodySchema, secondVerdictRefusal, tokenRefusal, launchTokenActor } from '../src/server/review-verdict.js';
+/** Whether a standing launch still authorizes this bearer. */
+const tokenRegistered = async (services: Parameters<typeof launchTokenActor>[0], tokenHash: string) => !!await launchTokenActor(services, tokenHash);
 import { assertReviewCandidate, readReviewLedger, reviewRecordSchema, reviewPrompt, saveReviewerProfile, staleReviewReason } from '../src/reviewer.js';
 import { reviewStandard } from '../src/review-prompt.js';
 import { loadMasterConfig, setupMaster } from '../src/master/config.js';

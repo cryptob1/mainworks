@@ -258,8 +258,7 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
  * keeps it from starting (GY-888). Synchronous: the headless runner spawns without awaiting, so a
  * host whose namespaces are known-refused refuses here, and one whose probe has not answered yet
  * lets bubblewrap itself fail the spawn — either way the run fails instead of starting unconfined.
- * The spawner that applies these words is src/runner/roles.ts confiningSpawn, which hands them to
- * the runner's own spawn.
+ * The headless runner applies these words (runConfinement in src/runner/roles.ts).
  */
 export function headlessConfinementWrapper(root: string, cwd: string | undefined, bwrap: string | null = bwrapOnPath(), credentialMask?: CredentialMask, environment?: NodeJS.ProcessEnv): readonly string[] {
   const head = `A headless session cannot be started with the coordinator checkout at ${root} unwritable at the OS level`;

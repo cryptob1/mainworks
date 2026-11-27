@@ -6,11 +6,10 @@ import { execFileSync } from 'node:child_process';
 import { daemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { RefusedResponse } from '../src/model/refusal.js';
-import { planeWideRefusal } from '../src/model/refusal.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-1751: a proxy's empty or HTML 502-504 on an operator-agent call keeps its status, so it is the plane's outage and not a SyntaxError.
-test('unit:operator-agent-502-status — an empty or HTML 502 answer to an operator-agent call is a plane-wide refusal; the server\'s own refusal is not', async () => {
+test('unit:operator-agent-502-status — an empty or HTML 502 answer to an operator-agent call keeps its 502 status as a refused response, not a SyntaxError', async () => {
   const root = await temporaryDirectory('gy1751-op-'), outside = await temporaryDirectory('gy1751-opcred-');
   execFileSync('git', ['init', '-q', root]);
   const credentialFile = join(outside, 'operator.token');
@@ -24,8 +23,5 @@ test('unit:operator-agent-502-status — an empty or HTML 502 answer to an opera
     const proxy = await answer(body, 502).rework!(work, 'r').catch((error: unknown) => error) as RefusedResponse;
     assert.ok(proxy instanceof RefusedResponse, String((proxy as any)?.stack ?? proxy));
     assert.equal(proxy.status, 502);
-    assert.equal(planeWideRefusal(proxy), true);
   }
-  const own = await answer(JSON.stringify({ error: 'Work item not found' }), 502).rework!(work, 'r').catch((error: unknown) => error);
-  assert.equal(planeWideRefusal(own), false);
 });

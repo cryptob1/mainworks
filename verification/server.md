@@ -29,4 +29,4 @@ After committing and building, `mainworks verify GY-N` checks HEAD. The merge tr
 - Refusal responses name their reason; tests match that text.
 - An `Idempotency-Key` makes a retried mutation replay its result; reusing one with different input is refused.
 
-- Validation runner routes return 404; external report import/read/seal and deployment-definition mutations remain. Startup and ticks perform no validation reconciliation or artifact expiry. `tests/validation-import-route.test.ts` and `tests/runner-report.test.ts` cover reports.
+- Validation runner routes return 404; external report import/read/seal and deployment-definition mutations remain. Startup and ticks perform no validation reconciliation or artifact expiry. `tests/validation-import-route.test.ts` and `tests/runner-report-result-verbatim.test.ts` cover reports.
