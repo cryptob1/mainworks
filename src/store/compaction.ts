@@ -64,8 +64,12 @@ export const expiringKinds = ['agent-registry.observed', 'agent-registry.session
 export const expiringRetentionMs = 7 * 24 * 60 * 60 * 1000;
 /** Rows one retention batch deletes at most; each batch is its own short transaction. */
 const expiringBatch = 1_000;
-/** A catch-up that removed at least this many rows rewrites the table once it is done, so its size drops. */
-const rewriteAfterRows = 50_000;
+/**
+ * A catch-up that freed at least this many stored payload bytes rewrites the table once it is done, so
+ * its size drops. Rows written since the registry stopped carrying its document are small, so only the
+ * first catch-up of the old whole-document rows reaches it.
+ */
+const rewriteAfterBytes = 1e9;
 
 const literal = (list: readonly string[]) => `ARRAY[${list.map(kind => `'${kind}'`).join(',')}]::text[]`;
 const kinds = literal([...routineSaveKinds, ...bookkeepingKinds, ...expiringKinds]);
@@ -175,15 +179,15 @@ export async function compactLedger(pool: pg.Pool, options: { retentionMs?: numb
   return { removed, total, batches: ran, cutoff: cutoff.toISOString(), cursor: Number(cursor) };
 }
 
-let expiredSinceRewrite = 0;
+let freedSinceRewrite = 0;
 /**
  * GY-4005: delete rows of `expiringKinds` older than the window, at most `batch` rows per short
  * transaction on the pool (never under the coordination lock), each batch audited with a
- * `ledger.compacted` row. When a catch-up of many rows finishes, the events table is rewritten once
+ * `ledger.compacted` row. When a catch-up that freed `rewriteAfterBytes` finishes, the events table is rewritten once
  * (VACUUM FULL, waiting at most 5 s for its lock) so its size drops instead of only its growth stopping;
  * a rewrite that fails (its lock busy, or too little disk for the copy) is not retried until the next catch-up.
  */
-export async function expireEvents(pool: pg.Pool, options: { retentionMs?: number; batch?: number; batches?: number; pauseMs?: number; rewriteAfter?: number } = {}) {
+export async function expireEvents(pool: pg.Pool, options: { retentionMs?: number; batch?: number; batches?: number; pauseMs?: number; rewriteAfterBytes?: number } = {}) {
   const retentionMs = options.retentionMs ?? expiringRetentionMs, batch = options.batch ?? expiringBatch;
   const removed: Record<string, number> = {};
   let total = 0, done = false;
@@ -193,9 +197,9 @@ export async function expireEvents(pool: pg.Pool, options: { retentionMs?: numbe
       await db.query('BEGIN');
       await db.query("SET LOCAL graphyard.ledger_compaction = 'on'");
       const rows = (await db.query(`DELETE FROM events WHERE seq = ANY(ARRAY(SELECT seq FROM events WHERE kind = ANY($1::text[]) AND work_id IS NULL
-        AND created_at < clock_timestamp() - ($2::text||' milliseconds')::interval LIMIT $3)) RETURNING kind`, [[...expiringKinds], String(retentionMs), batch])).rows as { kind: string }[];
+        AND created_at < clock_timestamp() - ($2::text||' milliseconds')::interval LIMIT $3)) RETURNING kind, pg_column_size(payload) AS bytes`, [[...expiringKinds], String(retentionMs), batch])).rows as { kind: string; bytes: number }[];
       const byKind: Record<string, number> = {};
-      for (const row of rows) byKind[row.kind] = (byKind[row.kind] ?? 0) + 1;
+      for (const row of rows) { byKind[row.kind] = (byKind[row.kind] ?? 0) + 1; freedSinceRewrite += Number(row.bytes); }
       if (rows.length) await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', ['graphyard', ledgerCompactedKind, JSON.stringify({ details: { removed: byKind, total: rows.length, retentionMs } })]);
       await db.query('COMMIT');
       for (const [kind, n] of Object.entries(byKind)) removed[kind] = (removed[kind] ?? 0) + n;
@@ -203,16 +207,15 @@ export async function expireEvents(pool: pg.Pool, options: { retentionMs?: numbe
     } catch (error) { await db.query('ROLLBACK').catch(() => {}); throw error; } finally { db.release(); }
     if (!done) await new Promise(resolve => setTimeout(resolve, options.pauseMs ?? ledgerCompactionPauseMs));
   }
-  expiredSinceRewrite += total;
   let rewritten = false;
-  if (done && expiredSinceRewrite >= (options.rewriteAfter ?? rewriteAfterRows)) {
+  if (done && freedSinceRewrite >= (options.rewriteAfterBytes ?? rewriteAfterBytes)) {
     const db = await pool.connect();
     let failed: Error | undefined;
     try {
       await db.query("SET statement_timeout = 0; SET lock_timeout = '5s'");
       await db.query('VACUUM (FULL, ANALYZE) events');
       rewritten = true;
-    } catch (error) { failed = error as Error; console.error('events table rewrite failed', failed.message); } finally { expiredSinceRewrite = 0; db.release(failed ?? true); }
+    } catch (error) { failed = error as Error; console.error('events table rewrite failed', failed.message); } finally { freedSinceRewrite = 0; db.release(failed ?? true); }
   }
   return { removed, total, done, rewritten };
 }

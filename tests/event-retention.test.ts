@@ -64,7 +64,8 @@ test('integration:event-retention-keeps-item-history — on a seeded ledger the 
   const size = async () => Number((await store.pool.query("SELECT pg_total_relation_size('events') AS bytes")).rows[0].bytes);
   const before = await counts(), sizeBefore = await size();
 
-  const result = await expireEvents(store.pool, { batches: 1_000, pauseMs: 0 });
+  // The 60,000 rows free about 20 MB here; core's whole-document rows free gigabytes against the 1 GB default.
+  const result = await expireEvents(store.pool, { batches: 1_000, pauseMs: 0, rewriteAfterBytes: 10e6 });
   assert.equal(result.total, 60_000);
   assert.deepEqual(result.removed, Object.fromEntries(named.map(kind => [kind, 20_000])));
   assert.equal(result.done, true);
@@ -77,6 +78,6 @@ test('integration:event-retention-keeps-item-history — on a seeded ledger the 
   assert.equal(result.rewritten, true, 'a catch-up this large rewrites the table');
   assert.ok(await size() < sizeBefore, 'the events table is smaller than before');
 
-  const again = await expireEvents(store.pool, { pauseMs: 0 });
+  const again = await expireEvents(store.pool, { pauseMs: 0, rewriteAfterBytes: 10e6 });
   assert.deepEqual([again.total, again.rewritten], [0, false], 'a pass with nothing past the window removes and rewrites nothing');
 });
