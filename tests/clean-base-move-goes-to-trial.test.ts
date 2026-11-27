@@ -59,7 +59,7 @@ async function fixture(label: string) {
     await mergeWriterStep({ state, config, effects: { mergeWriter: reads, persist: async () => {}, rework: async (target: Work, reason: string) => { reworks.push({ key: target.key, reason }); } }, now: () => clock, snapshot: { work: [item] }, performed } as unknown as Cycle);
     await mergeWriterIdle(state);
   };
-  return { origin, head, events, trials, reworks, moveMain, step, setOnRefused: (call: () => Promise<void>) => { onRefused = call; } };
+  return { origin, head, state, events, trials, reworks, moveMain, step, setOnRefused: (call: () => Promise<void>) => { onRefused = call; } };
 }
 
 test('integration:clean-base-move-goes-to-trial — a head refused for a conflict that merges cleanly onto the moved main is trialled and lands, not returned', { timeout: 60_000 }, async () => {
@@ -90,4 +90,18 @@ test('integration:clean-base-move-goes-to-trial — a head that still conflicts 
   assert.match(f.reworks[0]!.reason, /the merge conflicts in item\.txt\. The base moved: run sync GY-1/);
   assert.equal(f.trials.length, 0, 'no trial runs on a merge that conflicts');
   assert.equal(git(f.origin, 'rev-parse', 'main'), conflicting, 'nothing landed');
+});
+
+test('integration:clean-base-move-goes-to-trial — a conflict rework waits while the item has an unconfirmed write, then the head is trialled', { timeout: 60_000 }, async () => {
+  const f = await fixture('unconfirmed-base-move');
+  const reason = 'trial failed: the merge conflicts in item.txt', at = new Date().toISOString();
+  // A restart left a conflict rework owed and an unconfirmed write of the same item; the head merges cleanly onto main.
+  f.state.mergeWriter.reworks = [{ key: 'GY-1', id: 'w1', head: f.head, reason, refusedAt: at, attempts: 0, lastError: null }];
+  f.state.mergeWriter.unconfirmed = [{ key: 'GY-1', id: 'w1', attempt: 'lost-attempt', write: 0, event: { kind: 'refused', head: f.head, reason }, sentAt: at, replays: 0, lastError: 'socket hang up' }];
+  const stepped = await Promise.race([f.step().then(() => true), new Promise<false>(resolve => setTimeout(() => resolve(false), 10_000).unref())]);
+  assert.ok(stepped, 'the cycle finishes: the rework never waits on a write only a later replay confirms');
+  assert.ok(f.events.some(event => event.key === 'merge-record:w1:lost-attempt:0:refused'), 'the unconfirmed write is replayed');
+  for (let cycle = 0; cycle < 6 && !f.reworks.length && !f.events.some(event => event.kind === 'merge.pushed'); cycle++) await f.step();
+  assert.deepEqual(f.reworks, [], 'the head merges cleanly, so it is not returned to its worker');
+  assert.equal(f.trials.length, 1, 'the head is trialled on main as it is now');
 });

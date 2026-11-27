@@ -523,6 +523,8 @@ async function requestPendingReworks(cycle: Pick<Cycle, 'state' | 'effects' | 'n
     if (!effects.rework) { kept.push({ ...pending, attempts: pending.attempts + 1, lastError: 'this loop runs without the master identity' }); action('failed', `The rework the merge writer's refusal of ${pending.key} head ${pending.head} grounds waits: this loop runs without the master identity, so apply it with mainworks master rework ${pending.key} REASON`); continue; }
     // GY-4016: a merge conflict is judged again on main as it is now; a head that merges onto it cleanly is queued for its trial there, not returned.
     if (pending.reason.startsWith(conflictRefusalPrefix)) {
+      // A write of this item still unconfirmed is replayed later this step; waiting on it here would never end, so the rework waits a cycle.
+      if (hasUnconfirmed(writer, item.id)) { kept.push(pending); continue; }
       try {
         const tip = await reads.fetch(), merged = await reads.merge(pending.head, tip, item);
         if (!('conflict' in merged)) {
