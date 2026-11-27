@@ -27,7 +27,7 @@ import { cachedPasses, commitDependencies, dependencyKey, recordPasses, testResu
 import { shellQuote } from '../shell-quote.js';
 import { recordTestSelection, selectionCounts } from './test-selection.js';
 import { supportsCheckImages } from '../host-shim.js';
-import { HostBusyError, HostDroppedError, readShardHosts, recordHeatFallback, rereadHotHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
+import { HostBusyError, HostDroppedError, readShardHosts, recordHeatFallback, rereadHotHosts, shardSshSession, type ShardSshSession, runShardsOnHosts, realFreeCores, recordRemoteShardRun, remoteShardSession, shardHosts, hostableTrialCase, trialE2eOnHosts, splitLocalOnlyTests, trialImageHasBrowser, underHeatLimit, type HostReading, type PlacedHost } from './remote-shards.js';
 import { repositoryTrialImage, trialDockerfile, TrialRepositoryImageError } from './repository-trial-image.js';
 import { addressPoolsSpent, checkServiceVariables, dockerEnvironment, previewNetworkCount, startCheckServices, tcpAcceptProbe, type CheckServices } from '../compose-preview.js';
 import { diskFloorBytes, gateTrialKey, trialFileTimeoutMs, heatWaitSeconds, TrialHeatError, trialContainerFault, trialLoad, trialShardLanes, trialStartOwner } from './trial-load.js';
@@ -1310,6 +1310,8 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
   const log: string[] = [];
   // GY-2965: how the item's bound E2E cases ran against the served head, filled once the build has passed and riding every verdict after it.
   const e2e: TrialE2eCase[] = [];
+  /** GY-4002: how many of the trial's e2e cases ran, and how many on a test machine, for master status's remote share. */
+  let e2eShare: { cases: number; remote: number } | undefined;
   let testCache = { cached: 0, ran: 0 };
   const remaining = () => Math.max(1000, deadline - now());
   const tail = () => log.join('\n').slice(-tailLength);
@@ -1636,11 +1638,30 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const overlay = kept ? e2eOverlay : (input.e2eFrom ? String(await run('git', ['-C', worktree, 'diff', '--name-only', '-z', input.mergeSha, input.e2eFrom, '--', 'e2e/', 'tests/'], { timeoutMs: remaining() })).split('\0').filter(Boolean) : []);
       if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.e2eFrom!, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() });
       const cpuBefore = cpu.sample();
-      const ran = await containerTrialE2e({
-        worktree, mergeSha: input.mergeSha, proofs: input.e2eProofs, env, wrapper, origins: input.e2eOrigins,
+      const here = (proofs: readonly string[]) => proofs.length ? containerTrialE2e({
+        worktree, mergeSha: input.mergeSha, proofs, env, wrapper, origins: input.e2eOrigins,
         networkWrapper: boundary, runDirectory: input.runDirectory,
         scratch: temporary ?? checkout.directory, budgetMs: remaining(), run, log: line => log.push(line),
-      }).catch(async error => { throw await networkPoolFault(error, env) ?? error; }).finally(async () => {
+      }).catch(async error => { throw await networkPoolFault(error, env) ?? error; }) : Promise.resolve([]);
+      const ran = await (async () => {
+        // GY-4002: the head's cases that may run on a test machine run there as the daily catalog's do, the rest here at
+        // the same time; a case a host faulted on, or no host took, runs here once after them, its fault in the log. Base proof runs (an overlay) stay here.
+        const hosts = overlay.length ? [] : input.remote?.hosts ?? await shardHosts();
+        const hostable: string[] = [], stay: string[] = [];
+        for (const proof of hosts.length ? input.e2eProofs! : []) (await hostableTrialCase(worktree, proof.slice(4)) ? hostable : stay).push(proof);
+        if (!hostable.length) return here(input.e2eProofs!);
+        const [remote, local] = await Promise.all([
+          trialE2eOnHosts({ root: input.root, commit: input.mergeSha, baseTip: input.baseTip, proofs: hostable, run, deadline, image: runImage, hosts, read: input.remote?.read, signal: input.signal })
+            .catch(error => { log.push(`[remote] e2e cases run on this machine: ${error instanceof Error ? error.message : String(error)}`); return { cases: [], here: hostable, faults: [] }; }),
+          here(stay),
+        ]);
+        e2eShare = { cases: input.e2eProofs!.length, remote: remote.cases.length };
+        for (const entry of remote.cases) log.push(`[remote] ${entry.proof} ran on ${entry.host}`);
+        for (const fault of remote.faults) log.push(`[remote] host fault: ${fault}; it runs on this machine`);
+        local.push(...await here(remote.here));
+        const order = new Map(input.e2eProofs!.map((proof, index) => [proof, index]));
+        return [...remote.cases, ...local].sort((a, b) => (order.get(a.proof) ?? 0) - (order.get(b.proof) ?? 0));
+      })().finally(async () => {
         // Restore both edited and added proof files before any later base checks or concurrent passes.
         try { if (overlay.length) await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...overlay], { timeoutMs: remaining() }); }
         finally { if (needsExclusive && !proofOverlay.length) await releaseKeptLock(); }
@@ -1953,7 +1974,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
           const fallbackShards = placement.ran.filter((name, index) => name === local.name && !pinned[index]).length;
           if (fallbackShards > 0) await recordHeatFallback(input.root, { kind: 'shard', count: fallbackShards, at: new Date().toISOString(), hosts: [...new Set(hotHosts)] }).catch(() => {});
         }
-        await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length,
+        await recordRemoteShardRun(input.root, { ...(input.localSlot ? { label: input.localSlot } : {}), at: new Date().toISOString(), wallMs: Math.max(0, now() - startedAt), shards: placement.ran.length, remote: placement.ran.filter(name => name !== local.name).length, ...(e2eShare ? { e2e: e2eShare } : {}),
           queuedWhileIdle: placement.queuedWhileIdle, host: local.name, celsius: local.reading.celsius,
           hosts: readings.map(reading => ({ name: reading.name, away: reading.away || placement.dropped.includes(reading.name), reason: dropped.get(reading.name)?.reason ?? reading.reason, celsius: reading.celsius, freeCores: Math.round(realFreeCores(reading) * 10) / 10 })) }).catch(() => {});
       }
