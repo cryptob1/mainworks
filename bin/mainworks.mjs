@@ -10,6 +10,18 @@ let root = fileURLToPath(new URL('../', import.meta.url));
 // GY-3214: the published npm package holds no source; it runs the release this host installed.
 if (!existsSync(join(root, 'src', 'cli.ts'))) root = await (await import('./bootstrap.mjs')).releaseRoot(root, args);
 let child;
+// GY-4003: a release handover (exit code 75: the server serves another commit, as it does mid-deploy)
+// retries with backoff for up to a minute, reloading the CLI pointer each time, then gives up.
+const handoverMs = Number(process.env.MAINWORKS_RELEASE_HANDOVER_MS ?? process.env.GRAPHYARD_RELEASE_HANDOVER_MS ?? 60_000);
+const handoverStarted = Date.now();
+const retryHandover = async attempt => {
+  const remaining = handoverStarted + handoverMs - Date.now();
+  if (remaining <= 0) { console.error(`[mainworks] release handover: the server still serves another commit after ${Math.round(handoverMs / 1000)}s; giving up`); return false; }
+  const ms = Math.min(500 * 2 ** attempt, 5_000, remaining);
+  console.error(`[mainworks] release handover: retry ${attempt + 1} in ${ms}ms`);
+  await new Promise(resolve => setTimeout(resolve, ms));
+  return true;
+};
 // Resolve the complete artifact before loading it. Retained artifacts also keep lazy imports safe.
 for (let attempt = 0; ; attempt++) {
   let selected = root;
@@ -30,9 +42,8 @@ for (let attempt = 0; ; attempt++) {
     await import(pathToFileURL(built).href);
     await finished;
     if (process.exitCode !== 75) break;
+    if (!await retryHandover(attempt)) { process.exitCode = 1; break; }
     process.exitCode = 0;
-    console.error(`[mainworks] release handover: retry 1/3 in 500ms`);
-    await new Promise(resolve => setTimeout(resolve, 500));
     continue;
   }
   const entry = built ? [built] : ['--import', createRequire(join(selected, 'package.json')).resolve('tsx'), join(selected, 'src/cli.ts')];
@@ -45,7 +56,6 @@ for (let attempt = 0; ; attempt++) {
     child.on('error', error => { console.error(error.message); resolve(1); });
     child.on('exit', code => resolve(code ?? 1));
   });
-  if (code !== 75 || attempt >= 3) process.exit(code === 75 ? 1 : code);
-  console.error(`[mainworks] release handover: retry ${attempt + 1}/3 in 500ms`);
-  await new Promise(resolve => setTimeout(resolve, 500));
+  if (code !== 75) process.exit(code);
+  if (!await retryHandover(attempt)) process.exit(1);
 }
