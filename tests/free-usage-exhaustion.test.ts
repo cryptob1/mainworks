@@ -13,7 +13,7 @@ import { workFixture } from './helpers/work-fixture.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { loadMasterConfig, saveWorkerProfile, setupMaster } from '../src/master/config.js';
-import { dispatchWork, prepareWorkerLaunch, workerCommand, workerRunHandle, type WorkerRun } from '../src/master/dispatch.js';
+import { dispatchWork, workerRunHandle, type WorkerRun } from '../src/master/dispatch.js';
 import { detectRuntimeExhaustion } from '../src/master/runtime-prompt.js';
 import { detectExhaustion } from '../src/model/capacity.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
@@ -35,26 +35,27 @@ const token = (principal: Principal) => `${principal.id}-token-${'x'.repeat(32)}
 const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const freeNotice = 'Error: 429 FreeUsageLimitError: Free usage limit reached. Subscribe to OpenCode Go to keep using this model.';
-let store: Store, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
-let root: string, scratch: string, bin: string, url: string, hostId: string;
+let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, registry: AgentRegistry;
+let root: string, scratch: string, worktreeRoot: string, bin: string, url: string, hostId: string;
 const homes = new Map<string, string>();
+const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 
 before(async () => {
   store = await withDatabase('free-usage-exhaustion'); await store.init();
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   scratch = await temporaryDirectory('free-usage-exhaustion', join(process.cwd(), '.graphyard'));
   root = await temporaryDirectory('coordinator', scratch);
+  worktreeRoot = await temporaryDirectory('checkouts', scratch);
   bin = await temporaryDirectory('bin', scratch);
-  const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
+  engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
   ({ url, close } = await listen(server(engine, [coordinator, worker].map(principal => ({ ...principal, token: token(principal) })))));
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
   git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
   await writeFile(join(root, 'README.md'), 'Fixture.\n');
   git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
   git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
   process.env.PATH = `${bin}:${process.env.PATH}`;
   const credentials = await temporaryDirectory('credentials', scratch);
-  await setupMaster(root, { url, token: token(coordinator), cliPath: launcher, credentialDirectory: credentials, run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
+  await setupMaster(root, { url, token: token(coordinator), cliPath: launcher, credentialDirectory: credentials, run: { worktreeRoot } });
   hostId = (await loadMasterConfig(root)).hostId;
   const credentialFile = join(credentials, 'worker-a.token');
   await writeFile(credentialFile, token(worker), { mode: 0o600 });
@@ -78,10 +79,10 @@ async function readyItem(key: string): Promise<Work> {
 
 /**
  * One registry account per entry, each with a fixture model executable for its runtime kind: it
- * leaves uncommitted work, then either prints `failure` (after `failAfterMs`, mid-run) and exits 1,
+ * leaves uncommitted work, then either prints `failure` (after `fail-now` when `waitForTrigger` is set) and exits 1,
  * or commits and submits its head as the leased worker.
  */
-async function configure(entries: { name: string; kind: string; failure?: string; failAfterMs?: number }[], modelId: string | null = 'fixture-model') {
+async function configure(entries: { name: string; kind: string; failure?: string; waitForTrigger?: boolean }[], modelId: string | null = 'fixture-model') {
   const accounts = (await registry.document(coordinator)).accounts.filter(account => !entries.some(entry => entry.name === account.name)).map(({ quota, quotaDecision, smoke, unjudged, ...account }) => ({ ...account, enabled: false }));
   const runtimes = [];
   for (const entry of entries) {
@@ -101,7 +102,7 @@ console.log('fixture ${entry.kind} working on ' + key + ' epoch ' + epoch);
 fs.writeFileSync('notes-' + epoch + '.txt', 'partial work of epoch ' + epoch + '\\n');
 (async () => {
   if (${JSON.stringify(entry.failure ?? '')}) {
-    await new Promise(resolve => setTimeout(resolve, ${entry.failAfterMs ?? 0}));
+    if (${Boolean(entry.waitForTrigger)}) while (!fs.existsSync(home + '/fail-now')) await new Promise(resolve => setTimeout(resolve, 20));
     console.error(${JSON.stringify(entry.failure ?? '')}); process.exit(1);
   }
   fs.writeFileSync('change.txt', 'done by ${entry.kind}\\n');
@@ -123,10 +124,24 @@ fs.writeFileSync('notes-' + epoch + '.txt', 'partial work of epoch ' + epoch + '
 
 const runs = new Map<string, WorkerRun>();
 /** One host dispatch invocation, as the loop makes it. */
-async function dispatch(work: Work) {
+async function dispatch(work: Work, startupMs?: number) {
   const config = await loadMasterConfig(root);
-  return dispatchWork(root, work, config.workers[0]!, { allWork: [work], observedAt: now(), headless: spawnHeadless,
-    prepare: (at, key, profile, _run, claimBy, keep, cycle) => prepareWorkerLaunch(at, key, profile, (command, args, options) => command === 'git' && args[0] === 'fetch' ? '' : workerCommand(command, args, options), claimBy, keep, cycle),
+  return dispatchWork(root, work, config.workers[0]!, { allWork: [work], observedAt: now(), headless: spawnHeadless, startupMs,
+    prepare: async (_at, key) => {
+      const claimed = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
+      const epoch = claimed.lease!.epoch;
+      const base = git('rev-parse', '--verify', 'refs/remotes/origin/main');
+      const branch = `graphyard/${key.toLowerCase()}-${epoch}`;
+      const path = join(worktreeRoot, `${key}-${epoch}`);
+      git('worktree', 'add', '-q', '-b', branch, path, base);
+      await engine.execute(worker, 'workspace', claimed.id, { epoch, host: hostId, path, branch }, randomUUID());
+      return { epoch, path, base, branch, work: claimed };
+    },
+    release: async (_at, _key, epoch) => {
+      await engine.execute(worker, 'release', work.id, { epoch }, randomUUID()).catch(error => {
+        if (!(error instanceof Error && /Lease missing, expired, or superseded/.test(error.message))) throw error;
+      });
+    },
     capacity: async event => { const result = await api('POST', `work/${work.id}/capacity`, event); assert.equal(result.status, 200, JSON.stringify(result.body)); },
     onRun: async run => { runs.set(work.id, run); const result = await api('POST', `work/${work.id}/session`, workerRunHandle(work, config.workers[0]!, hostId, run)); assert.equal(result.status, 200, JSON.stringify(result.body)); } });
 }
@@ -184,11 +199,15 @@ test('e2e:free-usage-exhaustion — a worker account that prints 429 FreeUsageLi
   assert.equal(await starts('paid'), 6);
 });
 
+let midrunMs = 0;
+
 test('e2e:free-usage-exhaustion — a quota notice mid-run keeps the work, holds the account until its named reset, and the successor resumes it', async () => {
-  await configure([{ name: 'midrun', kind: 'muse', failure: 'Error: 429 FreeUsageLimitError: Free usage limit reached. Try again in 3h.', failAfterMs: 11_000 }, { name: 'after', kind: 'opencode' }]);
+  const startedAt = Date.now();
+  await configure([{ name: 'midrun', kind: 'muse', failure: 'Error: 429 FreeUsageLimitError: Free usage limit reached. Try again in 3h.', waitForTrigger: true }, { name: 'after', kind: 'opencode' }]);
   const work = await readyItem('GY-9790');
-  const launched = await dispatch(work);
+  const launched = await dispatch(work, 300);
   assert.equal(launched.runtime, 'muse', 'the run outlived its startup observation');
+  await writeFile(join(homes.get('midrun')!, 'fail-now'), '1');
   const exhaustion = await until(async () => (await stored(work.id)).capacity?.exhaustions?.find(entry => entry.epoch === 1 && entry.account === 'midrun'), 'the mid-run notice is recorded', 30_000, 50);
   assert.equal(exhaustion.partialWork?.state, 'committed', 'the work done before the notice is kept');
   const resetsAt = Date.parse(exhaustion.resetsAt!);
@@ -205,6 +224,11 @@ test('e2e:free-usage-exhaustion — a quota notice mid-run keeps the work, holds
   assert.ok(brief.includes(exhaustion.partialWork!.commit!.slice(0, 12)), 'the successor brief names the retained commit');
   await submitted(work.id, 2);
   assert.equal(await starts('midrun'), 1);
+  midrunMs = Date.now() - startedAt;
+});
+
+test('unit:free-usage-exhaustion — the mid-run quota notice case completes without waiting out workerStartupMs', () => {
+  assert.ok(midrunMs > 0 && midrunMs < 10_000, `expected mid-run case under 10_000 ms, took ${midrunMs} ms`);
 });
 
 test('e2e:free-usage-exhaustion — an unrelated 429 is no exhaustion: the account stays selectable', async () => {
