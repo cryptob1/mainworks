@@ -139,7 +139,7 @@ export function joinHostHeavyBudget(project: string, environment: NodeJS.Process
   environment[projectVariable] = project;
 }
 
-export interface SlotOwner { identity?: string; locked?: true; ticket?: string; pid: number; label: string; project?: string; /** GY-3528: the host a placed shard runs on. */ host?: string; cwd: string; at: string; /** The in-flight suite files the holder declared (`declareSlotFiles`, GY-1821): what later runs deduct from the floor's budget. */ files?: number }
+export interface SlotOwner { identity?: string; locked?: true; /** GY-4026: the image and build-cache reclaim — no other job takes a slot while it holds one. */ exclusive?: true; ticket?: string; pid: number; label: string; project?: string; /** GY-3528: the host a placed shard runs on. */ host?: string; cwd: string; at: string; /** The in-flight suite files the holder declared (`declareSlotFiles`, GY-1821): what later runs deduct from the floor's budget. */ files?: number }
 export interface HeldSlot { slot: number; path: string; release: () => void }
 export interface AcquireOptions {
   directory: string; label: string; project?: string;
@@ -309,7 +309,21 @@ async function running(directory: string) {
   return heldSlots(directory).filter(entry => entry.slot < (readStrictCap(directory) ? declarationSlot : gateSlot));
 }
 
+/** GY-4026: a live exclusive holder (the reclaim) other than slot `mine`; a dead one is reclaimed. */
+async function exclusiveHeld(directory: string, mine?: number) {
+  for (const entry of heldSlots(directory)) if (entry.owner?.exclusive && entry.slot !== mine && !await reclaimStale(join(directory, `slot-${entry.slot}`))) return true;
+  return false;
+}
+
 async function tryTake(directory: string, slots: number, owner: SlotOwner, firstSlot = 0): Promise<HeldSlot | null> {
+  if (await exclusiveHeld(directory)) return null;
+  const held = await takeFree(directory, slots, owner, firstSlot);
+  // Two that took slots at once each see the other: the job steps back for the reclaim.
+  if (held && !owner.exclusive && await exclusiveHeld(directory, held.slot)) { held.release(); return null; }
+  return held;
+}
+
+async function takeFree(directory: string, slots: number, owner: SlotOwner, firstSlot: number): Promise<HeldSlot | null> {
   // The limit counts jobs, not slot numbers: a job admitted under a higher limit keeps running on its
   // number, and nothing new starts until fewer than the limit run.
   if (firstSlot < gateSlot && (await running(directory)).length >= slots) return null;
@@ -397,6 +411,24 @@ export function waitLine(options: Pick<AcquireOptions, 'directory' | 'slots' | '
     .map(entry => `${holderText(entry)}${entry.owner ? ` [pid ${entry.owner.pid}, ${entry.owner.cwd}]` : ''}`);
   return `mainworks: ${options.label} waits for a host heavy-job slot: every Mainworks project on this host shares ${options.slots ?? heavyJobLimit(options.directory)} at once`
     + `${holders.length ? `, held by ${holders.join('; ')}` : ''}. It starts when one frees (${join(options.directory, 'limit')} sets the limit).`;
+}
+/**
+ * GY-4026: run `job` only while no heavy job holds a slot on this host, itself holding one that every
+ * job starting meanwhile waits for. A slot held when it starts skips it: the holders are returned and
+ * `job` does not run. A process that never joined the host budget runs it at once.
+ */
+export async function whileNoHeavyJob<T>(label: string, job: () => Promise<T>, directory = setting(slotsDirectoryVariable)): Promise<{ ran: T } | { heldBy: string[] }> {
+  if (!directory) return { ran: await job() };
+  mkdirSync(directory, { recursive: true });
+  const others = async (mine?: number) => (await liveSlots(directory)).filter(entry => entry.slot !== mine).map(holderText);
+  const before = await others();
+  if (before.length) return { heldBy: before };
+  const held = await tryTake(directory, 1, { identity, locked: true, exclusive: true, pid: process.pid, label, ...(setting(projectVariable) ? { project: setting(projectVariable) } : {}), cwd: process.cwd(), at: new Date().toISOString() });
+  if (!held) return { heldBy: await others() };
+  try {
+    const after = await others(held.slot);
+    return after.length ? { heldBy: after } : { ran: await job() };
+  } finally { held.release(); }
 }
 /** GY-3396: a test merge's heavy job, by its item key (or the batch gate's), in the words the Work page shows. */
 export const testMergeLabel = (key: string) => `test merge ${key}`;
