@@ -32,7 +32,7 @@ export function DeliveryDefaults({ status }: { status: any }) {
   const delivery = project?.delivery;
   const apps = delivery?.applications.length ?? 0;
   return <><PageHeader title="Delivery" fact={delivery ? `${previewLabel[delivery.previews] ?? delivery.previews} · ${apps ? `${apps} ${apps === 1 ? 'application' : 'applications'} declared` : 'no application declared'} · ${delivery.productionVerification ? 'live release verified' : 'no production verification'}.`
-      : project?.error ? 'The delivery declaration is refused.' : 'Reading the delivery settings…'}/>
+      : project?.error ? 'The delivery declaration is refused.' : status ? 'Delivery settings show here once the control plane reports them.' : 'Reading the delivery settings…'}/>
     <section className="panel" aria-label="Delivery defaults"><h2>Delivery defaults</h2>
       {project?.error && <p className="error" role="alert">The project's delivery declaration is refused: {project.error}</p>}
       {delivery && <dl className="facts">

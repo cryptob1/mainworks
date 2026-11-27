@@ -91,7 +91,7 @@ export function AlertsLine({ status }: { status: any }) {
   const on = typeof alerts === 'number' && alerts > 0;
   return <div data-alerts={on ? 'on' : alerts === false ? 'off' : 'unknown'}>
     <p title={on ? `When queued work has neither started nor merged for ${alerts} minutes, the loop posts to your webhook URL, repeats at most hourly, and posts an all-clear when work moves again.` : undefined}>
-      {on ? <span className="green">Stall alerts: on (after {alerts} min)</span> : alerts === false ? <span className="amber">Stall alerts: off</span> : 'Stall alerts: not known yet'}
+      {on ? <span className="green">Stall alerts: on (after {alerts} min)</span> : alerts === false ? <span className="amber">Stall alerts: off</span> : 'Stall alerts show here once the loop reports them.'}
     </p>
     {alerts === false && <MoreDetails summary="Turn them on">To be told when queued work cannot start or merge, set <code>run.alertUrl</code> in <code>.graphyard/master.json</code> on the host that runs the master loop to a webhook URL that takes a POST, such as an ntfy topic (<code>https://ntfy.sh/your-topic</code>); <code>run.alertMinutes</code> sets the stall window (default 20).</MoreDetails>}
     {!on && alerts !== false && <MoreDetails summary="Why">The dashboard learns it from a running master loop. Start the loop on the host with <code>mainworks master run</code>, or check it with <code>mainworks master status</code>.</MoreDetails>}

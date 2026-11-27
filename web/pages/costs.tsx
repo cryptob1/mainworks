@@ -6,15 +6,16 @@ type Api = (path: string) => Promise<any>;
 const useCosts = (api: Api, path: string, key: unknown) => {
   const [costs, setCosts] = useState<CostSummary | null>(null);
   const [error, setError] = useState('');
-  useEffect(() => { let live = true; api(path).then(next => { if (live) setCosts(next?.windows ? next : null); }, e => { if (live) setError((e as Error).message); }); return () => { live = false; }; }, [key]);
-  return { costs, error };
+  const [read, setRead] = useState(false);
+  useEffect(() => { let live = true; api(path).then(next => { if (live) { setCosts(next?.windows ? next : null); setRead(true); } }, e => { if (live) setError((e as Error).message); }); return () => { live = false; }; }, [key]);
+  return { costs, error, read };
 };
 
 /** The Costs page (GY-3289): what the agents spent this week and by role; the per-model, per-account and price-sheet tables sit in one Details fold (GY-3485). */
 export default function CostsPage({ api, observedAt }: { api: Api; observedAt: number }) {
   // Read again each minute the dashboard stays open, not on every poll.
-  const { costs, error } = useCosts(api, 'costs', Math.floor(observedAt / 60_000));
-  return <CostsView costs={costs} error={error} now={Number.isNaN(observedAt) ? Date.now() : observedAt}/>;
+  const { costs, error, read } = useCosts(api, 'costs', Math.floor(observedAt / 60_000));
+  return <CostsView costs={costs} error={error} read={read} now={Number.isNaN(observedAt) ? Date.now() : observedAt}/>;
 }
 
 /** A window's total: what its priced tokens cost, 'at least' beside unpriced ones, or 'price unknown' when none is priced. */
@@ -31,11 +32,11 @@ const breakdown = (title: string, lines: CostLine[]) => {
 };
 
 /** The page as rendered from one read, so it can be drawn and tested without the network. */
-export function CostsView({ costs, error, now }: { costs: CostSummary | null; error: string; now: number }) {
+export function CostsView({ costs, error, read = true, now }: { costs: CostSummary | null; error: string; read?: boolean; now: number }) {
   const due = costs ? pricesDue(costs, now) : [], unpriced = costs ? costs.models.filter(entry => entry.unpriced > 0) : [];
   const spent = !!costs && (lineTokens(costs.windows.all) > 0 || costs.windows.all.notReported > 0);
   return <section className="costs-page" aria-label="Costs">
-    <PageHeader title="Costs" fact={costs ? <>{dollars(costs.windows.week.cost)} this week{unpriced.length > 0 && <> · <span title={unpriced.map(entry => entry.name).join(', ')}>{unpriced.length} {unpriced.length === 1 ? 'model has' : 'models have'} no price</span></>}</> : error ? 'Costs could not be read.' : 'Reading costs…'}/>
+    <PageHeader title="Costs" fact={costs ? <>{dollars(costs.windows.week.cost)} this week{unpriced.length > 0 && <> · <span title={unpriced.map(entry => entry.name).join(', ')}>{unpriced.length} {unpriced.length === 1 ? 'model has' : 'models have'} no price</span></>}</> : error ? 'Costs could not be read.' : read ? 'Nothing spent yet: costs show once a session reports its usage.' : 'Reading costs…'}/>
     {error && <p role="alert" className="amber">{error}</p>}
     {costs && !spent && <EmptyState title="No agent has spent anything yet.">Each session's tokens are counted here once it reports its usage.</EmptyState>}
     {costs && <>
