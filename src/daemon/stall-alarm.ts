@@ -20,7 +20,7 @@ const minStallMs = 30 * 60_000, maxStallMs = 4 * 3_600_000;
 const nonMovingKinds = new Set(['heartbeat', 'github.observed', 'priority', 'message', 'taste', 'sync']);
 
 export type NextStepOwner = 'a builder' | 'a reviewer' | 'the merge step' | 'the Lead' | 'a person' | 'nobody';
-export interface NotMovingItem { key: string; title: string; stage: string; ageMs: number; owner: NextStepOwner }
+export interface NotMovingItem { key: string; title: string; stage: string; ageMs: number; owner: NextStepOwner; blocker?: string }
 export interface StallReadings {
   now: number; open: readonly Work[]; ready: readonly Work[]; releasable?: readonly Work[];
   released?: number; freeSlots: number; state: Pick<DaemonState, 'actions' | 'lock'>;
@@ -94,7 +94,7 @@ export function deriveNotMoving(work: readonly Work[], now: number, eventsByWork
     // Work waiting on an open dependency is not itself stalled: the dependency is, and is reported.
     if (item.stage === 'done' || isClosed(item) || (!item.ready && item.stage === 'backlog') || item.dependencies?.some(id => work.find(dep => dep.id === id)?.stage !== 'done')) continue;
     const owner = nextStepOwner(item, work, now), ageMs = Math.max(0, now - lastMovedAt(item, eventsByWork.get(item.id) ?? [], now));
-    const entry: NotMovingItem = { key: item.key, title: item.title, stage: item.stage, ageMs, owner };
+    const entry: NotMovingItem = { key: item.key, title: item.title, stage: item.stage, ageMs, owner, ...(item.blocker ? { blocker: item.blocker } : {}) };
     if (owner === 'a person') { waitingOnPerson.push(entry); continue; }
     const thresholdMs = owner === 'nobody' ? minStallMs : Math.min(maxStallMs, Math.max(minStallMs, 3 * (medians[item.stage] ?? 0)));
     if (ageMs > thresholdMs) notMoving.push(entry);

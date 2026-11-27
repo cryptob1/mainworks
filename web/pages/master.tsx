@@ -7,7 +7,7 @@ import { formatAge } from '../../src/model/duration';
 import { humanAsk } from '../../src/model/human-ask';
 import LiveTerminal, { type TerminalHandle } from '../components/live-terminal';
 import { MoreDetails, PageHeader } from '../components/page-layout';
-import { goalOrder, leadFeed, ledgerKinds, notMovingLines, steerers, type FeedDecision, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
+import { goalOrder, leadFeed, ledgerKinds, notMovingLine, steerers, type FeedDecision, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
 
 type Message = { id: number; from: string; to?: string; thread: string; text: string; at: string; replies: { id: number; by: string; text: string; at: string }[] };
 type Entry = { id: number; who: string; text: string; at: string };
@@ -140,9 +140,21 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   };
   // GY-3432: the loop's stall alarm, first, until work moves again.
   const stall = typeof status?.setup?.stallAlarm === 'string' ? status.setup.stallAlarm : null;
-  const stalledLines = notMovingLines(notMoving);
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const owes = masterOwes(work, now);
+  // GY-4000 AC-5: Not moving replaces Blocked; merge standing blockers once, carrying each blocker reason.
+  const workByKey = new Map(work.map(item => [item.key, item]));
+  const stalledByKey = new Map<string, NotMovingRow & { id?: string }>();
+  for (const row of notMoving) {
+    const item = workByKey.get(row.key);
+    stalledByKey.set(row.key, { ...row, id: item?.id, blocker: item ? (item.blocker ?? undefined) : row.blocker });
+  }
+  for (const entry of owes) {
+    if (stalledByKey.has(entry.key)) continue;
+    const item = workByKey.get(entry.key);
+    stalledByKey.set(entry.key, { id: entry.id, key: entry.key, title: entry.title, stage: item?.stage ?? 'ready', ageMs: entry.since !== null ? Math.max(0, now - entry.since) : 0, owner: 'nobody', blocker: entry.blocker });
+  }
+  const stalled = [...stalledByKey.values()].sort((a, b) => b.ageMs - a.ageMs || a.key.localeCompare(b.key));
   // Who this session is, as the conversation judges it: the operator may act on anything, an
   // invited maintainer may steer (message and priority), and everyone else watches.
   const actor = status?.actor ?? null;
@@ -187,18 +199,14 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   return <>
     <PageHeader title="Lead" fact="Steer the Lead and act on its cards."/>
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
-    {stalledLines.length > 0 && <section className="panel" data-not-moving aria-label="Not moving"><h2>Not moving ({notMoving.length})</h2>
-      <ul className="master-owes">{stalledLines.map((entry, i) => {
-        const id = work.find(item => item.key === notMoving[i]?.key)?.id;
-        return <li key={entry}>{id && i < 5 ? <button className="text-button" onClick={() => setSelected(id)}>{entry}</button> : <span className="muted">{entry}</span>}</li>;
-      })}</ul>
-    </section>}
-    {owes.length > 0 && <section className="panel" aria-label="Blockers the Lead owes"><h2>Blocked ({owes.length})</h2>
-      <ul className="master-owes">{owes.map(entry => <li key={entry.id}>
-        <button className="text-button" onClick={() => setSelected(entry.id)}><span data-title>{entry.title}</span></button>
-        <span className="muted">{entry.since !== null ? `blocked ${formatAge(entry.since, now)}` : 'blocked'}</span>
-        <span className="muted master-owes-blocker" title={entry.blocker}>{entry.blocker}</span>
-      </li>)}</ul>
+    {stalled.length > 0 && <section className="panel" data-not-moving aria-label="Not moving"><h2>Not moving ({stalled.length})</h2>
+      <ul className="master-owes">
+        {stalled.slice(0, 5).map(entry => <li key={entry.key}>
+          {entry.id ? <button className="text-button" onClick={() => setSelected(entry.id!)}>{notMovingLine(entry)}</button> : <span className="muted">{notMovingLine(entry)}</span>}
+          {entry.blocker && <span className="muted master-owes-blocker" title={entry.blocker}>{entry.blocker}</span>}
+        </li>)}
+        {stalled.length > 5 && <li key="more"><span className="muted">+{stalled.length - 5} more not moving</span></li>}
+      </ul>
     </section>}
     <div className="tabs master-tabs" role="tablist" aria-label="Lead views">
       {tabs.map((entry, index) => <button

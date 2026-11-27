@@ -12,7 +12,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { notMovingLines } from '../web/lead-feed.js';
+import { notMovingLine } from '../web/lead-feed.js';
 import MasterPage from '../web/pages/master.js';
 import type { Work } from '../src/model.js';
 import type { FlowEvent } from '../src/flow-numbers.js';
@@ -133,6 +133,7 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
   assert.equal(result.notMoving.find(i => i.key === 'GY-111')!.owner, 'the Lead', 'a scope request is the Lead\'s to decide, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-108')!.owner, 'a builder', 'queued ready work waits on a builder, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-101')!.owner, 'nobody');
+  assert.equal(result.notMoving.find(i => i.key === 'GY-101')!.blocker, 'old env blocker');
   assert.equal(result.notMoving.find(i => i.key === 'GY-103')!.owner, 'a reviewer');
   assert.equal(result.notMoving.find(i => i.key === 'GY-104')!.owner, 'nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-106')!.owner, 'a builder');
@@ -153,8 +154,7 @@ test('integration:not-moving-items-reach-status-wake-and-lead-page — oldest fi
   assert.match(lines[0]!, /^GY-201 Stalled item 1 .*1h 35m.*ready.*nobody/);
   assert.match(lines[5]!, /\+2 more/);
   assert.deepEqual(formatNotMovingLines([]), [], 'empty produces no lines (no stall none)');
-  assert.deepEqual(notMovingLines([]), [], 'Lead feed helper produces no lines when empty');
-  assert.equal(notMovingLines(items).length, 6, 'Lead feed helper caps at 5 plus rest');
+  assert.match(notMovingLine(items[0]!), /^GY-201 Stalled item 1 .*1h 35m.*ready.*nobody/);
 
   // Wire into masterStatusReport and runCycle.
   const directory = await temporaryDirectory('not-moving-integration');
@@ -218,7 +218,12 @@ test('integration:not-moving-items-reach-status-wake-and-lead-page — oldest fi
   assert.equal('notMoving' in reportEmpty, false, 'empty notMoving is omitted from master status');
   assert.equal(JSON.stringify(reportEmpty).toLowerCase().includes('stall none'), false);
 
-  // Lead page renders nothing for not-moving when empty.
+  // Lead page renders nothing for not-moving when empty, and renders a blocked item once in Not moving (replacing Blocked) with its blocker reason.
   const emptyMarkup = renderToStaticMarkup(createElement(MasterPage, { work: [], observedAt: clock, token: '', api: async () => ({}), setSelected: () => {}, action: async () => {}, busy: false }));
   assert.equal(emptyMarkup.includes('Not moving'), false, 'Lead page shows nothing for not-moving when none');
+  const blocked = workFixture({ id: 'w-b1', key: 'GY-301', title: 'Fix billing export', stage: 'build', ready: true, blocker: 'Missing staging DB credentials', blockedAt: new Date(clock - 45 * min).toISOString(), stageEnteredAt: new Date(clock - 45 * min).toISOString(), sessions: [] });
+  const blockedMarkup = renderToStaticMarkup(createElement(MasterPage, { work: [blocked], observedAt: clock, token: '', api: async () => ({}), setSelected: () => {}, action: async () => {}, busy: false }));
+  assert.ok(blockedMarkup.includes('Not moving (1)'), 'blocked item appears in Not moving');
+  assert.ok(blockedMarkup.includes('Missing staging DB credentials'), 'blocked item carries its blocker reason');
+  assert.equal(blockedMarkup.includes('Blocked ('), false, 'no separate Blocked panel exists');
 });
