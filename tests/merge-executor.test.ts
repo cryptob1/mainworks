@@ -28,7 +28,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { completionBody } from '../src/cli/complete.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { isolatedTestEnvironment } from '../src/cli/test-isolation.js';
 import { trialPhases, type TrialPhaseDurations } from '../src/merge-writer/trial.js';
@@ -510,10 +510,8 @@ async function commit(cwd: string, path: string, text: string, message: string) 
 }
 before(async () => {
   fixtureRoot = await realpath(await temporaryDirectory('merge-executor'));
-  origin = join(fixtureRoot, 'origin.git'); checkout = join(fixtureRoot, 'checkout'); worktreeBase = join(fixtureRoot, 'managed');
-  git(fixtureRoot, 'init', '-q', '--bare', '-b', 'main', origin); git(fixtureRoot, 'clone', '-q', origin, checkout);
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await commit(checkout, 'README.md', '# Fixture\n', 'base');
+  checkout = join(fixtureRoot, 'checkout'); worktreeBase = join(fixtureRoot, 'managed');
+  ({ origin } = await gitRepo({ root: checkout, origin: true, files: { 'README.md': '# Fixture\n' } }));
   await commit(checkout, 'src/app.ts', 'export const app = 1;\n', 'app');
   await commit(checkout, 'tests/app.test.ts', "import { test } from 'node:test';\ntest('unit:app-works — the app answers', () => {});\n", 'test');
   git(checkout, 'push', '-q', 'origin', 'main');
