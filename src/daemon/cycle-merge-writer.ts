@@ -788,19 +788,25 @@ function mergeFlightTrials(reads: MergeWriterReads, state: DaemonState, persist:
 async function startMergeFlight(cycle: Pick<Cycle, 'state' | 'effects' | 'now'>, reads: MergeWriterReads, heads: readonly Work[], options: { adopted?: Map<string, TrialRunHandle> } = {}) {
   const { state, effects, now } = cycle;
   const writer = state.mergeWriter;
+  const live = flightsOf(state);
+  const running = new Set([...live].flatMap(flight => flight.keys ?? [flight.key]));
+  const runningHeads = new Set([...live].map(flight => flight.head).concat((writer.inFlights ?? []).filter(position => running.has(position.key)).map(position => position.head)));
+  // GY-3986: refuse any head that already has a live flight or an open intent in this loop.
+  heads = heads.filter(work => !running.has(work.key) && !runningHeads.has(work.candidate!.sha.toLowerCase())
+    && (options.adopted?.has(work.key) || (work.mergeLedger?.state !== 'intent' && !(writer.unconfirmed ?? []).some(entry => entry.key === work.key && entry.event.kind === 'intent'))));
+  if (!heads.length) return;
   const at = () => new Date(now()).toISOString();
   const first = heads[0]!;
   const carried = new Map((writer.inFlights ?? []).filter(entry => options.adopted?.has(entry.key)).map(entry => [entry.key, entry]));
   const previous = carried.get(first.key);
   // GY-1852: the attempt id is on the persisted state before the attempt's first write; the flight is published only once it is, so a failed persist leaves nothing new in flight and a later cycle starts afresh.
-  const attempt = previous?.attempt ?? (previous ? writer.inFlight?.attempt : undefined) ?? randomUUID(), live = flightsOf(state);
+  const attempt = previous?.attempt ?? (previous ? writer.inFlight?.attempt : undefined) ?? randomUUID();
   const entry: Flight = { key: first.key, id: first.id, head: first.candidate!.sha.toLowerCase(), startedAt: previous?.startedAt ?? at(), settled: null, trials: new Set(), keys: heads.map(work => work.key), attempt, slots: mergeBatches(heads).length };
   // Every head in flight, in queue order, its detached trial run with it (GY-3159): the flights already
   // running keep their entries (GY-3182), and this flight's heads join them. GY-2963: each head's first
   // step is its wait — the fetch, the trial merge and the intent record before the trial's checkout
   // begins — so even a slow start is named from the first instant.
   const before = { inFlight: writer.inFlight, inFlights: writer.inFlights };
-  const running = new Set([...live].flatMap(flight => flight.keys ?? [flight.key]));
   writer.inFlights = [...(writer.inFlights ?? []).filter(position => running.has(position.key) || (options.adopted && !heads.some(work => work.key === position.key))),
     ...heads.map(work => { const head = work.candidate!.sha.toLowerCase(); return carried.get(work.key) ?? { key: work.key, id: work.id, head, attempt, startedAt: entry.startedAt, step: 'queue wait', stepStartedAt: entry.startedAt }; })];
   live.add(entry);
