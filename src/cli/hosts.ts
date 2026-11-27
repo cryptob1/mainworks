@@ -14,7 +14,7 @@ export const hostCommands = defineCommands([{
     '  host unshare HOST PUBLIC-KEY  then run host add there. Unshare removes that key',
     '  host prepare                  Print the one-time sudo script, for a host with no SSH login',
     '  host sessions USER@HOST N     Let the host run N agent sessions at once (0: test shards only).',
-    '                                Codex workers start there; each login is handed over per session',
+    '                                Builders start there first; each login is handed over per session',
     '                                in memory and never written to the host\'s disk',
     '  host remove USER@HOST         Stop reading the host',
     '  host list                     The recorded hosts',

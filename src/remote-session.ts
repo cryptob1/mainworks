@@ -1,5 +1,6 @@
 // Concern: GY-3405 — an agent session on an added host. A host that `mainworks host sessions` opened to
-// sessions takes worker sessions of the runtimes its image holds. The session's commit goes to the host
+// sessions takes worker sessions of the runtimes its image holds; GY-4004: that is every runtime the
+// builders use, so a builder runs on a host with room before this machine. The session's commit goes to the host
 // as a merge trial's does (its mirror, the warm image), and the shim's `run-session` runs the runtime there
 // in a container with the checkout mounted at the worktree's own path. The account login is handed over
 // for that one session: it travels on the SSH channel's stdin into the container, which writes it into an
@@ -18,12 +19,13 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { defaultChildRun, type ChildRun } from './child-runner.js';
-import { probeHost, readHosts } from './hosts.js';
+import { probeHost, readHosts, type HostRecord } from './hosts.js';
 import { remoteShardSession, shardSshSession } from './merge-writer/remote-shards.js';
 import { trialImage } from './merge-writer/trial-container.js';
+import { trialHotCelsius } from './merge-writer/trial-load.js';
 
 /** Runtimes the worker image holds (the Dockerfile's trial stage): only their sessions run on a host. */
-const remoteRuntimes = ['codex'];
+export const remoteRuntimes: readonly string[] = ['claude', 'codex', 'opencode', 'cursor'];
 /** The files of a login home that hold its sign-in and settings: what is handed over, and handed back when changed. */
 const loginFiles = ['.credentials.json', '.claude.json', 'settings.json', 'auth.json', 'config.toml', 'opencode/auth.json', 'cursor/auth.json', 'cli-config.json'];
 const sessionDirectory = '/tmp/mainworks-session';
@@ -289,14 +291,22 @@ export async function runRemoteSession(input: RemoteSession): Promise<number> {
   }
 }
 
-/** An added host open to sessions with room for one more of `kind`, answering its probe now; null keeps the session on this machine. */
+/** A ready, cool added host open to sessions with room for one more of `kind`; null keeps the session on this machine. */
 export async function remoteSessionHost(kind: string, live: () => readonly string[], run: ChildRun = defaultChildRun, file?: string): Promise<string | null> {
   if (!remoteRuntimes.includes(kind)) return null;
   for (const host of await readHosts(file).catch(() => [])) {
     if (!host.sessions || live().filter(target => target === host.target).length >= host.sessions) continue;
-    // A shim older than sessions takes shards only, until prepare runs there again.
+    // A helper older than sessions takes shards only, until `host add` updates it; `host list` names why.
     const probe = await probeHost(host.target, run);
-    if (probe.ok && probe.verbs?.includes('run-session:1')) return host.target;
+    if (probe.ok && probe.verbs?.includes('run-session:1') && (probe.celsius === null || probe.celsius < trialHotCelsius)) return host.target;
   }
   return null;
+}
+
+/** GY-4004: the builder sessions running now on this machine (null) and on each host open to sessions, beside its room. */
+export function builderSessionCounts(running: readonly (string | null)[], hosts: readonly Pick<HostRecord, 'target' | 'sessions'>[]) {
+  return {
+    coordinator: running.filter(host => !host).length,
+    hosts: hosts.filter(host => host.sessions).map(host => ({ host: host.target, running: running.filter(entry => entry === host.target).length, room: host.sessions! })),
+  };
 }

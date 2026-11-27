@@ -53,7 +53,7 @@ The detail the [getting-started guide](setup.md) leaves out.
 - Compute-only port: where port 22 is Tailscale SSH (which ignores keys), setup starts OpenSSH for `gy-compute` on port 2222, key-only and shim-only.
 - On such a machine add `gy-compute@HOST:2222` or an alias from `~/.ssh/config`.
 - Agent sessions on a host: `mainworks host sessions gy-compute@HOST 2` lets it run up to two worker sessions at once. 0 turns it back to test shards only.
-- Codex workers start there, the runtime the worker image holds; others stay on this machine.
+- Claude, Codex, OpenCode and Cursor builders start there first, while it has room and is under its heat limit; this machine runs them only when no host has room.
 - The account's login goes over SSH into the container's memory for that one session. It is never written to the host's disk and is gone when the session ends.
 - A login the provider refreshed comes back here.
 - The remote session's commits and changed files show up in the worktree here as it works.
