@@ -63,21 +63,24 @@ for (const width of [390, 1280]) {
     await expect(section).toContainText('nobody');
     await expect(section).toContainText('Waiting for staging database credentials');
 
-    // AC-5: Not moving replaces Blocked; no Blocked panel exists and no item appears twice across panels.
+    // AC-5: Not moving replaces Blocked; no Blocked panel exists and no item appears twice anywhere on the page (panels or Goal order rail, by key or title).
     await expect(page.getByRole('region', { name: 'Blockers the Lead owes' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /^Blocked\b/ })).toHaveCount(0);
-    const panelKeys = await page.evaluate(() => {
-      const matches: string[] = [];
-      for (const panel of document.querySelectorAll('section.panel')) {
-        for (const button of panel.querySelectorAll('li button')) {
-          const match = button.textContent?.match(/\bDEMO-\d+\b/);
-          if (match) matches.push(match[0]);
-        }
-      }
-      return matches;
-    });
-    expect(panelKeys).toEqual(['DEMO-104', 'DEMO-105']);
-    expect(new Set(panelKeys).size, `no item appears twice across panels at ${width} px`).toBe(panelKeys.length);
+    const openItems = state.work.filter((w: any) => w.stage !== 'done').map((w: any) => ({ key: w.key as string, title: w.title as string }));
+    const occurrences = await page.evaluate((items) => {
+      const buttons = [...document.querySelectorAll('section.panel li button, aside.lead-rail li button')].map(el => el.textContent ?? '');
+      const railText = document.querySelector('aside.lead-rail')?.textContent ?? '';
+      return items.map(item => ({
+        key: item.key,
+        count: buttons.filter(text => text.includes(item.key) || text.includes(item.title)).length,
+        inRail: railText.includes(item.key) || railText.includes(item.title),
+      }));
+    }, openItems);
+    for (const entry of occurrences) {
+      expect(entry.count, `${entry.key} appears at most once across Lead page panels and rail at ${width} px`).toBeLessThanOrEqual(1);
+    }
+    expect(occurrences.find(e => e.key === 'DEMO-104')).toEqual({ key: 'DEMO-104', count: 1, inRail: false });
+    expect(occurrences.find(e => e.key === 'DEMO-105')).toEqual({ key: 'DEMO-105', count: 1, inRail: false });
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `no horizontal scroll at ${width} px`).toBe(0);

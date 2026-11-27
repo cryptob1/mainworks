@@ -6,6 +6,7 @@ import { writeFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { deriveNotMoving, formatNotMovingLines, type NotMovingItem } from '../src/daemon/stall-alarm.js';
+import { flowKinds } from '../src/server/flow.js';
 import { emptyDaemonState, daemonStatePath } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
@@ -118,18 +119,41 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
   const scopeAsk = workFixture({ id: 'w-sr', key: 'GY-111', title: 'Blocker on a scope request', stage: 'ready', ready: true, stageEnteredAt: at(-35 * min), blocker: 'needs a file', blockedAt: at(-35 * min), sessions: [],
     agentRequests: [{ id: 'sr-1', type: 'scope-request', epoch: 1, requestedBy: 'worker-a', at: at(-35 * min), reason: 'Need extra file', decider: { kind: 'rule', who: 'master', command: null }, releasedLease: true, state: 'open' }] as never });
 
-  const result = deriveNotMoving([...finished, staleBlocker, reviewOk, reviewSlow, backedOff, humanWait, buildCapped, queuedFresh, queuedOld, waitsOnDep, humanDecided, scopeAsk], now, events);
+  // 10. Fresh blocked item under 30m is NOT reported.
+  const freshBlocker = workFixture({
+    id: 'w-fresh-blocker', key: 'GY-112', title: 'Freshly blocked item', stage: 'ready', ready: true,
+    stageEnteredAt: at(-90 * min), blocker: 'fresh env blocker', blockedAt: at(-15 * min), sessions: [],
+  });
+
+  // 11. No-actor cases: review and build items with no running session and no live lease are owner 'nobody'
+  // (reported past 30m even when stage 3x median is longer; not reported under 30m).
+  const reviewNoActor = workFixture({
+    id: 'w-rev-orphan', key: 'GY-113', title: 'Review with no reviewer', stage: 'review', ready: true,
+    stageEnteredAt: at(-35 * min), sessions: [], lease: null,
+  });
+  const buildNoActor = workFixture({
+    id: 'w-build-orphan', key: 'GY-114', title: 'Build with no builder', stage: 'build', ready: true,
+    stageEnteredAt: at(-35 * min), sessions: [], lease: null,
+  });
+  const buildNoActorFresh = workFixture({
+    id: 'w-build-orphan-fresh', key: 'GY-115', title: 'Build just lost builder', stage: 'build', ready: true,
+    stageEnteredAt: at(-20 * min), sessions: [], lease: null,
+  });
+
+  const result = deriveNotMoving([...finished, staleBlocker, reviewOk, reviewSlow, backedOff, humanWait, buildCapped, queuedFresh, queuedOld, waitsOnDep, humanDecided, scopeAsk, freshBlocker, reviewNoActor, buildNoActor, buildNoActorFresh], now, events);
 
   // Waiting on a person is separate and never in notMoving.
   assert.deepEqual(result.waitingOnPerson.map(i => i.key), ['GY-105', 'GY-110']);
   assert.equal(result.waitingOnPerson[0]!.owner, 'a person');
   assert.equal(result.notMoving.some(i => i.key === 'GY-105'), false, 'human wait is never counted as system stall');
 
-  // Review inside usual time is not reported.
+  // Review inside usual time, fresh blocker (<30m), and fresh no-actor build (<30m) are not reported.
   assert.equal(result.notMoving.some(i => i.key === 'GY-102'), false, 'live review inside usual time is not reported');
+  assert.equal(result.notMoving.some(i => i.key === 'GY-112'), false, 'blocked item under 30m is not reported');
+  assert.equal(result.notMoving.some(i => i.key === 'GY-115'), false, 'no-actor build under 30m is not reported');
 
-  // Oldest first: GY-106 (250m), GY-103 (80m), GY-104 (50m), GY-101 (45m), GY-108 (40m); never GY-107 or GY-109.
-  assert.deepEqual(result.notMoving.map(i => i.key), ['GY-106', 'GY-103', 'GY-104', 'GY-101', 'GY-108', 'GY-111']);
+  // Oldest first: GY-106 (250m), GY-103 (80m), GY-104 (50m), GY-101 (45m), GY-108 (40m), GY-111/113/114 (35m); never GY-107, GY-109, GY-112, GY-115.
+  assert.deepEqual(result.notMoving.map(i => i.key), ['GY-106', 'GY-103', 'GY-104', 'GY-101', 'GY-108', 'GY-111', 'GY-113', 'GY-114']);
   assert.equal(result.notMoving.find(i => i.key === 'GY-111')!.owner, 'the Lead', 'a scope request is the Lead\'s to decide, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-108')!.owner, 'a builder', 'queued ready work waits on a builder, not nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-101')!.owner, 'nobody');
@@ -137,6 +161,21 @@ test('unit:not-moving-is-judged-by-time-and-owner-not-cause — stale blocker, l
   assert.equal(result.notMoving.find(i => i.key === 'GY-103')!.owner, 'a reviewer');
   assert.equal(result.notMoving.find(i => i.key === 'GY-104')!.owner, 'nobody');
   assert.equal(result.notMoving.find(i => i.key === 'GY-106')!.owner, 'a builder');
+  assert.equal(result.notMoving.find(i => i.key === 'GY-113')!.owner, 'nobody', 'review with no session is owned by nobody');
+  assert.equal(result.notMoving.find(i => i.key === 'GY-114')!.owner, 'nobody', 'build with no session or live lease is owned by nobody');
+
+  // 12. Clearing a blocker (unblock), setting a hold (hold), and lifting a hold (ready) reset lastMovedAt and are read by flowKinds.
+  for (const kind of ['blocked', 'unblock', 'hold', 'ready']) assert.ok(flowKinds.includes(kind), `flowKinds includes ${kind} so delta rows reach lastMovedAt`);
+  const unblocked = { ...staleBlocker, blocker: null, blockedAt: null };
+  const afterUnblock = deriveNotMoving([unblocked], now, new Map([['w-blocker', [{ kind: 'blocked', at: at(-45 * min) }, { kind: 'unblock', at: at(-2 * min) }]]]));
+  assert.equal(afterUnblock.notMoving.some(i => i.key === 'GY-101'), false, 'clearing a blocker clears the not-moving report');
+
+  const held = workFixture({ id: 'w-hold', key: 'GY-116', title: 'Held item', stage: 'ready', ready: true, hold: true, stageEnteredAt: at(-90 * min), sessions: [] });
+  assert.equal(deriveNotMoving([held], now, new Map([['w-hold', [{ kind: 'hold', at: at(-10 * min) }]]])).notMoving.length, 0, 'fresh hold resets moving clock');
+  const heldStale = deriveNotMoving([held], now, new Map([['w-hold', [{ kind: 'hold', at: at(-35 * min) }]]]));
+  assert.deepEqual(heldStale.notMoving.map(i => [i.key, i.owner]), [['GY-116', 'the Lead']]);
+  const holdLifted = { ...held, hold: undefined };
+  assert.equal(deriveNotMoving([holdLifted], now, new Map([['w-hold', [{ kind: 'hold', at: at(-35 * min) }, { kind: 'ready', at: at(-2 * min) }]]])).notMoving.length, 0, 'lifting a hold resets moving clock');
 });
 
 test('integration:not-moving-items-reach-status-wake-and-lead-page — oldest first, max 5 + rest count, 1h wake repeat, and empty shows nothing', async () => {

@@ -155,6 +155,8 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
     stalledByKey.set(entry.key, { id: entry.id, key: entry.key, title: entry.title, stage: item?.stage ?? 'ready', ageMs: entry.since !== null ? Math.max(0, now - entry.since) : 0, owner: 'nobody', blocker: entry.blocker });
   }
   const stalled = [...stalledByKey.values()].sort((a, b) => b.ageMs - a.ageMs || a.key.localeCompare(b.key));
+  const stalledKeys = new Set(stalled.map(entry => entry.key));
+  const goals = goalOrder(work.filter(item => !stalledKeys.has(item.key)));
   // Who this session is, as the conversation judges it: the operator may act on anything, an
   // invited maintainer may steer (message and priority), and everyone else watches.
   const actor = status?.actor ?? null;
@@ -289,7 +291,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
           <aside className="lead-rail" aria-label="Lead context">
             <div>
               <h3>Goal order</h3>
-              {goalOrder(work).length ? <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}><span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals; file one on Work and it shows here.</p>}
+              {goals.length ? <ol>{goals.map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}><span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals; file one on Work and it shows here.</p>}
             </div>
             <div>
               <h3>Waiting on you</h3>

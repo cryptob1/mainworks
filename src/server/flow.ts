@@ -7,7 +7,7 @@ import { flowAttention, flowNumbers, flowWindows, type FlakeEvent, type FlowEven
 import { deriveNotMoving, type NotMovingItem } from '../daemon/stall-alarm.js';
 
 interface Queryable { query: (text: string, values: unknown[]) => Promise<{ rows: any[] }> }
-export const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
+export const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert', 'blocked', 'unblock', 'hold', 'ready'];
 /** GY-3763: the longest window the flow reports; nothing older is read. */
 const readSpanMs = 7 * 24 * 3_600_000;
 const columns = `work_id, kind, created_at, seq, stage,
