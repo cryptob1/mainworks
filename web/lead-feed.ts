@@ -51,19 +51,21 @@ export function decisionFrom(row: LedgerRow, work: readonly Work[]): FeedDecisio
   const at = iso(row.created_at), details = row.details ?? {};
   const item = row.work_id ? work.find(entry => entry.id === row.work_id) : undefined;
   const key = item?.key ?? row.work_id?.slice(0, 8) ?? 'an item';
+  // GY-3962: the owner reads the task's title; its key stays in the undo reason agents read.
+  const name = item ? `“${item.title}”` : 'a task';
   const why = text(details.reason);
   const undoWork = (command: string, data: Record<string, unknown>): Undo | null => row.work_id && item ? { target: 'work', workId: row.work_id, command, data } : null;
   if (row.kind === 'priority') {
     const priority = number(details.priority) ?? number(details.newPriority), previous = number(details.oldPriority);
     if (why?.endsWith('from the dashboard') || at === null || priority === null || previous === null) return null;
-    return { kind: 'decision', at, what: `Priority for ${key} moved to P${priority}`, why, undo: undoWork('priority', { priority: previous, reason: `Owner undid the priority change for ${key} from the Lead page` }) };
+    return { kind: 'decision', at, what: `Priority for ${name} moved to P${priority}`, why, undo: undoWork('priority', { priority: previous, reason: `Owner undid the priority change for ${key} from the Lead page` }) };
   }
   if (row.kind === 'hold' && at !== null)
-    return { kind: 'decision', at, what: `${key} held out of dispatch`, why, undo: undoWork('ready', { expectedRevision: item?.revision, reason: `Owner undid the hold on ${key} from the Lead page` }) };
-  if (row.kind === 'rework' && at !== null) return { kind: 'decision', at, what: `${key} sent back for changes`, why, undo: null };
-  if (row.kind === 'unblock' && at !== null) return { kind: 'decision', at, what: `${key} unblocked`, why, undo: null };
-  if (row.kind === 'requirements' && at !== null) return { kind: 'decision', at, what: `Requirements for ${key} changed`, why, undo: null };
-  if (row.kind === 'message' && at !== null) return { kind: 'decision', at, what: `Messaged ${key}'s builder`, why: text(details.text), undo: null };
+    return { kind: 'decision', at, what: `${name} put on hold`, why, undo: undoWork('ready', { expectedRevision: item?.revision, reason: `Owner undid the hold on ${key} from the Lead page` }) };
+  if (row.kind === 'rework' && at !== null) return { kind: 'decision', at, what: `${name} sent back for changes`, why, undo: null };
+  if (row.kind === 'unblock' && at !== null) return { kind: 'decision', at, what: `${name} unblocked`, why, undo: null };
+  if (row.kind === 'requirements' && at !== null) return { kind: 'decision', at, what: `Requirements for ${name} changed`, why, undo: null };
+  if (row.kind === 'message' && at !== null) return { kind: 'decision', at, what: `Messaged the builder of ${name}`, why: text(details.text), undo: null };
   return null;
 }
 

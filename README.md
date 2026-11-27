@@ -6,7 +6,7 @@ Mainworks is an open-source assembly line for software. You say what you want; a
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE) [![Node 24+](https://img.shields.io/badge/node-%3E%3D24-green)](package.json)
 
-[![Goal to live](docs/media/hero.gif)](docs/media/hero.mp4)
+[![A goal typed in, then built, reviewed, merged and shipped live](docs/media/hero.gif)](docs/media/hero.mp4)
 
 *One goal, start to live. No one touched the code in between.*
 
@@ -23,21 +23,21 @@ Mainworks is the part around the agent:
 
 ## What it looks like
 
-![Work](docs/media/work.png)
+![Work page listing changes as they build, get reviewed, test and ship](docs/media/work.png)
 
 **Work** shows every change and exactly where it is.
 
-![Change](docs/media/change.png)
+![One change with its goal, passing checks, changed files and review](docs/media/change.png)
 
 **Each change carries its own proof** — the requirement, the test that shows it, and who checked.
 
-![Lead](docs/media/lead.png)
+![Lead page with its conversation, decisions and one approval waiting](docs/media/lead.png)
 
 **Lead** tells you, in plain words, what happened and the few things that need you.
 
 ## How it works
 
-![Pipeline](docs/media/pipeline.svg)
+![The pipeline from goal to build, review, merge trial, deploy and watch](docs/media/pipeline.svg)
 
 1. **Goal** — you write what you want and why, in a sentence or two. A lead agent turns it into requirements that can be checked.
 2. **Build** — a coding agent writes the change and its tests in a sandbox of its own.

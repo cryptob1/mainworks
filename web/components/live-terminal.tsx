@@ -250,7 +250,7 @@ export default function LiveTerminal({ token, label, onSession, handle }: { toke
   }, [token]);
   return <section ref={section} className={`live-terminal${session?.state === 'working' ? ' working' : ''}`} aria-label={label} data-terminal={state}>
     <div className="terminal-info" role="status">
-      {session && <span className="terminal-session" title={`${session.runtime ?? 'Runtime unknown'} · ${session.pane ?? 'No pane'}`}>{session.state === 'absent' ? 'Lead is restarting…' : `${session.state.charAt(0).toUpperCase()}${session.state.slice(1)} · ${session.account ?? 'Account unknown'}`}</span>}
+      {session && <span className="terminal-session" title={`${session.account ?? 'Account unknown'} · ${session.runtime ?? 'Runtime unknown'} · ${session.pane ?? 'No pane'}`}>{session.state === 'absent' ? 'Lead is restarting…' : `${session.state.charAt(0).toUpperCase()}${session.state.slice(1)}`}</span>}
       <span>{state === 'connecting' ? 'Connecting…' : state === 'reconnecting' ? 'Reconnecting…' : state === 'control' ? 'You can type here' : state === 'observe' ? 'View only' : reason}</span>
       {reason && state !== 'refused' && <span>{reason}</span>}
     </div>

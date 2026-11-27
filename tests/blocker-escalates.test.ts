@@ -116,7 +116,8 @@ test('integration:blocker-escalates — however long the blocker waits it never 
   assert.deepEqual(dashboard.rows, [], 'a 35-minute-old blocker still raises nothing on Needs you');
   assert.equal(dashboard.board.groups['needs-you'].some(entry => entry.key === 'GY-1'), false, 'never grouped under Needs you');
   assert.equal(dashboard.board.groups.blocked.find(entry => entry.key === 'GY-1') !== undefined, true, 'it stays Blocked');
-  assert.ok(dashboard.master.includes('GY-1') && dashboard.master.includes('Fix the export'), 'the Master page lists it');
+  // GY-3962: the Lead page names the task by its title; its key stays off the owner's view.
+  assert.ok(dashboard.master.includes('Fix the export') && !dashboard.master.includes('>GY-1 '), 'the Master page lists it');
   assert.ok(dashboard.master.includes('blocked 35m'), `the Master page says how long it has stood: ${dashboard.master}`);
 });
 
@@ -126,7 +127,7 @@ test('integration:blocker-escalates — a blocker with no recorded instant (a re
   f.advance(24 * 60);
   const dashboard = f.dashboard();
   assert.deepEqual(dashboard.rows, [], 'nothing is read as freshly raised without a recorded instant');
-  assert.ok(dashboard.master.includes('GY-1'), 'the Master page still carries the blocker itself');
+  assert.ok(dashboard.master.includes('Fix the export'), 'the Master page still carries the blocker itself');
 });
 
 test('integration:blocker-escalates — unblocking clears the attention line, the Lead page row and the blocker, and the item waits for a worker again', async () => {

@@ -139,8 +139,8 @@ test(`e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
   test.setTimeout(60_000);
   const f = await fixture(server), { page } = f;
   try {
-    await expect(page.getByRole('status')).toContainText('Idle · test-account');
-    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · w1:master');
+    await expect(page.locator('.terminal-session')).toHaveText('Idle');
+    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'test-account · codex · w1:master');
     await expect(page.getByRole('status')).toContainText('You can type here');
     const layout = () => page.evaluate(() => {
       const terminal = (window as any).testTerminal, box = document.querySelector('.terminal-host')!.getBoundingClientRect();
@@ -203,14 +203,15 @@ test(`e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     f.current.master.pane = 'w1:replacement'; f.current.master.account = 'second-account'; f.current.status = 'working'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:replacement');
-    await expect(page.getByRole('status')).toContainText('Working · second-account');
-    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · w1:replacement');
+    // GY-3962: the account id is the hover title, not the label.
+    await expect(page.locator('.terminal-session')).toHaveText('Working');
+    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'second-account · codex · w1:replacement');
     f.current.master.pane = null; f.current.master.agentName = ''; await f.save();
     await expect(page.getByRole('status')).toContainText('Lead is restarting…');
     f.child.send('drop-terminals');
     await expect(page.locator('.live-terminal')).toHaveAttribute('data-terminal', 'control');
     await expect(page.getByRole('status')).toContainText('Lead is restarting…');
-    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · No pane');
+    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'second-account · codex · No pane');
     f.current.master.pane = 'w1:returned'; f.current.master.agentName = 'master'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:returned');
   } finally { await f.stop(); }
