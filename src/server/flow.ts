@@ -41,7 +41,8 @@ type Attempts = Map<string, { claimedAt: string; endedAt: string | null; end?: s
  * GY-4059: the repository's onboarding, from timestamps already recorded: connected at the control
  * plane's first schema record or its first work item, whichever is earlier, to its first merge.
  */
-export const onboardingSql = `SELECT LEAST((SELECT min(applied_at) FROM graphyard_schema), (SELECT min((document->>'createdAt')::timestamptz) FROM work_items)) AS connected_at,
+export const onboardingSql = `SELECT LEAST((SELECT min(applied_at) FROM graphyard_schema),
+  (SELECT (w.document->>'createdAt')::timestamptz FROM work_index i JOIN work_items w ON w.id = i.id ORDER BY i.number LIMIT 1)) AS connected_at,
   (SELECT min(merged_at) FROM work_index) AS merged_at`;
 /** One connected repository's onboarding: minutes from connection to first merge, or waiting so far. */
 export interface OnboardingTime { repository: string; connectedAt: string; firstMergeAt: string | null; minutes: number; waiting: boolean }
