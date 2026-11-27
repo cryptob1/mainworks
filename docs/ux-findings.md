@@ -61,6 +61,7 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 | Goal order rail | "DEMO-105 Export monthly invoices as CSV": keys before every goal | internal | 2 | Fixed |
 | Live session | "Working · lead-claude": the agent's account id as the status | internal | 2 | Fixed |
 | Product | "The master has not written the brief. It records one with master brief set FILE REASON." | internal | 1 | Fixed |
+| Product (with a brief) | "Updated Nov 13 by the master." under the title, while the menu says Lead (seen in the Lead page's browser case, not the captures) | plain | 2 | Open |
 | Empty rail and History | "No open goals.", "Nothing waits on you.", "Nothing typed into the Lead yet." with no next step | next | 2 | Fixed |
 | Page fact | "Steer the Lead and act on its cards.": says how, not what state the Lead is in | next | 3 | Open |
 | History | "You 10/14/2026, 8:00:00 AM" in a long US timestamp while every other page says "26m ago" | plain | 3 | Open |
