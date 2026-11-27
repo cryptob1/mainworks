@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { oldPlannerNameLines } from './helpers/old-planner-name.js';
 
 // GY-3594: the code says Mainworks. The old name stays only inside the names tests/old-names.txt
 // lists, which installs created before the rename still use.
@@ -32,4 +33,8 @@ test('unit:no-old-name-pinned — onboarding-time and warm-image-serves-the-head
     line.startsWith('src/onboarding-time.ts:') || line.startsWith('tests/warm-image-serves-the-head.test.ts:'),
   );
   assert.deepEqual(offending, []);
+});
+
+test('unit:help-calls-the-planner-the-lead — Help never calls the planner the Master, which product review sent back twice (GY-3988, GY-3994)', () => {
+  assert.deepEqual(oldPlannerNameLines(), [], 'say the Lead; keep master only in command and unit names');
 });
