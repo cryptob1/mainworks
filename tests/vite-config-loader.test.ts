@@ -15,6 +15,6 @@ test('unit:vite-config-loader-runner — every script that runs Vite loads its c
 
 // GY-3818: the suite's in-process dashboard build failed every remote trial shard the same way.
 test('unit:vite-config-loader-runner — the suite builds the dashboard with the runner loader', async () => {
-  const helper = await readFile(new URL('./helpers/run-tests.ts', import.meta.url), 'utf8');
+  const helper = await readFile(new URL('../src/dashboard-build.ts', import.meta.url), 'utf8');
   assert.match(helper, /build\(\{[^}]*configLoader: 'runner'/, 'ensureDashboardBuilt loads vite.config.ts with the runner loader');
 });

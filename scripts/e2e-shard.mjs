@@ -6,12 +6,15 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureDashboardBuilt } from '../src/dashboard-build.ts';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.ts';
 
 const [list, records, budget] = process.argv.slice(2);
 const proofs = readFileSync(list, 'utf8').split('\n').map(line => line.match(/^e2e\/cases\/(.+)\.json$/)?.[1]).filter(Boolean).map(id => `e2e:${id}`);
 const worktree = process.cwd(), mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 writeFileSync(records, '');
+// GY-3967: the commit's checkout has no dist/, so the serve would answer with no dashboard and every browser step would time out.
+await ensureDashboardBuilt(worktree);
 const cases = await runTrialE2eCases({ worktree, mergeSha, proofs, env: { ...process.env }, scratch: mkdtempSync(join(tmpdir(), 'e2e-shard-')),
   budgetMs: Number(budget), holds: async path => existsSync(join(worktree, path)), log: line => console.log(line) });
 for (const entry of cases) appendFileSync(records, `${JSON.stringify({ ...entry, screenshot: undefined })}\n`);
