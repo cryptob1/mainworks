@@ -89,6 +89,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:055746cec2b8073ed1b522b414445a00c875239b32c9cd00fb305d4292e6ac8a',
   // GY-4005: the agent registry's document in its own row (agent_registry); unread registry kinds expire after a week.
   'sha256:55f9a2260431c7041b542d21f4de11f991e3bce670d472019e786ea3a40f075a',
+  // GY-4061: the work index's projection (the coordination view's SQL document) removes each document's keys once and reads each tail's array once.
+  'sha256:538b194731de7a5d173b0473e5488dc3de3c81eddb3892f64da766f77fc37aa2',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;
