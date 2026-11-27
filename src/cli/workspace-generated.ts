@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { withoutMasterInstructions } from '../master/instructions.js';
+import { withoutMasterInstructions } from '../master.js';
 import { managedInstructions } from '../repository-setup.js';
 import { parseGeneratedManifest, type GeneratedManifest } from '../sync.js';
 
@@ -32,7 +32,7 @@ export function regenerateGenerated(cwd: string, manifest: GeneratedManifest) {
  * tree whose sources will not load, use the templates this CLI ships. A graphyard-master block an
  * earlier master init wrote is dropped, not rendered: the master reads it from master guide.
  */
-export const agentsTemplateSources = ['src/repository-setup.ts', 'src/master/instructions.ts'];
+export const agentsTemplateSources = ['src/repository-setup.ts', 'src/master.ts'];
 
 export async function agentsRenderers(cwd: string) {
   const [setupFile, masterFile] = agentsTemplateSources.map(file => resolve(cwd, file));
