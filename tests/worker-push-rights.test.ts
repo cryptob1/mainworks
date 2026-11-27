@@ -136,7 +136,7 @@ test('integration:authorized-rework-is-executable — a rework over an ejected, 
   work = await engine.execute(worker, 'claim', work.id, {}, randomUUID());
   work = await engine.execute(worker, 'workspace', work.id, { epoch: 1, host: 'push-rights-host', path: join(scratch, 'attempt-1'), branch: itemBranch }, randomUUID());
   git(seed, 'checkout', '-q', '-b', itemBranch);
-  commit(seed, 'src-own.txt', 'own v1', 'GY-A: own change');
+  commit(seed, 'src-own.txt', 'own v1', 'GY-A: own change\n\nAC-1 — met: own change');
   const reviewed = git(seed, 'rev-parse', 'HEAD');
   git(seed, 'push', '-q', 'origin', itemBranch);
   work = await engine.execute(worker, 'submit', work.id, { epoch: 1, pr }, randomUUID());

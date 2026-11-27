@@ -34,7 +34,7 @@ import assert from 'node:assert/strict';
 import { answer } from '../app.js';
 test('integration:reuse-required', () => assert.equal(answer, 42));
 `);
-  git('add', '.'); git('commit', '-qm', 'implementation');
+  git('add', '.'); git('commit', '-qm', 'implementation\n\nAC-1 — met: reuse fixture');
   const head = git('rev-parse', 'HEAD');
   const store = await withDatabase('verification-reuse'); await store.init(); t.after(() => store.close());
   const engine = new Engine(store, 600, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
