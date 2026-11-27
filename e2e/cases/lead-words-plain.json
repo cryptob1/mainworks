@@ -1,0 +1,18 @@
+{
+  "id": "lead-words-plain",
+  "title": "Lead pages and Help say Lead, and decisions and Needs you read in the owner's words at 390 and 1280 px",
+  "description": "A real browser on the built dashboard over the demo data at 390 and 1280 px checks the five Lead/Settings wording fixes from docs/ux-findings.md: Lead Product says 'Updated Nov 13 by the Lead.', Lead Decision cards fold agent-wording Why details by default, Settings Help calls the planner the Lead (including inside every FAQ fold and Common commands), Settings Setup reports an un-onboarded repo without 'Master fault', and Settings Needs you opens with a single plain sentence. None of the five views scrolls sideways.",
+  "tags": [
+    "dashboard"
+  ],
+  "target": "any",
+  "required": false,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "the five Lead and Settings wording fixes hold at 390 and 1280 px",
+      "run": "npm run test:browser -- browser-tests/lead-words-plain.spec.ts",
+      "timeoutSeconds": 240
+    }
+  ]
+}

@@ -42,7 +42,7 @@ export default function HumanRequestsPage({ work, status, observedAt, action, bu
   const open = requests.length + (growth ? 1 : 0) + (outdated.length ? 1 : 0);
   return <>
     <PageHeader title="Needs you" fact={open ? `${open} ${open === 1 ? 'action waits' : 'actions wait'} on you.` : 'Nothing is waiting on you.'}>
-      Agents decide everything except goals and priorities, spending money or opening third-party accounts, and issuing credentials to people. You can give your decision to any agent, which records your own words. You can reverse a relayed answer here. An item that reaches one waits here without holding a worker; everything else is the Lead's, on the Lead page.</PageHeader>
+      Only you decide goals and priorities, money and accounts, and sign-ins for people; the Lead decides the rest.</PageHeader>
     {actor && <p className="muted signed-in-as">Signed in as <strong>{actor.displayName ?? actor.id}</strong> · {signedInAs(actor)}</p>}
     {growth && <div className="card human-request" data-worker-growth><div className="card-top"><strong>Worker pool cannot grow</strong></div><p>{growth}</p></div>}
     {outdated.length > 0 && <div className="card human-request" data-host-update-request><div className="card-top"><strong>Compute machines need an update</strong></div>
