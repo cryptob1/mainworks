@@ -10,6 +10,7 @@ import type { HostReading } from '../src/merge-writer/remote-shards.js';
 // bound to 90 minutes and it still timed out. The daily run now splits the catalog's cases into shards
 // placed on the ready test machines and this one, as a merge trial places its test-file shards, and
 // the catalog is bounded by the 45-minute limit again.
+// GY-3974: this machine, the slowest and busiest one, keeps only the cases a test machine cannot run.
 
 const reading = (name: string): HostReading => ({ name, cores: 8, busy: 0, steal: 0, celsius: null, limit: 90, away: false });
 
