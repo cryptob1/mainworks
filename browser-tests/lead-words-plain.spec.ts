@@ -5,11 +5,11 @@ import { serveXterm } from './xterm';
 // GY-3994: five docs/ux-findings.md rows on Lead and Settings at 390 and 1280 px:
 //   1. Lead · Product: "Updated Nov 13 by the Lead." (not "by the master")
 //   2. Lead · Decision card: agent wording in Why is folded behind a closed Why disclosure
-//   3. Settings · Help: calls the planner the Lead everywhere, including inside FAQ folds and Common commands
+//   3. Settings · Help: calls the planner the Lead everywhere, including inside every FAQ and Reference fold
 //   4. Settings · Setup: un-onboarded repo says "<repo> is not onboarded yet" and "The Lead adds it" (no "Master fault")
 //   5. Settings · Needs you: header summary is one plain sentence, not a five-sentence paragraph
 
-const oldPlannerName = /(?<![-\w])master(?![-\w]| status)/i;
+const oldPlannerName = /(?<![-\w])master(?![-\w]|\.json| status)/i;
 
 async function open(page: Page, width: number) {
   const state = buildDemoState('static');
@@ -80,15 +80,14 @@ for (const width of [390, 1280]) {
     await expect(whyFold).toContainText('3 checkable criteria with bound tests');
     await noSidewaysScroll(page, 'Lead · Conversation', width);
 
-    // 3. Settings · Help: calls the planner the Lead everywhere, including inside FAQ folds and Common commands.
+    // 3. Settings · Help: calls the planner the Lead everywhere, including inside every FAQ and Reference fold.
     await page.evaluate(() => { location.hash = 'guide'; });
     await expect(page.getByRole('heading', { name: 'How Mainworks works', level: 1 })).toBeVisible();
     await page.evaluate(() => {
-      document.querySelectorAll<HTMLDetailsElement>('#docs-faq details').forEach(fold => { fold.open = true; });
-      const common = [...document.querySelectorAll<HTMLDetailsElement>('#docs-reference details')]
-        .find(fold => fold.querySelector('summary')?.textContent?.includes('Common commands'));
-      if (common) common.open = true;
+      document.querySelectorAll<HTMLDetailsElement>('article.guide details').forEach(fold => { fold.open = true; });
     });
+    await expect(page.locator('article.guide')).toContainText('Setup prerequisites and options');
+    await expect(page.locator('article.guide')).toContainText('graphyard-master-OWNER-NAME.service');
     const docsText = await page.locator('article.guide').innerText();
     expect(docsText).toContain('The Lead: keeps the brief, plans work and unsticks it.');
     const badMasterLines = docsText.split('\n').map(l => l.trim()).filter(l => oldPlannerName.test(l));
