@@ -50,7 +50,7 @@ import { workerLaunchHealth, earlyExitKey } from './worker-launch-health.js';
 import { actionStallDelay, actionStallThreshold } from '../model/action-progress.js';
 import { syncProjectMemory } from '../project-memory.js';
 import { reconcileMasterMemory } from '../model/project-memory.js';
-import { diskHeadroomStep, type Reclaimed } from './disk-headroom.js';
+import { diskHeadroomStep, noteReclaimSkip, type Reclaimed } from './disk-headroom.js';
 import { cpuPressureStep, cpuWaiting, heatClear, sessionUsageStep } from './cpu-pressure.js';
 import { causeCleared, environmentCause } from './environment-blockers.js';
 import { leftoversStep, tallyLeftovers } from './leftovers.js';
@@ -547,12 +547,12 @@ async function closeStep(cycle: Cycle) {
   const trials = await effects.stopOrphanTrials?.() ?? [];
   tallyLeftovers(state, 'trialContainers', trials.length);
   if (trials.length) await note(cycle, `trial-orphans:${state.cycle}`, 'reclaim', null, 'done', `Stopped ${trials.join(', ')}: a trial container whose checkout is gone or that outlived twice the trial deadline`);
-  const leftovers: Reclaimed = await effects.reclaimJobLeftovers?.() ?? [];
+  const swept = await effects.reclaimJobLeftovers?.() ?? null, leftovers: Reclaimed = swept ?? [];
   const networks = leftovers.filter(entry => entry.startsWith('network ')).length;
   tallyLeftovers(state, 'reclaimed', leftovers.length - networks);
   tallyLeftovers(state, 'networks', networks);
   if (leftovers.length) await note(cycle, `job-leftovers:${state.cycle}`, 'reclaim', null, 'done', `Removed ${leftovers.join(', ')}: left behind by jobs that have ended`);
-  if (leftovers.skipped) await note(cycle, 'job-leftovers:skipped', 'reclaim', null, 'waiting', leftovers.skipped);
+  if (swept) { const skip = await noteReclaimSkip(state, 'job-leftovers:skipped', swept, cycle.now(), effects.persist); if (skip) cycle.performed.push(skip); }
   const releases = await effects.sweepCliReleases?.().catch(error => { cycle.log(`[mainworks-master] the CLI release sweep failed: ${message(error)}`); return null; });
   if (releases?.removed.length) {
     tallyLeftovers(state, 'cliReleases', releases.removed.length);

@@ -129,7 +129,8 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
   if ((low.length || dockerLow) && effects.reclaimDisk) {
     const removed = await effects.reclaimDisk();
     tallyLeftovers(state, 'reclaimed', removed.length);
-    if (removed.skipped) performed.push(await record(state, 'disk-reclaim:skipped', { kind: 'reclaim', work: null, principal: null, state: 'waiting', attempts: 1, cycle: state.cycle, detail: removed.skipped }, now(), effects.persist));
+    const skip = await noteReclaimSkip(state, 'disk-reclaim:skipped', removed, now(), effects.persist);
+    if (skip) performed.push(skip);
     const after = await effects.diskVolumes();
     const beforeVolume = dockerVolume ?? low[0];
     const afterVolume = after.find(volume => volume.path === beforeVolume?.path);
@@ -153,6 +154,14 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
   const standing = state.actions[diskHeadroomKey];
   if (standing?.state === 'failed' && standing.detail === detail) { standing.at = at; return; }
   performed.push(await record(state, diskHeadroomKey, { kind: 'attention', work: null, principal: null, state: 'failed', attempts: (standing?.attempts ?? 0) + 1, cycle: state.cycle, detail }, now(), effects.persist));
+}
+
+/** GY-4026: a skipped image reclaim stands as a waiting row, written once per holder set, and is closed by the next pass that runs. */
+export async function noteReclaimSkip(state: DaemonState, key: string, removed: Reclaimed, now: number, persist: (state: DaemonState) => Promise<void>) {
+  const standing = state.actions[key];
+  if (removed.skipped && standing?.state === 'waiting' && standing.detail === removed.skipped) return null;
+  if (!removed.skipped && standing?.state !== 'waiting') return null;
+  return record(state, key, { kind: 'reclaim', work: null, principal: null, state: removed.skipped ? 'waiting' : 'done', attempts: 1, cycle: state.cycle, detail: removed.skipped ?? 'The image and build-cache reclaim ran once no heavy job held a slot' }, now, persist);
 }
 
 /** The durable volumes Mainworks writes: its checkout, data directory, worktree root, trial checkout root and durable temporary root — one path per device. A memory-backed /tmp is never measured: its size is not disk headroom. */
