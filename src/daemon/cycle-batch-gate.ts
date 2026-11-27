@@ -393,7 +393,7 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
   };
 }
 
-const stopped = new WeakSet<object>(), gateRuns = new WeakMap<object, AbortController>();
+const stopped = new WeakSet<object>(), gateRuns = new WeakMap<object, AbortController>(), tagPushes = new WeakMap<object, Promise<void>>();
 /** GY-3450: when the gate flight began and whether one of its checks has started (holds its host heavy-job slot). */
 const gateStarts = new WeakMap<object, { since: number; started: boolean }>();
 /** GY-3450: a gate in flight this long with no check started raises the stall alarm, naming the slot holders. */
@@ -601,13 +601,18 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
   const deployed = readDeployRecord(deployRecordPath(gate.root));
   if (reads.pushReleaseTag && gate.repository.toLowerCase() === mainworksRepository &&
       deployed?.repository?.toLowerCase() === mainworksRepository && (deployed.verified || deployed.tip === record.verified) &&
-      deployed.tip && !deployed.reason && !deployed.failed && !deployed.restore && record.releaseTagged !== deployed.tip) {
-    try {
-      const tag = await reads.pushReleaseTag(deployed.tip);
-      record.releaseTagged = deployed.tip;
-      await mergeGateRecord(file, latest => ({ ...(latest ?? record!), releaseTagged: deployed.tip }));
-      note('publish-tag', 'done', `Pushed ${tag}; GitHub Actions publishes the package and images`);
-    } catch (error) { note('publish-tag', 'failed', `Could not push the release tag: ${message(error)}`); }
+      deployed.tip && !deployed.reason && !deployed.failed && !deployed.restore && record.releaseTagged !== deployed.tip && !tagPushes.has(cycle.state)) {
+    // GY-3957: the push runs beside the cycle — a slow remote outlasts the step's timeout — one at a time.
+    const tagged = record, tip = deployed.tip, push = reads.pushReleaseTag;
+    tagPushes.set(cycle.state, (async () => {
+      try {
+        const tag = await push(tip);
+        tagged.releaseTagged = tip;
+        await mergeGateRecord(file, latest => ({ ...(latest ?? tagged), releaseTagged: tip }));
+        note('publish-tag', 'done', `Pushed ${tag}; GitHub Actions publishes the package and images`);
+      } catch (error) { note('publish-tag', 'failed', `Could not push the release tag: ${message(error)}`); }
+      finally { tagPushes.delete(cycle.state); }
+    })());
   }
   // GY-3444: the gate has first claim on trial slots — it starts without waiting for a free merge
   // slot, and its trial containers start before queued merge trials (trialStartOrder).
@@ -680,5 +685,5 @@ export async function batchGateStep(cycle: Pick<Cycle, 'state' | 'effects' | 'sn
       finally { live.diagnostics = null; }
     })();
   }
-  return { gate: live.gate, diagnostics: live.diagnostics };
+  return { gate: live.gate, diagnostics: live.diagnostics, tag: tagPushes.get(cycle.state) ?? null };
 }
