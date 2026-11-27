@@ -5,7 +5,7 @@ import { appOnboarding, type AppOnboarding } from './model/onboarding-work.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm, writeFile } from 'node:fs/promises';
-import { takeLock } from './host-lock.js';
+import { imageLock, takeLock, withHostLock } from './host-lock.js';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { GitRunner } from './merge-writer/local-observation.js';
@@ -111,6 +111,8 @@ export interface ControlPlaneRecord {
   failedAt: string | null;
   /** GY-3746: the newer build an install following Mainworks waits to take, why, and since when; null once it updates. */
   waiting?: { tip: string; reason: string; since: string } | null;
+  /** GY-4030: the retry the last successful update needed, named; null when it needed none. */
+  retried?: string | null;
   at: string;
 }
 export const controlPlaneRecordPath = (root: string) => join(stateDirectory(root), 'control-plane.json');
@@ -155,7 +157,7 @@ export function controlPlaneSummary(record: ControlPlaneRecord | null, now: numb
   return { commit: short(record.commit), checkedAt: record.checkedAt, updatedAt: record.updatedAt,
     verified: short(record.verified), verifiedSeenAt: record.verifiedSeenAt,
     failedStep: record.failedStep, failedReason: record.failedReason,
-    waiting: record.waiting?.reason ?? null,
+    waiting: record.waiting?.reason ?? null, retried: record.retried ?? null,
     stale: controlPlaneStaleLines(record, now) };
 }
 
@@ -242,6 +244,8 @@ export interface DeployWatchPorts {
   stoppedPlane?: StoppedPlanePorts;
   /** GY-3676: the lock file one deploy at a time holds on this control plane; absent, one beside the deploy record. */
   lockFile?: string;
+  /** GY-4030: the install this watch deploys, as another install waiting on its image build reads it; absent, the served repository. */
+  install?: string;
   /** GY-3703: the retry backoff; absent, deployRetryBackoffMs. */
   retryBackoffMs?: readonly number[];
 }
@@ -370,10 +374,28 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     const current = readControlPlaneRecord(controlFile) ?? { commit: previous, checkedAt: null, updatedAt: null, verified: null, verifiedSeenAt: null, failedStep: null, failedReason: null, failedAt: null };
     await writeControlPlaneRecord(controlFile, { ...current, commit: current.commit ?? previous, ...entry });
   };
+  // GY-4030: installs on one machine take turns building and exporting their image under the host's image lock;
+  // a build that still loses its BuildKit lease is tried once more after the other build ends.
+  let retried: string | null = null;
+  const restartInTurn = (commit: string) => withHostLock(imageLock, () => ports.restart(commit), {
+    holder: ports.install ?? owner ?? 'another install',
+    onWait: holder => {
+      log(`[mainworks-deploy] waits for ${holder}'s image build to finish`);
+      return noteControl({ waiting: { tip: commit, reason: `Waits for ${holder}'s image build to finish`, since: new Date().toISOString() } });
+    },
+  }).finally(() => noteControl({ waiting: null }));
+  const restartStep = async (commit: string) => {
+    try { await restartInTurn(commit); } catch (error) {
+      if (!/lease does not exist/i.test(message(error))) throw error;
+      log(`[mainworks-deploy] the image build of ${commit.slice(0, 12)} lost its BuildKit lease; retrying once: ${message(error)}`);
+      retried = `The image build of ${commit.slice(0, 12)} was retried once after a BuildKit lease error`;
+      await restartInTurn(commit);
+    }
+  };
   const run = async (commit: string) => {
     for (const step of steps) {
       log(`[mainworks-deploy] ${step} ${commit.slice(0, 12)}`);
-      try { await ports[step](commit); } catch (error) {
+      try { await (step === 'restart' ? restartStep(commit) : ports[step](commit)); } catch (error) {
         // GY-3676: a restart that failed while the commit already serves healthy (another deploy restarted it) is no failure.
         if (step === 'restart' && await ports.health(commit).then(() => true, () => false)) { log(`[mainworks-deploy] restart failed but ${commit.slice(0, 12)} already serves healthy: ${message(error)}`); continue; }
         throw Object.assign(new Error(`${step} failed: ${message(error)}`), { step });
@@ -442,7 +464,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   try {
     await run(tip);
     await write({ tip, failed: null, reason: null, verified: gated === tip });
-    await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null });
+    await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null, retried });
     log(`[mainworks-deploy] serving ${tip.slice(0, 12)}`);
   } catch (error) {
     const reason = message(error), step = (error as { step?: string }).step;

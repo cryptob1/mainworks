@@ -1,6 +1,6 @@
 // `mainworks upgrade` (GY-1962): one command moves the CLI checkout, the server, the loop and
 // executors, and the managed repository's generated files to one dated release, in order.
-import { imageLock, withHostLock } from '../host-lock.js';
+import { heldLocksVariable, imageLock, withHostLock } from '../host-lock.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
@@ -574,7 +574,8 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
       const loader = createRequire(join(build, 'package.json')).resolve('tsx');
       // redeployArguments quotes sourceRoot for shell commands; this invocation takes literal argv.
       const args = [...redeployArguments(install, inputs.image!).slice(0, -1), '--source-root', build, '--apply'];
-      const invoke = (flags: string[]) => run(process.execPath, ['--import', loader, join(build, 'src', 'cli.ts'), 'install', ...flags], repoRoot, { ...process.env, GRAPHYARD_VERSION: stamp.version, GRAPHYARD_BUILD_REVISION: stamp.revision });
+      // GY-4030: the deploy watch holds the host's image lock over this restart; the install it runs builds under it.
+      const invoke = (flags: string[]) => run(process.execPath, ['--import', loader, join(build, 'src', 'cli.ts'), 'install', ...flags], repoRoot, { ...process.env, GRAPHYARD_VERSION: stamp.version, GRAPHYARD_BUILD_REVISION: stamp.revision, [heldLocksVariable]: imageLock });
       await invoke([...args.slice(0, -1), '--plan']);
       const started = Date.now();
       await invoke(args);
@@ -595,6 +596,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     ...(install.provider === 'compose' ? { stoppedPlane: stoppedPlanePorts(url, join(directory, 'compose'), input.run) } : {}),
     // GY-3676: one deploy at a time for this install, whichever checkout a watcher runs from.
     lockFile: join(directory, 'deploy', 'deploy.lock'),
+    install: input.repository,
   };
 }
 
