@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mergeWriterIdle, mergeWriterReads, mergeWriterStep } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { actionLine } from '../src/daemon/run.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { ChildRun } from '../src/child-runner.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';

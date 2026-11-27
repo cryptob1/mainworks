@@ -15,7 +15,7 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { mergeRecordKey, mergeWriterIdle, mergeWriterReads, mergeWriterSummary, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { MergePorts, MergeRecordEvent, MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { MergeLedgerState } from '../src/model/merge-ledger.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { Principal, Work } from '../src/model.js';
 import { Store } from '../src/store.js';

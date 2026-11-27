@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { realpathSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import { join } from 'node:path';
-import { keyringEndpointWarning, type KeyringEndpointVerdict, type KeyringProbeBackoff } from '../src/master/launch.js';
+import { keyringEndpointWarning, type KeyringEndpointVerdict, type KeyringProbeBackoff } from '../src/master/launch-keyring.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const listen = async (endpoint: string) => { const server = createServer(); await new Promise<void>(done => server.listen(endpoint, done)); return server; };

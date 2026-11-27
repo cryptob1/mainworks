@@ -10,7 +10,7 @@ import { accountLaunch, checkAgentEnvironment } from '../src/master/environments
 import { runtimeLoginHomes } from '../src/master/profiles.js';
 import { connectProvider, observeAccount, relaySubscriptionLogin, type FleetLaunchAccount } from '../src/fleet.js';
 import { runSmokePrompt } from '../src/master/connect-accounts.js';
-import { headlessArgs } from '../src/headless-session.js';
+import { headlessArgs } from '../src/headless-argv.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, foldObservations, proposedRuntimes, type AgentRegistry } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

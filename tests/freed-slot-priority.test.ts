@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { Launcher, runCycle } from '../src/daemon/cycle.js';
 import { dispatchKey } from '../src/daemon/reconcile.js';

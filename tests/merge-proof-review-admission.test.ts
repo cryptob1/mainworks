@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Work } from '../src/model.js';
+import type { QueueCarry, Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { evaluate } from '../src/model-boundary/gates.js';
 import { mergeCandidateHold, mergeOpeningHold } from '../src/merge-writer/executor.js';
@@ -62,7 +62,6 @@ import type { Services } from '../src/server/routes.js';
 import { recordMergeEvent } from '../src/server/merge-record.js';
 import { mergeOne, mergeRecordKinds, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
-import { decideCarry } from '../src/model/carry.js';
 import { reconcileReviewConflict } from '../src/model/review-conflict.js';
 import { auditAdmission, auditInstalls } from '../src/merge-admission-audit.js';
 
@@ -130,10 +129,8 @@ test('e2e:merge-proof-review-admission transactional push refuses missing eviden
 test('e2e:merge-proof-review-admission carried approval records its original identity, head and policy', () => {
   const work = admissionFixture(); attest(work);
   const from = { sha: 'd'.repeat(40), baseSha: 'e'.repeat(40) }, to = { sha: H, baseSha: B };
-  const carry = decideCarry({ from, to, policyRevision: 1, at,
-    merge: { from: from.sha, parents: [from.sha, B], authoredByApp: true, author: 'plane', conflicts: false, baseChanges: [], diff: { reviewed: 'same', tip: 'same' } },
-    predecessor: { key: null, validated: true }, reviewedFiles: ['package-lock.json'], proofs: [], app: 'plane',
-    approval: { provider: 'github', reviewer: 'independent', sha: from.sha, reviewId: 12 } });
+  const carry: QueueCarry = { from, to, policyRevision: 1, at, predecessor: 'base branch', changedFiles: [], reviewedFiles: ['package-lock.json'], evidence: [],
+    approval: { carried: true, provider: 'github', reviewer: 'independent', sha: from.sha, reviewId: 12, originalSha: from.sha, reason: 'diff unchanged' } };
   work.baseRefresh = { head: H, carry } as Work['baseRefresh'];
   assert.equal(mergeCandidateHold(work), null);
   const audit = auditAdmission(work, at);

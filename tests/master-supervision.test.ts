@@ -6,13 +6,16 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentRuntimeRun, agentRuntimeTimeoutMs, listHerdrAgents, masterConfigSchema, observeHerdrAgents, setupMaster, type MasterConfig } from '../src/master.js';
+import { listHerdrAgents, observeHerdrAgents } from '../src/master/herdr.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { setupMaster } from '../src/master/config.js';
 import { daemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
-import { ChildProcessError, defaultChildTimeoutMs } from '../src/child-runner.js';
-import { alignLoopUnit, installLoopSupervisor, LoopSupervisorRefusal, loopStopTimeoutSeconds, loopSupervision, loopSupervisionAttention, loopUnitDirectory, loopUnitName, loopUnitText, loopWatchdogSeconds, supervisorSupport, temporaryDirectories, testSuiteHomeGuard, underTestRunner, unsupervisedInstruction } from '../src/install/loop-unit.js';
-import { deployUnitOf, perInstallUnits } from '../src/install/units.js';
+import { ChildProcessError, childRunner, defaultChildTimeoutMs } from '../src/child-runner.js';
+import { alignLoopUnit, installLoopSupervisor, LoopSupervisorRefusal, loopStopTimeoutSeconds, loopUnitDirectory, loopUnitText, loopWatchdogSeconds, supervisorSupport, testSuiteHomeGuard } from '../src/install/loop-unit.js';
+import { temporaryDirectories, underTestRunner } from '../src/runtime-environment.js';
+import { deployUnitOf, legacyLoopUnit, perInstallUnits } from '../src/install/units.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 // Time-bomb allowance (GY-1694): Date.now() only measures how long the bounded runs took.
 
@@ -33,7 +36,7 @@ const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url))
 const coordinatorToken = 'coordinator-token-'.padEnd(40, 'x');
 const coordinatorStatus = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
 const source = (name: string) => readFileSync(fileURLToPath(new URL(`../src/${name}`, import.meta.url)), 'utf8');
-// src/master.ts re-exports the modules under src/master/ (GY-177); its source is theirs.
+// The master's source: every module under src/master/ (GY-177).
 const masterSource = () => readdirSync(fileURLToPath(new URL('../src/master', import.meta.url))).filter(name => name.endsWith('.ts')).sort().map(name => source(`master/${name}`)).join('\n');
 /** A new install names its loop for its repository (GY-1441); a unit placed by hand under the legacy name is an older install's. */
 const loopUnit = perInstallUnits('owner/project').master;
@@ -117,7 +120,7 @@ test('integration:setup-installs-supervisor — setup writes, enables and starts
     assert.match(sections.Service, /^NotifyAccess=all$/m);
     assert.equal(/^WatchdogSec=(\d+)$/m.exec(sections.Service)![1], String(loopWatchdogSeconds(20)));
     assert.equal(/^TimeoutStopSec=(\d+)$/m.exec(sections.Service)![1], String(loopStopTimeoutSeconds));
-    assert.ok(loopStopTimeoutSeconds * 1000 > agentRuntimeTimeoutMs, 'the unit gives the loop longer to stop than its longest bounded external call takes');
+    assert.ok(loopStopTimeoutSeconds * 1000 > defaultChildTimeoutMs, 'the unit gives the loop longer to stop than its longest bounded external call takes');
     assert.ok(loopWatchdogSeconds(20) * 1000 > 2 * 20_000, 'the packaged window never restarts a healthy loop mid-cycle');
 
     // It is enabled (so it returns after a reboot), started now, and this user lingers.
@@ -183,14 +186,6 @@ test('unit:unsupervised-host-stated — a host that can have no supervisor is to
       assert.deepEqual(setup.supervisor!.performed, []);
     }
 
-    // The same statement reaches master status, which never claims an unsupportable host is fine.
-    const observed = await loopSupervision({ root, cliPath: launcher }, { platform: 'darwin' });
-    assert.equal(observed.supported, false);
-    assert.equal(observed.instruction, unsupervisedInstruction({ root, cliPath: launcher }));
-    const [attention] = loopSupervisionAttention(observed);
-    assert.match(attention.text, /not supervised on this host/);
-    assert.equal(attention.next, observed.instruction);
-
     // And setup still completes: the configuration it wrote is the whole point of running it.
     assert.match(await readFile(join(root, '.graphyard/master.json'), 'utf8'), /"repository": "owner\/project"/);
   } finally { await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); }
@@ -206,7 +201,7 @@ test('integration:runtime-calls-bounded — a hung agent runtime fails its step,
     await writeFile(join(stubs, 'herdr'), '#!/bin/sh\nexec sleep 600\n', { mode: 0o755 });
     process.env.PATH = `${stubs}:${previousPath}`;
     // The loop's own runner, at a bound short enough to measure; the shipped default is far longer.
-    const bounded = agentRuntimeRun(400);
+    const bounded = childRunner({ timeoutMs: 400 });
 
     const started = Date.now();
     await assert.rejects(listHerdrAgents(bounded), (error: ChildProcessError) =>
@@ -244,8 +239,6 @@ test('integration:runtime-calls-bounded — a hung agent runtime fails its step,
       "export async function readSessionScreen(target: string, run: ChildRun = defaultChildRun, lines = 80)",
     ]) assert.ok(master_ts.includes(signature), `the agent runtime is reached only through the bounded runner: ${signature}`);
     assert.doesNotMatch(master_ts, /execFileSync\(|spawnSync\(/, 'no call reaches Herdr around the bounded runner');
-    assert.match(master_ts, /agentRuntimeRun = \(timeoutMs: number = agentRuntimeTimeoutMs\)[\s\S]{0,300}?childRunner\(\{ timeoutMs \}\)/);
-    assert.equal(defaultChildTimeoutMs, agentRuntimeTimeoutMs, 'the default runner carries the runtime bound');
     // The loop's other subprocess commands are bounded where it builds them.
     for (const file of ['daemon/effects-production.ts', 'dispatch/effects.ts']) {
       const defaults = [...source(file).matchAll(/childRunner\(\{[^}]*\}\)/g)];
@@ -265,7 +258,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
   const home = join(scratch, 'home');
   const previous = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
   // The unit under the real user home, as it stands: this proof reads it and must leave it exactly so.
-  const realUnit = join(loopUnitDirectory({ env: { ...process.env } }), loopUnitName);
+  const realUnit = join(loopUnitDirectory({ env: { ...process.env } }), legacyLoopUnit);
   const realBefore = await fileState(realUnit);
   try {
     assert.ok(underTestRunner(), 'this proof runs under the test runner, which marks its processes; the shared guard keys on that mark');
@@ -397,7 +390,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
     const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
     const bare = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_TEST_CONTEXT' && key !== 'npm_lifecycle_event' && !key.startsWith('NODE_OPTIONS')));
     const outside = execFileSync(process.execPath, ['--import', 'tsx', '-e',
-      "import('./src/install/loop-unit.ts').then(m => { m.testSuiteHomeGuard(process.env.GUARDED_DIRECTORY); console.log(JSON.stringify({ underTestRunner: m.underTestRunner() })); })"],
+      "Promise.all([import('./src/install/loop-unit.ts'), import('./src/runtime-environment.ts')]).then(([m, r]) => { m.testSuiteHomeGuard(process.env.GUARDED_DIRECTORY); console.log(JSON.stringify({ underTestRunner: r.underTestRunner() })); })"],
       { cwd: repositoryRoot, encoding: 'utf8', env: { ...bare, GUARDED_DIRECTORY: realDirectory }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
     assert.deepEqual(JSON.parse(outside.trim().split(/\r?\n/).at(-1)!), { underTestRunner: false }, 'without the marks the real home is not refused');
 

@@ -1,7 +1,8 @@
 import { test } from './helpers/loop-state.js';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { automaticReviewerConcurrency, loadMasterConfig, sessionAgentName } from '../src/master.js';
+import { automaticReviewerConcurrency, sessionAgentName } from '../src/master/profiles.js';
+import { loadMasterConfig } from '../src/master/config.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { fleet, requested } from './helpers/review-fleet.js';

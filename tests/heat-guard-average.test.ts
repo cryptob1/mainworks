@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { cpuCelsius, cpuPressureStep, cpuWaiting, trialCapNow } from '../src/daemon/cpu-pressure.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3426: since GY-3416 nearly every launch waited ("launches waiting: CPU 98C") because one core

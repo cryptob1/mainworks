@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeQueue } from '../src/merge-writer/executor.js';
-import { baseFailureItem } from '../src/model/base-failure.js';
 import type { Work } from '../src/model.js';
 
 // GY-2150: the item the base-failure step files repairs the base every held head waits on, so the queue trials it first.
@@ -18,11 +17,11 @@ const head = (n: number, minutesAgo: number, title: string) => ({
 }) as unknown as Work;
 
 test('unit:base-repair-merges-first — the base-failure repair item is next ahead of older heads, beside hotfixes, and the rest keep oldest-first order', () => {
-  const { title } = baseFailureItem({ check: 'test', test: 'tests/x.test.ts', baseSha: 'c'.repeat(40), blocks: [] } as never, 'main');
+  const title = 'Base branch main fails test test: tests/x.test.ts';
   const older = head(1, 300, 'Older feature'), old = head(2, 200, 'Old feature'), repair = head(3, 5, title), fix = head(4, 100, 'Hotfix: unblock');
   assert.equal(mergeQueue([older, old, repair], {}, start).next?.key, 'GY-3');
   assert.deepEqual(mergeQueue([older, old, repair, fix], {}, start).queue.map(entry => entry.key), ['GY-4', 'GY-3', 'GY-1', 'GY-2']);
   // A check name may hold spaces (this repository's `test shard 1`); the repair still goes first.
-  const shard = baseFailureItem({ check: 'test shard 1', test: 'tests/x.test.ts', baseSha: 'c'.repeat(40), blocks: [] } as never, 'main').title;
+  const shard = 'Base branch main fails test shard 1 test: tests/x.test.ts';
   assert.equal(mergeQueue([older, old, head(5, 1, shard)], {}, start).next?.key, 'GY-5');
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { neededRework, proofRework } from '../src/daemon/rework.js';
 import { piProducerPrompt, producerPrompt } from '../src/producer.js';
 import { guideText } from '../src/guide.js';

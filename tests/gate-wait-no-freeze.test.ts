@@ -13,7 +13,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { acquireVerificationSlot, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';

@@ -11,7 +11,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { liveRun } from '../src/runner/registry.js';
 import { spawnHeadless, startHeadlessSession } from '../src/headless-session.js';

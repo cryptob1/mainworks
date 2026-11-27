@@ -15,8 +15,7 @@ import { plainReason } from './plain-status.js';
  * item's to move, a live lease is a session already moving it, and anything else is an item
  * holding a failing gate with nobody told, which is what the page is here to show.
  *
- * `tests/action-totality.test.ts` asserts this agrees with `stalledItems` over a battery of
- * states, so the two readings cannot drift into disagreeing about what is stuck.
+ * `tests/action-totality.test.ts` asserts what it reads as stalled over a battery of states.
  */
 
 /** A refusal that belongs to another item: that item's action is what moves this one. */

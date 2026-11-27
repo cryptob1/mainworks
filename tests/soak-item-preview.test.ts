@@ -8,11 +8,10 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { mergeRecordKey, type MergeRecordEvent } from '../src/merge-writer/executor.js';
-import { mergeRecordFingerprint } from '../src/server/merge-record.js';
 import { openPreview, previewCheckoutPrefix, previewRecordAttempts, previewSlots, type ItemPreviewPorts, type OpenedPreview } from '../src/merge-writer/preview.js';
 import { applyPreviewRecord, previewHistoryLimit, previewRecordBodySchema, type ItemPreview } from '../src/project-previews.js';
 import type { ProjectDelivery } from '../src/project-applications.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import type { ChildRun } from '../src/child-runner.js';
 import type { StaticBuildShell } from '../src/release-project.js';
@@ -142,7 +141,7 @@ class World {
     if (!this.outage && this.now() >= start + outageCycle * cycleMs && preview.state === 'running' && this.keeps(Number(item.key.slice(3)), preview.sha)) this.outage = { until: this.now() + outageMs, failed: 0, key: item.key, id: preview.id };
     if (this.unavailable()) { this.outage!.failed += 1; throw unconfirmed(new Error('503: the server is unavailable')); }
     if (this.calls % 7 === 0 && !this.recovering()) { this.refused += 1; throw unconfirmed(new Error('503: the server is restarting')); }
-    const key = mergeRecordKey(item, event as unknown as MergeRecordEvent), fingerprint = mergeRecordFingerprint(item.id, event), receipt = this.receipts.get(key);
+    const key = mergeRecordKey(item, event as unknown as MergeRecordEvent), fingerprint = JSON.stringify([item.id, event]), receipt = this.receipts.get(key);
     if (receipt !== undefined) { assert.equal(receipt, fingerprint, `Idempotency key reused with different input: ${key}`); this.retrying.delete(preview.id); return { recorded: true }; }
     const doc = [...this.docs.values()].find(entry => entry.id === item.id)!;
     const refusal = applyPreviewRecord(doc, preview);

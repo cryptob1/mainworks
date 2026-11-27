@@ -9,7 +9,7 @@ import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import type { PlannerInput } from '../src/daemon/planner.js';
 import { runPlanner } from '../src/master/planner.js';
 import { recordTestSelection } from '../src/merge-writer/test-selection.js';
-import type { WorkerProfile } from '../src/master.js';
+import type { WorkerProfile } from '../src/master/profiles.js';
 import { adminToken, coordinatorToken, cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 
 // GY-3845: on a running test install the planner prompt contains a recently delivered item's title

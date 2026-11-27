@@ -130,7 +130,6 @@ tests/registry-refusals-collapse.test.ts
 tests/release-recorded-hold-edit.test.ts
 tests/remote-shards-allow-sandbox.test.ts
 tests/remote-shards-local-only.test.ts
-tests/report-adapters.test.ts
 tests/review-abandon-recovery.test.ts
 tests/review-ledger-lock.test.ts
 tests/review-self.test.ts

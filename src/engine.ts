@@ -12,11 +12,9 @@ import { EventLoopLag, configuredReconcileFullMs } from './reconcile/lag.js';
 import type { FaceMove, FaceMoveSides, OwnFaceMove, ReconcileEntry, ReconcilePass, ReconcilePlan, ReconcileTick } from './reconcile/faces.js';
 
 import type { Store } from './store.js';
-export { idempotencyMismatch, type Command } from './engine/commands/schemas.js';
-export { RenewalFault, planeStallMs, readPlaneStalls, renewalFaultEvent, renewalFaultOf, stallRenewalWindowMs } from './engine/leases.js';
-export { actionOnlyLookback, onlyActionsMovedSince, sameBesideActions, sameBesideBookkeeping } from './engine/observe.js';
-export { EventLoopLag, configuredReconcileFullMs } from './reconcile/lag.js';
-export type { FaceMove, ReconcileFull, ReconcileTick } from './reconcile/faces.js';
+export { type Command } from './engine/commands/schemas.js';
+export { RenewalFault } from './engine/leases.js';
+export type { FaceMove, ReconcileTick } from './reconcile/faces.js';
 
 export class Engine {
   operatorAuthorizer?: (db: any, now: Date, actor: Principal) => Promise<Principal>;

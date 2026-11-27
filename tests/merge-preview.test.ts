@@ -9,7 +9,7 @@ import { mergeOne, type MergePorts, type MergeRecordEvent, type MergeTrialRun } 
 import { openPreview, previewCheckoutPrefix, previewConcurrency, previewReasonLimit, previewSlots, previewWithheld, sweepPreviewCheckouts, type PreviewInput } from '../src/merge-writer/preview.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { previewVerdictSchema } from '../src/model-boundary/merge-ledger.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { PreviewableApplication as Application } from '../src/project-applications.js';
 import { tempOwnerMarker, tmpReclaimMinAgeMs, writeTempOwner } from '../src/tmp-reclaim.js';
 import type { Work } from '../src/model.js';

@@ -8,7 +8,7 @@ import { readDaemonState, writeDaemonState, type DaemonState } from '../src/daem
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { deliveryAlertStep, postAlert } from '../src/daemon/delivery-alerts.js';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

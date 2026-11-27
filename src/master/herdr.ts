@@ -3,14 +3,13 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { type ChildRun, type ChildRunOptions, defaultChildTimeoutMs, type BoundChildRun, childRunner, defaultChildRun } from '../child-runner.js';
+import { type ChildRun, type ChildRunOptions, defaultChildRun } from '../child-runner.js';
 import type { MasterConfig } from './profiles.js';
 import { herdrConnectCommands } from '../herdr-connect.js';
 import { setting } from '../setting.js';
 
 /** A legacy private server retained only while its existing panes drain. */
 export interface HerdrInstance { configHome: string; session: string }
-export const herdrSocketPath = (instance: HerdrInstance) => join(instance.configHome, 'herdr/sessions', instance.session, 'herdr-client.sock');
 /**
  * GY-3237: the Herdr socket and config directories the install's master session reaches — the
  * host's main Herdr (its socket and config live under `~/.config/herdr`), and a recorded private
@@ -75,18 +74,6 @@ export const herdrAttachCommand = (instance: HerdrInstance | null = processInsta
 let serverSeen: boolean | null = null;
 export const herdrServerSeen = () => serverSeen;
 
-/**
- * The configured Herdr workspace, checked against Herdr's own inventory: a workspace closed since
- * `master init` makes every launch refuse, so status names it before a launch does.
- */
-export async function herdrWorkspaceHealth(config: Pick<MasterConfig, 'herdrWorkspace'>, run?: ChildRun) {
-  if (!config.herdrWorkspace) return { workspace: null, exists: null as boolean | null, reason: null as string | null };
-  let listed: string[];
-  try { listed = await listHerdrWorkspaces(run); }
-  catch { return { workspace: config.herdrWorkspace, exists: null, reason: 'Herdr could not list workspaces, so the configured workspace is unverified' }; }
-  const exists = listed.includes(config.herdrWorkspace);
-  return { workspace: config.herdrWorkspace, exists, reason: exists ? null : `Herdr workspace ${config.herdrWorkspace} configured in .graphyard/master.json no longer exists (Herdr lists ${listed.join(', ') || 'none'}); every launch into it will refuse. Set herdrWorkspace to a live workspace, or rerun master init --herdr-workspace ID` };
-}
 const listHerdrWorkspaces = async (run?: ChildRun): Promise<string[]> => {
   const result = await herdrJson(['workspace', 'list'], run);
   return (Array.isArray(result?.workspaces) ? result.workspaces : []).map((entry: any) => entry?.workspace_id).filter((id: unknown): id is string => typeof id === 'string' && !!id);
@@ -127,7 +114,6 @@ export type HerdrAgent = { name?: string; pane_id?: string; workspace_id?: strin
  */
 let processScope: string | null = null;
 export function scopeHerdr(workspace: string | null | undefined) { processScope = workspace?.trim() || null; }
-export const herdrScope = () => processScope;
 /** The workspace a Herdr entry positively names: its workspace_id, else the `W:` prefix of its pane or tab id. */
 export function herdrWorkspaceOf(entry: { workspace_id?: string; pane_id?: string; tab_id?: string } | string): string | null {
   if (typeof entry === 'string') return /^([^:\s]+):[^:\s]+$/.exec(entry)?.[1] ?? null;
@@ -156,8 +142,6 @@ function assertHerdrScope(target: string, scope: string | null = processScope) {
  * every child, and it sits above every inner wait Herdr is asked for (a 30s `agent start`, three
  * 20s prompt deliveries), so it can only fire on a runtime that has stopped answering.
  */
-export const agentRuntimeTimeoutMs = defaultChildTimeoutMs;
-export const agentRuntimeRun = (timeoutMs: number = agentRuntimeTimeoutMs): BoundChildRun => childRunner({ timeoutMs });
 export async function herdrJson(args: string[], run: ChildRun = defaultChildRun) {
   // A refusal arrives as the JSON body or, from a call that exits non-zero, inside the failure's text.
   const output = await Promise.resolve().then(() => herdrCall(run, args)).catch(error => {

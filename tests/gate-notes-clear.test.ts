@@ -8,7 +8,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { ServeLanding } from '../src/merge-writer/serve-revert.js';
 import type { Work } from '../src/model.js';

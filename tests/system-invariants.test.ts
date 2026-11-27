@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { repeatingPaths, repetitionReviewSection, reviewPrompt } from '../src/reviewer.js';
+import { reviewPrompt } from '../src/reviewer.js';
+import { repeatingPaths, repetitionReviewSection } from '../src/review-prompt.js';
 
 // GY-404: every fault found on 2026-09-25 passed its own item's gates; they appeared only from
 // interaction over time. The review of a change to code that runs on every loop cycle asks what repetition does.

@@ -10,7 +10,7 @@ import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { runPlanner } from '../src/master/planner.js';
-import type { WorkerProfile } from '../src/master.js';
+import type { WorkerProfile } from '../src/master/profiles.js';
 import { adminToken, coordinatorToken, pipelineWorld } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

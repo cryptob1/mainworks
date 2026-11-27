@@ -6,7 +6,7 @@ import { writeFile } from 'node:fs/promises';
 import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3642: a merge, a finished trial or an accepted submission the loop itself wrote wakes it

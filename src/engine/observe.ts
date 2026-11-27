@@ -23,18 +23,6 @@ export function sameBesideActions(read: Work, current: Work): boolean {
   const rest = ({ actionQueue: _queue, revision: _revision, updatedAt: _updated, ...others }: Work) => stableJson(others);
   return rest(read) === rest(current);
 }
-/**
- * Whether two readings of one item differ only in the loop's own bookkeeping (GY-1257): the action
- * queue (`sameBesideActions`), plus what each save re-derives or the loop records about the item
- * rather than the submitted work — its next action and gates, the sessions it
- * reports. None of it is what a GitHub observation
- * reads, and the observation's own save re-evaluates the gates, so it never stands on a stale one.
- */
-export function sameBesideBookkeeping(read: Work, current: Work): boolean {
-  const rest = ({ actionQueue: _queue, revision: _revision, updatedAt: _updated, nextAction: _next, gates: _gates,
-    sessions: _sessions, ...others }: Work) => stableJson(others);
-  return rest(read) === rest(current);
-}
 /** How many saves behind a reader may be and still have its read resolved from the ledger. */
 export const actionOnlyLookback = 20;
 /**
@@ -110,8 +98,8 @@ export async function observeControlPlaneCandidate(engine: Engine, work: Work): 
  * action-queue bookkeeping (`onlyActionsMovedSince`): an executor claiming or settling the item's
  * `resync` row saves the item, and refusing the observation over that write discarded the very
  * reading the row was waiting for, so the item stayed stale and the row was claimed again,
- * forever (GY-607). The loop's own bookkeeping counts the same way (`sameBesideBookkeeping`,
- * GY-1257): its per-cycle writes refused the very observation it had woken for a rework decision.
+ * forever (GY-607). The loop's own bookkeeping counts the same way
+ * (GY-1257): its per-cycle writes refused the very observation it had woken for a rework decision.
  * Any other move that left everything the observation was derived from unchanged counts the same
  * (`sameObservationInputs`, GY-1310): a session, lease, evidence or dispatch write raced every poll,
  * so gate claims waited minutes for an observation that was taken and then discarded.

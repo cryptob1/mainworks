@@ -1,18 +1,33 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  // GY-3964: tests are no entry points, so code only tests use is reported.
   "entry": [
     "bin/*.mjs",
     "scripts/**/*.{mjs,ts}",
-    "tests/**/*.test.ts",
-    "tests/browser/*.ts",
-    "tests/fixtures/postgres-in-scratch.ts",
-    "tests/helpers/heavy-job-launcher.ts",
-    "tests/helpers/*-server.ts",
-    "tests/helpers/playwright-report-fixture.ts",
-    "tests/helpers/worker-sync.mjs",
-    "browser-tests/**/*.spec.ts"
+    // Loaded by path through tsImport (scripts/build-publisher.mjs, scripts/graphyard-pull.mjs), which knip does not follow.
+    "src/publish-verified.ts",
+    "src/dispatch/worker-pull.ts"
   ],
-  "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}", "tests/**/*.{ts,mjs}", "browser-tests/**/*.ts"],
+  "project": ["src/**/*.{ts,tsx}", "web/**/*.{ts,tsx}", "bin/**/*.mjs", "scripts/**/*.{mjs,ts}"],
+  // An export its own file uses is live code; knip reports only an export no file besides its own
+  // uses. Without this it would also list several hundred exports production calls in their own
+  // file that tests import as well, and those cannot be deleted.
+  "ignoreExportsUsedInFile": true,
+  // The 13 exports kept for tests alone, each with its reason. knip's ignore is per file: these
+  // files carry exactly these unused exports today, so nothing else is hidden.
+  "ignoreIssues": {
+    "src/daemon/cycle-merge-writer.ts": ["exports"], // mergeWriterIdle: the idle writer state about 48 test files start from.
+    "src/install/transport.ts": ["exports"], // fakeTransport: the install tests' stand-in for SSH to a host.
+    "src/master/runtimes.ts": ["exports"], // opencodeAuthList, opencodeModels: the real opencode probes tests inject in place of the runner's null probe.
+    "src/merge-writer/executor.ts": ["exports"], // clearBaseTipCheckCache: resets the module cache between tests reusing one base tip.
+    "src/merge-writer/trial.ts": ["exports"], // trialConfinement: the trial sandbox wrapper, tested directly and used by the hard-math benchmark.
+    "src/model-boundary/project-applications.ts": ["exports"], // setProjectDelivery: pins the delivery config, as setRepositoryPolicy does.
+    "src/model/actions.ts": ["exports"], // claimAction, settleAction: how seven test files set up claimed action rows.
+    "src/model/registry-sessions.ts": ["exports"], // supersededByRequest: the in-memory registry fakes in four tests rely on it.
+    "src/runner/registry.ts": ["exports"], // clearRuns: resets the run registry between tests.
+    "src/server/flow.ts": ["exports"], // forgetFlow: resets the once-a-minute flow cache between tests.
+    "src/store/locked-read.ts": ["exports"] // boundLockedCache: tests eviction without filling the real 20,000-entry cache.
+  },
   "ignoreBinaries": ["flock", "tailscale", "mise", "bwrap", "sha256sum", "rg", "opencode", "codex", "ffmpeg", "uv"],
   "ignoreDependencies": ["esbuild", "playwright", "@xterm/xterm"]
 }

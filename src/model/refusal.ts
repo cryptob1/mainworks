@@ -31,31 +31,6 @@ export function demandWork<T>(work: T | undefined | null): asserts work is T {
   if (!work) throw new Refusal('Work item not found', 404, { code: unknownWorkCode });
 }
 export function admin(actor: Principal) { demand(actor.role === 'admin', 'Operator permission required', 403); }
-/**
- * GY-1344. Whether a failed request met a control plane that did not answer it at all, rather than
- * one that judged it: a proxy's 502-504 in place of the server's own refusal (Railway's 502
- * "Application failed to respond" carries no `error` field), a refused or reset connection, or the
- * request's own timeout. Between 01:39 and 02:01Z on 6 October 2026 the plane answered nothing, and
- * the loop counted each consequence — a diagnosis decide, a class filing, the dispatcher's ticks, a
- * cycle's 30s waits — as a loop fault of its own. One outage is one condition: what met it is
- * retried, and only the outage itself is a fault.
- */
-const planeSilence = /Application failed to respond|ECONNREFUSED|ECONNRESET|socket hang up|(?<!git )fetch failed|operation was aborted due to timeout|\b50[234] (?:Bad Gateway|Service Unavailable|Gateway Time-?out)\b/i;
-export const planeUnavailableText = (text: string | null | undefined) => !!text && planeSilence.test(text);
-/**
- * The structural read of a refusal's status and body, shared by every client that keeps both
- * (GY-1895): a 502-504 whose body carries no `error` field of its own is the plane not answering —
- * a proxy answered in the server's place, and Railway's 502 body names `message`, not `error` —
- * while an answer the server judged itself (its own `error` string) is the item's.
- */
-export function planeUnavailableStatus(status: unknown, body: unknown): boolean {
-  return typeof status === 'number' && status >= 502 && status <= 504 && !(body && typeof (body as { error?: unknown }).error === 'string');
-}
-export function planeUnavailable(error: unknown): boolean {
-  if (error instanceof RefusedResponse) return planeUnavailableStatus(error.status, error.body);
-  if ((error as { name?: unknown } | null)?.name === 'TimeoutError') return true;
-  return planeUnavailableText(error instanceof Error ? error.message : typeof error === 'string' ? error : null);
-}
 
 // A memory failure is the control plane's only when it names the server: a worker's own build or
 // test running out of memory is about the item, not the plane.
@@ -71,10 +46,3 @@ const startupReadiness = /\bStartup validation has not completed\b/;
  * timeout. The loop rides such a window out and retries; it is no failure of the step that met it.
  */
 export const planeWideFailure = (text: string | null | undefined) => !!text && (planeWideShape.test(text) || serverCallTimeout.test(text) || startupReadiness.test(text));
-/** Whether a thrown failure is plane-wide: a refusal that keeps its status and body is read structurally (GY-1344, GY-1895), anything else from its text. */
-export const planeWideRefusal = (error: unknown) => {
-  if (error instanceof RefusedResponse) return planeUnavailable(error) || startupReadiness.test(error.message);
-  const structural = error as { status?: unknown; body?: unknown } | null;
-  if (structural && typeof structural.status === 'number' && structural.body !== undefined && planeUnavailableStatus(structural.status, structural.body)) return true;
-  return planeWideFailure(error instanceof Error ? error.message : typeof error === 'string' ? error : null);
-};

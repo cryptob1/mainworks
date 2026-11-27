@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { gateRecordPath, readGateRecord } from '../src/batch-gate.js';
 import { deployOnce, deployRecordPath, writeControlPlaneRecord, controlPlaneRecordPath } from '../src/deploy-watch.js';
 import { masterStatusReport, npmPublishedVersion } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { publishedVersion } from '../src/release.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import { gateFixture, runGit as git } from './helpers/publish-tag-fixture.js';

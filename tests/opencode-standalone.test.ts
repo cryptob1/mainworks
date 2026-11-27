@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { checkAccountLive, pinRuntime, proposeFleet } from '../src/fleet.js';
-import { headlessArgv } from '../src/headless-session.js';
+import { headlessArgv } from '../src/headless-argv.js';
 import { hostAccountsVariable } from '../src/host-accounts.js';
 import { accountLaunch } from '../src/master/environments.js';
 import { opencodeAuthList, opencodeModels } from '../src/master/runtimes.js';

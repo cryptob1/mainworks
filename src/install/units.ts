@@ -19,21 +19,23 @@ import { z } from 'zod';
 import { stateDirectory, unitPrefix, type UnitPrefix } from './layout.js';
 
 export const legacyLoopUnit = 'graphyard-master.service';
-export const legacyExecutorTemplate = 'graphyard-executor@.service';
+/** The legacy executor unit's file name, read from the host to tell whose the legacy alias is (GY-1452); no unit is templated from it. */
+export const legacyExecutorUnit = 'graphyard-executor@.service';
 /** Where an install records the units it owns; local and ignored, like every file under `.graphyard/`. */
 export const installUnitsFile = '.graphyard/units.json';
 /** GY-3711: the record's path in ROOT's own state directory (`.mainworks` for a fresh install). */
 export const installUnitsPath = (root: string) => resolve(stateDirectory(root), 'units.json');
 
+// Not strict: a record written before GY-3964 still names its executorTemplate. Nothing reads that; the parse
+// drops it and keeps the rest, so such a record loads and is rewritten without it.
 const recordSchema = z.object({
   version: z.literal(1),
   /** The install slug the names derive from; null for the legacy alias. */
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).max(80).nullable(),
   master: z.string().regex(/^(?:graphyard|mainworks)-master[A-Za-z0-9@._-]*\.service$/),
-  executorTemplate: z.string().regex(/^(?:graphyard|mainworks)-executor[A-Za-z0-9._-]*@\.service$/),
   /** True when the install kept the pre-GY-1441 names because its units already ran this checkout. */
   alias: z.boolean(),
-}).strict();
+});
 export type InstallUnits = z.infer<typeof recordSchema>;
 
 /**
@@ -50,12 +52,12 @@ export function installSlug(repository: string) {
   const hash = createHash('sha256').update(repository.toLowerCase()).digest('hex').slice(0, 8);
   return `${plain.slice(0, 71).replace(/-+$/, '')}-${hash}`;
 }
-/** The names a new install of REPOSITORY writes: `PREFIX-master-OWNER-NAME.service` and its executor template; PREFIX is `mainworks` for a fresh install (GY-3711). */
+/** The names a new install of REPOSITORY writes: `PREFIX-master-OWNER-NAME.service`; PREFIX is `mainworks` for a fresh install (GY-3711). */
 export function perInstallUnits(repository: string, prefix: UnitPrefix = 'graphyard'): InstallUnits {
   const slug = installSlug(repository);
-  return { version: 1, slug, master: `${prefix}-master-${slug}.service`, executorTemplate: `${prefix}-executor-${slug}@.service`, alias: false };
+  return { version: 1, slug, master: `${prefix}-master-${slug}.service`, alias: false };
 }
-export const legacyInstallUnits: InstallUnits = { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: legacyExecutorTemplate, alias: true };
+export const legacyInstallUnits: InstallUnits = { version: 1, slug: null, master: legacyLoopUnit, alias: true };
 
 /** The install's deploy unit (GY-2877), named beside its loop unit: `graphyard-deploy.service` for the legacy alias, `graphyard-deploy-OWNER-NAME.service` otherwise. */
 export const deployUnitOf = (units: Pick<InstallUnits, 'master'>) => units.master.replace(/^(graphyard|mainworks)-master/, '$1-deploy');
@@ -75,7 +77,7 @@ export const userUnitDirectory = (env: NodeJS.ProcessEnv = process.env) =>
 export function legacyUnitFiles(unitDirectory = userUnitDirectory()): LegacyUnitFile[] {
   const temporary = canonical(tmpdir());
   if (underTestRunner() && !`${canonical(unitDirectory)}${sep}`.startsWith(`${temporary}${sep}`)) return [];
-  return [legacyLoopUnit, legacyExecutorTemplate].map(name => {
+  return [legacyLoopUnit, legacyExecutorUnit].map(name => {
     const path = join(unitDirectory, name);
     try { return { path, text: readFileSync(path, 'utf8') }; } catch (error) { if (!absent(error)) throw error; return { path, text: null }; }
   });
@@ -155,8 +157,8 @@ export function readInstallUnits(root: string, unitDirectory = userUnitDirectory
  * needed nothing (GY-1880). Specifier and `$` expansions resolve in the manager's own environment,
  * which no unit reader sees, so a word still holding one is kept as written — it matches a launcher
  * path under no reading. An unquoted line splits on whitespace exactly as the readers before this
- * parser did. It is defined beside the ExecStart reader (`unitCheckout`) and exported by
- * `src/repository-setup.ts` beside its launcher reader, so every reader words the line one way.
+ * parser did. It is defined beside the ExecStart reader (`unitCheckout`), so every reader words
+ * the line one way.
  */
 export function systemdCommandLineWords(line: string): string[] {
   const words: string[] = [];

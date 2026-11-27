@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { chmod, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { launchReview, readReviewLedger, reconcileReviews, reviewLedgerLockStaleMs, saveReviewerProfile, updateReviewLedger } from '../src/reviewer.js';
 import type { Work } from '../src/model.js';

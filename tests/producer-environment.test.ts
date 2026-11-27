@@ -6,11 +6,13 @@ import { mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Work } from '../src/model.js';
-import { loadMasterConfig, masterConfigSchema, saveProducerProfile, setupMaster } from '../src/master.js';
+import { loadMasterConfig, saveProducerProfile, setupMaster } from '../src/master/config.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { emptyDispatchCursor, dispatchFailureLimit, dispatchRetryMaxMs, dispatchRetryMinMs } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
-import { piProducerPrompt, ClosedQuestionsDecided, launchProducer, missingProducerEnv, needsProducerEnv, parseEnvValue, producerPrompt, producerSecretsPrefix, readProducerEnvironment, readProducerLedger } from '../src/producer.js';
+import { piProducerPrompt, ClosedQuestionsDecided, launchProducer, missingProducerEnv, needsProducerEnv, producerPrompt, producerSecretsPrefix, readProducerEnvironment, readProducerLedger } from '../src/producer.js';
+import { parseEnvValue } from '../src/env-file.js';
 import { liveInstallProof } from '../src/runner/roles.js';
 import { clearRuns } from '../src/runner/registry.js';
 import type { RunOptions, Runner } from '../src/runner/types.js';

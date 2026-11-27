@@ -12,7 +12,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { launchTrialRun, readTrialRunSpec, trialRunFiles, trialRunsDirectory } from '../src/merge-writer/trial-run.js';
 import { runFiles } from '../src/runner/pi.js';
 import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { until } from './helpers/until.js';

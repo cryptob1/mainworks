@@ -16,6 +16,11 @@ import type { Principal, Work } from '../src/model.js';
 import { MatrixView, TestsView, type MatrixFilter } from '../web/pages/tests.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+
+// The item this test files carries an e2e proof, so the policy in force says how a head is served for
+// it; the policy is read once per process, and nothing reads it ahead of this line.
+setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3278 AC-3: the Tests page's default view is the environment matrix — every E2E case, grouped
 // by its first tag, with its latest result in each place it runs (Trial, Main, Served, Nightly),

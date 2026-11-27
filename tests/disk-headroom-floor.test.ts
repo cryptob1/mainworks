@@ -12,7 +12,7 @@ import { mergeWriterIdle, mergeWriterSummary, type MergeWriterReads } from '../s
 import { masterCauses } from '../src/daemon/master-stalled-delivery.js';
 import { processPidNamespace, processStartTicks } from '../src/tmp-reclaim.js';
 import type { MergePorts } from '../src/merge-writer/executor.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3122: below the free-space floor the loop reclaims only its own leftovers, and while still below starts no trial or worker.

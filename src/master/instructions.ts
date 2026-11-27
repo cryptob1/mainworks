@@ -59,11 +59,3 @@ export function withoutMasterInstructions(existing: string) {
   if (starts !== ends || starts > 1 || starts === 1 && existing.indexOf(masterEnd) < existing.indexOf(masterStart)) throw new Error('Malformed or duplicate Mainworks master markers; resolve them before updating AGENTS.md');
   return starts ? existing.slice(0, existing.indexOf(masterStart)) + existing.slice(existing.indexOf(masterEnd) + masterEnd.length) : existing;
 }
-
-/**
- * @deprecated The name of the AGENTS.md block renderer this replaced. A CLI released before GY-1493
- * still loads it from the merged tree when sync regenerates a conflicted AGENTS.md carrying the master
- * block, so text with master markers loses that block, never the rest of the file; text without them
- * gets the master instructions.
- */
-export const managedMasterInstructions = (existing = '') => existing.includes(masterStart) || existing.includes(masterEnd) ? withoutMasterInstructions(existing) : masterInstructions;

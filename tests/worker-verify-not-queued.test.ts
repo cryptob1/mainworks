@@ -9,7 +9,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { heavyRunLabel } from './helpers/run-tests.js';
 import { heldSlots, heldVariable, hostHeavyJobsDirectory, projectVariable, slotsDirectoryVariable, verificationEnvironment } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { until } from './helpers/until.js';
 
 // GY-3447: since GY-3290 a worker's own `npm run build` and selected tests waited for one of the

@@ -13,12 +13,15 @@ import type { Principal, Work } from '../src/model.js';
 import { fixtureApi, fixtureStatus, fixtureWork, NOW, visibleWords } from '../scripts/dashboard-fixture.mjs';
 import { live } from '../browser-tests/ui-board.js';
 import { OVERDUE_MINUTES, formatDuration, statusDuration } from '../src/model/duration.js';
-import { phaseOf, phaseLabel, statusHeld, statusSince } from '../src/model/plain-status.js';
+import { phaseOf, statusSince } from '../src/model/plain-status.js';
+/** How long a card says the item has held its status; delivered work is settled, never overdue. */
+const statusHeld = (work: Work, now: number) => statusDuration(statusSince(work, now), now, phaseOf(work, now) === 'shipped');
 import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkPage from '../web/pages/work.js';
 import { boardFromStatus } from '../src/model/board.js';
 import WorkDetails from '../web/pages/work-details.js';
-import { groupOf, timedGroups } from '../web/groups.js';
+import { timedGroups } from '../web/groups.js';
+import { groupOf } from '../src/model/board.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
@@ -245,7 +248,7 @@ test('integration:status-duration-tracks-real-progress — a retry loop, a heart
   item = await engine.execute(worker, 'submit', item.id, { epoch: item.epoch, pr: 4108 }, id());
   const handedIn = Date.parse(statusSince(item, Date.now()));
   assert.equal(item.stage, 'build', 'the stage has not moved');
-  assert.notEqual(phaseLabel[phaseOf(item, handedIn)], phaseLabel.building);
+  assert.notEqual(phaseOf(item, handedIn), 'building');
   assert.ok(handedIn > building, 'but the status the card names has, so the clock restarted with it');
   assert.equal(statusHeld(item, handedIn + 29 * minute).overdue, false);
   assert.equal(statusHeld(item, handedIn + 31 * minute).overdue, true);

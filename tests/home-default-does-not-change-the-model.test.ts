@@ -9,7 +9,7 @@ import { withDatabase } from './helpers/postgres.js';
 import { builderFixture } from './helpers/builder-fixture.js';
 import { Engine } from '../src/engine.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
-import { dispatchWork } from '../src/master.js';
+import { dispatchWork } from '../src/master/dispatch.js';
 import { reworkWorktreePath } from '../src/cli/workspace-worktree.js';
 import { trialFailureRework } from '../src/daemon/cycle-merge-writer.js';
 import { reportedModel } from '../src/master/runtimes.js';

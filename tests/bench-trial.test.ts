@@ -21,7 +21,7 @@ import {
   type BenchResult,
 } from '../src/bench.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { guideText } from '../src/guide.js';

@@ -2,7 +2,11 @@ import { headlessInventory, sessionAgents } from '../../session-inventory.js';
 
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { listHerdrAgents, masterHarness, masterSettingsFromArgs, producerCommand, registeredReview, saveMasterSettings, saveWorkerProfile, startMaster, workerProfileSchema } from '../../master.js';
+import { listHerdrAgents } from '../../master/herdr.js';
+import { masterHarness, startMaster } from '../../master/harness.js';
+import { masterSettingsFromArgs, producerCommand, saveMasterSettings, saveWorkerProfile } from '../../master/config.js';
+import { registeredReview } from '../../master/autonomy.js';
+import { workerProfileSchema } from '../../master/profiles.js';
 import { reviewCommand as launchReview } from '../../reviewer.js';
 import { writeHarnessPermissions } from '../../harness.js';
 import { reviewerCommand } from '../master-reviewer.js';

@@ -1,13 +1,8 @@
 // Concern: who owns each attention item, control-plane attention, fleet and production summaries.
-import { environmentBlocked, blockedPath } from '../worker-sandbox.js';
-import { humanDecisionLabel, answerCommand } from '../model/human-request.js';
-import { automatableProof } from '../model/mechanical-proofs.js';
 import type { Work } from '../model.js';
-import { missingBaseAncestry } from '../merge-base-ancestry.js';
 import { type ProductionReport, type ApplicationRelease, attentionLines } from '../production-watch.js';
 import type { FleetView } from '../model/registry.js';
 import { humanOnlyDecisions } from '../model/human-request.js';
-import { conflictReworkBoundMs, conflictReworkDue } from '../model/base-refresh.js';
 
 /** The control-plane facts `GET /api/status` reports that are not about any one work item. */
 export interface ControlPlaneStatus {
@@ -33,7 +28,6 @@ export interface AttentionItem extends AttentionOwner { subject: string; text: s
   /** Until when the loop is itself carrying what the line names (GY-1315): shown in master status. */
   inMotionUntil?: string }
 export const agentOwner = (role: 'master' | 'reviewer' | 'control plane', next: string): AttentionOwner => ({ role, human: false, humanOnly: null, next });
-const humanOwner = (humanOnly: typeof humanOnlyDecisions[number], next: string): AttentionOwner => ({ role: 'human', human: true, humanOnly, next });
 /** The sources of installation attention. */
 export const installationSources = ['delegation-limits', 'production'] as const;
 /** The owner of one installation attention line, by the source that raised it. */
@@ -41,64 +35,6 @@ export function installationOwner(source: typeof installationSources[number], te
   if (source === 'delegation-limits') { const assignment = /Set (\S+=\S+)/.exec(text)?.[1]; return agentOwner('master', assignment ? `Set ${assignment} on the deployment (Railway: railway variables --set ${assignment} --service mainworks), then redeploy` : 'Set the named capacity variable on the deployment, then redeploy'); }
   // The failing deployment is on the base branch production deploys; the fix is its redeploy.
   return agentOwner('master', 'Fix the failing deployment of the base branch, which production tracks, with the configured provider');
-}
-/** Why a work item raises attention. */
-const workAttentionCauses = ['human-request', 'session', 'proof-gap', 'reviewer-exhausted', 'launch-review', 'launch-producer',
-  'stalled-step', 'base-conflict', 'merged-reverted', 'hold-overdue', 'merge-base-dismissed', 'merge-refused', 'gate'] as const;
-export type WorkAttentionCause = typeof workAttentionCauses[number];
-/**
- * The owner of a work item's attention, from the same facts that raised it. Everything an agent
- * identity may run is routed to an agent: decisions a human used to make the master applies at once.
- */
-export function workAttentionOwner(work: Work, cause: WorkAttentionCause, now = Date.now()): AttentionOwner {
-  const key = work.key;
-  if (cause === 'merge-refused') return agentOwner('master', `Nothing to run by hand: the integration job asks GitHub again on every observation of ${key}; fix what GitHub names (branch protection, the App's pull request permission, a moved head) and the next observation clears it`);
-  if (cause === 'merge-base-dismissed') return agentOwner('master', missingBaseAncestry(work)
-    ? `Nothing to run: the loop requests a fresh review of ${key}'s head; mainworks master status shows the new verdict`
-    : `Nothing to run: the approval is restored on the unchanged head`);
-  // The one attention item no agent may clear: the three human decisions, answered by the human.
-  if (cause === 'human-request') {
-    const request = work.humanRequest!;
-    return humanOwner(humanDecisionLabel[request.kind], `${answerCommand(key, request)} (or Work → Needs you on the dashboard); the answer returns ${key} to the loop, which dispatches it without a master session`);
-  }
-  // A merge the base branch does not hold the content of is not a record to settle (GY-97): no
-  // decision can deliver work that is not there. The content goes back first, as a follow-up
-  // item naming this one, its files and the merge that removed them; the delivery waits for it.
-  if (cause === 'merged-reverted') {
-    const reverted = work.observation!.revertedDelivery!;
-    return agentOwner('master', `mainworks master create FILE for a follow-up item that restores ${reverted.files.map(file => file.path).join(', ')} to the base branch as ${key} shipped them${reverted.removedBy ? `, naming merge ${reverted.removedBy.mergeSha?.slice(0, 12) ?? `of pull request #${reverted.removedBy.pr}`}${reverted.removedBy.key ? ` of ${reverted.removedBy.key}` : ''} as what removed them` : ''}; request no merge decision for ${key} until the base branch holds its content — a reconciliation now would record a delivery for work that is not there`);
-  }
-  // Mainworks absorbs a moved base itself; a conflict is the one case it cannot, so the candidate
-  // goes back to a worker for a fresh attempt rather than waiting for a refresh that cannot land.
-  // On a system-driven item that rework is the loop's own round (GY-1389), which refuses a hand request:
-  // the owner names the loop's step and the bound it is due by, never a command the CLI refuses (GY-1434).
-  if (cause === 'stalled-step' || (cause === 'base-conflict' && work.systemDriven === true)) {
-    const due = conflictReworkDue(work, now);
-    const bound = due ? ` (due at ${due.dueAt}, ${conflictReworkBoundMs / 60_000} minutes after the conflict was first recorded at ${due.since})` : '';
-    return cause === 'stalled-step'
-      ? agentOwner('master', `mainworks master rework ${key} REASON returns it now; check the loop is cycling (master status names its liveness), since its rework step left the conflict rework unapplied${bound}`)
-      : agentOwner('control plane', `Nothing to run by hand: the loop's rework step returns ${key} to a worker itself${bound}; past that bound master status names the step as stalled`);
-  }
-  if (cause === 'base-conflict') return agentOwner('master', `mainworks master rework ${key} REASON`);
-  // A system-driven item is never pushed by hand (GY-175): the owner text names the loop step, not a command the CLI refuses.
-  const driven = work.systemDriven === true;
-  if (cause === 'session') return agentOwner('master', `herdr agent list to inspect the session; once the lease lapses, ${driven ? `the loop's dispatcher launches ${key} again` : `mainworks master dispatch ${key} PROFILE`}`);
-  if (cause === 'proof-gap') return agentOwner('master', `mainworks principal add PRODUCER --role producer --proof ${(work.proofGaps ?? [])[0] ?? 'PROOF'}`);
-  const reviewNext = driven ? `the loop relaunches the review on its own; mainworks master review ${key} only once the loop has stopped relaunching its request` : `mainworks master review ${key}`;
-  if (cause === 'reviewer-exhausted') return agentOwner('master', `mainworks master reviewer add FILE with a profile on another provider, then ${reviewNext}`);
-  if (cause === 'launch-review') return agentOwner('master', `Fix the refusal reason, then ${reviewNext}`);
-  if (cause === 'launch-producer') return agentOwner('master', 'Fix the refusal reason (mainworks master producer add FILE for a missing profile); the loop relaunches the producer on its own');
-  // A required command the worker's sandbox refused is the launcher's to fix, never the item's (GY-134).
-  if (environmentBlocked(work.blocker)) return agentOwner('master', `Grant ${blockedPath(work.blocker!) ?? 'the refused path'} to the worker's sandbox, then mainworks master unblock ${key} REASON and dispatch it again`);
-  // The owner follows the refusal the row shows: the first failing gate, then a bare blocker.
-  const first = work.gates.find(gate => !gate.passed);
-  const manual = first?.name === 'acceptance' ? /(manual:[\w./-]+)/.exec(first.reasons.join(' '))?.[1] : undefined;
-  if (manual && driven && automatableProof(work, manual)) return agentOwner('control plane', `The loop's producer session produces ${manual} on the exact head; once the loop stops relaunching its request, mainworks master attest ${key} ${manual} REASON`);
-  if (manual) return agentOwner('master', `mainworks master attest ${key} ${manual} REASON`);
-  if (first?.name === 'review') return agentOwner('reviewer', driven ? `The reviewer session judges it; ${reviewNext}` : `The reviewer session judges it; mainworks master review ${key} relaunches a refused review`);
-  if (first?.name === 'merge' && work.stage === 'merge') return agentOwner('master', `Nothing to run by hand: GitHub merges ${key} once its merge gate passes`);
-  if (work.blocker) return agentOwner('master', `Clear the cause, then mainworks master unblock ${key} REASON; a cause that needs money, a third-party account or a person's credential goes to the human`);
-  return agentOwner('master', `mainworks diagnose ${key}`);
 }
 /**
  * Attention that belongs to the installation rather than to a work item: a

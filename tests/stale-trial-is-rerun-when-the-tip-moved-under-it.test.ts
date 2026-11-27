@@ -4,10 +4,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { keptTrialAheadOfReview, mergeOne, pushPassedTrial, trialAheadOfReviewReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { mergeOne, pushPassedTrial, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import { keptTrialAheadOfReview, trialAheadOfReviewReason } from '../src/model/merge-queue.js';
 import { moveTouches } from '../src/merge-writer/stale-trial.js';
 import { riskOf } from '../src/model-boundary/risk-class.js';
-import { emptyMergeWriterState, mergeWriterSummary } from '../src/daemon/cycle-merge-writer.js';
+import { mergeWriterSummary } from '../src/daemon/cycle-merge-writer.js';
+import { emptyMergeWriterState } from '../src/daemon/merge-writer-state.js';
 import type { Work } from '../src/model/work.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

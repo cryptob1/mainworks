@@ -6,7 +6,8 @@ import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Work } from '../src/model.js';
-import { loadMasterConfig, masterConfigSchema, saveProducerProfile, setupMaster } from '../src/master.js';
+import { loadMasterConfig, saveProducerProfile, setupMaster } from '../src/master/config.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { launchProducer, readProducerLedger, reconcileProducers } from '../src/producer.js';
 import { narrowRoleRuntime, piRuntimeSchema } from '../src/runner/payloads.js';
 import { clearRuns } from '../src/runner/registry.js';

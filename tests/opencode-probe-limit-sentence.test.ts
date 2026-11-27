@@ -10,7 +10,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Engine } from '../src/engine.js';
 import { checkAccountLive } from '../src/fleet.js';
 import { hostAccountsVariable, recordHostAccountCheck } from '../src/host-accounts.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { runCaretaker } from '../src/master/caretaker.js';
 import type { Principal } from '../src/model.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';

@@ -7,7 +7,7 @@ import { applyDelivery, onboardingServe } from '../src/repository-setup.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { freePort } from '../src/cli/test-isolation.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';

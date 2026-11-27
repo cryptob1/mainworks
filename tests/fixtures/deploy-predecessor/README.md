@@ -5,6 +5,8 @@ file on disk. Keep this snapshot frozen: using today's watchPorts would miss
 the loaded-code failure that GY-3073 fixes. Host commands are bridged to the
 test process; git and worker CLI loading remain real.
 
-One edit since: GY-3201 deleted `parseServeDeclaration`, so the snapshot's
-serve declaration reads graphyard.json through `servedApplication`; the
-watch ports under test are untouched.
+Edits since: GY-3201 deleted `parseServeDeclaration`, so the snapshot's
+serve declaration reads graphyard.json through `servedApplication`; GY-3964
+deleted `createBackup`, so its backup step calls `writeBackupFile`, and
+reduced `src/master.ts` to one re-export, so it loads the config from
+`master/config.js`. The watch ports under test are untouched.

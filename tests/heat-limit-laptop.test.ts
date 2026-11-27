@@ -9,7 +9,7 @@ import type { Cycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { encodeLoopCpu, loopCpu } from '../src/model/loop-presence.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

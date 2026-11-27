@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeProtocolSkew } from '../src/master.js';
+import { mergeProtocolSkew } from '../src/master/status.js';
 import { MERGE_PROTOCOL, buildIdentity, cliCommit } from '../src/protocol-version.js';
 
 // GY-59 AC-3: a CLI/server protocol mismatch on master merge is reported as version skew.

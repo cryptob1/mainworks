@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { masterCredentialMask, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { launchSession } from '../src/master/launch.js';
 import { herdrSessionPaths } from '../src/master/herdr.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { saveReviewerProfile } from '../src/reviewer.js';
 import { migrateHerdr } from '../src/herdr-migration.js';
 import { Engine } from '../src/engine.js';
@@ -258,7 +258,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
 test('unit:tests/confined-master-main-herdr.test.ts — a master pane a Herdr migration left in the moved-away workspace is closed through the recorded private instance once, and the master relaunches; a pane in the current workspace, or with no instance recorded, is not', async () => {
   const { runCycle } = await import('../src/daemon/cycle.js');
   const { emptyDaemonState } = await import('../src/daemon/state.js');
-  const { masterConfigSchema } = await import('../src/master.js');
+  const { masterConfigSchema } = await import('../src/master/profiles.js');
   const directory = await temporaryDirectory('confined-master-relaunch');
   const instance = { configHome: join(directory, 'herdr'), session: 'gy-fixture' };
   const MASTER = 'graphyard-master-project';

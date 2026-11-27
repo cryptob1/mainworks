@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { awaitRuntimeStart, observeStart, SessionStartError } from '../src/master.js';
+import { awaitRuntimeStart, observeStart, SessionStartError } from '../src/master/launch.js';
 import { runsProgram, supervisorArgv, paneForeground } from '../src/master/launch.js';
 import { setupLine } from '../src/session-watch.js';
 import { workspaceCommands } from '../src/cli/workspace.js';

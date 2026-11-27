@@ -6,13 +6,12 @@ import { fileURLToPath } from 'node:url';
 import type { Observation, Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import type { SessionHandleInput } from '../src/model/sessions.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { boundedLaunch, launchBoundMs, LaunchBoundError } from '../src/master/launch-bound.js';
 import { planeWideFailure } from '../src/model/refusal.js';
-import { planeUnavailableText } from '../src/model/refusal.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
 // Time-bomb allowance (GY-1694): 2026-10-06T13:41 is the tick's explicit clock (now: () => clock, snapshot now: at); Date.now() only measures how long the bounded tick took.
@@ -50,7 +49,6 @@ test('unit:launch-bound — a launch its runtime never acknowledges fails on its
   assert.ok(error instanceof LaunchBoundError);
   assert.match(error.message, /^the claude runtime on vishrog did not acknowledge the launch of GY-64: review within its 50 ms launch bound/);
   assert.equal(planeWideFailure(error.message), false, 'a dead runtime is that runtime\'s fault, not the control plane\'s');
-  assert.equal(planeUnavailableText(error.message), false);
   // A launch inside its bound is returned as it is, and a late failure past the bound is dropped, never unhandled.
   assert.equal(await boundedLaunch(async () => 'pane-1', { runtime: 'claude', host: 'vishrog', subject: 'x', boundMs: 1_000 }), 'pane-1');
   await assert.rejects(boundedLaunch(() => new Promise((_, reject) => setTimeout(() => reject(new Error('late')), 80)), { runtime: 'codex', host: 'h', subject: 'x', boundMs: 20 }), LaunchBoundError);

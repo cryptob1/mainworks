@@ -5,7 +5,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listTestFiles, repositoryRoot } from '../scripts/ci-tests.mjs';
-import { serveStaticSite } from '../src/merge-writer/preview.js';
+import { serveStaticSite } from '../src/merge-writer/serve-head.js';
 import { buildStaticSite, projectCaseSuite } from '../src/release-project.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

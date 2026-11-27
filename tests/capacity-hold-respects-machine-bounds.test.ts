@@ -10,10 +10,9 @@ import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { profileHealth } from '../src/daemon/sessions.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import {
-  masterConfigSchema, observedExhaustions, recordObservedExhaustion,
-  selectAccount, type HerdrAgent, type MasterConfig,
-} from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { observedExhaustions, recordObservedExhaustion, selectAccount } from '../src/master/environments.js';
+import { type HerdrAgent } from '../src/master/herdr.js';
 import type { Principal, Work } from '../src/model.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -38,6 +37,13 @@ let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url:
 
 const ok = (principal: Principal, method: 'GET' | 'POST', path: string, body?: unknown) => apiOk(url, token(principal), path, { method, body });
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
+/** One epoch's worker exhaustion and attempt counts: a double count shows as two rows. */
+const workerAttemptLedger = (work: Work, epoch: number) => {
+  const exhaustions = (work.capacity?.exhaustions ?? []).filter(e => e.role === 'worker' && e.epoch === epoch);
+  const attempts = (work.pipeline?.attempts ?? []).filter(e => e.epoch === epoch);
+  return { exhaustions: exhaustions.length, attempts: attempts.length, released: attempts.filter(e => e.end === 'released').length,
+    open: attempts.filter(e => e.end === null).length, preservedCommit: exhaustions.find(e => e.partialWork.state === 'committed')?.partialWork.commit ?? null };
+};
 
 before(async () => {
   store = await withDatabase('capacity-hold-respects-machine-bounds');
@@ -53,15 +59,6 @@ before(async () => {
 after(async () => { await close?.(); await store?.close(); });
 
 test('unit:capacity-hold-respects-machine-bounds — a held account is not re-selected, a finished agent whose lease ended frees its profile, and the spent epoch is counted once', async () => {
-  const capacity = await import('../src/model/capacity.js') as {
-    accountHeldForRole?: (held: Record<string, { until?: string; resetsAt?: string | null }>, account: string, now: number) => boolean;
-    workerAttemptLedger?: (work: Work, epoch: number) => { exhaustions: number; attempts: number; released: number; open: number; preservedCommit: string | null };
-  };
-  assert.equal(typeof capacity.accountHeldForRole, 'function', 'GY-1708 exports accountHeldForRole');
-  assert.equal(typeof capacity.workerAttemptLedger, 'function', 'GY-1708 exports workerAttemptLedger');
-  const accountHeldForRole = capacity.accountHeldForRole!;
-  const workerAttemptLedger = capacity.workerAttemptLedger!;
-
   await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');
   const now = Date.now();
   const resetsAt = new Date(now + 3_600_000).toISOString();
@@ -88,9 +85,8 @@ test('unit:capacity-hold-respects-machine-bounds — a held account is not re-se
     role: 'worker', profile: 'builder', work: 'GY-1708',
   }, now, { smoke: async () => ({ ok: false, error: `Usage limit reached; resets at ${resetsAt}` }) });
   const held = await observedExhaustions(config);
-  assert.equal(accountHeldForRole(held, 'env-a', now), true, 'GY-1705 hold stands while the reset is ahead');
-  assert.equal(accountHeldForRole(held, 'env-b', now), false);
-  assert.equal(accountHeldForRole(held, 'env-a', Date.parse(resetsAt) + 1), false, 'after the reset the account is free again');
+  assert.ok(held['env-a'], 'GY-1705 hold stands while the reset is ahead');
+  assert.equal(held['env-b'], undefined);
 
   const selected = await selectAccount(config, 'worker', config.workers[0], { quota: false, now: () => now, cacheMs: 0, work: 'GY-1708' });
   assert.equal(selected.account?.name, 'env-b', 'selection fails over to the next account; the held one is never re-selected');

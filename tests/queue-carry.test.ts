@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { BaseRefresh } from '../src/model/base-refresh.js';
-import { carriedApproval, carryRefusal, currentCarry, decideCarry, evidenceBindsCandidate, refreshedCarriedApproval, type CarryInput, type Evidence, type Observation, type TipMerge, type Work } from '../src/model.js';
+import { carriedApproval, currentCarry, evidenceBindsCandidate, refreshedCarriedApproval, type Evidence, type Observation, type QueueCarry, type TipMerge, type Work } from '../src/model.js';
 import { assertReviewCandidate } from '../src/reviewer.js';
 import { diagnose } from '../src/coordination.js';
 
@@ -12,63 +12,14 @@ const H = sha40('a1'), B = sha40('b1'), P = sha40('c1'), TIP = sha40('d1');
 const at = '2026-09-19T08:00:00.000Z';
 const authored = (overrides: Partial<TipMerge> = {}): TipMerge => ({ from: H, parents: [H, P], author: 'graphyard[bot]', authoredByApp: true, conflicts: false, baseChanges: ['src/other.ts', 'docs/other.md'], ...overrides });
 const evidenceRecord = (proof: string, overrides: Partial<Evidence> = {}): Evidence => ({ id: `ev-${proof}`, proof, sha: H, baseSha: B, policyRevision: 1, producer: 'ci-runner', trusted: true, result: 'pass', executed: 3, skipped: 0, at, ...overrides });
-function input(overrides: Partial<CarryInput> = {}): CarryInput {
-  return { from: { sha: H, baseSha: B }, to: { sha: TIP, baseSha: P }, policyRevision: 1, at, merge: authored(), predecessor: { key: 'GY-1', validated: true },
-    reviewedFiles: ['src/queue.ts', 'tests/queue.test.ts'], approval: { provider: 'github', reviewer: 'reviewer[bot]', sha: H, reviewId: 900 },
-    proofs: [{ proof: 'unit:queue', evidence: evidenceRecord('unit:queue', { scopeFiles: ['src/queue.ts', 'tests/'] }) }, { proof: 'integration:docs', evidence: evidenceRecord('integration:docs', { id: 'ev-docs', scopeFiles: ['docs/'] }) }, { proof: 'manual:unscoped', evidence: evidenceRecord('manual:unscoped', { id: 'ev-manual' }) }, { proof: 'e2e:missing', evidence: undefined }],
-    app: 'graphyard', ...overrides };
-}
-const states = (carry: ReturnType<typeof decideCarry>) => [carry.approval.carried, ...carry.evidence.map(entry => entry.carried)];
-/** The base refresh that brought approved head H on B onto base P as Mainworks-authored TIP, with its carry decision. */
-const refreshed = (carry: ReturnType<typeof decideCarry>): BaseRefresh => ({ from: { sha: H, baseSha: B }, base: P, baseTree: sha40('7e'), policyRevision: 1, at, head: TIP, conflict: null, merge: authored(), carry });
-
-test('unit:queue-authored-tip-carry — approval and scope-disjoint evidence carry to a Mainworks-authored two-parent tip over the approved head and a validated predecessor', () => {
-  const carry = decideCarry(input());
-  assert.equal(carry.approval.carried, true);
-  assert.deepEqual({ ...carry.approval, reason: undefined }, { carried: true, provider: 'github', reviewer: 'reviewer[bot]', sha: H, reviewId: 900, originalSha: H, reason: undefined });
-  assert.match(carry.approval.reason, /GY-1 changed none of the 2 reviewed files/);
-  assert.deepEqual(carry.evidence.map(entry => [entry.proof, entry.carried]), [['unit:queue', true], ['integration:docs', false], ['manual:unscoped', false], ['e2e:missing', false]]);
-  assert.equal(carry.evidence[0].evidenceId, 'ev-unit:queue');
-  assert.match(carry.evidence[1].reason, /changed docs\/other\.md inside the scope of evidence ev-docs; fresh evidence/);
-  assert.match(carry.evidence[2].reason, /declares no scopeFiles, so its independence .* cannot be shown/);
-  assert.match(carry.evidence[3].reason, /no trusted evidence was bound to the replaced head/);
-  assert.deepEqual([carry.from, carry.to, carry.predecessor, carry.changedFiles], [{ sha: H, baseSha: B }, { sha: TIP, baseSha: P }, 'GY-1', ['src/other.ts', 'docs/other.md']]);
-  // A predecessor that changed nothing relative to the bound base leaves the tested tree untouched.
-  const untouched = decideCarry(input({ merge: authored({ baseChanges: [] }) }));
-  assert.deepEqual(states(untouched), [true, true, true, true, false]);
-  // The base branch itself is a validated predecessor.
-  assert.equal(decideCarry(input({ predecessor: { key: null, validated: true } })).approval.carried, true);
-});
-
-test('unit:queue-authored-tip-carry — every refusal case requires fresh review and evidence, with the reason recorded', () => {
-  const refused = (overrides: Partial<CarryInput>, pattern: RegExp) => {
-    const carry = decideCarry(input(overrides));
-    assert.deepEqual(states(carry), [false, false, false, false, false], pattern.source);
-    assert.match(carry.approval.reason, pattern); for (const entry of carry.evidence) assert.match(entry.reason, pattern);
-    assert.match(carryRefusal(input(overrides))!, pattern);
-  };
-  refused({ merge: null }, /was not produced by Mainworks's merge of the approved head/);
-  refused({ merge: authored({ from: sha40('a9') }) }, /was not produced by Mainworks's merge of the approved head/);
-  refused({ merge: authored({ parents: [H, P, sha40('e1')] }) }, /carries commits Mainworks did not produce/);
-  refused({ merge: authored({ parents: [sha40('a9'), P] }) }, /rather than exactly the approved head/);
-  refused({ merge: authored({ parents: [H] }) }, /carries commits Mainworks did not produce/);
-  refused({ merge: authored({ authoredByApp: false, author: 'worker' }) }, /authored by worker, not by the graphyard App/);
-  refused({ merge: authored({ conflicts: true }) }, /needed conflict resolution/);
-  refused({ predecessor: { key: 'GY-1', validated: false } }, /predecessor GY-1 is not fully validated/);
-  refused({ merge: authored({ baseChanges: null }) }, /could not be listed completely/);
-  assert.equal(carryRefusal(input()), null);
-  // Scope intersection is decided per binding: a touched reviewed file requires a fresh approval
-  // while a disjoint proof still carries, and the other way round.
-  const reviewed = decideCarry(input({ merge: authored({ baseChanges: ['src/queue.ts'] }) }));
-  assert.equal(reviewed.approval.carried, false); assert.match(reviewed.approval.reason, /GY-1 changed reviewed files src\/queue\.ts; a fresh independent approval/);
-  assert.deepEqual(reviewed.evidence.map(entry => entry.carried), [false, true, false, false], 'the proof scoped to the touched file is re-required; the docs proof carries');
-  const unapproved = decideCarry(input({ approval: null }));
-  assert.equal(unapproved.approval.carried, false); assert.match(unapproved.approval.reason, /no approval was bound to the replaced head/);
-  assert.equal(unapproved.evidence[0].carried, true);
-});
+/** The carry decision recorded when approved head H on B was brought onto base P as Mainworks-authored TIP. */
+const decided = (): QueueCarry => ({ from: { sha: H, baseSha: B }, to: { sha: TIP, baseSha: P }, policyRevision: 1, at, predecessor: 'GY-1', changedFiles: ['src/other.ts', 'docs/other.md'], reviewedFiles: ['src/queue.ts', 'tests/queue.test.ts'],
+  approval: { carried: true, provider: 'github', reviewer: 'reviewer[bot]', sha: H, reviewId: 900, originalSha: H, reason: 'GY-1 changed none of the 2 reviewed files' },
+  evidence: [{ proof: 'unit:queue', carried: true, evidenceId: 'ev-unit:queue', producer: 'ci-runner', reason: 'scope disjoint' }, { proof: 'integration:docs', carried: false, evidenceId: 'ev-docs', producer: 'ci-runner', reason: 'scope touched' }] });
+const refreshed = (carry: QueueCarry): BaseRefresh => ({ from: { sha: H, baseSha: B }, base: P, baseTree: sha40('7e'), policyRevision: 1, at, head: TIP, conflict: null, merge: authored(), carry });
 
 test('unit:queue-authored-tip-carry — a carried binding applies only to the exact refreshed head and policy it was decided for, and only for the policy\'s provider', () => {
-  const carry = decideCarry(input());
+  const carry = decided();
   const work = { candidate: { sha: TIP, baseSha: P, pr: 2, branch: 'graphyard/gy-2-1', author: 'worker' }, policyRevision: 1, policy: { checks: ['test'], review: true }, baseRefresh: refreshed(carry) } as unknown as Work;
   assert.equal(currentCarry(work), carry);
   assert.equal(carriedApproval(work)?.reviewer, 'reviewer[bot]');
@@ -104,7 +55,7 @@ test('unit:queue-real-base-tip — the review launcher refuses a candidate behin
 /** A base refresh of reviewed head H whose carried approval names review 800 of an earlier pull request's commit. */
 const OLD = sha40('0d1');
 function staleCarry(reviews: Observation['reviews'] = []) {
-  const carry = decideCarry(input());
+  const carry = decided();
   carry.approval = { carried: true, provider: 'github', reviewer: 'graphyard-reviewer[bot]', sha: OLD, reviewId: 800, originalSha: OLD, reason: 'carried from the earlier pull request' };
   const candidate = { sha: TIP, baseSha: P, pr: 371, branch: 'graphyard/gy-470-2', author: 'worker' };
   return { key: 'GY-470', candidate, policyRevision: 1, policy: { checks: ['test'], review: true }, baseRefresh: refreshed(carry),

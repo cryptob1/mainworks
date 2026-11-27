@@ -6,7 +6,7 @@ import { REDACTED } from '../src/install/index.js';
 import { fingerprint, Vault } from '../src/install/secrets.js';
 import { variableMarker, type AdapterContext, type ProviderAdapter } from '../src/install/adapters.js';
 import { masterSetup, setupAuditFile } from '../src/cli/master-setup.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-1416: an installation deployed before the plan derived a variable never got it, although the

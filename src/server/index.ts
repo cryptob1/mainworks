@@ -32,7 +32,6 @@ import { terminalUpgrade } from './terminal.js';
 import { queryCaller } from '../store/slow-queries.js';
 export { principalSchema, type Credential } from './principals.js';
 export type { ServerOptions } from './auth.js';
-export { assembleServices } from './auth.js';
 
 /** Routes that answer without a bearer token. */
 const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraActRoutes];

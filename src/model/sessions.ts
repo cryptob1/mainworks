@@ -162,7 +162,7 @@ export function recordSession(work: Work, input: SessionHandleInput, principal: 
 }
 
 // One line per session for a reader, and the one reading of whether it is running: session-state.ts (GY-172).
-export { runningSessions, sessionSummary } from './session-state.js';
+export { sessionSummary } from './session-state.js';
 
 
 /**

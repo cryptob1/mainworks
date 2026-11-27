@@ -10,8 +10,7 @@ import { setting } from '../../setting.js';
 /**
  * The plane's own health; no token required. Health names the release, schema generation and
  * the commit the build runs so an upgrade can be confirmed from outside the container, and so a
- * deployment probe (`master init --deployment-url .../healthz --deployment-sha-field commit`)
- * and the version-skew guard can read what production serves without a credential.
+ * deployment probe and the version-skew guard can read what production serves without a credential.
  *
  * It reports the plane unhealthy (`healthy: false`, `ok: false`), naming each cause, while it
  * cannot serve its purpose: while a rolled-back write is refused — a read-only database, a standby,

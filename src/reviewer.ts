@@ -59,9 +59,6 @@ import { runEnvironment } from './runner/pi.js';
 import { browserInstallCommand, browserToolName, provisionBrowserTool } from './browser-tool.js';
 import { endRegistrySessionById } from './master/registry-slot.js';
 import { stateDirectory } from './install/layout.js';
-export { controlPlaneFindingSection } from './review-prompt.js';
-export { reviewStandard, reviewStandards, repetitionReviewSection, repeatingPaths, touchesRepeatingPath } from './review-prompt.js';
-export { simplicityParagraph, blockingStandardSection, postDeployReviewSection, singleCaseReviewSection, criteriaRuleSection, criteriaVerdictRule } from './review-prompt.js';
 
 const sha40 = z.string().regex(/^[0-9a-f]{40}$/i);
 /** The most BLOCKING lines of a post-merge verdict that are each filed as their own follow-up item (GY-1525 AC-4). */
@@ -525,7 +522,6 @@ export function cliUnreachableRefusal(config: Partial<Pick<MasterConfig, 'cliPat
   return null;
 }
 
-export { browserToolName, browserToolOnPath } from './browser-tool.js';
 /**
  * GY-3331: why a product-review launch cannot give its session the three things its own
  * environment owes it — the control plane's address, the CLI it posts through, and a browser tool
@@ -1394,8 +1390,6 @@ async function withdrawCredential(record: Pick<ReviewRecord, 'sessionDirectory'>
   try { await rm(record.sessionDirectory, { recursive: true, force: true }); return null; }
   catch (error) { return `the reviewer credential directory ${record.sessionDirectory} could not be removed: ${error instanceof Error ? error.message : 'unknown reason'}`.slice(0, 500); }
 }
-/** Whether a settled record's close failure is Herdr refusing to close its pane, rather than only a credential directory left behind. */
-const paneCloseRefused = (record: Pick<ReviewRecord, 'closeFailure'>) => !!record.closeFailure?.startsWith('Herdr could not close pane ');
 
 /**
  * Settle one record: close its pane, withdraw the session credential, and record the outcome.
@@ -1590,7 +1584,7 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   // pane is matched by the record's own pane id and name, never by name alone, and a name a
   // pending record holds is left alone; a session settled on this very pass had its close already
   // and, if that close failed, is retried on the next. A close Herdr keeps refusing is tried at most
-  // `settledCloseAttempts` times, one ledger write each, and is then reported (heldNameAttention)
+  // `settledCloseAttempts` times, one ledger write each, and its failure is then kept on the record
   // rather than retried on every tick; once the pane is gone its failure is cleared.
   // The sweep reads two indexes built once per pass (GY-1075), so it stays linear in the ledger
   // however long retention grows: the panes Herdr lists, by (pane, name), and the names a pending
@@ -1631,15 +1625,3 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
 
 /** Errors under which the existing host lock runs lockless. */
 const unwritableLockCodes = new Set(['EROFS', 'EACCES', 'EPERM']);
-
-/**
- * A settled reviewer whose pane the sweep could not close in `settledCloseAttempts` tries (GY-1072):
- * it still holds its agent name, and a launch that needs the name is refused at the bound. It is a
- * fault named with its pane, never a silent bound; it clears once the pane is gone.
- */
-export function heldNameAttention(records: ReviewRecord[]) {
-  return records.filter(record => record.state !== 'pending' && !!record.pane && paneCloseRefused(record) && (record.closeAttempts ?? 0) >= settledCloseAttempts)
-    .map(record => ({ subject: record.key,
-      text: `Settled reviewer session ${record.agentName} on ${record.key} (${record.state}, request ${record.requestId ?? record.id}) still holds its agent name in pane ${record.pane}: ${settledCloseAttempts} closes failed, the last with ${record.closeFailure}`.slice(0, 1000),
-      next: `herdr pane close ${record.pane} (a pane that is already gone counts as closed); the next dispatch tick clears the failure` }));
-}

@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Work } from '../src/model.js';
-import { loadMasterConfig } from '../src/master.js';
+import { loadMasterConfig } from '../src/master/config.js';
 import { readReviewLedger, reconcileReviews, reviewIdleGraceMs } from '../src/reviewer.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { fleet, requested, starts } from './helpers/review-fleet.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 

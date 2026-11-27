@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
-import { awaitRuntimeStart, emptySourceStarts, sessionHarnessPlan, SessionStartError, startAgentSession, workerHarnessPlan } from '../src/master.js';
-import { bashRuleMatches, claudeRuleProblem, harnessDecision, masterHarnessPlan } from '../src/harness.js';
+import { awaitRuntimeStart, SessionStartError, startAgentSession } from '../src/master/launch.js';
+import { emptySourceStarts, sessionHarnessPlan, workerHarnessPlan } from '../src/master/harness.js';
+import { bashRuleMatches, claudeRuleProblem, masterHarnessPlan } from '../src/harness.js';
+import { harnessDecision } from './helpers/harness-decision.js';
 import { detectConsentPrompt, settingsWarning } from '../src/consent-prompt.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

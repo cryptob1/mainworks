@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { bootstrapGate, diagnosticsAttention, gateRecordPath, gateSummary, readGateRecord, runDiagnostics, writeGateRecord } from '../src/batch-gate.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { masterPrompt } from '../src/master/harness.js';
 import { guideTopics } from '../src/guide.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 
 // GY-3249: a red trial caused by the trial host (its network, disk, or a tool its image lacks) is a
 // Mainworks fault; the master is told so, and told never to change the managed repository around it.

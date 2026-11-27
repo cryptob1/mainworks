@@ -212,5 +212,3 @@ export function environmentFailure(error: unknown, cwd = process.cwd()): { path:
 export function environmentBlocker(command: string, runtime: string | undefined, failure: { path: string; detail: string }) {
   return `Environment, not the item: the ${runtime || 'worker'} sandbox cannot write ${failure.path}, so required command '${command}' failed: ${failure.detail.slice(0, 300)}. The launcher must grant this path to the worker's sandbox; unblock and relaunch once it does.`;
 }
-export const environmentBlocked = (blocker: string | null | undefined) => !!blocker?.startsWith('Environment, not the item:');
-export const blockedPath = (blocker: string) => /cannot write (\S+), so required command/.exec(blocker)?.[1] ?? null;

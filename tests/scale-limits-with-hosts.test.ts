@@ -12,7 +12,7 @@ import { workerVerificationPump } from '../src/daemon/worker-verification.js';
 import { runningVerificationChildren } from '../src/merge-writer/worker-verification.js';
 import { encodeLoopHosts, loopHosts } from '../src/model/loop-presence.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { until } from './helpers/until.js';
 
 // GY-3528: a hard-coded two heavy jobs turned three machines into one queue. The budget is now each

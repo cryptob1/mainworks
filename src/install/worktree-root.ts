@@ -1,4 +1,4 @@
-import { defaultChildRun, runChild, type ChildRun } from '../child-runner.js';
+import { defaultChildRun, type ChildRun } from '../child-runner.js';
 import { statfsSync, type Dirent } from 'node:fs';
 import { chmod, lstat, mkdir, readdir, rm, rmdir, statfs } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -20,9 +20,8 @@ import { setting } from '../setting.js';
  */
 
 export const defaultWorktreeRootMinFreeGb = 2;
-const defaultWorktreeRootBudgetGb = 10;
 type Environment = Record<string, string | undefined>;
-export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot?: string; worktreeRootMinFreeGb?: number; worktreeRootBudgetGb?: number } }
+export interface WorktreeRootSettings { repository: string; run?: { worktreeRoot?: string; worktreeRootMinFreeGb?: number } }
 
 /**
  * Where this installation keeps data that is neither configuration nor a credential. It is never
@@ -45,7 +44,6 @@ export function worktreeRoot(root: string, config: WorktreeRootSettings, environ
   return configured ? resolve(configured) : defaultWorktreeRoot(root, config.repository, environment);
 }
 export const worktreeRootMinFreeBytes = (config: Pick<WorktreeRootSettings, 'run'>) => (config.run?.worktreeRootMinFreeGb ?? defaultWorktreeRootMinFreeGb) * 1e9;
-export const worktreeRootBudgetBytes = (config: Pick<WorktreeRootSettings, 'run'>) => (config.run?.worktreeRootBudgetGb ?? defaultWorktreeRootBudgetGb) * 1e9;
 
 /** Filesystems whose contents live in memory and are gone at the next boot. */
 const volatileFilesystems: Record<number, string> = { 0x01021994: 'tmpfs', 0x858458f6: 'ramfs' };
@@ -180,44 +178,4 @@ export async function removeUnownedCheckouts(repository: string, base: string, l
     catch (error) { errors.push(`${directory}: ${error instanceof Error ? error.message : String(error)}`); }
   }
   return { removed, errors };
-}
-
-/** What the root itself holds, as `du` counts it; null when it cannot be measured in time. */
-async function directoryBytes(path: string, timeoutMs = 10_000): Promise<number | null> {
-  try {
-    const kilobytes = Number.parseInt((await runChild('du', ['-sk', path], { timeoutMs })).split(/\s/)[0] ?? '', 10);
-    return Number.isFinite(kilobytes) ? kilobytes * 1024 : null;
-  } catch { return null; }
-}
-
-export interface WorktreeRootHealth {
-  path: string; exists: boolean; volatile: string | null; freeBytes: number | null; minFreeBytes: number;
-  usedBytes: number | null; budgetBytes: number; checkouts: number; unowned: number; low: boolean; overBudget: boolean;
-}
-/** The share of the budget at which `master status` speaks up, while writes still succeed. */
-const worktreeRootBudgetWarning = 0.8;
-/**
- * The root as `master status` reports it. Free space is what the kernel reports for the volume; a
- * user quota is invisible there, so the root's own size is also held against a configured budget —
- * the quota case is exactly the one that stopped this host with gigabytes nominally free.
- */
-export async function inspectWorktreeRoot(path: string, settings: { minFreeBytes: number; budgetBytes: number }, live: Iterable<string>, dependencies: { probe?: FilesystemProbe; usage?: (path: string) => Promise<number | null> } = {}): Promise<WorktreeRootHealth> {
-  const owned = new Set([...live].map(entry => resolve(entry)));
-  const entries = (await readdir(path, { withFileTypes: true }).catch(() => null));
-  const checkouts = (entries ?? []).filter(entry => entry.isDirectory() && managedName.test(entry.name)).map(entry => resolve(path, entry.name));
-  const facts = await (dependencies.probe ?? probeFilesystem)(path);
-  const usedBytes = entries === null ? 0 : await (dependencies.usage ?? directoryBytes)(path);
-  return { path, exists: entries !== null, volatile: facts.volatile, freeBytes: facts.freeBytes, minFreeBytes: settings.minFreeBytes, usedBytes, budgetBytes: settings.budgetBytes,
-    checkouts: checkouts.length, unowned: checkouts.filter(directory => !owned.has(directory)).length,
-    low: facts.freeBytes !== null && facts.freeBytes < settings.minFreeBytes,
-    overBudget: usedBytes !== null && usedBytes >= settings.budgetBytes * worktreeRootBudgetWarning };
-}
-/** Attention texts for the root; `master status` gives each its owner. Raised on thresholds, never on the first failed write. */
-export function worktreeRootConcerns(health: WorktreeRootHealth): string[] {
-  const concerns: string[] = [];
-  const held = `${health.checkouts} ephemeral checkout(s), ${health.unowned} owned by no live session`;
-  if (health.volatile) concerns.push(`The managed worktree root ${health.path} is on a ${health.volatile}: every proof and review checkout is held in memory. Set run.worktreeRoot in .graphyard/master.json to a directory on durable storage`);
-  if (health.low && health.freeBytes !== null) concerns.push(`${gigabytes(health.freeBytes)} free on the managed worktree root ${health.path}, below the configured ${gigabytes(health.minFreeBytes)} minimum; it holds ${held}`);
-  if (health.overBudget && health.usedBytes !== null) concerns.push(`The managed worktree root ${health.path} holds ${gigabytes(health.usedBytes)} of its ${gigabytes(health.budgetBytes)} budget (run.worktreeRootBudgetGb) in ${held}`);
-  return concerns;
 }

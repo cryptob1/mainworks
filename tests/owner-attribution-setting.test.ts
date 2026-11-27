@@ -7,7 +7,7 @@ import { configCommand } from '../src/cli/config-owner.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall } from '../src/install/index.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { servedInstall } from './helpers/served-install.js';
 import { harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

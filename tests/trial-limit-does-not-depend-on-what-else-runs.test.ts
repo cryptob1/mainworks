@@ -6,7 +6,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { TrialRunRequest } from '../src/merge-writer/trial-run.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';

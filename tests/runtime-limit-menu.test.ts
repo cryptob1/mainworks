@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRuntimePrompt } from '../src/master.js';
+import { classifyRuntimePrompt } from '../src/master/runtime-prompt.js';
 import { detectRuntimeExhaustion } from '../src/master/runtime-prompt.js';
 import { parseResetTime } from '../src/model/capacity.js';
 

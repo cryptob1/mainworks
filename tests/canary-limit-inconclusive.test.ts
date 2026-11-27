@@ -8,7 +8,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { masterCauses } from '../src/daemon/master-stalled-delivery.js';
 import { daemonSummary } from '../src/daemon/run.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import type { AgentRegistry, CanaryOffer, FleetRuntime } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

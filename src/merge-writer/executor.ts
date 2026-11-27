@@ -23,7 +23,7 @@ export { countProofCases };
 // ---- The queue (model/merge-queue.ts) ------------------------------------------------------------
 import { baseFailurePrefix, gate, keptTrialAheadOfReview, open, trialAheadOfReviewReason } from '../model/merge-queue.js';
 import { setting } from '../setting.js';
-export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge,  trialAheadOfReviewPrefix, trialAheadOfReviewReason, trialRefusalHeld, keptTrialAheadOfReview,   } from '../model/merge-queue.js';
+export { baseFailureHoldMs, baseFailurePrefix, isBaseRepair, isHotfix, mergeQueue, nextToMerge, trialAheadOfReviewPrefix, trialRefusalHeld } from '../model/merge-queue.js';
 
 /** Whether trial results still belong to this implementation and policy. */
 export function mergeCandidateObsolete(current: Work | undefined, selected: Work = current!): string | null {
@@ -676,8 +676,6 @@ export const baseTipCheckCacheLimit = 8;
 const baseTipCheckCache = new Map<string, BaseTipCheckEntry>();
 /** Clears the base-tip check cache (tests that mock the same tip with different outcomes). */
 export const clearBaseTipCheckCache = () => baseTipCheckCache.clear();
-/** How many base-tip check entries the writer currently holds (tests of the bound). */
-export const baseTipCheckCacheSize = () => baseTipCheckCache.size;
 /** Remember a usable base-tip check: drop every other tip's entries, refresh LRU order, evict past the bound. */
 function rememberBaseTipCheck(tip: string, key: string, entry: BaseTipCheckEntry) {
   for (const existing of [...baseTipCheckCache.keys()]) if (!existing.startsWith(`${tip}:`)) baseTipCheckCache.delete(existing);

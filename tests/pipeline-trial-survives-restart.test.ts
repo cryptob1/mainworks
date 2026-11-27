@@ -11,7 +11,7 @@ import { trialRunsDirectory, type TrialRunHandle } from '../src/merge-writer/tri
 import { mergeRecordKinds, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';

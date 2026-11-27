@@ -4,7 +4,8 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { atomicPrivateWrite, loadStoredMasterConfig, masterConfigSchema, setupMaster } from '../src/master.js';
+import { atomicPrivateWrite, loadStoredMasterConfig, setupMaster } from '../src/master/config.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-1918: `master init` rebuilt .graphyard/master.json field by field and dropped every field its

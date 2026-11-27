@@ -4,10 +4,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { harnessDecision } from '../src/harness.js';
+import { harnessDecision } from './helpers/harness-decision.js';
 import * as herdrModule from '../src/master/herdr.js';
 import { closeHerdrPane, listHerdrAgents, observeHerdrAgents, stopCreatedHerdrTab } from '../src/master/herdr.js';
-import { liveMasterConfig, loadMasterConfig, masterConfigSchema, masterHarness, setupMaster } from '../src/master.js';
+import { liveMasterConfig, loadMasterConfig, setupMaster } from '../src/master/config.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
+import { masterHarness } from '../src/master/harness.js';
 import * as supervisorModule from '../src/install/loop-unit.js';
 import { installLoopSupervisor, loopUnitText } from '../src/install/loop-unit.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -24,7 +26,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // What GY-1441 adds is read when a test runs, never at load: a checkout without it fails each test, not the file.
 const units = () => import('../src/install/units.js');
 const loopUnitOf = (root: string, unitDirectory?: string, home?: string) => (supervisorModule as unknown as { loopUnitOf: (root: string, unitDirectory?: string, home?: string) => string }).loopUnitOf(root, unitDirectory, home);
-const scope = herdrModule as unknown as { scopeHerdr: (workspace: string | null) => void; herdrScope: () => string | null };
+const scope = herdrModule as unknown as { scopeHerdr: (workspace: string | null) => void };
 const legacyLoopUnit = 'graphyard-master.service';
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 
@@ -66,7 +68,7 @@ test('unit:per-install-units — two installs on one host write, enable and rest
   const beta = await checkout('install-beta', 'cryptob1/graphyard-game-pilot');
   const alphaUnits = perInstallUnits('cryptob1/graphyard'), betaUnits = perInstallUnits('cryptob1/graphyard-game-pilot');
   assert.equal(alphaUnits.master, 'graphyard-master-cryptob1-graphyard.service');
-  assert.equal(betaUnits.executorTemplate, 'graphyard-executor-cryptob1-graphyard-game-pilot@.service');
+  assert.equal(betaUnits.master, 'graphyard-master-cryptob1-graphyard-game-pilot.service');
 
   // The first install: its loop, under its own names, recorded beside its configuration.
   const alphaLoop = await installLoopSupervisor({ root: alpha, cliPath: launcher, repository: 'cryptob1/graphyard', intervalSeconds: 20 }, host.loopHost(home));
@@ -112,7 +114,7 @@ test('unit:per-install-units — two installs on one host write, enable and rest
   const kept = await installLoopSupervisor({ root: production, cliPath: launcher, repository: 'cryptob1/graphyard', intervalSeconds: 20 }, legacy.loopHost(legacyHome));
   assert.equal(kept.unit, legacyLoopUnit);
   assert.equal(kept.wrote, 'unchanged');
-  assert.deepEqual(JSON.parse(await readFile(join(production, installUnitsFile), 'utf8')), { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: 'graphyard-executor@.service', alias: true });
+  assert.deepEqual(JSON.parse(await readFile(join(production, installUnitsFile), 'utf8')), { version: 1, slug: null, master: legacyLoopUnit, alias: true });
   // The pilot on that host: the legacy unit is production's, so the pilot takes its own names.
   const pilot = await checkout('install-pilot', 'cryptob1/graphyard-game-pilot');
   assert.deepEqual(await resolveInstallUnits(pilot, 'cryptob1/graphyard-game-pilot', legacyDirectory, legacyHome), betaUnits);
@@ -156,7 +158,7 @@ test('unit:unit-names-fail-closed — with no units.json, a legacy-named unit th
   await writeFile(join(executorOnly, 'graphyard-executor@.service'), `[Service]\nExecStart=${process.execPath} ${production}/scripts/graphyard-executor.mjs --slot %i\n`);
   assert.throws(() => readInstallUnits(pilot, executorOnly, home), (error: unknown) => error instanceof LegacyUnitRefusal && error.unitPath === join(executorOnly, 'graphyard-executor@.service') && error.checkout === production);
   // A legacy unit serving this same checkout still resolves to the legacy alias.
-  assert.deepEqual(readInstallUnits(production, unitDirectory, home), { version: 1, slug: null, master: legacyLoopUnit, executorTemplate: 'graphyard-executor@.service', alias: true });
+  assert.deepEqual(readInstallUnits(production, unitDirectory, home), { version: 1, slug: null, master: legacyLoopUnit, alias: true });
   // The host installer reads a remote host's record and legacy units the same way.
   const remote = [{ path: `/home/graphyard/.config/systemd/user/${legacyLoopUnit}`, text: 'WorkingDirectory=/home/graphyard/code/cryptob1-graphyard\n' }, { path: '/home/graphyard/.config/systemd/user/graphyard-executor@.service', text: null }];
   assert.throws(() => parseInstallUnits(null, 'units.json on host', () => unrecordedInstallUnits('/home/graphyard/code/owner-project', remote, '/home/graphyard')), refusal('/home/graphyard/code/cryptob1-graphyard'));
@@ -201,7 +203,6 @@ test('unit:herdr-scope-per-install — the install\'s workspace scopes every inv
   await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'wA' }, status as typeof fetch);
   scope.scopeHerdr(null);
   await loadMasterConfig(root);
-  assert.equal(scope.herdrScope(), 'wA');
 
   // The inventories every sweep reads list only the install's own panes, though names and paths match.
   const herdr = sharedHerdr();
@@ -222,14 +223,13 @@ test('unit:herdr-scope-per-install — the install\'s workspace scopes every inv
   await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB', baseBranch: 'release' }));
   const refused = await live.reload();
   assert.match(refused.refused ?? '', /baseBranch/);
-  assert.equal(scope.herdrScope(), 'wA', 'a refused reload never moves the Herdr scope');
-  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wA:p1', 'wA:p2']);
+  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wA:p1', 'wA:p2'], 'a refused reload never moves the Herdr scope');
   await writeFile(join(root, '.graphyard/master.json'), JSON.stringify({ ...stored, herdrWorkspace: 'wB' }));
   assert.equal((await live.reload()).refused, null);
-  assert.equal(scope.herdrScope(), 'wB', 'an accepted reload adopts the new workspace');
+  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wB:p1', 'wB:p2'], 'an accepted reload adopts the new workspace');
   await writeFile(join(root, '.graphyard/master.json'), '{');
   assert.match((await live.reload()).refused ?? '', /could not be reloaded/);
-  assert.equal(scope.herdrScope(), 'wB');
+  assert.deepEqual((await listHerdrAgents(herdr.run)).map(agent => agent.pane_id), ['wB:p1', 'wB:p2']);
   scope.scopeHerdr(null);
 });
 

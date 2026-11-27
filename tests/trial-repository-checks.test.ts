@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultChildRun } from '../src/child-runner.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
-import { attributeFailures, baseFailurePrefix, baseFailureReason, baseTipCheckCacheLimit, baseTipCheckCacheSize, clearBaseTipCheckCache, failureIsBase, mergeOne, runMergeTrial, trialFailureReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
+import type { MasterConfig } from '../src/master/profiles.js';
+import { attributeFailures, baseFailurePrefix, baseFailureReason, baseTipCheckCacheLimit, clearBaseTipCheckCache, failureIsBase, mergeOne, runMergeTrial, trialFailureReason, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import {
@@ -456,30 +456,27 @@ test('unit:base-tip-check-cache-bounds — a new tip drops the previous tip\'s e
   clearBaseTipCheckCache();
   const head = 'e'.repeat(40);
   const tip1 = '1'.repeat(40), tip2 = '2'.repeat(40);
-  const file = 'tests/bound.test.ts', caseTitle = 'unit:bound — base fails';
-  const tap = `TAP version 13\n# Subtest: ${file}\n    not ok 1 - ${caseTitle}\n    1..1\nnot ok 1 - ${file}\n1..1\n`;
-  const first: MergeTrialRun = { build: 'pass', tests: { passed: 0, failed: [file], files: 1 }, durationMs: 1, logTail: '', files: [file], proofs: {}, runnerExit: 1 };
   const verdict = (files: string[]) => ({ build: 'pass' as const, tests: { passed: 0, failed: files, files: files.length }, durationMs: 1, logTail: '', runnerExit: 1 });
-  const retest = async () => ({ run: verdict([file]), tap });
-  await attributeFailures(first, tap,
-    { root: '/coordinator', base: '/coordinator', mergeSha: head, changedFiles: ['src/a.ts'], proofs: [], proofFiles: [], baseTip: tip1, timeoutMs: 60_000 },
-    async () => '', retest);
-  assert.equal(baseTipCheckCacheSize(), 1, 'one usable base tip is remembered');
-  await attributeFailures(first, tap,
-    { root: '/coordinator', base: '/coordinator', mergeSha: head, changedFiles: ['src/a.ts'], proofs: [], proofFiles: [], baseTip: tip2, timeoutMs: 60_000 },
-    async () => '', retest);
-  assert.equal(baseTipCheckCacheSize(), 1, 'a new tip drops the previous tip\'s entry rather than retaining both');
-  // One more than the bound of distinct failing-file keys on the live tip.
-  for (let i = 0; i < baseTipCheckCacheLimit + 1; i++) {
-    const alone = `tests/f${i}.test.ts`;
-    const aloneTap = `TAP version 13\n# Subtest: ${alone}\n    not ok 1 - case ${i}\n    1..1\nnot ok 1 - ${alone}\n1..1\n`;
-    const aloneFirst: MergeTrialRun = { build: 'pass', tests: { passed: 0, failed: [alone], files: 1 }, durationMs: 1, logTail: '', files: [alone], proofs: {}, runnerExit: 1 };
-    await attributeFailures(aloneFirst, aloneTap,
-      { root: '/coordinator', base: '/coordinator', mergeSha: head, changedFiles: ['src/a.ts'], proofs: [], proofFiles: [], baseTip: tip2, timeoutMs: 60_000 },
-      async () => '',
-      async (_commit, files) => ({ run: verdict(files), tap: aloneTap }));
-  }
-  assert.ok(baseTipCheckCacheSize() <= baseTipCheckCacheLimit, `cache held ${baseTipCheckCacheSize()} entries past its bound of ${baseTipCheckCacheLimit}`);
+  let baseRuns = 0;
+  // Attribute FILE's failure on TIP; a base retest that runs (a cache miss) counts in baseRuns.
+  const attribute = (tip: string, file = 'tests/bound.test.ts') => {
+    const tap = `TAP version 13\n# Subtest: ${file}\n    not ok 1 - unit:bound — base fails\n    1..1\nnot ok 1 - ${file}\n1..1\n`;
+    const first: MergeTrialRun = { build: 'pass', tests: { passed: 0, failed: [file], files: 1 }, durationMs: 1, logTail: '', files: [file], proofs: {}, runnerExit: 1 };
+    return attributeFailures(first, tap,
+      { root: '/coordinator', base: '/coordinator', mergeSha: head, changedFiles: ['src/a.ts'], proofs: [], proofFiles: [], baseTip: tip, timeoutMs: 60_000 },
+      async () => '', async (commit, files) => { if (commit !== head) baseRuns++; return { run: verdict(files), tap }; });
+  };
+  await attribute(tip1); await attribute(tip1);
+  assert.equal(baseRuns, 1, 'one usable base tip is remembered');
+  await attribute(tip2); await attribute(tip1);
+  assert.equal(baseRuns, 3, 'a new tip drops the previous tip\'s entry rather than retaining both');
+  // One more than the bound of distinct failing-file keys on the live tip: the oldest is evicted, the newest kept.
+  for (let i = 0; i <= baseTipCheckCacheLimit; i++) await attribute(tip2, `tests/f${i}.test.ts`);
+  const filled = baseRuns;
+  await attribute(tip2, `tests/f${baseTipCheckCacheLimit}.test.ts`);
+  assert.equal(baseRuns, filled, 'the newest entry is kept');
+  await attribute(tip2, 'tests/f0.test.ts');
+  assert.equal(baseRuns, filled + 1, `the cache holds no more than its bound of ${baseTipCheckCacheLimit}`);
   clearBaseTipCheckCache();
 });
 

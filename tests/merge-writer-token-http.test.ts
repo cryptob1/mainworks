@@ -7,7 +7,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import { serveGitHttp } from './helpers/git-http-remote.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { defaultChildRun } from '../src/child-runner.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { writeMergeToken } from '../src/install/merge-token.js';
 
 // GY-3220 AC-2: a scratch bare repository served over token-authenticated git smart HTTP on loopback

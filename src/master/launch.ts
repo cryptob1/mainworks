@@ -31,7 +31,7 @@ import { setting } from '../setting.js';
 import { stateDirectory } from '../install/layout.js';
 // Prompt delivery moved to prompt-delivery.ts (GY-1863) with the screen a stalled delivery is
 // judged by; the names below are the one address every existing import has always had.
-export { promptAttempts, promptAcceptMs, promptRetryPauseMs,  PromptNotAcceptedError, herdrErrorCode, herdrErrorText, nameRefusedByRuntime, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
+export { herdrErrorCode, deliverPrompt, readSessionScreen, sessionWords, type PromptDelivery } from './prompt-delivery.js';
 
 /**
  * Keep what an interrupted attempt had not committed. The work is committed on the attempt's own
@@ -258,8 +258,7 @@ export async function sessionConfinement(kind: string, args: readonly string[], 
  * keeps it from starting (GY-888). Synchronous: the headless runner spawns without awaiting, so a
  * host whose namespaces are known-refused refuses here, and one whose probe has not answered yet
  * lets bubblewrap itself fail the spawn — either way the run fails instead of starting unconfined.
- * The spawner that applies these words is src/runner/roles.ts confiningSpawn, which hands them to
- * the runner's own spawn.
+ * The headless runner applies these words (runConfinement in src/runner/roles.ts).
  */
 export function headlessConfinementWrapper(root: string, cwd: string | undefined, bwrap: string | null = bwrapOnPath(), credentialMask?: CredentialMask, environment?: NodeJS.ProcessEnv): readonly string[] {
   const head = `A headless session cannot be started with the coordinator checkout at ${root} unwritable at the OS level`;
@@ -672,8 +671,6 @@ export async function startAgentSession(name: string, kind: string, pane: string
   } finally { settle(launched); }
 }
 
-export { secretsBusUnjudged, secretsBusMigration, secretsBusEndpointProblem, keyringEndpointWarning, keyringProbeBackoffMs, keyringProbeBackoffMaxMs } from './launch-keyring.js';
-export type { KeyringEndpointVerdict, KeyringProbeBackoff } from './launch-keyring.js';
 
 /** Launch every terminal role through the same pane/start/close sequence. The request is
  * delivered by startAgentSession on the runtime command line. Coordinates are cleared only

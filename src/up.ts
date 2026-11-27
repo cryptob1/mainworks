@@ -37,7 +37,6 @@ import { loopCodeRoot } from './daemon/checkout-state.js';
 import { recordHerdrWorkspace } from './master/config.js';
 import { chooseInstallLayout, stateDirectory } from './install/layout.js';
 import { authorEnvironment } from './check-in-author.js';
-export { readInstallLoopCode } from './loop-code.js';
 
 /**
  * `mainworks up` (GY-1419): every machine step of a first installation, in order — preflight,

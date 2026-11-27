@@ -2,11 +2,9 @@ import { bootstrapObligations, inheritedObligations, type BootstrapObligation } 
 import { currentEvidence } from './evidence.js';
 import { evidenceBindsCandidate } from './carry.js';
 import { grantsAuthorize, type ProofAuthority } from './proof.js';
-import { observationWindowHold, type Stage, type Work } from './work.js';
+import type { Stage, Work } from './work.js';
 import { PRODUCT_NAME } from './product.js';
-import { loopObservationProofs } from './loop-observation.js';
 import { pathScopesOverlap } from './documentation-glob.js';
-import { loopOwned } from './loop-owned.js';
 import { parkedOnHuman } from './human-request.js';
 import { behindBaseHold } from './behind-base.js';
 import { baseRefreshConflict, currentBaseRefreshCarry, pendingBaseRefresh } from './base-refresh.js';
@@ -64,7 +62,7 @@ const claimedNow = (work: Work, now: number) => !!work.lease && Date.parse(work.
 /**
  * In flight: claimed, or submitted with its candidate standing — not sent back for rework. A
  * submitted item whose rework was requested and that nobody has claimed is a peer waiting for a
- * worker, ordered by `dispatchOrder`, like a ready item.
+ * worker, ordered by `dispatchSort`, like a ready item.
  */
 export const inFlight = (work: Work, now: number) => work.stage !== 'done' && (claimedNow(work, now) || !!work.submission && !work.reworkRequested);
 /**
@@ -99,10 +97,6 @@ export function concurrentOverlap(work: Work, all: Work[], now: number): Overlap
   });
 }
 
-/** Ready to be offered a worker: released, unblocked, unclaimed, not submitted unless rework was requested, past any observation window (GY-1698), not a loop-owned observation the loop reads itself (GY-1762), not loop-owned (GY-1760: an item only the master side can satisfy is never offered, so the board's dispatchable count matches what dispatch launches), and not carrying a finished head the loop resubmits itself (GY-3335). */
-export const dispatchable = (work: Work, now: number) => work.stage !== 'done' && work.ready && !work.blocker && !work.finishedBlockerHead && !claimedNow(work, now) && (!work.submission || !!work.reworkRequested)
-  && !observationWindowHold(work, new Date(now)) && !loopObservationProofs(work) && !loopOwned(work);
-
 /** True when the item's observed candidate changes a hot file: one two or more live attempts are already changing (`hotspots`, GY-882). */
 const touchesHot = (item: Work, hot: ReadonlySet<string>) => {
   if (!hot.size) return false;
@@ -116,14 +110,11 @@ const touchesHot = (item: Work, hot: ReadonlySet<string>) => {
  * attempts are already changing is offered before one that does; age then decides within each group. This stays a pure reordering — overlap still holds nothing, and a hot
  * item still dispatches beside its peers rather than waiting for them. The hot set is computed once
  * per cycle from one snapshot and passed in: heat is a property of the whole set, and a comparator
- * driven only by (a, b) must not derive it mid-sort. The default empty set is the cold order, so
- * every existing `.sort(dispatchOrder)` call site is unchanged.
+ * driven only by (a, b) must not derive it mid-sort. The default empty set is the cold order.
  *
  * Given `now`, an item of the same priority that has waited `dispatchStarvationMs` or longer in its
  * stage is offered before every item that has not, whatever its heat (GY-1023: the scope and
  * cold-first preferences alone once starved a broad item for hours).
- * `dispatchSort` reads each item's wait once per sort; prefer it over `.sort(dispatchOrder)` when
- * ordering a whole set with a clock.
  */
 export const dispatchStarvationMs = 60 * 60_000;
 /**
@@ -159,18 +150,14 @@ function dispatchRank(a: Work, b: Work, hot: ReadonlySet<string>, starvingA: boo
     || (hotA !== hotB ? (hotA ? 1 : -1) : 0)
     || (Date.parse(a.createdAt) - Date.parse(b.createdAt) || 0);
 }
-export function dispatchOrder(a: Work, b: Work, hot: ReadonlySet<string> = new Set(), now?: number) {
-  return dispatchRank(a, b, hot, starving(a, now), starving(b, now));
-}
 /**
  * `items` in dispatch order, each item's starvation read once rather than on every comparison.
  * Within one priority, an item that already carries a submitted attempt is offered before an item
  * without one (GY-1891), ahead of the starvation, hot-file and age keys `dispatchRank` decides: a returned
  * rework has been built and reviewed once and is the nearest thing to a merge, so holding it while
  * fresh work starts only raises work in progress. Within each group the existing order stands
- * unchanged, and priority still decides first. The pairwise `dispatchOrder` keeps the heat/wait
- * order; whole-set ordering goes through here, as the loop's dispatch step and
- * master status's schedule already do. An item on its fourth rework round or later
+ * unchanged, and priority still decides first. The loop's dispatch step and master status's
+ * schedule order through here. An item on its fourth rework round or later
  * (`attemptedRankMaxRounds`) loses that rank and sorts with fresh work, so work that cannot
  * converge does not starve the rest of its priority (GY-3504).
  */

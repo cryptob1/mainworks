@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { statfs } from 'node:fs/promises';
 import { withDatabase } from './helpers/postgres.js';
-import { Store, save, applyWorkDelta, documentBefore, resolvedPayloadSql, routineSaveKinds, snapshotEvery, type WorkDelta } from '../src/store.js';
+import { Store, save, resolvedPayloadSql, routineSaveKinds, snapshotEvery } from '../src/store.js';
 import { compactLedger, ledgerCompactedKind, ledgerRetentionMs, configuredLedgerRetentionMs } from '../src/store/compaction.js';
 import { DELIVERY_EVENT_PREDICATE } from '../src/store/tables/production.js';
 import { Engine } from '../src/engine.js';
@@ -95,14 +95,13 @@ test('unit:routine-events-store-no-snapshot — a routine save stores only what 
     }
   }
   const byIndex = new Map(rows.map((row, index) => [row.seq, index]));
-  // Every revision reconstructs: in JavaScript from its base, in SQL through every reader.
+  // Every revision reconstructs in SQL through every reader.
   const sql = await store.pool.query(`SELECT seq, ${resolvedPayloadSql()} AS payload FROM events WHERE work_id=$1 ORDER BY seq`, [work.id]);
   for (const [index, row] of rows.entries()) {
     const expected = written[index];
     if (row.payload.delta) {
       const base = rows.find(entry => Number(entry.seq) === row.payload.delta.base)!;
       assert.ok(base.payload.work, 'a delta names a whole row');
-      assert.deepEqual(applyWorkDelta(base.payload.work, row.payload.delta as WorkDelta), expected, `${row.kind} at ${index} rebuilds in JavaScript`);
     }
     assert.deepEqual(sql.rows[index].payload.work, expected, `${row.kind} at ${index} rebuilds in SQL`);
     assert.deepEqual(sql.rows[index].payload.details, index ? { kind: row.kind } : undefined);
@@ -112,8 +111,6 @@ test('unit:routine-events-store-no-snapshot — a routine save stores only what 
   const history = await readEventHistory(store.pool, parseEventHistoryQuery(new URLSearchParams({ work: work.id, routine: 'include', order: 'asc', limit: '1000' })));
   assert.deepEqual(history.events.map(event => event.payload.work), written);
   for (const event of await store.events(work.id)) assert.deepEqual(event.payload.work, written.find(doc => doc.revision === event.payload.work.revision));
-  const client = await store.pool.connect();
-  try { assert.deepEqual(await documentBefore(client, work.id, new Date(Date.now() + 60_000), () => true), written.at(-1)); } finally { client.release(); }
 
   // Through the engine: a worker's renewals past snapshotEvery are never whole.
   let w = await engine.execute(operator, 'create', null, { type: 'chore',  title: 'Renewals', criteria: [{ id: 'AC-1', text: 'Behaves', proofs: ['integration:x', 'e2e:fixture'] }] }, randomUUID());

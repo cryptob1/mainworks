@@ -4,7 +4,8 @@ import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { profileHealth } from '../src/daemon/sessions.js';
-import { masterConfigSchema, type HerdrAgent, type MasterConfig, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
+import { type HerdrAgent } from '../src/master/herdr.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 

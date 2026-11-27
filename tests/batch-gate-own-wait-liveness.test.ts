@@ -15,7 +15,7 @@ import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { trialLoad, trialStartOwner, trialStartWaiting } from '../src/merge-writer/trial-load.js';
 import { acquireVerificationSlot, declarationSlot, heldSlots, slotsDirectoryVariable } from '../src/master/verification-slots.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';

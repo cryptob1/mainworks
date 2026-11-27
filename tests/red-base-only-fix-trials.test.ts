@@ -6,7 +6,7 @@ import { mergeWriterIdle, mergeWriterReads, mergeWriterStep, mergeWriterSummary 
 import { trialSlotCount } from '../src/merge-writer/trial-load.js';
 import { trialAffordableFiles } from '../src/merge-writer/trial.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { baseFailureReason, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { ChildRun } from '../src/child-runner.js';
 import type { Cycle } from '../src/daemon/cycle.js';

@@ -8,7 +8,7 @@ import { onboardingServe } from '../src/model/onboarding-work.js';
 import { checkServedApp, featureMapCaseId } from '../src/app-feature-check.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { gateChecks } from '../src/batch-gate.js';
 import { freePort } from '../src/cli/test-isolation.js';

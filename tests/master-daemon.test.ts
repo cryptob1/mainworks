@@ -6,13 +6,14 @@ import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireDaemonLock, actionDetailMax, daemonStatePath, daemonStateSchema, emptyDaemonState, pruneDaemonState, readDaemonState, retainedActions, writeDaemonState, type DaemonState } from '../src/daemon/state.js';
-import { candidateKey, dispatchKey, reconcilePendingActions } from '../src/daemon/reconcile.js';
+import { dispatchKey, reconcilePendingActions } from '../src/daemon/reconcile.js';
 import { cycleFailureDelay, cycleFailureStart, noteCycleFailure } from '../src/daemon/liveness.js';
 import { daemonSummary, runDaemon } from '../src/daemon/run.js';
 import { profileHealth } from '../src/daemon/sessions.js';
-import { retriedSnapshot, snapshotRetryDelayMs, type DaemonEffects } from '../src/daemon/effects.js';
+import { retriedSnapshot, type DaemonEffects } from '../src/daemon/effects.js';
+import { snapshotRetryDelayMs } from '../src/daemon/snapshot-retry.js';
 import { runCycle } from '../src/daemon/cycle.js';
-import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig, type MasterRun, type WorkerProfile } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
@@ -352,13 +353,7 @@ test('runDaemon holds the lock while cycling, releases it on exit, and stops on 
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('candidate-scoped cursor keys change with the commit, the base, and the policy', () => {
-  const candidate = submitted();
-  const base = candidateKey('review', candidate);
-  assert.notEqual(base, candidateKey('proof', candidate));
-  assert.notEqual(base, candidateKey('review', { ...candidate, policyRevision: 2 }));
-  assert.notEqual(base, candidateKey('review', { ...candidate, candidate: { ...candidate.candidate!, sha: 'f'.repeat(40) } }));
-  assert.notEqual(base, candidateKey('review', { ...candidate, candidate: { ...candidate.candidate!, baseSha: 'f'.repeat(40) } }));
+test('dispatch cursor keys change with the attempt', () => {
   assert.equal(dispatchKey(work({ epoch: 1 })) === dispatchKey(work({ epoch: 2 })), false, 'a new attempt is a new dispatch');
 });
 

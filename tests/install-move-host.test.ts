@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
-import { atomicPrivateWrite, setupMaster } from '../src/master.js';
+import { atomicPrivateWrite, setupMaster } from '../src/master/config.js';
 import { copyTemplateCluster } from '../src/e2e/warm-postgres.js';
 import { postgresBinaries, startCluster, type LocalPaths } from '../src/install/local-runtime.js';
 import { installDirectory } from '../src/install/secrets.js';

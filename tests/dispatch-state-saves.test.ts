@@ -9,7 +9,7 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { dispatchEffects, type DispatchEffects } from '../src/dispatch/effects.js';
 import { readDispatchCursor, writeDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick, type DispatchTick } from '../src/dispatch/tick.js';

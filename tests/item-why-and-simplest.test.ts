@@ -8,10 +8,9 @@ import { itemLeadBrief, itemLeadRule } from '../src/review-prompt.js';
 import { masterPrompt } from '../src/master/harness.js';
 import { masterGuide } from '../src/master/guide.js';
 import { workerPrompt } from '../src/master/dispatch.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { controlPlaneUpgradeItem, stepStallItem, trialHostFaultItem } from '../src/daemon/control-plane.js';
-import { gateFiledItem } from '../src/daemon/cycle-batch-gate.js';
-import { baseFailureItem } from '../src/model/base-failure.js';
+import { gateFiledItem } from '../src/daemon/control-plane.js';
 import { onboardingWorkRequest } from '../src/model/onboarding-work.js';
 import { postMergeFollowUp } from '../src/model/post-merge-review.js';
 import { tasteFollowUp } from '../src/engine/commands/taste.js';
@@ -56,7 +55,6 @@ test('item-why-and-simplest: every built-in creator supplies both sentences, and
     'control-plane fault (reporter create upstream)': controlPlaneUpgradeItem({ failedStep: 'build', verified: 'a'.repeat(40) } as never),
     'stalled step filing': stepStallItem('dispatch', 'owner/project'),
     'trial host filing': trialHostFaultItem('registry.npmjs.org', 'owner/project'),
-    'base failure filing': baseFailureItem({ check: 'test', test: 't', baseSha: 'b'.repeat(40), blocks: [], jobId: null, url: null } as never, 'main'),
     'onboarding filing': onboardingWorkRequest('c'.repeat(40), null, 'first'),
     'post-merge follow-up': postMergeFollowUp(delivered, 'd'.repeat(40), { text: 'A defect', path: null, line: null, paths: [] } as never, 0),
     'taste send-back follow-up': tasteFollowUp(delivered, 'The note is the reason', 'owner', '2026-01-01T00:00:00.000Z'),

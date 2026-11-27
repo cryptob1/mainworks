@@ -8,7 +8,7 @@ import { mergeOne, mergeRecordKinds, type MergeRecordEvent, type MergeTrialInput
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 

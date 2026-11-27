@@ -1,5 +1,5 @@
 import { appendEvidence } from '../model-boundary/append-evidence.js';
-import { once, digest } from '../store/mutations.js';
+import { once } from '../store/mutations.js';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -151,8 +151,6 @@ async function demandOrphanRecovery(db: pg.PoolClient, work: Work, all: Work[], 
     && evaluate(flight, all, now).gates.some(gate => gate.name === 'review' && gate.passed)
     && work.gates.some(gate => gate.name === 'review' && gate.passed), reason, 409);
 }
-
-export const mergeRecordFingerprint = (id: string, data: unknown) => digest(mergeRecordInput(id, data));
 
 export async function recordMergeEvent(services: Services, actor: Principal, id: string, body: unknown, key: string) {
   demand(actor.role === 'coordinator', 'Only the loop\'s coordinator identity records the merge writer\'s ledger', 403);

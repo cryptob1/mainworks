@@ -2,7 +2,8 @@
 import { renderPublicLink } from '../team-access.js';
 import { parseArgs } from 'node:util';
 import { resourceConflicts } from '../../coordination.js';
-import { dispatchWork, readWorkerCredential } from '../../master.js';
+import { dispatchWork } from '../../master/dispatch.js';
+import { readWorkerCredential } from '../../master/config.js';
 import { atomicPrivateWrite } from '../../private-file.js';
 import { loopRestartRequestPath } from '../../daemon/state.js';
 import { masterStatusReport } from '../master-status.js';

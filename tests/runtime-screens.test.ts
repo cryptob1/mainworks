@@ -6,8 +6,12 @@ import { appendFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { HeadlessExec } from '../src/headless-session.js';
 import { fileURLToPath } from 'node:url';
-import { accountStartFailurePath, clearAccountStartFailures, readAccountStartFailures, readProfileLaunchRecords } from '../src/master/dispatch.js';
-import { atomicPrivateWrite, awaitRuntimeStart, dispatchWork, loadMasterConfig, observeStart, SessionStartError, setupMaster, type HerdrAgent, type WorkerProfile } from '../src/master.js';
+import { accountStartFailurePath, clearAccountStartFailures, readAccountStartFailures } from '../src/master/dispatch.js';
+import { atomicPrivateWrite, loadMasterConfig, setupMaster } from '../src/master/config.js';
+import { awaitRuntimeStart, observeStart, SessionStartError } from '../src/master/launch.js';
+import { dispatchWork } from '../src/master/dispatch.js';
+import { type HerdrAgent } from '../src/master/herdr.js';
+import { type WorkerProfile } from '../src/master/profiles.js';
 import { runtimeAdapter } from '../src/master/runtimes.js';
 const opencodeScreen = runtimeAdapter('opencode')!.screen!;
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
@@ -183,13 +187,6 @@ test('unit:start-failure-fallback-visible — a launch whose preferred account\'
     assert.ok(dispatched.fallback!.note.endsWith('; launched on claude-b'), dispatched.fallback!.note);
     assert.deepEqual(dispatched.fallback!.failed.map(failure => [failure.account, failure.kind]), [['opencode-a', 'opencode']]);
 
-    // The record the launcher keeps beside its reservation says the same: a slot running Claude
-    // under an opencode-named profile is on the record.
-    const records = await readProfileLaunchRecords(root, [profile]);
-    assert.equal(records[profile.name].runtime, 'claude');
-    assert.equal(records[profile.name].account, 'claude-b');
-    assert.deepEqual(records[profile.name].failedAccounts.map(failure => failure.account), ['opencode-a']);
-
     // The account's consecutive failures are counted.
     assert.equal((await readAccountStartFailures(master))['opencode-a'].failures, 1);
 
@@ -204,8 +201,6 @@ test('unit:start-failure-fallback-visible — a launch whose preferred account\'
     const healthy = await dispatch(new Set(['opencode']));
     assert.deepEqual(healthy.pane.kinds, ['opencode']);
     assert.equal(healthy.dispatched.fallback, null);
-    const after = await readProfileLaunchRecords(root, [profile]);
-    assert.deepEqual(after[profile.name].failedAccounts, [], 'a dispatch without a fallback records none');
     assert.deepEqual(await readAccountStartFailures(master), {});
 
     // A profile whose every account failed to start says so instead of dying on the last one alone.

@@ -15,7 +15,7 @@ import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { reviewBindingFile, type ReviewPostBinding } from '../src/review-post.js';
 import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
-import { setupMaster } from '../src/master.js';
+import { setupMaster } from '../src/master/config.js';
 import { WorkerSandboxError } from '../src/worker-sandbox.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

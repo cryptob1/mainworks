@@ -17,7 +17,8 @@ import { closureHandle, launchedSessionHandle, reconcileSessionLiveness, session
 import { dispatchEffects, type DispatchEffects } from '../src/dispatch/effects.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
-import { masterConfigSchema, selectAccount, sessionAgentName } from '../src/master.js';
+import { masterConfigSchema, sessionAgentName } from '../src/master/profiles.js';
+import { selectAccount } from '../src/master/environments.js';
 import { launchGraceMs } from '../src/model/registry.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { deliverThroughLedger } from './helpers/ledger-delivery.js';

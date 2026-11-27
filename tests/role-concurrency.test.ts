@@ -13,7 +13,10 @@ import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
-import { isProfileSession, loadMasterConfig, reviewerProfileSchema, sessionAgentName, sessionNameLimit, setupMaster, saveProducerProfile, type HerdrAgent, type MasterConfig } from '../src/master.js';
+import { reviewerProfileSchema, sessionAgentName, type MasterConfig } from '../src/master/profiles.js';
+import { loadMasterConfig, setupMaster, saveProducerProfile } from '../src/master/config.js';
+import { sessionNameLimit } from '../src/session-name.js';
+import { type HerdrAgent } from '../src/master/herdr.js';
 import type { FleetClient } from '../src/fleet.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, launchGraceMs, liveSessions, proposedRuntimes, type AgentRegistry, type FleetSession } from '../src/model/registry.js';
@@ -36,7 +39,7 @@ setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocki
 // session name. Each test is named for the proof it produces: integration:concurrent-reviews,
 // integration:concurrent-producers, integration:role-concurrency-configured,
 // and the docs check behind manual:capacity-sizing-onboarding-review.
-// GY-122 adds unit:profile-session-name-round-trip and unit:role-concurrency-deterministic-tags.
+// GY-122 adds unit:role-concurrency-deterministic-tags.
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
 const sha40 = (label: string) => label.replace(/[^a-f0-9]/g, '0').padEnd(40, 'f').slice(0, 40);
@@ -250,14 +253,10 @@ test('integration:role-concurrency-configured — concurrency is declared per ro
     assert.deepEqual(more.launched.map(entry => entry.work), ['GY-202', 'GY-203']); assert.deepEqual(more.waiting.filter(entry => entry.kind === 'review'), []);
     assert.equal(host.agents.length, 3);
     assert.deepEqual(starts(host.calls), items.map(item => `review-claude-${tag(item.autoDispatch!.review!.id)}`), 'each session is named for its request');
-    // The first and second items carry the all-digit tags 12345678 and 00000000 (fixedTags), so this recognises a name that used to be misread on every run.
-    assert.ok(starts(host.calls).every(name => isProfileSession(config.reviewers[0], name)));
-    assert.equal(isProfileSession(config.reviewers[0], 'review-claude-10'), false, 'another profile whose name extends this one is not counted as its session');
-    // A profile name near the runtime's 32-character limit still gets a distinct, launchable name per request, recognised as its own.
+    // A profile name near the runtime's 32-character limit still gets a distinct, launchable name per request.
     const long = { name: 'long', agentName: 'review-claude-on-the-second-acct', concurrency: 2 };
     const derived = sessionAgentName(long, { id: randomUUID(), requestId: items[1].autoDispatch!.review!.id });
     assert.ok(derived.length <= sessionNameLimit && derived.endsWith(`-${tag(items[1].autoDispatch!.review!.id)}`) && derived !== long.agentName, derived);
-    assert.ok(isProfileSession(long, derived) && !isProfileSession(config.reviewers[0], derived));
     assert.equal(sessionAgentName(long, { id: randomUUID(), requestId: items[1].autoDispatch!.review!.id, attempt: 3 }).length <= sessionNameLimit, true);
     // Lowered to 1 while three run: nothing is stopped, nothing new launches until the sessions drain.
     host.registry.setConcurrency(1);
@@ -287,37 +286,6 @@ test('integration:role-concurrency-configured — concurrency is declared per ro
   } finally { await host.cleanup(); }
 });
 
-test('unit:profile-session-name-round-trip — isProfileSession recognises every name derivedSessionName produces, for hex and all-digit tags with and without an attempt suffix, and rejects the names of other profiles', () => {
-  const short = { name: 'claude-reviewer', agentName: 'review-claude', concurrency: 3 };
-  const long = { name: 'long', agentName: 'review-claude-on-the-second-acct', concurrency: 2 };
-  const other = { name: 'cursor-reviewer', agentName: 'review-cursor', concurrency: 3 };
-  const tags = ['a1b2c3d4', '12345678', '00000000'];
-  const attempts: (number | undefined)[] = [undefined, 1, 12];
-  let checked = 0;
-  for (const profile of [short, long]) for (const requestTag of tags) for (const attempt of attempts) {
-    const name = sessionAgentName(profile, { id: randomUUID(), requestId: `${requestTag}-${randomUUID()}`, ...(attempt === undefined ? {} : { attempt }) });
-    assert.ok(name.length <= sessionNameLimit && name.endsWith(attempt !== undefined && attempt > 1 ? `-${requestTag}-${attempt}` : `-${requestTag}`), name);
-    assert.equal(isProfileSession(profile, name), true, `${profile.agentName} owns ${name}`);
-    assert.equal(isProfileSession(other, name), false, `${other.agentName} does not own ${name}`);
-    assert.equal(isProfileSession(profile === short ? long : short, name), false, `${name} is not the other claude profile's session`);
-    checked++;
-  }
-  assert.equal(checked, 2 * tags.length * attempts.length);
-  // The shape that was misread: a digest-shortened name whose all-digit tag follows the eight-hex digest, with no attempt suffix.
-  const shortened = sessionAgentName(long, { id: randomUUID(), requestId: '12345678-0000-4000-8000-000000000000' });
-  assert.match(shortened, /^review-claude-[0-9a-f]{8}-12345678$/, shortened);
-  assert.equal(isProfileSession(long, shortened), true, 'the tag is read from the end of the name, never as an attempt of the digest before it');
-  // Anchored: a tag is never read as an attempt, and an attempt is never read as a tag.
-  assert.equal(isProfileSession(short, 'review-claude-12345678'), true);
-  assert.equal(isProfileSession(short, 'review-claude-12345678-1'), false, 'the first attempt carries no suffix, so this is not a name the launcher produces');
-  assert.equal(isProfileSession(short, 'review-claude-10'), false, 'a profile whose name extends this one');
-  assert.equal(isProfileSession(short, 'review-claude-a1b2c3d4-0'), false);
-  assert.equal(isProfileSession(short, 'review-claude-a1b2c3d4-01'), false);
-  assert.equal(isProfileSession(short, `review-claude-a1b2c3d4-${'9'.repeat(18)}`), false, 'an attempt the limit cannot hold is nobody\'s session, not an error');
-  assert.equal(isProfileSession(short, undefined), false);
-  assert.equal(isProfileSession(short, 'review-claude'), true, 'the fixed name is the profile\'s own');
-});
-
 test('unit:role-concurrency-deterministic-tags — this suite\'s request ids are fixed rather than drawn from the clock, and include the all-digit tags that once made integration:role-concurrency-configured fail one run in fifty', () => {
   const items = [requested(1), requested(2), requested(3), requested(4)];
   assert.deepEqual(items.slice(0, 3).map(item => tag(item.autoDispatch!.review!.id)), ['12345678', '00000000', 'a1b2c3d4']);
@@ -329,10 +297,23 @@ test('unit:role-concurrency-deterministic-tags — this suite\'s request ids are
   assert.ok(ids.every(id => /^[0-9a-f]{32}$/.test(id)), ids.join(', '));
   // No producer request stands beside the review (GY-1235), so the review's tag is the only one an item's sessions carry.
   assert.ok(items.every(item => item.autoDispatch!.producers.length === 0));
-  // The names the configured test derives from these ids, on both the plain and the digest-shortened profile, round-trip on every run.
+  // The names the configured test derives from these ids, on both the plain and the digest-shortened profile, end in their tag.
   const short = { name: 'claude-reviewer', agentName: 'review-claude', concurrency: 3 }, long = { name: 'long', agentName: 'review-claude-on-the-second-acct', concurrency: 2 };
   for (const item of items) for (const profile of [short, long]) {
     const name = sessionAgentName(profile, { id: randomUUID(), requestId: item.autoDispatch!.review!.id });
-    assert.ok(name.endsWith(`-${tag(item.autoDispatch!.review!.id)}`) && isProfileSession(profile, name), `${profile.agentName} counts ${name}`);
+    assert.ok(name.endsWith(`-${tag(item.autoDispatch!.review!.id)}`), `${profile.agentName} counts ${name}`);
   }
+});
+
+// GY-122: what the launcher derives, whatever reads it back. The names stay inside the runtime's limit and end in
+// their tag, with the attempt after the first, for hex and all-digit tags on a plain and a digest-shortened profile.
+test('unit:profile-session-name-shape — every name sessionAgentName derives stays inside the runtime\'s limit and ends in its tag, with the attempt after the first, for hex and all-digit tags on a plain and a digest-shortened profile', () => {
+  const short = { name: 'claude-reviewer', agentName: 'review-claude', concurrency: 3 };
+  const long = { name: 'long', agentName: 'review-claude-on-the-second-acct', concurrency: 2 };
+  for (const profile of [short, long]) for (const requestTag of ['a1b2c3d4', '12345678', '00000000']) for (const attempt of [undefined, 1, 12]) {
+    const name = sessionAgentName(profile, { id: randomUUID(), requestId: `${requestTag}-${randomUUID()}`, ...(attempt === undefined ? {} : { attempt }) });
+    assert.ok(name.length <= sessionNameLimit && name.endsWith(attempt !== undefined && attempt > 1 ? `-${requestTag}-${attempt}` : `-${requestTag}`), name);
+  }
+  // A profile name near the limit is digest-shortened: an all-digit tag then follows the eight-hex digest.
+  assert.match(sessionAgentName(long, { id: randomUUID(), requestId: '12345678-0000-4000-8000-000000000000' }), /^review-claude-[0-9a-f]{8}-12345678$/);
 });

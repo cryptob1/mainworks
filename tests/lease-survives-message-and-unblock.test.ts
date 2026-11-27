@@ -133,7 +133,7 @@ describe('lease-survives-message-and-unblock', { concurrency: true }, () => {
   test('e2e:lease-survives-message-and-unblock — missing, expired and superseded leases stop after two consecutive endings even with progress', async () => {
     const { workerLaunchHealth } = await import('../src/daemon/worker-launch-health.js');
     const { advanceFailureRuns, failureHeld } = await import('../src/daemon/repeated-failure.js');
-    const { masterConfigSchema } = await import('../src/master.js');
+    const { masterConfigSchema } = await import('../src/master/profiles.js');
     const config = masterConfigSchema.parse({ version: 1, url: 'http://localhost:1', credentialFile: '/outside/coordinator.token', cliPath: cli,
       repository: 'owner/project', baseBranch: 'main', hostId: 'test', masterAgentName: 'master', workers: [] });
     for (const cause of ['missing', 'expired', 'superseded'] as const) {

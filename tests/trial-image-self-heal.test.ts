@@ -11,7 +11,7 @@ import type { TrialRunHandle } from '../src/merge-writer/trial-run.js';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { ensureTrialImage } from '../src/install/trial-image.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';

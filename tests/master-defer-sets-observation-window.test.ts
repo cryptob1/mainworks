@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { Store } from '../src/store.js';
-import { runAutonomyCommand, type MasterConfig } from '../src/master.js';
+import { runAutonomyCommand } from '../src/master/autonomy.js';
+import { type MasterConfig } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

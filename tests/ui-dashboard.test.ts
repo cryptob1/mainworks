@@ -8,10 +8,10 @@ import type { Work } from '../src/model.js';
 import { NOW, boardApi, boardStatus, boardWork } from '../browser-tests/ui-board.js';
 // @ts-expect-error Dependency-free fixture script.
 import { fixtureApi, visibleWords } from '../scripts/dashboard-fixture.mjs';
-import { boardFromStatus, classify, groupLabel, groupOf, groupWithin, groups, humanOnlyIds, mergedAt, nextActor, timedGroups } from '../web/groups.js';
+import { classify, groupLabel, groupWithin, mergedAt, nextActor, timedGroups } from '../web/groups.js';
+import { boardFromStatus, groupOf, groups, humanOnlyIds } from '../src/model/board.js';
 import { prSteps, stateIds } from '../src/model/pr-steps.js';
 import { noRelease } from '../src/model/release.js';
-import { jargon } from '../src/model/plain-status.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 import WorkPage, { workFilters } from '../web/pages/work.js';
 import WorkDetails from '../web/pages/work-details.js';
@@ -166,7 +166,7 @@ test('unit:ui-needs-you-and-timers — a human-only decision is listed once, und
 
 test('unit:ui-item-first-screen — an item page says on its first screen what state it is in, why, which named role acts next, in plain words with no internal jargon and no pull request wording; the guide is under 300 words', () => {
   const roles = ['You', 'Builder agent', 'Reviewer agent', 'Prover agent', 'Automated checks', 'Mainworks (automatic)', 'Mainworks (assigns a builder)', 'Master agent', 'Nobody yet', 'Nobody — it is live', 'Nobody — it has merged'];
-  const banned = [...jargon, 'session kind', 'epoch', 'lease', 'candidate', 'pull request'];
+  const banned = ['epoch', 'lease', 'candidate', 'policy revision', 'producer', 'attestation', 'trusted evidence', 'session kind', 'pull request'];
   for (const item of board()) {
     const screen = firstScreen(itemPage(item.key));
     const words = visibleWords(screen).join(' ');

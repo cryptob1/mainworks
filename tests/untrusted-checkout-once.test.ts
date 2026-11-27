@@ -11,7 +11,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { encodeLoopCheckoutTrust, loopCheckoutTrust } from '../src/model/loop-presence.js';
 import { setupChecklist } from '../src/model/setup-checklist.js';
 import { runUp, upExitCodes, upRequestFromArgs, upStateFile, type UpDependencies, type UpEvent } from '../src/up.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';

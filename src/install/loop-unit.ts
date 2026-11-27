@@ -6,16 +6,15 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir, userInfo } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
-import { deployUnitOf, installUnitsPath, legacyLoopUnit, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords } from './units.js';
+import { deployUnitOf, installUnitsPath, proposedInstallUnits, readInstallUnits, resolveInstallUnits, systemdCommandLineWords } from './units.js';
 import { knownGoodCli, knownGoodState } from '../master/known-good.js';
 import { installDirectory } from './secrets.js';
 import { installIdFor } from './types.js';
 import { installLauncherPath, unitLauncherFault, writeInstallLauncher } from './cli-release.js';
 import { canonical, temporaryDirectories, underTestRunner } from '../runtime-environment.js';
 import { stateDirectory } from './layout.js';
-export { temporaryDirectories, underTestRunner } from '../runtime-environment.js';
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, 200);
 
 // --- The master loop's own supervisor ----------------------------------------
@@ -27,12 +26,6 @@ const detail = (error: unknown) => (error instanceof Error ? error.message : Str
 // What follows installs that supervisor, verifies it, and — where no supervisor can be installed —
 // says so instead of leaving the promise unkept.
 
-/**
- * The loop's legacy unit name: what an install written before GY-1441 runs, kept as its recorded
- * alias. A new install names its loop for itself (`graphyard-master-OWNER-NAME.service`,
- * install/units.ts), and `loopUnitOf` reads the name a checkout recorded.
- */
-export const loopUnitName = legacyLoopUnit;
 /** The loop unit the install at ROOT owns: its recorded name, or the legacy alias. */
 export const loopUnitOf = (root: string, unitDirectory?: string, home?: string) => readInstallUnits(root, unitDirectory, home).master;
 /** Long enough for the cycle's own bounded external calls to return before SIGKILL. */
@@ -360,9 +353,6 @@ export function unsupervisedInstruction(input: Pick<LoopUnitInput, 'root' | 'cli
   return `Mainworks cannot install a supervisor for the loop on this host, so its self-healing does not apply here: a crashed, killed, or rebooted loop stays down until a person starts it, and no restart follows the attention item that reports it. Keep it alive yourself - run "${command}" from ${input.root} under this platform's own always-restart supervisor (launchd on macOS, an init service or a container restart policy elsewhere), configure that supervisor to start at boot, and read the loop line in mainworks master status to confirm it is cycling.`;
 }
 
-/** The user whose manager runs the unit, as `loginctl` must be told it: by uid, or by name where there is none. */
-const supervisedUser = () => String(process.getuid?.() ?? userInfo().username);
-
 /** Read back what the supervisor reports about the unit, without changing anything. */
 function observeUnit(run: (command: string, args: string[]) => string, unit: string) {
   const enabled = supervisorState(run, ['--user', 'is-enabled', unit]);
@@ -512,31 +502,6 @@ export async function alignLoopUnit(input: LoopUnitInput, host: LoopSupervisorHo
   const home = host.home ?? ((host.env ?? process.env).HOME?.trim() || homedir());
   return { wrote: installed.wrote, reason: installed.refused ?? installed.reason, unitPath,
     ...(installed.wrote === 'refused' ? { launcherStale: unitSetting(existing, 'ExecStart', home) !== unitSetting(wanted, 'ExecStart', home) } : {}) };
-}
-
-/** The same facts, observed rather than installed: what `master status` reports about supervision. */
-export async function loopSupervision(input: Pick<LoopUnitInput, 'root' | 'cliPath'>, host: LoopSupervisorHost = {}): Promise<LoopSupervision> {
-  const support = supervisorSupport(host);
-  const loopUnit = loopUnitOf(input.root, loopUnitDirectory(host), host.home);
-  const unitPath = join(loopUnitDirectory(host), loopUnit);
-  if (!support.supported) return { supported: false, unit: loopUnit, unitPath: null, installed: false, enabled: null, active: null, linger: null,
-    reason: support.reason, instruction: unsupervisedInstruction(input), ...(support.unreachable ? { unreachable: true } : {}) };
-  const run = supervisorRun(host);
-  // Reading supervision must never be able to fail a report: an unreadable unit file is one signal
-  // missing, and systemd's own answer below still decides whether a unit is installed.
-  let installed = false;
-  try { await readFile(unitPath, 'utf8'); installed = true; } catch { installed = false; }
-  const observed = observeUnit(run, loopUnit);
-  // A unit systemd knows by another path (a packaged or hand-placed one) is installed too.
-  installed ||= observed.enabledState !== null && observed.enabledState !== 'not-found';
-  const unreadable = [observed.enabled === null ? 'enabled' : null, observed.active === null ? 'active' : null].filter(Boolean).join(' and ');
-  // Lingering is read, never assumed: a host that cannot answer leaves it unknown rather than false.
-  // `show-user` needs the user named: without one it shows the login manager, which has no Linger
-  // property and answers nothing, and the reboot half of the restart policy went unverified.
-  let linger: boolean | null = null;
-  try { const answer = run('loginctl', ['show-user', supervisedUser(), '--property=Linger', '--value']).trim().toLowerCase(); linger = answer === 'yes' ? true : answer === 'no' ? false : null; } catch { linger = null; }
-  return { supported: true, unit: loopUnit, unitPath, installed, enabled: installed ? observed.enabled : false, active: installed ? observed.active : false, linger,
-    instruction: null, reason: unreadable ? `systemd did not report whether the unit is ${unreadable}` : null };
 }
 
 /**

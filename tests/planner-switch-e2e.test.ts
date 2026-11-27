@@ -12,7 +12,8 @@ import { fleetCommand } from '../src/cli/master/fleet.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { runPlanner } from '../src/master/planner.js';
-import { loadStoredMasterConfig, masterConfigSchema, type WorkerProfile } from '../src/master.js';
+import { loadStoredMasterConfig } from '../src/master/config.js';
+import { masterConfigSchema, type WorkerProfile } from '../src/master/profiles.js';
 import { adminToken, coordinatorToken, pipelineWorld } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

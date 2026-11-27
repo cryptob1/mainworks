@@ -14,8 +14,6 @@ const exclusionOf = (policy: RepositoryPolicy) => {
   if (!exclusions.has(policy)) exclusions.set(policy, compiledExclusion(policy));
   return exclusions.get(policy)!;
 };
-/** The rules in force when this module loaded; readers that must follow a replaced policy call `riskRules()`. */
-export const sensitiveRules: readonly CompiledRule[] = riskRules();
 
 /**
  * The class of a delta under the repository's policy. Each sensitive path yields one reason per rule it matches, naming the

@@ -1,11 +1,11 @@
-import { claimFixture, settleFixture, renewFixture } from './helpers/action-fixtures.js';
+import { claimFixture, settleFixture } from './helpers/action-fixtures.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { Store, save } from '../src/store.js';
-import { Engine, sameBesideBookkeeping } from '../src/engine.js';
+import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
 import type { ActionRow } from '../src/model/actions.js';
 
@@ -51,14 +51,13 @@ const submitted = async () => {
 };
 const claimResync = async (id: string) => (await claimFixture(store, executor, { host: 'host-1', kinds: ['resync'], work: id })).action!;
 const settle = (row: ActionRow, result: 'done' | 'failed', reason: string) => settleFixture(store, executor, row.id, { result, reason });
-test('unit:action-claim-keeps-observation — an action claimed, renewed and settled between an observation\'s read and its save does not discard the observation', async () => {
+test('unit:action-claim-keeps-observation — an action claimed and settled between an observation\'s read and its save does not discard the observation', async () => {
   const item = await submitted();
   // The observer reads the item...
   const read = await reload(item.id);
-  // ...an executor claims the item's resync row, renews it and fails it, each a save of the item...
+  // ...an executor claims the item's resync row and fails it, each a save of the item...
   const claimed = await claimResync(item.id);
   assert.equal(claimed.kind, 'resync');
-  await renewFixture(store, executor, claimed.id);
   await settle(claimed, 'failed', 'a failure recorded while GitHub was being observed');
   const moved = await reload(item.id);
   assert.ok(moved.revision > read.revision, 'the claim and the settlement saved the item');
@@ -92,11 +91,6 @@ test('unit:waked-observation-survives-loop-bookkeeping — the loop\'s own bookk
   assert.equal(observed.observation?.at, taken.at, 'the woken observation lands');
   assert.ok((await reload(item.id)).sessions?.some(entry => entry.id === handle.id), 'the session the loop wrote meanwhile is kept');
 
-  // Next action and gates are bookkeeping too; the submitted work is not.
-  const bookkeeping = { ...moved, revision: moved.revision + 1, nextAction: null, gates: [] } as unknown as Work;
-  assert.ok(sameBesideBookkeeping(moved, bookkeeping), 'next action, gates and attention are the loop\'s bookkeeping');
-  assert.ok(!sameBesideBookkeeping(moved, { ...moved, submission: { epoch: moved.submission!.epoch, pr: moved.submission!.pr + 1 } }), 'a moved submission is not');
-  assert.ok(!sameBesideBookkeeping(moved, { ...moved, candidate: { ...moved.candidate!, sha: 'f'.repeat(40) } } as Work), 'a moved candidate is not');
   // Any change to the work itself still refuses: the observation saved above moved the item.
   await assert.rejects(engine.observe(item.id, read.revision, itemObservation(read, head, base)), /Task changed while GitHub was being observed; retry/);
 });
@@ -118,7 +112,6 @@ test('unit:observation-saved-on-revision-change — a save that moved nothing th
   });
   const moved = await reload(item.id);
   assert.ok(moved.revision > read.revision + 1, 'the claim and the unrelated writes saved the item');
-  assert.ok(!sameBesideBookkeeping(read, moved), 'the moves are not bookkeeping: before GY-1310 the poll was discarded');
   // ...and the poll that read the item before them is saved, not rescheduled.
   const taken = itemObservation(read, head, base);
   const observed = await engine.observe(item.id, read.revision, taken);

@@ -5,7 +5,9 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { repositoryClaudeConfig, trustClaudeFolder } from '../src/harness.js';
-import { loadMasterConfig, prepareSessionHarness, setupMaster, startAgentSession } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
+import { prepareSessionHarness } from '../src/master/harness.js';
+import { startAgentSession } from '../src/master/launch.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

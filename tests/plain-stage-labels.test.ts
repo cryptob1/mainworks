@@ -35,7 +35,7 @@ const withDeployment = (work: Work): Work => ({
 } as unknown as Work);
 
 test('unit:plain-stage-labels — every derived stage maps to exactly one plain label, and master status items carry it', async () => {
-  const { liveFailingLine, plainStage, plainStageLines, plainStages } = await import('../src/model/plain-stage.js');
+  const { plainStage, plainStages } = await import('../src/model/plain-stage.js');
   const now = Date.parse('2026-01-02T00:00:00Z');
   // Each open stage has one plain label; done is refined by the release and the serve verdict below.
   const byStage: Record<Stage, string> = {
@@ -64,8 +64,6 @@ test('unit:plain-stage-labels — every derived stage maps to exactly one plain 
   assert.equal(plainStage(merged, now, served, verdict(true, other)), 'Merged, not live yet', 'merged, not yet served');
   assert.equal(plainStage(merged, now, served), 'Merged, not live yet', 'a watched release has not served it yet');
   assert.equal(plainStage(live, now, served), 'Live', 'a watched release serves it');
-  assert.equal(liveFailingLine(verdict(false, other, 'home')), 'The live app is failing home');
-  assert.equal(liveFailingLine(verdict(true, other)), null);
   assert.equal(plainStage(item('done', {
     closure: { kind: 'obsolete', ref: null, reason: 'gone', by: 'op', at: '2026-01-01T00:00:00Z', from: 'build' },
   } as Partial<Work>), now), 'Done');
@@ -97,6 +95,4 @@ test('unit:plain-stage-labels — every derived stage maps to exactly one plain 
   const steps = prSteps(item('ready'), Date.now());
   assert.deepEqual(steps.steps.map(step => step.label), ['Not started', 'Building', 'Testing, review, merge', 'Done']);
   assert.match(steps.label, /^Not started · \S/);
-
-  for (const label of plainStages) assert.ok(plainStageLines[label].startsWith(label));
 });

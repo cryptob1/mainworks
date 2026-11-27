@@ -8,7 +8,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import type { PlannerInput } from '../src/daemon/planner.js';
 import { runPlanner } from '../src/master/planner.js';
-import type { WorkerProfile } from '../src/master.js';
+import type { WorkerProfile } from '../src/master/profiles.js';
 import type { Principal } from '../src/model.js';
 import { adminToken, coordinatorToken, pipelineWorld } from './helpers/pipeline-world.js';
 

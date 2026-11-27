@@ -2,10 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  holdRepeatedLimitAccount, masterConfigSchema, recordEnvironmentLog,
-  repeatedLimitAccount, selectAccount, selectionKey, sessionAccount, type MasterConfig,
-} from '../src/master.js';
+import { holdRepeatedLimitAccount, repeatedLimitAccount } from '../src/master/launch-account.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
+import { selectAccount } from '../src/master/environments.js';
 import type { FleetClient } from '../src/fleet.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, foldObservations, proposedRuntimes, type AgentRegistry, type FleetRoleName, type FleetSession } from '../src/model/registry.js';
@@ -40,15 +39,7 @@ function memoryRegistry(host: string, at: number, accounts: { name: string; runt
   return client;
 }
 
-test('unit:hold-charged-to-selected-account — sessionAccount and repeatedLimit read the launch/selection account, never a nominal profile', async () => {
-  const root = await temporaryDirectory('hold-charged');
-  const credentialFile = join(root, 'coordinator.token');
-  await writeFile(credentialFile, 'token', { mode: 0o600 });
-  const config = { credentialFile } as Pick<MasterConfig, 'credentialFile'>;
-  await recordEnvironmentLog(config, [], [], { key: selectionKey('reviewer', 'reviewer-a'), environment: 'claude-c', kind: 'claude', at: new Date().toISOString(), work: 'GY-1701' });
-  await recordEnvironmentLog(config, [], [], { key: selectionKey('producer', 'producer'), environment: 'zai-a', kind: 'pi', at: new Date().toISOString(), work: null });
-  assert.equal((await sessionAccount(root, config, 'reviewer', 'reviewer-a', { work: 'GY-1701' }))?.environment, 'claude-c');
-  assert.equal((await sessionAccount(root, config, 'producer', 'producer'))?.environment, 'zai-a');
+test('unit:hold-charged-to-selected-account — repeatedLimit reads the launch/selection account, never a nominal profile', () => {
   const base = Date.now();
   const exhaustion = (requestId: string, offsetMs: number) => ({
     at: new Date(base + offsetMs).toISOString(), role: 'reviewer' as const, account: 'claude-c', profile: 'reviewer-a', reason: 'silent', resetsAt: null, requestId,

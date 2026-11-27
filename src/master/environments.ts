@@ -1,6 +1,5 @@
 import { PRODUCT_NAME } from '../model/product.js';
 import { registryToolsArgs } from '../registry-tools.js';
-export { registryToolsArgs } from '../registry-tools.js';
 // Concern: agent environments and accounts — discovery, health, quota, selection and the launch plan.
 import { existsSync } from 'node:fs';
 import { readdir, stat, mkdir, readFile } from 'node:fs/promises';
@@ -22,7 +21,6 @@ import { failureText } from '../disk-space.js';
 import { shellQuote } from '../shell-quote.js';
 import { providerIdentity } from './account-identity.js';
 import { getCachedPlanUsage, setCachedPlanUsage } from '../provider-usage.js';
-export { providerIdentity } from './account-identity.js';
 // The per-provider login and quota probes live in ./environment-quota.ts, reached through each runtime's adapter.
 import type { PlanReading } from './environment-quota.js';
 import { accountHomeEnvironment, openCodeConfig, runtimeAdapter, withModel, type AccountReading } from './runtimes.js';

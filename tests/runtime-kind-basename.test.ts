@@ -3,7 +3,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
 import { Engine } from '../src/engine.js';
-import { setupMaster } from '../src/master.js';
+import { setupMaster } from '../src/master/config.js';
 import { awaitRuntimeStart, launchSession, observeStart, SessionStartError } from '../src/master/launch.js';
 import type { Principal } from '../src/model.js';
 import { server } from '../src/server.js';

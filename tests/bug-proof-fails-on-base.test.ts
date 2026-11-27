@@ -9,7 +9,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { mergeOne, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import { masterGuide } from '../src/master/guide.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { proofPassesOnBasePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import { runTrial } from '../src/merge-writer/trial.js';

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { daemonSummary } from '../src/daemon/run.js';
 import { masterSummary } from '../src/daemon/state.js';
 import { writeFile } from 'node:fs/promises';

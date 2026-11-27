@@ -1,6 +1,5 @@
 import { productBrief } from './tables/product-brief.js';
 import { loopState } from './tables/loop-state.js';
-import { createHash } from 'node:crypto';
 import type { TableDefinition } from './tables.js';
 import { homeVisits, humanSignInSessions, teamInvites, teamMembers } from './tables/human-sign-in.js';
 import { workerIdentities } from './tables/worker-identities.js';
@@ -50,15 +49,6 @@ export interface MigrationDigests {
   /** One digest per table's own DDL. */
   tables: Record<string, string>;
 }
-
-const sha256 = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
-
-/** The digests of this release's migration: the whole text, its prelude, and each table's own DDL. */
-export const migrationDigests = (): MigrationDigests => ({
-  migration: `migration ${sha256(migration)}`,
-  prelude: sha256(migration.slice(0, migration.indexOf(tables[0].ddl))),
-  tables: Object.fromEntries(tables.map(table => [table.name, sha256(table.ddl)])),
-});
 
 /**
  * What a recorded graphyard_schema comment says. Releases before per-table digests carried

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { coordinatorConfinement, readOnlyMountWrapper } from '../src/master/confinement.js';
 import { headlessConfinementWrapper, masterSessionConfinement, prepareConfinedGitPaths, startAgentSession } from '../src/master/launch.js';
 import { runTrialAttempt, trialConfinement } from '../src/merge-writer/trial.js';
-import { herdrSocketPath, herdrTarget, targetHerdr } from '../src/master/herdr.js';
+import { herdrTarget, targetHerdr } from '../src/master/herdr.js';
 import { piRunner } from '../src/runner/pi.js';
 import { runConfinement } from '../src/runner/roles.js';
 import { mainworksTools } from '../src/runner/payloads.js';
@@ -199,7 +199,7 @@ test('integration:worker-control-socket-isolation — host Docker, systemd and c
   const runtimeSocket = join(sockets, 'launch.sock');
   const herdrHome = await temporaryDirectory('h');
   const herdr = { configHome: herdrHome, session: 'x' }, oldHerdr = herdrTarget();
-  const herdrSocket = herdrSocketPath(herdr);
+  const herdrSocket = join(herdrHome, 'herdr/sessions/x/herdr-client.sock');
   mkdirSync(join(herdrHome, 'herdr', 'sessions', 'x'), { recursive: true });
   let reached = 0;
   const server = createServer(connection => { reached++; connection.end('host command executor'); });

@@ -5,11 +5,10 @@ import { existsSync } from 'node:fs';
 import { statfs, readdir, lstat, rm, mkdir, symlink, writeFile, readFile, unlink } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../child-runner.js';
-import { type WorktreeRootHealth, worktreeRootConcerns, type FilesystemProbe, type SessionCheckout, type CheckoutKind, worktreeRoot, verifyWorktreeRoot, worktreeRootMinFreeBytes, allocateSessionCheckout, removeSessionCheckout, writableDirectories, inspectWorktreeRoot, worktreeRootBudgetBytes } from '../install/worktree-root.js';
+import { type FilesystemProbe, type SessionCheckout, type CheckoutKind, worktreeRoot, verifyWorktreeRoot, worktreeRootMinFreeBytes, allocateSessionCheckout, removeSessionCheckout, writableDirectories } from '../install/worktree-root.js';
 import type { MasterConfig } from './profiles.js';
 import { assertOutsideWorktrees } from '../private-file.js';
 import { stopProcessesUnder } from '../session-processes.js';
-import { agentOwner, type AttentionItem } from './attention.js';
 import { stateDirectory } from '../install/layout.js';
 
 /*
@@ -73,17 +72,6 @@ export async function preservedWorkNote(root: string, key: string, run: ChildRun
 }
 
 /**
- * The managed worktree root's attention items: a root on a tmpfs, a volume below its configured
- * minimum, or a root that has grown to most of its budget, each raised while writes still succeed.
- */
-export function worktreeRootAttention(health: WorktreeRootHealth): AttentionItem[] {
-  return worktreeRootConcerns(health).map(text => ({ subject: 'disk', text,
-    ...agentOwner('master', health.volatile && !health.low && !health.overBudget
-      ? 'Set run.worktreeRoot in .graphyard/master.json to an absolute path on durable storage, outside every worktree; master run adopts it on its next cycle'
-      : 'Raise run.worktreeRootBudgetGb or move run.worktreeRoot in .graphyard/master.json if the live sessions need more room; each settled session removes its own checkout') }));
-}
-
-/**
  * Allocate one session's directory under the managed worktree root. The root is verified on every
  * launch, not only at setup — a volume fills, and a configuration is edited — and the allocated
  * directory is held to the same rule as every other path Mainworks owns: outside every worktree.
@@ -105,13 +93,6 @@ export async function settleCheckout(root: string, directory: string | undefined
   try { await removeSessionCheckout(root, dirname(directory), directory, run); return null; }
   catch (error) { return writeFailure(error, 'Removing the ephemeral checkout', directory).message.slice(0, 500); }
 }
-/** The managed worktree root as `master status` reports it, with the attention it raises. `sessions` are the review and producer records. */
-export async function managedRootStatus(root: string, config: MasterConfig, sessions: { state: string; checkout?: string }[], dependencies: Parameters<typeof inspectWorktreeRoot>[3] = {}) {
-  const live = sessions.filter(record => record.state === 'pending' && record.checkout).map(record => record.checkout!);
-  const health = await inspectWorktreeRoot(worktreeRoot(root, config), { minFreeBytes: worktreeRootMinFreeBytes(config), budgetBytes: worktreeRootBudgetBytes(config) }, live, dependencies);
-  return { health, attention: worktreeRootAttention(health) };
-}
-
 /**
  * One dependency install, shared by every worktree that can use it. A fresh attempt must start
  * from a clean checkout of its exact head; what it must not do is spend another gigabyte, and the
@@ -245,4 +226,3 @@ export async function remoteFetchProbe(root: string): Promise<string | null> {
   catch (error: any) { return (String(error?.stderr ?? '').trim() || String(error?.message ?? error)).split('\n').filter(Boolean).join(' ').slice(0, 400); }
 }
 
-export { diskExhaustion, reclaimAdvice,  diskExhaustionMessage, writeFailure } from '../disk-space.js';

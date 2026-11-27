@@ -14,7 +14,6 @@ import {
   parseZaiUsage,
   getCachedPlanUsage,
   setCachedPlanUsage,
-  clearPlanUsageCache,
   deriveAccountPlan,
 } from '../src/provider-usage.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
@@ -121,7 +120,6 @@ test('unit:provider-usage-adapters — each supported provider plan has a usage 
   }
 
   // 6. Plan usage cache behavior
-  clearPlanUsageCache();
   const testPlan = 'test-plan-cache';
   assert.equal(getCachedPlanUsage(testPlan, now), null, 'initial cache is empty');
   setCachedPlanUsage(testPlan, claudeParsed, now);
@@ -248,7 +246,6 @@ test('unit:accounts-page-groups-by-plan — accounts that draw on one plan are g
   assert.equal(choice.account?.name, 'opencode-a', 'the other account remains available');
 
   // 4. Test Pi accounts route through Z.AI usage probe and share plan budget
-  clearPlanUsageCache();
   const piRuntime = initial.runtimes.find(r => r.name === 'pi')!;
   const fakeHome = await temporaryDirectory('pi-probe-test');
   await writeFile(join(fakeHome, 'zai.key'), 'test-zai-key\n');

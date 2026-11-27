@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
-import { Store, applyWorkDelta, documentBefore, type WorkDelta } from '../src/store.js';
+import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import type { Observation, Principal, Work } from '../src/model.js';
 
@@ -56,7 +56,7 @@ test('unit:routine-observation-delta — a re-observation that changes only its 
   }
   // Reconstruction: the base with the delta applied is the document the save wrote.
   const last = deltas.at(-1)!;
-  const rebuilt = applyWorkDelta(ledger.find(entry => Number(entry.seq) === last.payload.delta.base)!.payload.work, last.payload.delta as WorkDelta);
+  const rebuilt = (await store.pool.query('SELECT graphyard_event_work($1, $2::jsonb) AS work', [w.id, JSON.stringify(last.payload)])).rows[0].work;
   assert.deepEqual(JSON.parse(JSON.stringify(rebuilt)), JSON.parse(JSON.stringify(records.at(-1))));
   // A pass that changes a check result carries that change too, and reconstructs it.
   w = await engine.observe(w.id, w.revision, observation(w, { checks: [{ name: 'test', result: 'failure', appId: 15368 }] }));
@@ -91,28 +91,4 @@ test('unit:lifecycle-rows-keep-snapshots — the first save and every stage chan
   }
   await assert.rejects(store.pool.query("UPDATE events SET payload='{}'::jsonb WHERE work_id=$1", [w.id]), /append-only/);
   await assert.rejects(store.pool.query("DELETE FROM events WHERE work_id=$1 AND payload ? 'delta'", [w.id]), /append-only/);
-});
-
-test('unit:historical-record-carries-delta-clock — the record before a cutoff is the newest row before it, resolved from its delta, at that row\'s revision', async () => {
-  let w = await submitted();
-  w = await engine.execute(worker, 'submit', w.id, { epoch: 1, pr: 900 + serial }, randomUUID());
-  w = await engine.observe(w.id, w.revision, observation(w));
-  w = await engine.observe(w.id, w.revision, observation(w));
-  w = await engine.observe(w.id, w.revision, observation(w));
-  const cutoff = new Date(Date.now() + 1);
-  await new Promise(resolve => setTimeout(resolve, 20));
-  w = await engine.observe(w.id, w.revision, observation(w));
-  const ledger = await rows(w.id);
-  const deltas = ledger.filter(row => row.payload.delta && row.created_at < cutoff);
-  assert.ok(deltas.length >= 1);
-  const fullRow = ledger.filter(row => row.payload.work && row.created_at < cutoff).at(-1)!;
-  const client = await store.pool.connect();
-  try {
-    const past = (await documentBefore(client, w.id, cutoff, () => true))!;
-    const newest = applyWorkDelta(fullRow.payload.work, deltas.at(-1)!.payload.delta);
-    assert.equal(past.observation!.at, newest.observation!.at, 'the observation clock is the freshest before the cutoff, not one after it');
-    assert.equal(past.revision, deltas.at(-1)!.payload.delta.revision, 'the revision is the row\'s own, which graphyard_work_at_revision reads back');
-    assert.deepEqual((await client.query('SELECT graphyard_work_at_revision($1, $2) AS work', [w.id, String(past.revision)])).rows[0].work, JSON.parse(JSON.stringify(past)));
-    assert.ok(Date.parse(past.observation!.at) > Date.parse(fullRow.payload.work.observation.at));
-  } finally { client.release(); }
 });

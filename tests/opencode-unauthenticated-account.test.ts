@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { selectFleetSession, type FleetClient, type FleetSelection } from '../src/fleet.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { chooseSession, emptyRegistry, endRegistrySession, fleetView, foldObservations, proposedRuntimes, supersededByRequest, type AgentRegistry, type FleetSession, type RegistryMutation } from '../src/model/registry.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { opencodeAuthList } from '../src/master/runtimes.js';

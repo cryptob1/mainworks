@@ -6,7 +6,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { accountLaunch, agentLaunchPlan, checkAgentEnvironment, deliverPrompt, discoverAgentEnvironments, dispatchWork, herdrErrorCode, inspectProducerCredentials, inspectWorkerCredentials, loadMasterConfig, masterHarness, masterSettingsFromArgs, NoHealthyAccountError, prepareAgentEnvironment, PromptNotAcceptedError, readEnvironmentLog, saveMasterSettings, selectAccount, sessionHarnessFile, setupAgentEnvironments, setupMaster, startMaster, workerPrompt, type EnvironmentProbe } from '../src/master.js';
+import { accountLaunch, agentLaunchPlan, checkAgentEnvironment, discoverAgentEnvironments, NoHealthyAccountError, prepareAgentEnvironment, readEnvironmentLog, selectAccount, setupAgentEnvironments, type EnvironmentProbe } from '../src/master/environments.js';
+import { deliverPrompt, herdrErrorCode } from '../src/master/launch.js';
+import { PromptNotAcceptedError } from '../src/master/prompt-delivery.js';
+import { dispatchWork, workerPrompt } from '../src/master/dispatch.js';
+import { inspectProducerCredentials, inspectWorkerCredentials, loadMasterConfig, masterSettingsFromArgs, saveMasterSettings, setupMaster } from '../src/master/config.js';
+import { masterHarness, sessionHarnessFile, startMaster } from '../src/master/harness.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
@@ -14,7 +19,7 @@ import { launchProducer } from '../src/producer.js';
 import { readDispatchCursor } from '../src/dispatch/cursor.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { type DispatchEffects } from '../src/dispatch/effects.js';
-import { atomicPrivateWrite } from '../src/master.js';
+import { atomicPrivateWrite } from '../src/master/config.js';
 import { launchAuthorization } from '../src/repository-setup.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -413,7 +418,7 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
 
   const { root, credentialDirectory, cleanup } = await master({ reviewer: true });
   try {
-    const config = await configure(root, next => { next.run.smokeWorkflow = 'deploy-smoke.yml'; next.run.deploymentUrl = 'https://graphyard.example/api/health'; next.environments = [opencodeAccount]; });
+    const config = await configure(root, next => { next.run.smokeWorkflow = 'deploy-smoke.yml'; next.environments = [opencodeAccount]; });
     // Worker, reviewer and producer sessions: broadest approval, each with only its own role's credential.
     const credential = await token(credentialDirectory, 'workers', 'worker-oc', 'worker-oc-token-');
     const oc = recordedRuns();
@@ -462,11 +467,11 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
     assert.throws(() => masterSettingsFromArgs(['autoMerge=false']), /changes only what the master owns/, 'autoMerge is not an owned field');
     assert.throws(() => masterSettingsFromArgs([`credentialFile=${join(credentialDirectory, 'elsewhere.token')}`]), /changes only what the master owns/, 'credential paths are not owned fields');
     await assert.rejects(saveMasterSettings(root, { autoMerge: false } as any), /changes only what the master owns/, 'the writer refuses unknown fields too');
-    const tuned = await saveMasterSettings(root, masterSettingsFromArgs(['intervalSeconds=25', 'quotaCeilingPercent=90', 'deploymentUrl=https://graphyard.example/api/health', 'accounts:review-oc=opencode-a']));
+    const tuned = await saveMasterSettings(root, masterSettingsFromArgs(['intervalSeconds=25', 'quotaCeilingPercent=90', 'productionEnvironment=mainworks / production', 'accounts:review-oc=opencode-a']));
     const after = await loadMasterConfig(root);
-    assert.deepEqual(tuned.changed, ['intervalSeconds', 'deploymentUrl', 'quotaCeilingPercent', 'accounts:review-oc']);
+    assert.deepEqual(tuned.changed, ['intervalSeconds', 'productionEnvironment', 'quotaCeilingPercent', 'accounts:review-oc']);
     assert.equal(after.run.intervalSeconds, 25); assert.equal(after.run.quotaCeilingPercent, 90);
-    assert.equal(after.run.deploymentUrl, 'https://graphyard.example/api/health');
+    assert.equal(after.run.productionEnvironment, 'mainworks / production');
     assert.equal('autoMerge' in after, false, 'the retired setting is dropped');
     assert.equal(after.credentialFile, before.credentialFile, 'credential paths never move through the owned fields');
     assert.deepEqual(after.reviewers.find(profile => profile.name === 'review-oc')!.accounts, ['opencode-a']);
@@ -474,8 +479,8 @@ test('integration:max-autonomy-permissions — every launched agent gets its run
     await assert.rejects(saveMasterSettings(root, { reviewerProfile: 'no-such' }), /No reviewer profile named no-such/);
     await assert.rejects(saveMasterSettings(root, { accounts: [{ profile: 'no-such', accounts: ['opencode-a'] }] }), /No worker, reviewer, or producer profile named no-such/);
     await assert.rejects(saveMasterSettings(root, masterSettingsFromArgs(['accounts:review-oc=claude-a'])), /claude-a is not a configured agent environment/);
-    const cleared = await saveMasterSettings(root, masterSettingsFromArgs(['deploymentUrl=', 'accounts:review-oc=']));
-    assert.equal(cleared.run.deploymentUrl, undefined, 'an optional owned field can be cleared');
+    const cleared = await saveMasterSettings(root, masterSettingsFromArgs(['productionEnvironment=', 'accounts:review-oc=']));
+    assert.equal(cleared.run.productionEnvironment, undefined, 'an optional owned field can be cleared');
     assert.equal((await loadMasterConfig(root)).reviewers.find(profile => profile.name === 'review-oc')!.accounts, undefined, 'an empty account list clears the pinned order');
   } finally { await cleanup(); await rm(directory, { recursive: true, force: true }); }
 });

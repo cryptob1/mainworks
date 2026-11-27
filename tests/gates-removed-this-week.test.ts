@@ -10,10 +10,12 @@ import { server } from '../src/server.js';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { lessonsToCode } from '../src/daemon/lessons-to-code.js';
 import { lessonCommand } from '../src/master/lessons.js';
-import { masterLessons, readProjectMemory, writeProjectMemory } from '../src/project-memory.js';
+import { readProjectMemory, writeProjectMemory } from '../src/project-memory.js';
+import { masterLessons } from '../src/model/project-memory.js';
 import type { Principal, Work } from '../src/model.js';
 import TopBar from '../web/components/top-bar';
 import { listen } from './helpers/http-server.js';
+import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { api, apiOk } from './helpers/api.js';
 
 // GY-3399: after a lesson-to-code item is delivered and its lesson removed, the dashboard header
@@ -23,6 +25,9 @@ import { api, apiOk } from './helpers/api.js';
 const operator: Principal = { id: 'operator', role: 'admin' };
 const token = `operator-${'t'.repeat(32)}`;
 let store: Store, close: (() => Promise<void>) | undefined, url: string, root: string;
+// The item the loop files carries an e2e proof, so the policy in force says how a head is served for
+// it; the policy is read once per process, and nothing reads it ahead of this line.
+setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 before(async () => {
   root = await temporaryDirectory('gates-removed-root');

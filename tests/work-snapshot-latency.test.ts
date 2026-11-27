@@ -12,7 +12,7 @@ import { server } from '../src/server.js';
 import { evidenceIndependenceRefusals, type Evidence, type Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { type DispatchRequest } from '../src/model/dispatch.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';

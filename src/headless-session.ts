@@ -1,5 +1,5 @@
 import { headlessArgs, headlessArgv, headlessPromptInput, headlessPromptNeedsFile, HeadlessConfigurationError } from './headless-argv.js';
-export { continuable, headlessKind, headlessArgs, headlessArgv, headlessPromptInput, headlessPromptNeedsFile, headlessPromptPointer, HeadlessConfigurationError } from './headless-argv.js';
+export { continuable, HeadlessConfigurationError } from './headless-argv.js';
 // Concern: headless sessions — reviews, and since GY-3259 workers (at the end of this file). A reviewer no longer needs a Herdr pane,
 // a TUI start wait or a CLI call to post: its runtime runs once, non-interactively, as one child
 // process in the session's checkout, under the same coordinator confinement and credential mask a

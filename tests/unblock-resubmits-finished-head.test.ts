@@ -12,7 +12,7 @@ import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { assertDispatchable } from '../src/master/dispatch.js';
 import { leaseCommands } from '../src/cli/lease.js';
 import { requestWorkerVerification } from '../src/cli/worker-verification.js';

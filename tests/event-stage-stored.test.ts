@@ -9,7 +9,7 @@ import { server } from '../src/server.js';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { itemLedger, masterStatusReport } from '../src/cli/master-status.js';
 import { eventHistorySql, parseEventHistoryQuery } from '../src/events-history.js';

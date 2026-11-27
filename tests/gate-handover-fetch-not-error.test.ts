@@ -9,7 +9,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3161: a release handover stops the loop and kills the gate's git fetch with it. That is no gate

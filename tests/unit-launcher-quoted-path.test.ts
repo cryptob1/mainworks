@@ -20,7 +20,6 @@ import type { UpDependencies, UpRequest } from '../src/up.js';
  */
 // Loaded inside the test, so a tree without them fails as a test case, not at load.
 const supervisor = () => import('../src/install/loop-unit.js');
-const repositorySetup = () => import('../src/repository-setup.js');
 
 const SERVER = 'http://127.0.0.1:4310';
 const COMMIT = 'a'.repeat(40), OLD_COMMIT = 'b'.repeat(40), REPO_COMMIT = 'c'.repeat(40);
@@ -77,7 +76,7 @@ async function resumedRoot(label: string) {
 
 test('unit:unit-launcher-quoted-path — a loop unit whose ExecStart quotes a CLI checkout path holding whitespace reads back as exactly that checkout, so setup reports it current and does not rewrite it; a stale launcher is repaired onto the quoted path once and a later check reports it current; unquoted paths still parse as before', async () => {
   const { loopUnitText } = await supervisor();
-  const { readLoopCode, systemdCommandLineWords, unitLauncherCheckout } = await repositorySetup();
+  const { readLoopCode, systemdCommandLineWords, unitLauncherCheckout } = await import('../src/loop-code.js');
   const { runUp } = await import('../src/up.js');
   const units: InstallUnits = perInstallUnits('acme/shop');
 

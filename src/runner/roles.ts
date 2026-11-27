@@ -2,8 +2,7 @@ import { headlessArgv } from '../headless-argv.js';
 import { launchPlan } from '../harness.js';
 import { ChildProcessError, defaultChildRun, runChild } from '../child-runner.js';
 import { randomUUID } from 'node:crypto';
-import { confinedRuntimeArgs } from '../worker-sandbox.js';
-import { spawn, type SpawnOptions } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { accessSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -17,22 +16,6 @@ import { claimRunWatch, liveRun, runsDirectory, superviseRun, writeRunOwner, typ
 import { evidencePayloadSchema, mainworksTools, piRuntimeSchema, type EvidencePayload } from './payloads.js';
 import { runRecord, type RunOptions, type RunRecord, type RunResult, type Runner } from './types.js';
 import { parseProbeFailure } from '../model/account-quota.js';
-
-/**
- * A child-process spawner that puts the coordinator confinement (GY-888) before a spawned command:
- * the bubblewrap words go before the command and its arguments, which keep their own working
- * directory, environment and streams. A spawn that cannot be confined throws instead of starting
- * unconfined. Headless runs are not spawned through it: their runner confines Pi alone, inside the
- * run's shell (`runConfinement`).
- */
-export function confiningSpawn(base: typeof spawn = spawn, options: { coordinatorRoot?: string | null; bwrap?: string | null } = {}): typeof spawn {
-  const confine = runConfinement(options);
-  if (!confine) return base;
-  return ((command: string, args: readonly string[], spawnOptions: SpawnOptions) => {
-    const wrapper = confine(typeof spawnOptions?.cwd === 'string' ? spawnOptions.cwd : undefined, spawnOptions.env ?? process.env);
-    return base(wrapper[0], [...wrapper.slice(1), command, ...confinedRuntimeArgs(command, args)], spawnOptions);
-  }) as typeof spawn;
-}
 
 /**
  * The coordinator confinement of every headless run (GY-888), as the runner's `confine` option:

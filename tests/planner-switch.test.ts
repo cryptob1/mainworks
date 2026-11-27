@@ -9,13 +9,8 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import { fleetCommand } from '../src/cli/master/fleet.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import {
-  loadStoredMasterConfig,
-  masterConfigSchema,
-  masterSettingsFromArgs,
-  type MasterConfig,
-  type WorkerProfile,
-} from '../src/master.js';
+import { loadStoredMasterConfig, masterSettingsFromArgs } from '../src/master/config.js';
+import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
 import { runPlanner } from '../src/master/planner.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

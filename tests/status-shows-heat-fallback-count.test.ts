@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { slotsDirectoryVariable, writeMachines } from '../src/master/verification-slots.js';
 import { parseHostProbe } from '../src/hosts.js';
 import { heatFallbacksInLastHour, readHeatFallbacks, recordHeatFallback } from '../src/merge-writer/remote-shards.js';

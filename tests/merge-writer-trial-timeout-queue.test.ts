@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { mergeWriterIdle, mergeWriterStep, trialTimeoutReason, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { TrialTimeoutError } from '../src/merge-writer/trial.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
 import { mergeRecordKinds, type MergePorts, type MergeRecordEvent } from '../src/merge-writer/executor.js';

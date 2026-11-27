@@ -12,7 +12,7 @@ export const masterCommands = defineCommands([
     readsConnection: () => false,
     help: [
       '  master init --token-stdin [--herdr-workspace ID]',
-      '              [--dispatch-interval SECONDS] [--reviewer-profile NAME] [--producer-timeout MINUTES]',
+      '              [--reviewer-profile NAME] [--producer-timeout MINUTES]',
       '              [--replace-supervisor] Install the operating mode and, in the coordinator',
       "                                checkout, the loop's systemd unit; --replace-supervisor replaces",
       "                                another loop's.",
@@ -91,12 +91,12 @@ export const masterCommands = defineCommands([
       const root = await checkoutRoot(context, `mainworks master ${id ?? ''}`.trimEnd());
       // The master's role instructions lead the guide.
       if (id === 'guide') {
-        const [{ masterInstructions }, { masterGuide }] = await Promise.all([import('../master.js'), import('../master/guide.js')]);
+        const [{ masterInstructions }, { masterGuide }] = await Promise.all([import('../master/instructions.js'), import('../master/guide.js')]);
         return console.log(`${masterInstructions}\n${masterGuide}`);
       }
       if (id === 'init') return masterInit(context, root);
       if (id === 'setup') {
-        const [{ masterSetupCommand }, { loadStoredMasterConfig }] = await Promise.all([import('./master-setup.js'), import('../master.js')]);
+        const [{ masterSetupCommand }, { loadStoredMasterConfig }] = await Promise.all([import('./master-setup.js'), import('../master/config.js')]);
         return masterSetupCommand(context, root, await loadStoredMasterConfig(root));
       }
       const [
@@ -137,4 +137,3 @@ export const masterCommands = defineCommands([
 
 const masterInit: typeof import('./master-init.js').masterInit = async (...args) => (await import('./master-init.js')).masterInit(...args);
 
-export const derivedIntent: typeof import('./master/intent.js').derivedIntent = async (...args) => (await import('./master/intent.js')).derivedIntent(...args);

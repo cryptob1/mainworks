@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { runMergeTrial, trialFailureReason } from '../src/merge-writer/executor.js';
 import { trialMerge } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

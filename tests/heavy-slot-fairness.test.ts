@@ -8,7 +8,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git } from './helpers/git-repo.js';
 import { acquireVerificationSlot, gateSlot, heldSlots, hostHeavyJobsDirectory, slotsDirectoryVariable, type HeldSlot } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { until } from './helpers/until.js';
 
 // GY-3487: several installs share one host's heavy-job slots. One install held every slot, release

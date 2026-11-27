@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { accountLaunch } from '../src/master/environments.js';
-import { headlessArgs } from '../src/headless-session.js';
+import { headlessArgs } from '../src/headless-argv.js';
 import { smokeRegistryAccount } from '../src/runner/roles.js';
 import type { FleetLaunchAccount } from '../src/fleet.js';
 

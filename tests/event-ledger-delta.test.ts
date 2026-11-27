@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { useTestStore } from './helpers/test-store.js';
-import { Store, appendSave, applyWorkDelta, eventStats, resolvedPayloadSql, snapshotEvery, workDiff, type WorkDelta } from '../src/store.js';
+import { Store, appendSave, resolvedPayloadSql, snapshotEvery, workDiff } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { readEventHistory, parseEventHistoryQuery } from '../src/events-history.js';
 import type { Principal, Work } from '../src/model.js';
@@ -44,7 +44,7 @@ async function saveAs(work: Work, kind: string, details?: unknown) {
   return plain(work);
 }
 
-test('unit:delta-any-kind-reconstructs — a save of any kind is a delta that rebuilds the exact document in JavaScript and in SQL, through removals, nulls, array growth and shrinkage', async () => {
+test('unit:delta-any-kind-reconstructs — a save of any kind is a delta that rebuilds the exact document in SQL, through removals, nulls, array growth and shrinkage', async () => {
   const work: any = await seeded();
   const written: Work[] = [await saveAs(work, 'create')];
   const steps: [string, () => void][] = [
@@ -68,7 +68,6 @@ test('unit:delta-any-kind-reconstructs — a save of any kind is a delta that re
     const base = row.payload.delta ? rows.find(entry => Number(entry.seq) === row.payload.delta.base)!.payload.work : null;
     if (row.payload.delta) {
       assert.ok(base, 'the delta names a full snapshot');
-      assert.deepEqual(applyWorkDelta(base, row.payload.delta as WorkDelta), written[index], `${row.kind} rebuilds in JavaScript`);
       assert.ok(row.bytes * 3 < rows[0].bytes, `${row.kind} delta (${row.bytes} B) is a fraction of the snapshot (${rows[0].bytes} B)`);
     }
     assert.deepEqual(sql[index].payload.work, written[index], `${row.kind} rebuilds in SQL`);
@@ -76,7 +75,7 @@ test('unit:delta-any-kind-reconstructs — a save of any kind is a delta that re
   });
 });
 
-test('unit:delta-diff-roundtrip — the diff and its application agree for arbitrary documents, in JavaScript and in SQL', async () => {
+test('unit:delta-diff-roundtrip — the diff and its application agree for arbitrary documents in SQL', async () => {
   const item = await seeded();
   const random = (depth: number): any => {
     const pick = Math.floor(Math.random() * (depth > 2 ? 4 : 7));
@@ -84,11 +83,9 @@ test('unit:delta-diff-roundtrip — the diff and its application agree for arbit
     if (pick === 4) return Array.from({ length: Math.floor(Math.random() * 4) }, () => random(depth + 1));
     return Object.fromEntries(Array.from({ length: Math.floor(Math.random() * 4) }, (_, i) => [`k${Math.floor(Math.random() * 5)}${i % 2}`, random(depth + 1)]));
   };
-  for (let round = 0; round < 500; round++) {
+  for (let round = 0; round < 200; round++) {
     const a = { id: 'x', body: random(0) } as unknown as Work, b = { id: 'x', body: random(0), extra: random(1) } as unknown as Work;
-    assert.deepEqual(applyWorkDelta(a, { base: 1, revision: 1, updatedAt: '', lease: null, submission: null, ops: workDiff(a, b) }), b);
     assert.deepEqual(workDiff(a, structuredClone(a)), []);
-    if (round % 10) continue;
     const base = (await store.pool.query('INSERT INTO events(work_id,actor,kind,payload) VALUES($1,$2,$3,$4) RETURNING seq', [item.id, 'graphyard', 'fixture', JSON.stringify({ work: a })])).rows[0].seq;
     const delta = { base: Number(base), revision: 1, updatedAt: '', lease: null, submission: null, ops: workDiff(a, b) };
     const sql = (await store.pool.query('SELECT graphyard_event_work($1, $2::jsonb) AS work', [item.id, JSON.stringify({ delta })])).rows[0].work;
@@ -152,20 +149,4 @@ test('integration:delta-readers — events history, store.events and the timelin
   // Append-only holds for delta rows.
   await assert.rejects(store.pool.query("UPDATE events SET payload='{}'::jsonb WHERE work_id=$1 AND payload ? 'delta'", [w.id]), /append-only/);
   await assert.rejects(store.pool.query("DELETE FROM events WHERE work_id=$1 AND payload ? 'delta'", [w.id]), /append-only/);
-});
-
-test('integration:event-stats-by-kind — the last hour of the ledger reads as rows, stored bytes and delta rows by kind, from the created_at index', async () => {
-  const stats = await eventStats(store.pool);
-  const expected = (await store.pool.query("SELECT kind, count(*)::int AS count, sum(pg_column_size(payload))::bigint AS bytes, count(*) FILTER (WHERE payload ? 'delta')::int AS deltas FROM events GROUP BY kind")).rows;
-  assert.equal(stats.windowMinutes, 60);
-  assert.equal(stats.kinds.length, expected.length);
-  for (const row of expected) assert.deepEqual(stats.kinds.find(entry => entry.kind === row.kind), { kind: row.kind, count: row.count, bytes: Number(row.bytes), deltas: row.deltas });
-  assert.equal(stats.count, expected.reduce((sum, row) => sum + row.count, 0));
-  assert.ok(stats.kinds.find(entry => entry.kind === 'heartbeat')!.deltas > 0);
-  const db = await store.pool.connect();
-  try {
-    await db.query('BEGIN'); await db.query('SET LOCAL enable_seqscan=off');
-    const plan = (await db.query("EXPLAIN SELECT kind, count(*) FROM events WHERE created_at > now() - make_interval(mins => 60) GROUP BY kind")).rows.map(row => row['QUERY PLAN']).join('\n');
-    assert.match(plan, /events_created/);
-  } finally { await db.query('ROLLBACK'); db.release(); }
 });

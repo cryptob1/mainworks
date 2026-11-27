@@ -9,7 +9,13 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Work } from '../src/model.js';
-import { allocateManagedCheckout, assertOutsideWorktrees, diskExhaustion, diskExhaustionMessage, loadMasterConfig, managedRootStatus, masterRunSchema, reclaimAdvice, saveProducerProfile, sessionHarnessPlan, setupMaster, sharedGitDirectory, writeFailure, type MasterRun } from '../src/master.js';
+import { allocateManagedCheckout } from '../src/master/worktrees.js';
+import { diskExhaustion, diskExhaustionMessage, reclaimAdvice, writeFailure } from '../src/disk-space.js';
+import { loadMasterConfig, saveProducerProfile, setupMaster } from '../src/master/config.js';
+import { assertOutsideWorktrees } from '../src/private-file.js';
+import { masterRunSchema, type MasterRun } from '../src/master/profiles.js';
+import { sessionHarnessPlan } from '../src/master/harness.js';
+import { sharedGitDirectory } from '../src/master/environments.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
@@ -20,7 +26,7 @@ import { accountLaunch } from '../src/master/environments.js';
 import { grantWorkerPaths, verifyWorkerSandbox } from '../src/worker-sandbox.js';
 import { launchProducer, producerPrompt, readProducerLedger, reconcileProducers, producerIdleGraceMs, type ProducerBinding } from '../src/producer.js';
 import { readReviewLedger, reconcileReviews, reviewIdleGraceMs, reviewPrompt, saveReviewerProfile } from '../src/reviewer.js';
-import { allocateSessionCheckout, dataDirectory, defaultWorktreeRoot, inspectWorktreeRoot, probeFilesystem, removeSessionCheckout, removeUnownedCheckouts, sessionCheckout, verifyWorktreeRoot, worktreeRoot, worktreeRootBudgetBytes, worktreeRootMinFreeBytes, type FilesystemProbe } from '../src/install/worktree-root.js';
+import { allocateSessionCheckout, dataDirectory, defaultWorktreeRoot, probeFilesystem, removeSessionCheckout, removeUnownedCheckouts, sessionCheckout, verifyWorktreeRoot, worktreeRoot, worktreeRootMinFreeBytes, type FilesystemProbe } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
@@ -187,7 +193,7 @@ test('integration:managed-worktree-root — producer and reviewer checkouts are 
     const sources = fileURLToPath(new URL('../src/', import.meta.url));
     // Include every owning module under master/ and daemon/.
     const split = async (directory: string) => (await readdir(join(sources, directory))).filter(name => name.endsWith('.ts')).map(name => `${directory}/${name}`);
-    for (const file of ['producer.ts', 'reviewer.ts', 'master.ts', ...await split('master'), ...await split('daemon'), ...await split('dispatch'), 'harness.ts', 'install/worktree-root.ts']) {
+    for (const file of ['producer.ts', 'reviewer.ts', ...await split('master'), ...await split('daemon'), ...await split('dispatch'), 'harness.ts', 'install/worktree-root.ts']) {
       const code = (await readFile(join(sources, file), 'utf8')).split('\n').filter(line => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n');
       assert.doesNotMatch(code, /tmpdir\(\)/, `${file} never allocates from the host temporary directory`);
       if (!['master/confinement.ts', 'master/socket-confinement.ts'].includes(file))
@@ -307,7 +313,7 @@ test('integration:ephemeral-checkout-reclaim — a managed checkout no live sess
   assert.equal(existsSync(young.directory), true);
 });
 
-test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume without the configured room, and master status warns before the volume or quota is exhausted', async () => {
+test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume without the configured room', async () => {
   const scratch = await realpath(await temporaryDirectory('root-preflight'));
   try {
     const root = join(scratch, 'repository'), credentialDirectory = join(scratch, 'credentials'), managed = join(scratch, 'data/worktrees');
@@ -326,7 +332,6 @@ test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume 
 
     // Durable storage must also have the configured minimum free, and the minimum is configurable.
     assert.equal(worktreeRootMinFreeBytes({ run: {} }), 2e9); assert.equal(worktreeRootMinFreeBytes({ run: { worktreeRootMinFreeGb: 40 } }), 40e9);
-    assert.equal(worktreeRootBudgetBytes({ run: {} }), 10e9); assert.equal(worktreeRootBudgetBytes({ run: { worktreeRootBudgetGb: 3 } }), 3e9);
     await assert.rejects(setup({}, free(1.2e9)), /has 1\.2 GB free, below the required 2\.0 GB\. Free space on that volume, point run\.worktreeRoot at a larger one, or lower run\.worktreeRootMinFreeGb/);
     await assert.rejects(setup({ worktreeRootMinFreeGb: 40 }, free(30e9)), /has 30\.0 GB free, below the required 40\.0 GB/);
     assert.equal(existsSync(join(root, '.graphyard/master.json')), false);
@@ -352,36 +357,6 @@ test('integration:worktree-root-preflight — setup refuses a tmpfs or a volume 
     await assert.rejects(allocateManagedCheckout(root, config, 'proof', 'GY-88', H, randomUUID(), memory), /is on a tmpfs/);
     await assert.rejects(allocateManagedCheckout(root, config, 'review', 'GY-88', H, randomUUID(), free(0.5e9)), /has 0\.5 GB free, below the required 1\.0 GB/);
     assert.equal(existsSync(managed), false);
-
-    // master status: nothing while the root is healthy, and an attention item owned by the master while writes still succeed.
-    const owned = await allocateManagedCheckout(root, config, 'proof', 'GY-88', H, randomUUID(), durable), unowned = await allocateManagedCheckout(root, config, 'review', 'GY-88', H, randomUUID(), durable);
-    const sessions = [{ state: 'pending', checkout: owned.directory }, { state: 'completed', checkout: unowned.directory }];
-    const healthy = await managedRootStatus(root, config, sessions, { probe: free(80e9), usage: async () => 0.4e9 });
-    assert.deepEqual(healthy.attention, []);
-    assert.deepEqual({ ...healthy.health }, { path: managed, exists: true, volatile: null, freeBytes: 80e9, minFreeBytes: 1e9, usedBytes: 0.4e9, budgetBytes: 10e9, checkouts: 2, unowned: 1, low: false, overBudget: false });
-
-    const low = await managedRootStatus(root, config, sessions, { probe: free(0.7e9), usage: async () => 0.4e9 });
-    assert.equal(low.attention.length, 1);
-    assert.equal(low.attention[0].subject, 'disk'); assert.equal(low.attention[0].role, 'master'); assert.equal(low.attention[0].human, false);
-    assert.match(low.attention[0].text, new RegExp(`0\\.7 GB free on the managed worktree root ${managed}, below the configured 1\\.0 GB minimum; it holds 2 ephemeral checkout\\(s\\), 1 owned by no live session$`));
-    assert.match(low.attention[0].next, /Raise run\.worktreeRootBudgetGb or move run\.worktreeRoot/);
-
-    // A quota is invisible in the volume's free space, so the root's own size is held to a budget.
-    const quota = await managedRootStatus(root, { ...config, run: { ...config.run, worktreeRootBudgetGb: 5 } }, sessions, { probe: free(300e9), usage: async () => 4.1e9 });
-    assert.equal(quota.health.overBudget, true); assert.equal(quota.health.low, false);
-    assert.match(quota.attention[0].text, /holds 4\.1 GB of its 5\.0 GB budget \(run\.worktreeRootBudgetGb\) in 2 ephemeral checkout\(s\), 1 owned by no live session$/);
-    assert.deepEqual((await managedRootStatus(root, { ...config, run: { ...config.run, worktreeRootBudgetGb: 5 } }, sessions, { probe: free(300e9), usage: async () => 3.9e9 })).attention, [], 'below four fifths of the budget nothing is raised');
-
-    // A configuration that predates this check, or was edited onto a tmpfs, is said so too.
-    const volatile = await managedRootStatus(root, config, sessions, { probe: memory, usage: async () => 0 });
-    assert.match(volatile.attention[0].text, /is on a tmpfs: every proof and review checkout is held in memory/);
-    assert.match(volatile.attention[0].next, /Set run\.worktreeRoot in \.graphyard\/master\.json to an absolute path on durable storage/);
-
-    // The real measurement of a real root, and a root that does not exist yet.
-    const real = await inspectWorktreeRoot(managed, { minFreeBytes: 1, budgetBytes: 10e9 }, [owned.directory]);
-    assert.equal(real.checkouts, 2); assert.equal(real.unowned, 1); assert.equal(typeof real.usedBytes, 'number'); assert.ok(real.usedBytes! < 1e9);
-    const absent = await inspectWorktreeRoot(join(scratch, 'never-created'), { minFreeBytes: 1, budgetBytes: 10e9 }, [], { probe: durable });
-    assert.deepEqual([absent.exists, absent.checkouts, absent.usedBytes], [false, 0, 0]);
   } finally { await rm(scratch, { recursive: true, force: true }); }
 });
 

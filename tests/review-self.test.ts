@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { reviewStandard } from '../src/reviewer.js';
+import { reviewStandard } from '../src/review-prompt.js';
 import { gitRepo } from './helpers/git-repo.js';
 
 // GY-1987: the worker never saw the standard the independent reviewer judges it by, so a blocking

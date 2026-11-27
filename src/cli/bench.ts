@@ -11,7 +11,7 @@ function flagValue(args: readonly string[], flag: string): string | undefined {
 /** Checks whether the install's loop currently shows a queued or in-flight merge trial. */
 async function hasQueuedTrial(root: string): Promise<boolean> {
   try {
-    const [{ loadStoredMasterConfig }, { readDaemonState }] = await Promise.all([import('../master.js'), import('../daemon/state.js')]);
+    const [{ loadStoredMasterConfig }, { readDaemonState }] = await Promise.all([import('../master/config.js'), import('../daemon/state.js')]);
     const config = await loadStoredMasterConfig(root);
     const state = await readDaemonState(root, config);
     return (state.mergeWriter.queue?.length ?? 0) > 0;

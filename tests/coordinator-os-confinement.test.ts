@@ -9,8 +9,8 @@ const isDirectory = (path: string) => { try { return statSync(path).isDirectory(
 import { bwrapOnPath, coordinatorConfinement, coordinatorConfinementRefusal, hostProcessLaunchTargets, processLaunchMaskWords, readOnlyMountWrapper, secretsBusPath, sessionGitAdminDirectory, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { checkoutGitDirectory, checkoutWorktreeAdminDirectory, workerConfinementRefusal } from '../src/master/profiles.js';
 import { createServer } from 'node:net';
-import { headlessConfinementWrapper, keyringEndpointWarning, type KeyringEndpointVerdict, secretsBusEndpointProblem, secretsBusMigration, secretsBusUnjudged, launcherCoordinatorRoot, launcherRootUndetermined, prepareConfinedGitPaths, sessionConfinement, startAgentSession } from '../src/master/launch.js';
-import { confiningSpawn } from '../src/runner/roles.js';
+import { headlessConfinementWrapper, launcherCoordinatorRoot, launcherRootUndetermined, prepareConfinedGitPaths, sessionConfinement, startAgentSession } from '../src/master/launch.js';
+import { keyringEndpointWarning, type KeyringEndpointVerdict, secretsBusEndpointProblem, secretsBusMigration, secretsBusUnjudged } from '../src/master/launch-keyring.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
@@ -692,7 +692,7 @@ test('unit:launcher-knows-its-checkout — the launcher derives its coordinator 
   assert.equal(launcherRootUndetermined('/usr/bin/node', false), null, 'a non-CLI process has no refusal to carry');
 });
 
-test('integration:launch-carries-confinement — a session launch types the confinement into the pane and a headless run is wrapped at its spawn', async () => {
+test('integration:launch-carries-confinement — a session launch types the confinement into the pane and a headless run that cannot be confined is refused', async () => {
   const base = await temporaryDirectory('confinement-launch');
   try {
     const { root, worktree } = await coordinatorFixture(base);
@@ -723,29 +723,11 @@ test('integration:launch-carries-confinement — a session launch types the conf
       }
       assert.equal(expandTypedCommand(typed!).kind, 'pi', 'the runtime still follows the wrapper as the first command');
     }
-    // A headless run (the launcher's pi approver and producer) is wrapped at its spawn: the
-    // runtime command and its arguments follow the wrapper, its own options unchanged.
-    type SpawnFn = typeof import('node:child_process').spawn;
-    const captured: { command: string; args: readonly string[]; options: unknown }[] = [];
-    const base_spawn = ((command: string, args: readonly string[], options: unknown) => { captured.push({ command, args, options }); return { pid: 4242 }; }) as unknown as SpawnFn;
-    confiningSpawn(base_spawn, { coordinatorRoot: root, bwrap: 'bwrap' })('pi', ['--mode', 'json', '--no-session'], { cwd: worktree, env: { GRAPHYARD_URL: 'u' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    assert.equal(captured.length, 1);
-    assert.equal(captured[0].command, 'bwrap', 'the spawn starts bubblewrap');
-    assert.deepEqual([...captured[0].args].slice(-5), ['--', 'pi', '--mode', 'json', '--no-session'], 'the runtime command and arguments follow the wrapper');
-    assert.ok(captured[0].args.includes('--unshare-pid') && captured[0].args.includes(worktree), 'the headless wrapper isolates /proc and re-exposes the run directory');
-    assert.deepEqual(captured[0].options, { cwd: worktree, env: { GRAPHYARD_URL: 'u' }, stdio: ['ignore', 'pipe', 'pipe'] }, 'the run keeps its own options');
-    // Without a checkout to confine the spawner is the plain spawn.
-    const plain: string[] = [];
-    const plainSpawn = ((command: string, args: readonly string[]) => { plain.push(command, ...args); return { pid: 1 }; }) as unknown as SpawnFn;
-    confiningSpawn(plainSpawn)('pi', ['--mode', 'json'], { cwd: worktree });
-    assert.deepEqual(plain, ['pi', '--mode', 'json'], 'no coordinator checkout, no wrapper');
     // A headless run that cannot be confined fails at its spawn instead of starting unconfined.
     assert.throws(() => headlessConfinementWrapper(root, worktree, null), /bubblewrap \(bwrap\) is not installed/, 'a host without bubblewrap refuses the headless run');
     assert.throws(() => headlessConfinementWrapper(root, undefined, 'bwrap'), /no working directory/, 'a run without a working directory is refused');
     await sessionMountNamespaceWorks('/nonexistent/graphyard-bwrap-probe');
     assert.throws(() => headlessConfinementWrapper(root, worktree, '/nonexistent/graphyard-bwrap-probe'), /refuses the unprivileged namespaces/, 'a host whose namespaces are known-refused refuses the headless run');
-    const wrapped = confiningSpawn(base_spawn, { coordinatorRoot: root, bwrap: null });
-    assert.throws(() => wrapped('pi', [], { cwd: worktree }), /bubblewrap \(bwrap\) is not installed/, 'the wrapped spawn refuses instead of starting unconfined');
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

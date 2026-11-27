@@ -7,7 +7,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { loopRestartRequestPath } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3165: the loop adopts a newly served release only once it has run `run.handoverMinutes`

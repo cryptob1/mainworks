@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setupMaster } from '../src/master.js';
+import { setupMaster } from '../src/master/config.js';
 import { setupChecklist } from '../src/model/setup-checklist.js';
 import { setupFromZeroChecks } from '../src/setup-from-zero.js';
 import { applyProposal, managedInstructions, scanProposal, setupRepository } from '../src/repository-setup.js';

@@ -7,8 +7,9 @@ import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { repeatedFailureCause } from '../src/daemon/repeated-failure.js';
 import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { lessonCommand } from '../src/master/lessons.js';
-import { masterConfigSchema } from '../src/master.js';
-import { masterLessons, readProjectMemory, recordedMasterMemory, thisWeekReport, writeProjectMemory } from '../src/project-memory.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
+import { readProjectMemory, recordedMasterMemory, thisWeekReport, writeProjectMemory } from '../src/project-memory.js';
+import { masterLessons } from '../src/model/project-memory.js';
 import type { Work } from '../src/model/work.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

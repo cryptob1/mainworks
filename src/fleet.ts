@@ -62,7 +62,7 @@ export interface FleetLaunchAccount { name: string; kind: string; home: string |
   role?: FleetRoleName; policy?: RolePolicy; revision?: number } }
 
 class FleetUnreachableError extends Error {
-  /** The status and parsed body of the answer that came back, when one did (GY-1895): planeWideRefusal reads them structurally, the way it reads a RefusedResponse — a bare `answered 502` wording matches no plane-wide pattern. */
+  /** The status and parsed body of the answer that came back, when one did (GY-1895), read structurally like a RefusedResponse's — a bare `answered 502` wording matches no plane-wide pattern. */
   constructor(message: string, public status?: number, public body?: unknown) { super(message); }
 }
 /**

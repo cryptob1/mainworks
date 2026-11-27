@@ -59,12 +59,6 @@ export function sessionSummary(work: Work, now: Date) {
   }));
 }
 
-/** Every session shown running across the graph, longest-running first. */
-export function runningSessions(all: Work[], now: Date) {
-  return all.flatMap(work => sessionSummary(work, now).filter(handle => handle.live))
-    .sort((a, b) => b.runningMs - a.runningMs);
-}
-/** Every open record not shown running — recorded open, but not seen working or idle lately — longest unseen first. */
 
 /**
  * The one session state (GY-172): what the loop observes of every Mainworks-launched session it

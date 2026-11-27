@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { withDatabase } from './helpers/postgres.js';
 import { Store } from '../src/store.js';
-import { Engine, configuredReconcileFullMs } from '../src/engine.js';
+import { Engine } from '../src/engine.js';
+import { configuredReconcileFullMs } from '../src/reconcile/lag.js';
 import type { Principal, Work } from '../src/model.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.

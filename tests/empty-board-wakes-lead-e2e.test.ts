@@ -8,7 +8,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
-import type { WorkerProfile } from '../src/master.js';
+import type { WorkerProfile } from '../src/master/profiles.js';
 import { coordinatorToken, pipelineWorld } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

@@ -9,7 +9,7 @@ import { mergeBatches, mergeHeads, mergeRecordKinds, type MergeRecordEvent, type
 import { foldMergeLedger } from '../src/model-boundary/merge-ledger.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { trialFailurePrefix } from '../src/model/rework-ground.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 

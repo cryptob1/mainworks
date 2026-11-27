@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { useTestStore } from './helpers/test-store.js';
 import { Store } from '../src/store.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Principal, Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
 import { deliveredByMergeWriter, owedPostMergeReviews, parseFinding, postMergeFollowUp, postMergeRequestId, postMergeReviewMark, wholeFindings } from '../src/model/post-merge-review.js';

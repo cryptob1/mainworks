@@ -2,7 +2,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { serveStaticSite } from '../src/merge-writer/preview.js';
+import { serveStaticSite } from '../src/merge-writer/serve-head.js';
 import { buildStaticSite, projectCaseSuite } from '../src/release-project.js';
 import type { E2eLauncher, E2eReport } from '../src/e2e/runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

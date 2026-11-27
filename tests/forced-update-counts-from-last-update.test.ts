@@ -19,7 +19,7 @@ import {
 } from '../src/deploy-watch.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath, emptyDaemonState } from '../src/daemon/state.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 

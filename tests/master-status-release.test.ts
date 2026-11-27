@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { daemonStatePath } from '../src/daemon/state.js';
 import { deployRecordPath } from '../src/deploy-watch.js';
-import type { MasterConfig } from '../src/master.js';
+import type { MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-2951: master status compares the managed repository's served revision to its base tip — only

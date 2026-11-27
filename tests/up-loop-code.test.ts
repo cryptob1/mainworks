@@ -148,7 +148,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   // The replacement as the judgement itself words it: a unit on another checkout whose cursor
   // reports that checkout's commit is reported with both paths and both commits, so the output says
   // which code was replaced, not only where it lived.
-  const { judgeLoopCode } = await repositorySetup();
+  const { judgeLoopCode } = await import('../src/loop-code.js');
   const judged = judgeLoopCode({
     cli: { root: CLI_ROOT, commit: COMMIT }, primary: REPOSITORY_ROOT, repository: 'acme/shop',
     loop: { unit: MASTER_UNIT, path: MASTER_UNIT_PATH, checkout: OLD_CHECKOUT },
@@ -290,7 +290,7 @@ test('unit:up-rewrites-self-managed-loop-on-the-managed-checkout — when Mainwo
   assert.equal(before.loopReplace, 'unit', 'a launcher in the managed checkout is not this CLI: the unit is rewritten');
   assert.match(before.loopStale ?? '', new RegExp(`starts the CLI in ${quote(root)} at ${OLD_COMMIT.slice(0, 12)}, not this checkout \\(${quote(join(base, 'cli'))}\\)`), 'and names both checkouts');
   // A unit naming no launcher whose WorkingDirectory is the repository checkout still reads as this install's own.
-  const { judgeLoopCode } = await repositorySetup();
+  const { judgeLoopCode } = await import('../src/loop-code.js');
   const fallback = judgeLoopCode({ cli: { root: CLI_ROOT, commit: COMMIT }, primary: REPOSITORY_ROOT, repository: 'acme/shop', loop: { unit: MASTER_UNIT, path: MASTER_UNIT_PATH, checkout: REPOSITORY_ROOT, launcher: null }, cursor: JSON.stringify({ release: { commit: COMMIT, dirty: false } }), canonical: path => path });
   assert.equal(fallback.loopStale, null, 'the WorkingDirectory fallback accepts the repository checkout');
   const w = world([]), events: UpEvent[] = [];

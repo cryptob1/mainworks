@@ -7,9 +7,11 @@ import { delimiter, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { runtimeAdapters } from '../src/master/runtimes.js';
-import { accountLaunch, dispatchWork, loadMasterConfig, setupMaster, workAttentionOwner, type WorkerProfile } from '../src/master.js';
-import { environmentBlocked, environmentBlocker, environmentFailure, grantWorkerPaths, runtimeSandboxes, verifyWorkerSandbox, WorkerSandboxError, workerPaths, writablePaths, type SandboxExec } from '../src/worker-sandbox.js';
-import type { Work } from '../src/model.js';
+import { accountLaunch } from '../src/master/environments.js';
+import { dispatchWork } from '../src/master/dispatch.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
+import { type WorkerProfile } from '../src/master/profiles.js';
+import { environmentBlocker, environmentFailure, grantWorkerPaths, runtimeSandboxes, verifyWorkerSandbox, WorkerSandboxError, workerPaths, writablePaths, type SandboxExec } from '../src/worker-sandbox.js';
 import { sessionSlotsGrant } from '../src/master/harness.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -258,13 +260,6 @@ test('integration:environment-failure-attributed — a sync that fails on a read
     assert.ok(blocked[0].reason.includes(`${fixture.gitDir}/MERGE_HEAD`), blocked[0].reason);
     assert.match(blocked[0].reason, /required command 'sync GY-1' failed: .*Read-only file system/);
     assert.match(result.stderr, /Recorded as the blocker on GY-1/);
-    // The item presents as the environment, with the launcher's fix, not as a bare gate refusal.
-    const owner = workAttentionOwner({ ...item, blocker: blocked[0].reason, gates: [{ name: 'ready', passed: false, reasons: ['Work is blocked'] }] } as unknown as Work, 'gate');
-    assert.ok(environmentBlocked(blocked[0].reason));
-    // The fix is the launcher's grant, then the master's unblock.
-    assert.equal(owner.role, 'master');
-    assert.match(owner.next, new RegExp(`Grant ${fixture.gitDir.replaceAll('/', '\\/')}\\/MERGE_HEAD to the worker's sandbox`));
-    assert.doesNotMatch(owner.next, /^Clear the cause/);
 
     // A real permission refusal on the admin directory, without the shim, is attributed the same way.
     if (process.getuid?.() !== 0) {

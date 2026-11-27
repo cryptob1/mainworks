@@ -4,13 +4,15 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dispatchWork, loadMasterConfig, setupMaster, type WorkerProfile } from '../src/master.js';
-import { readProfileLaunchRecords } from '../src/master/dispatch.js';
+import { dispatchWork } from '../src/master/dispatch.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
+import { type WorkerProfile } from '../src/master/profiles.js';
 import type { FleetClient } from '../src/fleet.js';
 import { recordedRuns } from './helpers/headless-runs.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, proposedRuntimes, type AgentRegistry, type FleetSession } from '../src/model/registry.js';
-import { sensitiveRules } from '../src/model-boundary/risk-class.js';
+import { riskRules } from '../src/model-boundary/risk-class.js';
+import { globSurface } from '../src/model/repository-policy.js';
 import { piAttempts } from '../src/model/worker-preference.js';
 import { workerPreference } from '../src/model-boundary/worker-preference.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -20,7 +22,7 @@ import { workFixture } from './helpers/work-fixture.js';
  * GY-1772: dispatch prefers Pi by the risk class of the change the item names, not by its path lane.
  * The lane classifies a pull request's observed paths once there is one; before any launch the only
  * view of the change is the paths its criteria and description name, judged by the risk class's
- * `sensitiveRules`. A normal named change gets its first two attempts on Pi whatever its lane; a
+ * `riskRules`. A normal named change gets its first two attempts on Pi whatever its lane; a
  * sensitive named path, an item that names no path, a third attempt and two failed starts go to the
  * strong runtimes whatever its lane.
  */
@@ -52,7 +54,7 @@ test('unit:worker-preference-by-risk — a normal named change is fast on its fi
       assert.equal(workerPreference({ lane, ...naming(normalFiles), attemptCount: made }, 1 - made), 'fast', 'a failed start counts as an attempt made; one plus one is still within the two');
     }
     // Any sensitive named path, by every rule: the strong runtimes from the first attempt, beside however many normal files.
-    for (const { rule, pattern } of sensitiveRules) {
+    for (const { rule, pattern } of riskRules()) {
       const path = sensitivePaths[rule];
       assert.ok(path && pattern.test(path), `the fixture names a path for rule ${rule}`);
       assert.equal(workerPreference({ lane, ...naming([...normalFiles, path]), pipeline: { reworkRounds: 0, attempts: [] } }), 'strong', `lane ${lane}, ${path} (${rule}): strong`);
@@ -81,17 +83,16 @@ test('unit:worker-preference-by-risk — a normal named change is fast on its fi
 
 test('unit:worker-preference-by-risk — every sensitive rule has a surface that its own pattern matches, so a directory scope is judged against the whole rule set; an exact path is still judged by the rule itself', async () => {
   // Imported dynamically so a tree without these exports fails this case, not the file's load.
-  const { entrySensitive, sensitiveSurfaces } = await import('../src/model-boundary/worker-preference.js') as Partial<typeof import('../src/model-boundary/worker-preference.js')>;
-  assert.ok(entrySensitive && sensitiveSurfaces, 'the preference exports the per-entry judgement and the rules\' surfaces');
-  for (const { rule, pattern } of sensitiveRules) {
-    const surfaces = sensitiveSurfaces[rule];
-    assert.ok(surfaces?.length, `rule ${rule} names its surface`);
-    for (const surface of surfaces!) {
+  const { entrySensitive } = await import('../src/model-boundary/worker-preference.js') as Partial<typeof import('../src/model-boundary/worker-preference.js')>;
+  assert.ok(entrySensitive, 'the preference exports the per-entry judgement');
+  for (const { rule, pattern, globs } of riskRules()) {
+    const surfaces = [...new Set(globs.map(globSurface))];
+    assert.ok(surfaces.length, `rule ${rule} names its surface`);
+    for (const surface of surfaces) {
       assert.match(surface, pattern, `surface ${surface} is sensitive by its own rule ${rule}`);
       assert.ok(entrySensitive(surface), `${surface} named exactly is sensitive`);
     }
   }
-  assert.deepEqual(Object.keys(sensitiveSurfaces).sort(), sensitiveRules.map(({ rule }) => rule).sort(), 'no surface names a rule that does not exist');
   for (const scope of sensitiveScopes) assert.ok(entrySensitive(scope), `${JSON.stringify(scope)} covers a sensitive surface`);
   for (const scope of normalScopes) assert.ok(!entrySensitive(scope), `${scope} covers no sensitive surface`);
   for (const path of normalFiles) assert.ok(!entrySensitive(path), `${path} is a normal file`);
@@ -147,8 +148,7 @@ test('unit:dispatch-hands-planned-files — a real dispatch hands the item to th
     const prepare = async () => ({ epoch: ++claims, path: join(root, 'assigned'), base: 'c'.repeat(40) });
     const runs = recordedRuns();
     const dispatched = await dispatchWork(root, work, profile, { allWork: [work], prepare, release: async () => {}, observedAt: at, headless: runs.exec, probe: { registry: client, quota: false, cacheMs: 0, now: () => Date.parse(at) } as never });
-    const record = (await readProfileLaunchRecords(root, [profile]))[profile.name];
-    return { dispatched, kinds: runs.kinds(), requests, record };
+    return { dispatched, kinds: runs.kinds(), requests };
   };
 
   // A high-lane item whose named files are all normal: the preference the dispatch hands the registry is fast, and Pi takes it.
@@ -157,8 +157,6 @@ test('unit:dispatch-hands-planned-files — a real dispatch hands the item to th
   assert.deepEqual(normal.kinds, ['pi']);
   assert.equal(normal.dispatched.account!.environment, 'pi-a');
   assert.equal(normal.dispatched.account!.prefer, 'fast', 'the dispatch\'s selection names the preference it used');
-  assert.equal(normal.record.prefer, 'fast', 'the dispatch record names it too');
-  assert.equal(normal.record.account, 'pi-a');
 
   // A low-lane item naming a sensitive path: strong, so the strong account takes it although Pi is eligible.
   const sensitive = await dispatch(item('GY-2', 'low', ['src/master/dispatch.ts', 'src/store/work-store.ts']));
@@ -166,13 +164,11 @@ test('unit:dispatch-hands-planned-files — a real dispatch hands the item to th
   assert.deepEqual(sensitive.kinds, ['claude']);
   assert.equal(sensitive.dispatched.account!.environment, 'claude-b');
   assert.equal(sensitive.dispatched.account!.prefer, 'strong');
-  assert.equal(sensitive.record.prefer, 'strong');
 
   // A low-lane item naming no path is the worst case: strong as well.
   const unplanned = await dispatch(item('GY-3', 'low', []));
   assert.deepEqual(unplanned.requests, [{ prefer: 'strong', work: 'GY-3' }]);
   assert.equal(unplanned.dispatched.account!.environment, 'claude-b');
-  assert.equal(unplanned.record.prefer, 'strong');
 
   // The source hands the item itself to the preference, so its criteria and description reach it, and the lane is not what it reads.
   const source = await readFile(new URL('../src/master/dispatch.ts', import.meta.url), 'utf8');

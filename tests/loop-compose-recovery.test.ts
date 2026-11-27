@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { runDaemon } from '../src/daemon/run.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import type { ChildRunOptions } from '../src/child-runner.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';

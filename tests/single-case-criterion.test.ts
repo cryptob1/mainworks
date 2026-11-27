@@ -5,7 +5,8 @@ import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/rep
 
 // Every filed fixture owes an E2E proof and the serve declaration its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
-import { reviewPrompt, reviewStandard } from '../src/reviewer.js';
+import { reviewPrompt } from '../src/reviewer.js';
+import { reviewStandard } from '../src/review-prompt.js';
 import { pinnedCases, singleCaseWarnings } from '../src/model.js';
 import type { Principal } from '../src/model.js';
 import { api as request } from './helpers/api.js';

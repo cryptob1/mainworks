@@ -4,7 +4,7 @@ import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { keyringEndpointWarning, keyringProbeBackoffMaxMs, keyringProbeBackoffMs, secretsBusMigration, type KeyringEndpointVerdict, type KeyringProbeBackoff } from '../src/master/launch.js';
+import { keyringEndpointWarning, keyringProbeBackoffMaxMs, keyringProbeBackoffMs, secretsBusMigration, type KeyringEndpointVerdict, type KeyringProbeBackoff } from '../src/master/launch-keyring.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');

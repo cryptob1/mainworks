@@ -8,7 +8,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { stallAlarmKey } from '../src/daemon/stall-alarm.js';
 import type { PlannerInput } from '../src/daemon/planner.js';
 import { runPlanner } from '../src/master/planner.js';
-import type { WorkerProfile } from '../src/master.js';
+import type { WorkerProfile } from '../src/master/profiles.js';
 import { adminToken, coordinatorToken, pipelineWorld } from './helpers/pipeline-world.js';
 
 // GY-3911: on a running test install the planner prompt contains a recently closed draft and its reason.

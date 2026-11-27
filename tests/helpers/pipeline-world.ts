@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listen } from './http-server.js';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord, type GateRecord } from '../../src/batch-gate.js';
-import { fileFlakyCheck } from '../../src/daemon/cycle-batch-gate.js';
+import { fileFlakyCheck } from '../../src/daemon/control-plane.js';
 import { defaultChildRun, type ChildRun } from '../../src/child-runner.js';
 import { runCycle } from '../../src/daemon/cycle.js';
 import { mergeWriterReads, type MergeWriterReads } from '../../src/daemon/cycle-merge-writer.js';
@@ -20,7 +20,7 @@ import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../../src/d
 import { Engine } from '../../src/engine.js';
 import { mergeCandidateHold, mergeOpeningHold, openFlakyItem, runMergeTrial, trialAheadOfReviewPrefix } from '../../src/merge-writer/executor.js';
 import { gitRunnerFor } from '../../src/merge-writer/local-observation.js';
-import { masterConfigSchema, type MasterConfig } from '../../src/master.js';
+import { masterConfigSchema, type MasterConfig } from '../../src/master/profiles.js';
 import type { Principal, Work } from '../../src/model.js';
 import { server } from '../../src/server.js';
 import { Store } from '../../src/store.js';

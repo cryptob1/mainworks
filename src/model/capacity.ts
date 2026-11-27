@@ -195,38 +195,3 @@ export function capacityRetryAt(accounts: readonly Pick<CapacityAccount, 'resets
 /** One identity per capacity episode: the role and exactly which accounts are spent until when. */
 export const capacitySignature = (role: CapacityRole, accounts: readonly CapacityAccount[]) =>
   `${role}:${[...accounts].map(entry => `${entry.profile}/${entry.account}@${entry.resetsAt ?? 'unknown'}`).sort().join(',')}`;
-
-type AttemptWork = { capacity?: CapacityState | null; pipeline?: { attempts?: readonly { epoch: number; end: string | null }[] } | null };
-/** GY-1708: one epoch's exhaustion/attempt counts after mid-attempt limit (double-count shows as two rows). */
-export function workerAttemptLedger(work: AttemptWork, epoch: number) {
-  const exhaustions = (work.capacity?.exhaustions ?? []).filter(e => e.role === 'worker' && e.epoch === epoch);
-  const attempts = (work.pipeline?.attempts ?? []).filter(e => e.epoch === epoch);
-  return {
-    exhaustions: exhaustions.length, attempts: attempts.length,
-    released: attempts.filter(e => e.end === 'released').length,
-    open: attempts.filter(e => e.end === null).length,
-    preservedCommit: exhaustions.find(e => e.partialWork.state === 'committed')?.partialWork.commit ?? null,
-  };
-}
-/** GY-1708: spent epoch ended once with partial work kept for the redispatch's next epoch. */
-export function redispatchPreservesAttempt(work: AttemptWork, spentEpoch: number): { ok: boolean; detail: string } {
-  const ledger = workerAttemptLedger(work, spentEpoch);
-  if (ledger.exhaustions !== 1) return { ok: false, detail: `expected one exhaustion for epoch ${spentEpoch}, found ${ledger.exhaustions}` };
-  if (ledger.attempts !== 1) return { ok: false, detail: `expected one attempt row for epoch ${spentEpoch}, found ${ledger.attempts}` };
-  if (ledger.released !== 1 || ledger.open !== 0) return { ok: false, detail: `epoch ${spentEpoch} must be released once, not left open or double-ended` };
-  const exhaustion = (work.capacity?.exhaustions ?? []).find(e => e.role === 'worker' && e.epoch === spentEpoch)!;
-  if (exhaustion.partialWork.state === 'committed' && !exhaustion.partialWork.commit) return { ok: false, detail: 'committed partial work must name its commit' };
-  return {
-    ok: true,
-    detail: exhaustion.partialWork.state === 'committed'
-      ? `epoch ${spentEpoch} ended once; work kept at ${exhaustion.partialWork.commit}`
-      : `epoch ${spentEpoch} ended once; partial work ${exhaustion.partialWork.state}`,
-  };
-}
-/** GY-1708: held account is not selectable for the same role until reset (null reset = still held). */
-export function accountHeldForRole(held: Record<string, { until?: string; resetsAt?: string | null }>, account: string, now: number): boolean {
-  const entry = held[account];
-  if (!entry) return false;
-  const until = entry.until ?? entry.resetsAt;
-  return !until || Date.parse(until) > now;
-}

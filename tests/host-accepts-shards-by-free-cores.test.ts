@@ -7,7 +7,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { heavyJobBudget, hostShardRoom, slotsDirectoryVariable, takeHostSlot, writeMachines, type HeldSlot, type Machine } from '../src/master/verification-slots.js';
 import { HostBusyError, runShardsOnHosts, type PlacedHost } from '../src/merge-writer/remote-shards.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 
 // GY-3706: one shard per six cores left the hosts idle while this machine carried the trial. A host
 // takes shards while its busy cores plus the shards placed there stay under its cores less two;

@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { classifyRisk, riskOf, sensitiveRules, withRisk } from '../src/model-boundary/risk-class.js';
+import { classifyRisk, riskOf, riskRules, withRisk } from '../src/model-boundary/risk-class.js';
 import { deltaPaths, riskDelta, unknownChangeReason } from '../src/model/risk-class.js';
 import type { Work } from '../src/model/work.js';
 import { workCommands } from '../src/cli/work.js';
@@ -62,8 +62,8 @@ test('unit:risk-class-paths — every sensitive rule of the criterion classifies
   assert.equal(mixed.risk, 'sensitive');
   assert.deepEqual(mixed.reasons, ['src/store/tables/work.ts: persistence layer']);
   // The rule table is the criterion's list, one rule per surface.
-  assert.equal(sensitiveRules.length, 11);
-  assert.ok(sensitiveRules.every(({ pattern }) => pattern.source.startsWith('^')), 'every rule is anchored at the start of the path');
+  assert.equal(riskRules().length, 11);
+  assert.ok(riskRules().every(({ pattern }) => pattern.source.startsWith('^')), 'every rule is anchored at the start of the path');
   // Node-free: the module imports nothing from node: and nothing but the work type.
 });
 
@@ -129,7 +129,8 @@ test('unit:risk-class-delta-source — riskOf reads the landing files when the l
   const typed: Partial<Work> = { risk: 'normal' };
   assert.equal(typed.risk, 'normal');
   assert.doesNotMatch(await read('src/model/work.ts'), /\brisk\??:/, 'work.ts declares no risk field');
-  assert.match(await read('src/model/risk-class.ts'), /declare module '\.\/work\.js'/);
+  // The \s+ keeps complete's import scanner (src/cli/relative-imports.ts) from reading this regex as an import of ./work.js.
+  assert.match(await read('src/model/risk-class.ts'), /declare module\s+'\.\/work\.js'/);
 });
 
 const fixture = () => (fixtureWork() as Work[]).map(live) as Work[];

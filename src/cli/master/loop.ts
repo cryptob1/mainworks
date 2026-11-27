@@ -1,7 +1,7 @@
 // Concern: `mainworks master run` — wiring the durable loop to its effects.
 import { insideMasterConfinement } from '../../master/confinement.js';
 import { parseArgs } from 'node:util';
-import { liveMasterConfig } from '../../master.js';
+import { liveMasterConfig } from '../../master/config.js';
 import { daemonEffects, retriedSnapshot } from '../../daemon/effects.js';
 import { readDaemonState } from '../../daemon/state.js';
 import { runDaemon } from '../../daemon/run.js';

@@ -32,9 +32,6 @@ export const nextActionLlmRoles: Record<NextActionKind, LlmRole | null> = {
   resync: null, reclaim: null, merge: null,
   attention: 'attend',
 };
-export const llmRoles: readonly LlmRole[] = ['implement', 'review', 'produce-evidence', 'judge-rework', 'attend'];
-/** The action kinds an executor can drive to completion with no language model anywhere in the loop. */
-export const mechanicalActionKinds = nextActionKinds.filter(kind => nextActionLlmRoles[kind] === null);
 
 /**
  * Where the judgment for a kind happens, which is what decides whether an executor may run it:
@@ -54,8 +51,6 @@ export const actionJudgment: Record<NextActionKind, 'none' | 'in-session' | 'in-
   'request-rework': 'in-step', attention: 'in-step',
   resync: 'none', reclaim: 'none', merge: 'none',
 };
-/** Every kind an executor may hold a handler for: everything but the judgments made in the step itself. */
-export const executorRunnableKinds = nextActionKinds.filter(kind => actionJudgment[kind] !== 'in-step');
 
 export type NextActionInputs =
   | { kind: 'dispatch'; target: 'implementation'; epoch: number; priority: number }

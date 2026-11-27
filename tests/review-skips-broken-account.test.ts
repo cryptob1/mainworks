@@ -12,7 +12,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { Engine } from '../src/engine.js';
 import { spawnHeadless } from '../src/headless-session.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import type { Principal, Work } from '../src/model.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';

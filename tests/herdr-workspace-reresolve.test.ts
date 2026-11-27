@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { herdrWorkspaceHealth, liveMasterConfig, loadMasterConfig, masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { liveMasterConfig, loadMasterConfig } from '../src/master/config.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { reresolveHerdrWorkspace } from '../src/master/config.js';
 import { herdrJson, herdrWorkspaceRefused, liveHerdrWorkspace } from '../src/master/herdr.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
@@ -69,10 +70,9 @@ test('unit:workspace-not-found-triggers-reconfigure — a launch refused with wo
   assert.equal(herdrWorkspaceRefused(), false);
 });
 
-test('unit:herdr-workspace-switch-on-ledger — the switch is recorded on the loop\'s ledger with its reason, and the setup fault clears in the new workspace', async () => {
+test('unit:herdr-workspace-switch-on-ledger — the switch is recorded on the loop\'s ledger with its reason', async () => {
   const root = await installed('w1V');
   const live = liveMasterConfig(root, await loadMasterConfig(root), loadMasterConfig, () => Date.parse(at), reresolvingOn(['w4F']));
-  assert.equal((await herdrWorkspaceHealth(live.current, herdr(['w4F']))).exists, false, 'the dead workspace is the standing setup fault');
   const state = emptyDaemonState(live.current);
   const noted = await noteConfigReload(state, await live.reload(true), async () => {});
   const switched = state.actions[`config:herdr-workspace:${at}`];
@@ -80,6 +80,4 @@ test('unit:herdr-workspace-switch-on-ledger — the switch is recorded on the lo
   assert.equal(switched.state, 'done');
   assert.match(switched.detail, /^Switched herdrWorkspace from w1V to w4F: Recovered graphyard-owner-project/);
   assert.ok(noted.some(action => action.detail === switched.detail), 'the loop logs the switch it recorded');
-  const health = await herdrWorkspaceHealth(live.current, herdr(['w4F']));
-  assert.deepEqual([health.exists, health.reason], [true, null], 'launches go to a workspace Herdr lists, so the setup fault is gone');
 });

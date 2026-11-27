@@ -7,7 +7,7 @@ import { boundedChildRun, command, git } from '../benchmarks/hard-math/process.j
 import { ChildProcessError } from '../src/child-runner.js';
 import { mergeWriterReads, mergeWriterStep, mergeWriterIdle } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { type MergeRecordEvent } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model/work.js';
 import { workFixture } from './helpers/work-fixture.js';

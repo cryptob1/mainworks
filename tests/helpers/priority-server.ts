@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { masterConfigSchema } from '../../src/master.js';
+import { masterConfigSchema } from '../../src/master/profiles.js';
 import { emptyDaemonState } from '../../src/daemon/state.js';
 import { Launcher, runCycle } from '../../src/daemon/cycle.js';
 import { temporaryDirectory } from './temp-dirs.js';

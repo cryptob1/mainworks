@@ -11,7 +11,6 @@ import { applyDelivery, onboardingServe } from '../src/repository-setup.js';
 import * as onboarding from '../src/onboarding.js';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { baseFailureItem, type BaseFailure } from '../src/model/base-failure.js';
 import { postMergeFollowUp } from '../src/model/post-merge-review.js';
 import { onboardingWorkRequest } from '../src/model/onboarding-work.js';
 import { filingRefusal } from '../src/model-boundary/user-facing.js';
@@ -19,14 +18,13 @@ import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { setProjectDelivery } from '../src/model-boundary/project-applications.js';
 
-// GY-3037 AC-2: every item Mainworks files itself — a base-failure repair, a post-merge review
+// GY-3037 AC-2: every item Mainworks files itself — a post-merge review
 // follow-up, onboarding work — is accepted under the rule that every item owes an e2e proof, and
 // names a case that exists on the head: the merge trial runs it against the served head.
 
 const sha = (seed: string) => seed.repeat(40).slice(0, 40);
 const servePolicy = { ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking' as const, serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } };
 
-const failure: BaseFailure = { test: 'the suite fails on the base', check: 'test', baseSha: sha('a'), jobId: 7, url: 'https://ci.example/run/7', raisedAt: '2026-10-31T00:00:00.000Z', blocks: [], item: null, cleared: null };
 const delivered = { key: 'GY-1', title: 'Delivered item', policy: { checks: ['test'], review: true } };
 const finding = { text: 'the guard reads the stale copy', path: 'src/guard.ts', line: 3, paths: ['src/guard.ts'] };
 let engine: Engine;
@@ -37,12 +35,11 @@ useTestStore('self-filed-items-name-a-case', {}, ctx => {
 });
 
 const selfFiled = () => [
-  ['the base-failure repair', baseFailureItem(failure, 'main')],
   ['the post-merge follow-up', postMergeFollowUp(delivered, sha('b'), finding, 0)],
   ['the onboarding item', onboardingWorkRequest(sha('c'), ['test', 'typecheck'], 'create-work-item')],
 ] as const;
 
-test('unit:self-filed-items-name-a-case — a base-failure repair, a post-merge follow-up and onboarding work are each accepted and name a case that exists on the head', async () => {
+test('unit:self-filed-items-name-a-case — a post-merge follow-up and onboarding work are each accepted and name a case that exists on the head', async () => {
   setRepositoryPolicy(servePolicy);
   setProjectDelivery({ mode: 'local', previews: 'off', candidateMaxChanges: null, productionVerification: true, applications: [], cases: {}, source: 'graphyard.json' });
   for (const [what, item] of selfFiled()) {

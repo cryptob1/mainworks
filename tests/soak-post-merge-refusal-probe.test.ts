@@ -13,7 +13,7 @@ import { type DispatchEffects } from '../src/dispatch/effects.js';
 import { owedPostMergeReviews, postMergeRequestId, postMergeRefusalProbeMs } from '../src/model/post-merge-review.js';
 import { readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { reviewerCredentialDirectory } from '../src/master/confinement.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';

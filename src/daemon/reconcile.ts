@@ -1,6 +1,6 @@
 // Concern: cursor action keys, and reconciling pending actions against Mainworks after a restart.
 import type { Work } from '../model.js';
-import { storeAction, type DaemonAction, type DaemonActionKind, type DaemonState } from './state.js';
+import { storeAction, type DaemonAction, type DaemonState } from './state.js';
 
 /**
  * A daemon killed mid-action leaves a `started` cursor entry. Mainworks, not the cursor, decides
@@ -60,4 +60,3 @@ export function reconcilePendingActions(state: DaemonState, work: Work[], now: n
 }
 
 export const dispatchKey = (work: Work) => `dispatch:${work.id}:${work.epoch}`;
-export const candidateKey = (kind: DaemonActionKind, work: Work) => `${kind}:${work.id}:${work.candidate?.sha ?? 'none'}:${work.candidate?.baseSha ?? 'none'}:${work.policyRevision}`;

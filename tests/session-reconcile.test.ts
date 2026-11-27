@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { readReviewLedger, reconcileReviews, saveReviewerProfile, type ReviewRecord } from '../src/reviewer.js';
 import { readProducerLedger, reconcileProducers, saveProducerLedger, type ProducerRecord } from '../src/producer.js';
@@ -135,7 +135,6 @@ test('integration:expired-request-never-blocks — a request past its token expi
     await launchReview(root, item, 'claude-reviewer', [], new Date().toISOString(), { run: herdrRun(calls, 'ok'), registerLaunch, probe: reviewProbe(), requestId: 'review-request' });
     const record: ReviewRecord = (await readReviewLedger(root)).reviews[0];
     const config = await loadMasterConfig(root);
-    assert.ok(config.run.dispatchIntervalSeconds * 1000 <= expiredRequestBoundMs, 'the reconcile runs at least as often as the bound it declares');
     // Before the token expires, a pane that cannot be closed and a session Herdr no longer reports
     // leave the request to the ordinary idle grace — nothing settles it early.
     const early = await reconcileReviews(root, config, { run: herdrRun(calls, 'broken'), observe: () => null, agents: [], now: () => new Date(Date.parse(record.tokenExpiresAt) - 60_000), retry: () => {} });

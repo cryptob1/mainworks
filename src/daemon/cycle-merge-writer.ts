@@ -2,7 +2,7 @@ import { trialOverloadFault } from '../merge-writer/trial-cpu.js';
 import { timedMergePorts, trialStepMedians } from './trial-timings.js';
 import type { TrialStepReport } from '../merge-writer/trial.js';
 import { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks, mergeWriterKeptTimeouts, mergeWriterTrialTimeoutRefusals, mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays, type PendingRework, type UnconfirmedRecord, type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
-export { mergeWriterKeptQueue, mergeWriterKeptRefusals, mergeWriterKeptReworks,   mergeWriterKeptUnconfirmed, mergeWriterUnconfirmedReplays,   mergeWriterStateSchema, emptyMergeWriterState,   type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
+export { type MergeWriterState, type RevertFlight } from './merge-writer-state.js';
 // Concern: the control-plane merge executor's cycle step (GY-1524) — reconcile open intents, pick the next head, run one merge beside the cycle and record what it did.
 import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';

@@ -8,7 +8,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { type DaemonEffects } from '../src/daemon/effects.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 import { directoryBytes } from '../src/daemon/leftovers.js';
 
 // GY-3334: the loop's leftovers sweep removes the install's CLI release copies nothing uses, through

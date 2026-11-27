@@ -8,7 +8,8 @@ import { type DaemonEffects } from '../src/daemon/effects.js';
 import { daemonSummary, runDaemon } from '../src/daemon/run.js';
 import { loopCodeRoot } from '../src/daemon/checkout-state.js';
 import { readRelease } from '../src/protocol-version.js';
-import { liveMasterConfig, masterConfigSchema, type MasterConfig } from '../src/master.js';
+import { liveMasterConfig } from '../src/master/config.js';
+import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 

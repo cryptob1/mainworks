@@ -4,7 +4,7 @@ import { cpuPressureStep, cpuWaiting, trialCapNow } from '../src/daemon/cpu-pres
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { emptyDaemonState, type DaemonState } from '../src/daemon/state.js';
 import { heatReading } from '../src/merge-writer/trial-load.js';
-import { masterConfigSchema } from '../src/master.js';
+import { masterConfigSchema } from '../src/master/profiles.js';
 
 // GY-3532: short turbo spikes are normal on a CPU with a 105C limit. The heat rule compares the
 // mean of the package samples over the last 120 s (at least 4 of them) with the 85C limit, not the
