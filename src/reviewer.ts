@@ -225,20 +225,21 @@ export async function readReviewLedger(root: string): Promise<ReviewLedger> {
  */
 export async function saveReviewLedger(root: string, ledger: ReviewLedger) {
   for (let attempt = 1; ; attempt++) {
-    try { return await saveLedger(await loopStateClient(root), 'reviews', ledger, retainSessionRecords(ledger.reviews)); }
-    catch (error) {
-      if (refusalCode(error) !== 'loop-state-revision' || attempt >= 9) throw error;
-      Object.assign(ledger, reapplyChanges(ledger, await readReviewLedger(root)));
-    }
+    try { return await saveOnce(root, ledger); }
+    catch (error) { if (!staleRevision(error, attempt)) throw error; Object.assign(ledger, reapplyChanges(ledger, await readReviewLedger(root))); }
   }
 }
+const saveOnce = async (root: string, ledger: ReviewLedger) => saveLedger(await loopStateClient(root), 'reviews', ledger, retainSessionRecords(ledger.reviews));
 const refusalCode = (error: unknown) => error instanceof Refusal ? error.details?.code : undefined;
-/** Read the ledger, apply one change, and save what it changed. */
+const staleRevision = (error: unknown, attempt: number) => refusalCode(error) === 'loop-state-revision' && attempt < 9;
+/** Read the ledger, apply one change, and save what it changed; a stale save applies the change again to a fresh read. */
 export async function updateReviewLedger<T>(root: string, change: (ledger: ReviewLedger) => T | Promise<T>): Promise<T> {
-  const ledger = await readReviewLedger(root);
-  const result = await change(ledger);
-  await saveReviewLedger(root, ledger);
-  return result;
+  for (let attempt = 1; ; attempt++) {
+    const ledger = await readReviewLedger(root);
+    const result = await change(ledger);
+    try { await saveOnce(root, ledger); return result; }
+    catch (error) { if (!staleRevision(error, attempt)) throw error; }
+  }
 }
 /** The lock file the lock-era code kept for this checkout; left behind, it is removed. */
 const legacyLedgerLock = (root: string) => resolve(dataDirectory(), 'review-ledger', `${createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12)}.lock`);
