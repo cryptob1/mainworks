@@ -7,7 +7,7 @@ import { formatAge } from '../../src/model/duration';
 import { humanAsk } from '../../src/model/human-ask';
 import LiveTerminal, { type TerminalHandle } from '../components/live-terminal';
 import { MoreDetails, PageHeader } from '../components/page-layout';
-import { goalOrder, leadFeed, ledgerKinds, notMovingLine, steerers, type FeedDecision, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
+import { goalOrder, heldLine, leadFeed, ledgerKinds, notMovingLine, steerers, type FeedDecision, type HeldRow, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
 
 type Message = { id: number; from: string; to?: string; thread: string; text: string; at: string; replies: { id: number; by: string; text: string; at: string }[] };
 type Entry = { id: number; who: string; text: string; at: string };
@@ -36,8 +36,10 @@ export function messageThreads(messages: Message[]) {
  * longest wait first, with how long each has stood. The same reading `master status` carries as
  * attention: a blocker is the Lead's however long it waits, never the owner's.
  */
+const isHeldWithReason = (item: Pick<Work, 'hold' | 'holdReason'>) => Boolean(item.hold && item.holdReason?.trim());
+
 export function masterOwes(work: Work[], now: number) {
-  return work.filter(item => item.stage !== 'done' && !isClosed(item) && item.blocker && !parkedOnHuman(item))
+  return work.filter(item => item.stage !== 'done' && !isClosed(item) && !isHeldWithReason(item) && item.blocker && !parkedOnHuman(item))
     .map(item => ({ id: item.id, key: item.key, title: item.title, blocker: item.blocker!, since: blockerSince(item) }))
     .sort((a, b) => (b.since ?? 0) - (a.since ?? 0));
 }
@@ -84,6 +86,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const [registry, setRegistry] = useState<RegistryRow[]>([]);
   const [team, setTeam] = useState<{ login: string; role: string }[] | null>(null);
   const [notMoving, setNotMoving] = useState<NotMovingRow[]>([]);
+  const [heldFromApi, setHeldFromApi] = useState<HeldRow[]>([]);
   const [tab, setTab] = useState<MasterTab>(() => masterTabFromHash(typeof location === 'undefined' ? '' : location.hash));
   const [draft, setDraft] = useState('');
   const [boxNote, setBoxNote] = useState('');
@@ -104,7 +107,10 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
     void api(`events?kind=${ledgerKinds.join(',')}&payload=details&order=desc&limit=60&view=rows`).then(body => setLedger(Array.isArray(body) ? body : []), () => {});
     void api('agent-registry/history?limit=60').then(body => setRegistry(Array.isArray(body) ? body : []), () => setRegistry([]));
     void api('team-access').then(body => setTeam(body.teammates ?? []), () => setTeam(null));
-    void api('not-moving').then(body => setNotMoving(Array.isArray(body?.notMoving) ? body.notMoving : []), () => {});
+    void api('not-moving').then(body => {
+      setNotMoving(Array.isArray(body?.notMoving) ? body.notMoving : []);
+      setHeldFromApi(Array.isArray(body?.held) ? body.held : []);
+    }, () => {});
     return api('master/messages').then(body => { setMessages(body.messages ?? []); setMessagesLoaded(true); }, () => { setMessagesLoaded(true); });
   };
   useEffect(() => {
@@ -143,20 +149,33 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
   const now = Number.isNaN(observedAt) ? Date.now() : observedAt;
   const owes = masterOwes(work, now);
   // GY-4000 AC-5: Not moving replaces Blocked; merge standing blockers once, carrying each blocker reason.
+  // GY-4046: items held with a reason are excluded from Not moving and shown as Held with their reason.
   const workByKey = new Map(work.map(item => [item.key, item]));
+  const heldByKey = new Map<string, HeldRow & { id?: string }>();
+  for (const row of heldFromApi) {
+    const item = workByKey.get(row.key);
+    heldByKey.set(row.key, { ...row, id: item?.id });
+  }
+  for (const item of work) {
+    if (item.stage === 'done' || isClosed(item) || !isHeldWithReason(item) || heldByKey.has(item.key)) continue;
+    heldByKey.set(item.key, { id: item.id, key: item.key, title: item.title, stage: item.stage, ageMs: 0, reason: item.holdReason!.trim() });
+  }
+  const held = [...heldByKey.values()].sort((a, b) => b.ageMs - a.ageMs || a.key.localeCompare(b.key));
+  const heldKeys = new Set(held.map(entry => entry.key));
   const stalledByKey = new Map<string, NotMovingRow & { id?: string }>();
   for (const row of notMoving) {
     const item = workByKey.get(row.key);
+    if (heldKeys.has(row.key) || (item && isHeldWithReason(item))) continue;
     stalledByKey.set(row.key, { ...row, id: item?.id, blocker: item ? (item.blocker ?? undefined) : row.blocker });
   }
   for (const entry of owes) {
-    if (stalledByKey.has(entry.key)) continue;
+    if (stalledByKey.has(entry.key) || heldKeys.has(entry.key)) continue;
     const item = workByKey.get(entry.key);
     stalledByKey.set(entry.key, { id: entry.id, key: entry.key, title: entry.title, stage: item?.stage ?? 'ready', ageMs: entry.since !== null ? Math.max(0, now - entry.since) : 0, owner: 'nobody', blocker: entry.blocker });
   }
   const stalled = [...stalledByKey.values()].sort((a, b) => b.ageMs - a.ageMs || a.key.localeCompare(b.key));
   const stalledKeys = new Set(stalled.map(entry => entry.key));
-  const goals = goalOrder(work.filter(item => !stalledKeys.has(item.key)));
+  const goals = goalOrder(work.filter(item => !stalledKeys.has(item.key) && !heldKeys.has(item.key)));
   // Who this session is, as the conversation judges it: the operator may act on anything, an
   // invited maintainer may steer (message and priority), and everyone else watches.
   const actor = status?.actor ?? null;
@@ -208,6 +227,14 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
           {entry.blocker && <span className="muted master-owes-blocker" title={entry.blocker}>{entry.blocker}</span>}
         </li>)}
         {stalled.length > 5 && <li key="more"><span className="muted">+{stalled.length - 5} more not moving</span></li>}
+      </ul>
+    </section>}
+    {held.length > 0 && <section className="panel" data-held aria-label="Held"><h2>Held ({held.length})</h2>
+      <ul className="master-owes">
+        {held.map(entry => <li key={entry.key}>
+          {entry.id ? <button className="text-button" onClick={() => setSelected(entry.id!)}>{heldLine(entry)}</button> : <span className="muted">{heldLine(entry)}</span>}
+          <span className="muted master-owes-blocker" title={entry.reason}>{entry.reason}</span>
+        </li>)}
       </ul>
     </section>}
     <div className="tabs master-tabs" role="tablist" aria-label="Lead views">

@@ -266,3 +266,108 @@ test('integration:not-moving-items-reach-status-wake-and-lead-page — oldest fi
   assert.ok(blockedMarkup.includes('Missing staging DB credentials'), 'blocked item carries its blocker reason');
   assert.equal(blockedMarkup.includes('Blocked ('), false, 'no separate Blocked panel exists');
 });
+
+test('integration:held-item-not-alarmed — held item with reason is shown as held, never alarmed, and other items repeat at most hourly', async () => {
+  const holdReason = 'waiting on the caretaker for a key hash';
+  const heldItem = workFixture({
+    id: 'w-held-reason', key: 'GY-4010', title: 'Register caretaker key hash', stage: 'ready', ready: true,
+    hold: true, holdReason, heldBy: 'cryptob1-graphyard-operator',
+    stageEnteredAt: at(-90 * min), sessions: [],
+  });
+  const stalledItem = workFixture({
+    id: 'w-stalled-other', key: 'GY-4011', title: 'Unheld stalled item', stage: 'ready', ready: true,
+    stageEnteredAt: at(-90 * min), blocker: 'worker stalled', blockedAt: at(-90 * min), sessions: [],
+  });
+  const events = new Map<string, FlowEvent[]>([
+    ['w-held-reason', [{ kind: 'hold', at: at(-84 * min), stage: 'ready' }]],
+    ['w-stalled-other', [{ kind: 'blocked', at: at(-84 * min), stage: 'ready' }]],
+  ]);
+
+  // 1. deriveNotMoving skips the held-with-reason item from notMoving and reports it as held with its reason.
+  const derived = deriveNotMoving([heldItem, stalledItem], now, events);
+  assert.equal(derived.notMoving.some(i => i.key === 'GY-4010'), false, 'held item with reason is not in notMoving');
+  assert.equal(derived.notMoving.some(i => i.key === 'GY-4011'), true, 'non-held stalled item is in notMoving');
+  const heldList = (derived as { held?: { key: string; reason: string }[] }).held ?? [];
+  assert.equal(heldList.some(i => i.key === 'GY-4010' && i.reason === holdReason), true, 'held item is reported as held with its reason');
+
+  // 2. Multiple alarm passes within an hour: never alarms on the held item, and repeats the other item at most hourly
+  //    even if a flow read briefly fails or the item's owner/stage flips.
+  const directory = await temporaryDirectory('held-item-not-alarmed');
+  const config = masterConfigSchema.parse({
+    version: 1, url: 'https://graphyard.example', repository: 'owner/project',
+    credentialFile: join(directory, 'coordinator.token'), cliPath: '/bin/graphyard',
+    hostId: 'test-host', baseBranch: 'main', masterAgentName: 'master', workers: [],
+    run: { masterHeartbeatMinutes: 240 },
+  });
+  const state = emptyDaemonState(config);
+  let clock = now;
+  let flowResult: { notMoving: NotMovingItem[] } | null = { notMoving: derived.notMoving };
+  const wakes: string[] = [];
+  const openWork = [heldItem, stalledItem];
+  const effects: DaemonEffects = {
+    snapshot: async () => ({ work: openWork, now: new Date(clock).toISOString() }),
+    flow: async () => flowResult,
+    agents: () => [{ name: 'master', pane_id: 'pM', agent_status: 'idle' }],
+    credentials: async () => ({}),
+    closeSession: () => {},
+    dispatch: async () => ({}),
+    persist: async () => {},
+    masterSession: {
+      wake: async (_target, text) => { wakes.push(text); },
+      launch: async () => ({ agentName: 'master', pane: 'pM', runtime: 'codex', account: 'a', session: 's' }),
+    },
+  };
+
+  // Pass 1 (t = 0): wakes once for GY-4011, never mentions GY-4010.
+  await runCycle(config, state, effects, () => clock);
+  assert.equal(wakes.length, 1);
+  assert.ok(wakes[0]!.includes('GY-4011'), 'wake includes non-held stalled item');
+  assert.equal(wakes[0]!.includes('GY-4010'), false, 'wake never includes held item with reason');
+
+  // Pass 2 (t = 3m): transient flow read failure (returns null) must NOT reset the hourly timer.
+  clock += 3 * min;
+  flowResult = null;
+  await runCycle(config, state, effects, () => clock);
+  assert.equal(wakes.length, 1, 'no wake on transient flow failure');
+
+  // Pass 3 (t = 6m): flow recovers AND owner flips — still within 1h so must NOT repeat.
+  clock += 3 * min;
+  flowResult = { notMoving: derived.notMoving.map(i => ({ ...i, ageMs: i.ageMs + 6 * min, owner: 'a builder' })) };
+  await runCycle(config, state, effects, () => clock);
+  assert.equal(wakes.length, 1, 'must not repeat within an hour even after a transient flow drop or owner flip');
+
+  // Pass 4 (t = 30m): still within 1h — no repeat.
+  clock += 24 * min;
+  flowResult = { notMoving: derived.notMoving.map(i => ({ ...i, ageMs: i.ageMs + 30 * min })) };
+  await runCycle(config, state, effects, () => clock);
+  assert.equal(wakes.length, 1, 'no repeat at 30 minutes');
+
+  // Pass 5 (t = 60m): an hour has elapsed — repeats GY-4011 once, still never mentions GY-4010.
+  clock += 30 * min;
+  flowResult = { notMoving: derived.notMoving.map(i => ({ ...i, ageMs: i.ageMs + 60 * min })) };
+  await runCycle(config, state, effects, () => clock);
+  assert.equal(wakes.length, 2, 'repeats once an hour has passed');
+  assert.ok(wakes[1]!.includes('GY-4011'));
+  assert.equal(wakes[1]!.includes('GY-4010'), false);
+
+  // 3. master status omits the held item from notMoving and shows it in held with its reason.
+  await writeFile(daemonStatePath(config), JSON.stringify(state));
+  const root = await temporaryDirectory('held-item-not-alarmed-status');
+  execFileSync('git', ['init', '-q', root]);
+  const run = async (command: string, args: string[]) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${'c'.repeat(40)}\n`;
+  const report = await masterStatusReport(root, config, async (path: string) =>
+    path === 'work-snapshot' ? { work: openWork, now: new Date(clock).toISOString() }
+      : path === 'not-moving' ? derived
+      : { messages: [] }, run);
+  assert.equal(((report as any).notMoving ?? []).some((line: string) => line.includes('GY-4010')), false, 'master status omits held item from notMoving');
+  assert.equal(((report as any).notMoving ?? []).some((line: string) => line.includes('GY-4011')), true, 'master status keeps non-held item in notMoving');
+  assert.equal(((report as any).held ?? []).some((line: string) => line.includes('GY-4010') && line.includes(holdReason)), true, 'master status shows held item with its reason');
+
+  // 4. Lead page shows the held item as Held with its reason, not in Not moving (even if it also has a blocker).
+  const heldWithBlocker = { ...heldItem, blocker: 'stale blocker while held', blockedAt: at(-80 * min) };
+  const markup = renderToStaticMarkup(createElement(MasterPage, { work: [heldWithBlocker], observedAt: clock, token: '', api: async () => ({}), setSelected: () => {}, action: async () => {}, busy: false }));
+  assert.equal(markup.includes('Not moving'), false, 'Lead page does not report held item as Not moving');
+  assert.ok(markup.includes('Held (1)'), 'Lead page shows Held section');
+  assert.ok(markup.includes('GY-4010'), 'Lead page names the held item');
+  assert.ok(markup.includes(holdReason), 'Lead page shows the hold reason');
+});

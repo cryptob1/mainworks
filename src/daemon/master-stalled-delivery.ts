@@ -8,15 +8,15 @@ import { parseBaseFailureReason } from '../merge-writer/executor.js';
 import { gateCauses, type GateRecord } from '../batch-gate.js';
 import { normalizeFailureReason, repeatedFailureCause, repeatingItems } from './repeated-failure.js';
 import { reworkCapCause } from '../model/rework-ground.js';
-import { formatNotMovingLine, isEmptyBoardAlarm, stallAlarmKey, type NotMovingItem } from './stall-alarm.js';
+import { formatNotMovingLine, isEmptyBoardAlarm, isHeldWithReason, stallAlarmKey, type NotMovingItem } from './stall-alarm.js';
 import { unproducedManualProofs } from '../model/unproduced-attestation.js';
 
 /** GY-3770: repeat a sign-off wait wake every 30 minutes while the item remains unchanged. */
 const signoffWakeRepeatMs = 30 * 60_000;
 /** GY-3778: repeat an empty-board wake at most once per 30 minutes while builders sit idle with no work. */
 const emptyBoardWakeRepeatMs = 30 * 60_000;
-/** GY-4000: repeat a not-moving item wake at most once an hour. */
-const notMovingWakeRepeatMs = 60 * 60_000;
+/** GY-4000, GY-4046: repeat a not-moving item wake at most once an hour. */
+export const notMovingWakeRepeatMs = 60 * 60_000;
 /** GY-4029: an attention action no one has claimed for this long launches or wakes the master, which answers it. */
 export const unclaimedAttentionMs = 30 * 60_000;
 
@@ -82,11 +82,13 @@ const subject = (kind: string, id: string) => `${kind}:${createHash('sha1').upda
 export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}, now = Date.now(), notMoving: readonly NotMovingItem[] = []): MasterCause[] {
   const open = work.filter(item => item.stage !== 'done');
   const causes: MasterCause[] = stalledDelivery(open);
-  for (const item of notMoving.slice(0, 5)) {
+  const heldKeys = new Set(open.filter(isHeldWithReason).map(item => item.key));
+  const activeNotMoving = notMoving.filter(item => !heldKeys.has(item.key));
+  for (const item of activeNotMoving.slice(0, 5)) {
     causes.push({ key: `not-moving:${item.key}`, detail: formatNotMovingLine(item), digest: cause(`not-moving:${item.key}`, `${item.key}:${item.stage}:${item.owner}`).digest, repeatMs: notMovingWakeRepeatMs });
   }
-  if (notMoving.length > 5) {
-    causes.push({ key: 'not-moving:more', detail: `+${notMoving.length - 5} more not moving`, digest: cause('not-moving:more', notMoving.slice(0, 5).map(i => i.key).join(',')).digest, repeatMs: notMovingWakeRepeatMs });
+  if (activeNotMoving.length > 5) {
+    causes.push({ key: 'not-moving:more', detail: `+${activeNotMoving.length - 5} more not moving`, digest: cause('not-moving:more', activeNotMoving.slice(0, 5).map(i => i.key).join(',')).digest, repeatMs: notMovingWakeRepeatMs });
   }
   for (const { item, proofs, head } of signoffWaitingItems(open, now)) {
     const entry = cause(subject('signoff', item.id), `${item.key} waits for your sign-off: ${proofs.join(', ')} on ${head.slice(0, 12)} — verify and run mainworks master attest ${item.key} ${proofs[0]} REASON`);

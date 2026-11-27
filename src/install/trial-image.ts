@@ -18,6 +18,10 @@ export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, publishe
   command: (build => published ? `docker image pull ${published} || { ${build}; }` : build)(
     [`docker buildx inspect ${trialBuilder} >/dev/null 2>&1 || docker ${trialBuilderCreateArgs.join(' ')}`, ['docker', ...trialImageBuildArgs(ctx.sourceRoot)].map(shellQuote).join(' ')].join('; ')),
 });
+/** A stand-in move leaves image creation to the target's first start. Use the local image and
+ * clear any copied published-image marker so subsequent trials use the image this command builds. */
+export const trialImageStartCommand = (root: string): string =>
+  `rm -f ${shellQuote(pulledTrialImageFile(root))} && { docker image inspect ${shellQuote(trialContainerImage)} >/dev/null 2>&1 || { ${trialImagePlan({ sourceRoot: root }, null).command}; }; }`;
 /** Pulls the published trial image and names it for the release tree's trials (trial-container.ts `trialImage`); builds it here otherwise. The marker is removed through the transport, so it goes where the image is provisioned — the target of a move, not the machine that ran it. */
 export const provisionTrialImage = async (ctx: Pick<AdapterContext, 'transport' | 'sourceRoot'>, published: string | null) => {
   const marker = pulledTrialImageFile(ctx.sourceRoot);
