@@ -875,7 +875,7 @@ export interface RunTrialInput {
   /** GY-3283: run only the declared check of this name, whatever paths it is limited to (a worker's `mainworks check NAME`). */
   only?: string;
   /** GY-3412: the hosts a selection's shards fan out to — those `mainworks host add` recorded unless a test names others — and how they are read. */
-  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession; heatRereadMs?: number };
+  remote?: { hosts: readonly string[]; read?: (hosts: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; transport?: ShardSshSession; heatRereadMs?: number; /** GY-3953: the heat reread's wait, a fake clock in tests. */ heatSleep?: (ms: number) => Promise<void> };
   /** GY-3704: a check with services ran on `host`, or fell back from it to this machine for `fallback` (at most 500 characters). */
   onHostCheck?: (entry: { check: string; host: string; fallback?: string }) => void;
   /** GY-3526: a worker verification's label: it holds a host heavy-job slot under it only while a test shard or check runs on this machine, never while its shards run on other hosts. */
@@ -1590,6 +1590,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       const initial = (await readHosts(hosts)).slice(1);
       const readings = await rereadHotHosts(initial, async named => (await readHosts(named)).slice(1), {
         delayMs: input.remote?.heatRereadMs,
+        sleep: input.remote?.heatSleep,
         eligible: reading => Boolean(reading.compose),
         signal: input.signal,
       });
@@ -1816,7 +1817,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const readHosts = (named: readonly string[]) => (input.remote?.read ?? ((targets, shared) => readShardHosts(targets, run, cores, shared)))(named, transport!);
     const initialReadings = hosts.length ? await readHosts(hosts) : [];
     const readings = hosts.length
-      ? [initialReadings[0]!, ...(await rereadHotHosts(initialReadings.slice(1), async named => (await readHosts(named)).slice(1), { delayMs: input.remote?.heatRereadMs, signal: input.signal }))]
+      ? [initialReadings[0]!, ...(await rereadHotHosts(initialReadings.slice(1), async named => (await readHosts(named)).slice(1), { delayMs: input.remote?.heatRereadMs, sleep: input.remote?.heatSleep, signal: input.signal }))]
       : [];
     const remoteLanes = readings.slice(1).filter(underHeatLimit).reduce((sum, reading) => sum + Math.floor(realFreeCores(reading)), 0);
     // GY-3419, GY-3612: test files naming Docker or host-pinned confinement stay local-only;
