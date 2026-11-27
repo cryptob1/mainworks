@@ -1,13 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { execFile, execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gateLimitMs } from '../src/batch-gate.js';
-import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
+import { promisify } from 'node:util';
+import { bootstrapGate, gateLimitMs, gateRecordPath, readGateRecord, writeGateRecord } from '../src/batch-gate.js';
+import { batchGatePorts, batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
+import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import { localOnlyTestPattern, type HostReading } from '../src/merge-writer/remote-shards.js';
+import { gateTrialKey } from '../src/merge-writer/trial-load.js';
+import { trialRunsDirectory, type TrialRunHandle, type TrialRunRequest } from '../src/merge-writer/trial-run.js';
+import { git, gitRepo } from './helpers/git-repo.js';
+import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { until } from './helpers/until.js';
 
 // GY-3974: the 04:23Z diagnostics on b325b3da timed out in this machine's shard after 2700 s. It held
 // 263 cases — the 142 only this machine can run and, by count, an equal share of the rest — while one
@@ -52,8 +61,14 @@ async function placed(hosts: readonly HostReading[]) {
 
 test('integration:e2e-catalog-fits-bound — the whole catalog ends inside 45 minutes on this machine and on the test machines, as the 04:23Z run found them', async () => {
   assert.equal(gateLimitMs, 45 * 60_000, 'the 45-minute bound stays');
-  // vish-msi-compute as the 04:23Z run read it — 10.7 of its 24 cores free, the one ready test machine — then none.
-  for (const [named, hosts] of [['one test machine', [reading('gy-compute@vish-msi-compute', 24, 13.3)]], ['no test machine', []]] as const) {
+  const msi = 'gy-compute@vish-msi-compute', omarchy = 'gy-compute@omarchypc-compute';
+  // vish-msi-compute as the 04:23Z run read it — 10.7 of its 24 cores free, the one ready test machine —
+  // then both test machines as they read a day later, then none.
+  for (const [named, hosts, shards] of [
+    ['one test machine', [reading(msi, 24, 13.3)], { [msi]: 2 }],
+    ['two test machines', [reading(msi, 24, 6), reading(omarchy, 40, 8)], { [msi]: 3, [omarchy]: 4 }],
+    ['no test machine', [], {}],
+  ] as const) {
     const { ran, result } = await placed(hosts);
     const here = ran.filter(shard => shard.host === 'local');
     const longest = [...ran].sort((a, b) => seconds(b.cases) - seconds(a.cases))[0]!;
@@ -64,10 +79,119 @@ test('integration:e2e-catalog-fits-bound — the whole catalog ends inside 45 mi
     for (const shard of here) assert.equal(shard.timeout, gateLimitMs, `${named}: this machine's trial keeps the 45-minute bound`);
     if (hosts.length) {
       assert.ok(here.every(shard => shard.cases.every(proof => pinned.has(proof))), `${named}: this machine keeps only the cases a test machine cannot run`);
-      assert.ok(ran.some(shard => shard.host !== 'local'), `${named}: a test machine takes the rest`);
+      for (const [host, count] of Object.entries(shards)) {
+        assert.equal(ran.filter(shard => shard.host === host).length, count, `${named}: ${host} runs one shard per six of its free cores, at most four`);
+      }
     }
     assert.deepEqual(result.shards?.map(({ host, cases }) => [host, cases]), ran.map(shard => [shard.host, shard.cases.length]),
       `${named}: the run records where each shard ran and how many cases it held`);
     assert.ok(result.shards?.every(shard => typeof shard.ms === 'number'), `${named}: each recorded shard says how long it ran, so the next slow run names its longest`);
   }
+});
+
+test('integration:e2e-catalog-fits-bound — this machine\'s lanes are dealt by the timing baseline: no case in the heavier lane can move without widening the gap', async () => {
+  const { files: baseline } = JSON.parse(text('tests/helpers/timing-baseline.json')) as { files: Record<string, number> };
+  const recorded = Object.values(baseline).sort((a, b) => a - b), median = recorded[recorded.length >> 1]!;
+  // A case weighs its start and the baseline's time for the tests it names; a test the baseline lacks counts as the median.
+  const weighs = (proof: string) => 5_000 + [...new Set(text(`e2e/cases/${proof.slice(4)}.json`).match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])].reduce((sum, file) => sum + (baseline[file] ?? median), 0);
+  const { ran } = await placed([reading('gy-compute@vish-msi-compute', 24, 13.3)]);
+  const lanes = ran.filter(shard => shard.host === 'local').map(shard => ({ cases: shard.cases, ms: shard.cases.reduce((sum, proof) => sum + weighs(proof), 0) })).sort((a, b) => b.ms - a.ms);
+  assert.equal(lanes.length, 2, 'this machine runs its cases in two lanes');
+  const [heavier, lighter] = lanes as [typeof lanes[0], typeof lanes[0]];
+  for (const proof of heavier.cases) assert.ok(weighs(proof) >= heavier.ms - lighter.ms,
+    `the lanes hold ${Math.round(heavier.ms / 1000)} s and ${Math.round(lighter.ms / 1000)} s of recorded time: moving ${proof} (${Math.round(weighs(proof) / 1000)} s) would even them out`);
+});
+
+const repository = 'owner/project';
+const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } as NodeJS.ProcessEnv;
+
+test('integration:e2e-catalog-fits-bound — after a loop restart each of this machine\'s lanes adopts its own run, and none starts again', async () => {
+  // Eighty cases only this machine can run: two lanes with no test machine added.
+  const needsDocker = (index: number) => [`e2e/cases/needs-docker-${index}.json`, '{"steps":[{"kind":"command","run":"docker run"}]}'];
+  const { root: checkout, head: verified } = await gitRepo({ label: 'e2e-catalog-lane-adoption', origin: true,
+    files: { ...Object.fromEntries(Array.from({ length: 80 }, (_, index) => needsDocker(index))), 'graphyard.json': '{}', 'tests/helpers/timing-baseline.json': '{"files":{}}' } });
+  await writeGateRecord(gateRecordPath(checkout), { ...bootstrapGate(repository, verified), diagnosticsAt: '2026-11-18T04:14:18.630Z' });
+
+  const runs = new Map<string, { request: TrialRunRequest; settled: boolean; waiters: ((run: MergeTrialRun) => void)[] }>();
+  const launched: string[] = [], adopted: string[] = [];
+  let active = 0;
+  const passing = (request: TrialRunRequest) => ({ build: 'pass', tests: { passed: 1, failed: [], files: 1 }, durationMs: 1, logTail: '', files: [], proofs: {},
+    e2e: [...request.proofs, ...request.e2eProofs].map(proof => ({ proof, case: proof.slice(4), executed: 1, failed: 0 })) }) as unknown as MergeTrialRun;
+  const watch = (directory: string, loop: number): TrialRunHandle => {
+    const entry = runs.get(directory)!;
+    return { directory, mergeSha: entry.request.mergeSha,
+      trial: () => entry.settled ? Promise.resolve(passing(entry.request)) : new Promise<MergeTrialRun>(resolve => { entry.waiters.push(run => { if (loop === active) resolve(run); }); }),
+      detach: () => {}, cancel: () => {} };
+  };
+  const loop = () => {
+    const id = ++active;
+    const reads = {
+      baseBranch: 'main', now: Date.now,
+      fetch: async () => { git(checkout, 'fetch', '-q', 'origin', 'main'); return git(checkout, 'rev-parse', 'origin/main'); },
+      git: async (args: string[], extra?: Record<string, string>) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8', env: { ...env, ...extra } }),
+      trial: async () => { throw new Error('the diagnostics run detached, not in-process'); },
+      // The suite ends at once; a lane of the catalog waits.
+      launchTrialRun: (request: TrialRunRequest) => {
+        const directory = join(trialRunsDirectory(checkout), `diagnostics-${runs.size + 1}`);
+        runs.set(directory, { request, settled: request.changedFiles.includes('package.json'), waiters: [] });
+        launched.push(directory);
+        return watch(directory, id);
+      },
+      adoptTrialRun: async (ref: { directory: string; mergeSha: string }) => {
+        const entry = runs.get(ref.directory);
+        if (!entry || entry.request.mergeSha !== ref.mergeSha) return null;
+        adopted.push(ref.directory);
+        return watch(ref.directory, id);
+      },
+      push: async () => 'pushed', holds: async () => true, record: async () => undefined, createWork: async () => ({ key: 'GY-900' }),
+      gate: { root: checkout, repository },
+    } as unknown as MergeWriterReads;
+    return { state: emptyDaemonState({ url: 'http://127.0.0.1:1', repository } as never), effects: { mergeWriter: reads } as never, snapshot: { work: [], now: new Date().toISOString() } as never, performed: [], now: Date.now, log: () => {} };
+  };
+
+  const first = await batchGateStep(loop());
+  await first!.gate;
+  await until(() => launched.length === 3, 'the suite and two lanes launch');
+  const lanes = launched.slice(1);
+  assert.deepEqual(lanes.map(directory => runs.get(directory)!.request.e2eProofs.length), [40, 40], 'the 80 cases run in two lanes of 40');
+  await until(() => (readGateRecord(gateRecordPath(checkout))!.diagnosticsTrials ?? []).length === 3, 'the suite and each lane ride the record');
+
+  // A deploy restarts the loop while both lanes run.
+  const second = await batchGateStep(loop());
+  await second!.gate;
+  await until(() => adopted.length >= 3, 'the restarted loop adopts the suite and both lanes');
+  assert.deepEqual([...adopted].sort(), [...launched].sort(), 'each lane is adopted by its own run');
+  assert.equal(launched.length, 3, 'no lane starts again');
+
+  for (const directory of lanes) {
+    const entry = runs.get(directory)!;
+    entry.settled = true;
+    for (const resolve of entry.waiters.splice(0)) resolve(passing(entry.request));
+  }
+  await second!.diagnostics;
+  const record = readGateRecord(gateRecordPath(checkout))!;
+  assert.equal(record.diagnosticsRun?.outcome, 'passed');
+  assert.deepEqual(record.diagnosticsRun?.shards?.map(shard => [shard.host, shard.cases]), [['local', 40], ['local', 40]], 'the day\'s run records both lanes');
+  assert.deepEqual(record.diagnosticsTrials ?? [], [], 'a finished run leaves no runs to collect');
+});
+
+test('integration:e2e-catalog-fits-bound — the shards a test machine runs at once over one checkout build it once', { timeout: 120_000 }, async () => {
+  const { root } = await gitRepo({ label: 'e2e-catalog-builds-once', files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'node build.cjs' } }),
+    // A slow build, so a second shard that did not wait would build beside it.
+    'build.cjs': "const fs = require('fs'); fs.appendFileSync('builds.log', 'x\\n'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500); fs.mkdirSync('dist', { recursive: true }); fs.writeFileSync('dist/index.html', 'built');",
+    'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'site' }], cases: { 'needs-build': 'site' } } }),
+    'site/index.html': '<h1>fixture</h1>\n',
+    'e2e/cases/needs-build.json': JSON.stringify({ id: 'needs-build', title: 'The case reads the built dashboard', tags: ['api'], target: 'any', required: false,
+      steps: [{ kind: 'command', name: 'the build ran', run: 'test -f dist/index.html', timeoutSeconds: 30 }] }),
+  } });
+  writeFileSync(join(root, 'list'), 'e2e/cases/needs-build.json\n');
+  const script = fileURLToPath(new URL('../scripts/e2e-shard.mjs', import.meta.url));
+  const shard = (records: string) => promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script, 'list', records, '60000'], { cwd: root }).catch(() => undefined);
+  await Promise.all([shard('records-1'), shard('records-2')]);
+  for (const records of ['records-1', 'records-2']) {
+    const entries = (await readFile(join(root, records), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(entries.map(entry => [entry.proof, entry.executed, entry.failed, entry.failingStep ?? null]), [['e2e:needs-build', 1, 0, null]], `${records}: ${JSON.stringify(entries)}`);
+  }
+  assert.equal((await readFile(join(root, 'builds.log'), 'utf8')).trim().split('\n').length, 1, 'one shard built the checkout and the other waited for it');
 });
