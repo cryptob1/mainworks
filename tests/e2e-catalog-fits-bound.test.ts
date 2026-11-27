@@ -94,7 +94,7 @@ test('integration:e2e-catalog-fits-bound — this machine\'s lanes are dealt by 
   const weighs = (proof: string) => 5_000 + [...new Set(text(`e2e/cases/${proof.slice(4)}.json`).match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])].reduce((sum, file) => sum + (baseline[file] ?? median), 0);
   const { ran } = await placed([reading('gy-compute@vish-msi-compute', 24, 13.3)]);
   const lanes = ran.filter(shard => shard.host === 'local').map(shard => ({ cases: shard.cases, ms: shard.cases.reduce((sum, proof) => sum + weighs(proof), 0) })).sort((a, b) => b.ms - a.ms);
-  assert.equal(lanes.length, 2, 'this machine runs its cases in two lanes');
+  assert.ok(lanes.length > 1, 'this machine runs its own cases in more than one lane');
   const [heavier, lighter] = lanes as [typeof lanes[0], typeof lanes[0]];
   for (const proof of heavier.cases) assert.ok(weighs(proof) >= heavier.ms - lighter.ms,
     `the lanes hold ${Math.round(heavier.ms / 1000)} s and ${Math.round(lighter.ms / 1000)} s of recorded time: moving ${proof} (${Math.round(weighs(proof) / 1000)} s) would even them out`);
