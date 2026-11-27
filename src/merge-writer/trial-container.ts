@@ -1,3 +1,4 @@
+import { allowedCpus } from '../reserved-cpus.js';
 // The outer trial has a private filesystem, rather than a host Landlock domain:
 // its tests can establish their own mount namespaces before applying Landlock.
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
@@ -45,6 +46,7 @@ docker = ['docker', '--host', spec.get('docker', 'unix:///var/run/docker.sock')]
 # which also runs under CPU, memory and process limits.
 limits = spec.get('limits')
 args = docker + ['create', '--name', container_name, '-i', '--init',
+        *(['--cpuset-cpus=' + spec['allowedCpus']] if spec.get('allowedCpus') else []),
         '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
         '--security-opt=seccomp=unconfined', '--security-opt=systempaths=unconfined',
         *(['--cpus=' + str(limits['cpus']), '--memory=' + str(limits['memory']), '--pids-limit=' + str(limits['pids'])] if limits else []), '--network=' + spec['network'],
@@ -108,7 +110,7 @@ finally:
 
 /** The Docker launcher's words: commands run after them in a fresh `mainworks-trial-` container, stopped at `deadline` (epoch ms) when one is given, started once `load` admits it (GY-3189), under the trial AppArmor profile on an AppArmor host (GY-3339). */
 export const trialContainerLaunch = (spec: { image: string; mounts: [string, string, boolean][]; network: string; deadline?: number; load?: TrialLoad }) =>
-  ['/usr/bin/python3', '-I', '-S', '-c', trialLauncher, JSON.stringify({ ...spec, apparmor: appArmorEnabled() ? trialAppArmorProfile : null })];
+  ['/usr/bin/python3', '-I', '-S', '-c', trialLauncher, JSON.stringify({ ...spec, allowedCpus: allowedCpus(), apparmor: appArmorEnabled() ? trialAppArmorProfile : null })];
 
 /** The first writable directory is the disposable allocation that owns boundary scratch; `deadline` (epoch ms) is when the trial's container stops. */
 export function trialContainerWords(writable: readonly (string | null)[], dependencies: readonly string[] = [], image = trialImage(), network = 'bridge', deadline?: number, load?: TrialLoad): string[] {

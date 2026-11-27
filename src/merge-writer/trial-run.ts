@@ -1,3 +1,4 @@
+import { setting } from '../setting.js';
 // Concern: GY-3159 — a merge trial's verification run, detached from the loop's process so the
 // restart onto a newly served release (GY-3148) never kills a trial in progress. The run leads its
 // own session (and, under systemd, its own transient scope, like a headless run), writes its steps
@@ -145,7 +146,7 @@ export function launchTrialRun(input: { runsRoot: string; spec: TrialRunSpec; sp
   const launch = detachedLaunch(directory, id, command, args, containment, [], selfBoundSeconds(spec.timeoutMs));
   if (!failure) {
     try {
-      const child = (input.spawn ?? spawn)(launch.file, launch.args, { env: runEnvironment(process.env, heldJobEnvironment()), stdio: ['ignore', 'ignore', 'ignore'], detached: true });
+      const child = (input.spawn ?? spawn)(launch.file, launch.args, { env: runEnvironment(process.env, { ...heldJobEnvironment(), ...(setting('RESERVED_CPUS') ? { MAINWORKS_RESERVED_CPUS: setting('RESERVED_CPUS')! } : {}) }), stdio: ['ignore', 'ignore', 'ignore'], detached: true });
       child.on('error', error => { failure = `${command} could not be started: ${error.message}`; });
       child.unref();
       meta = { ...meta, pid: child.pid ?? null, identity: child.pid ? processIdentity(child.pid) : null };

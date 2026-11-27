@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { detachedLaunch, sessionLaunch } from '../src/runner/pi.js';
 import { systemdContainment } from '../src/session-watch.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
+import { allowedCpus } from '../src/reserved-cpus.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const proof = 'integration:reserved-cpus-excluded';
@@ -56,4 +57,11 @@ test(`${proof} — starts a session and trial child and reads their AllowedCPUs`
   } finally {
     if (before === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = before;
   }
+});
+
+test(`${proof} — no reservation leaves placement unchanged; lists use host CPU IDs`, () => {
+  assert.equal(allowedCpus('', '0-23'), undefined);
+  assert.equal(allowedCpus('0-3', '0-23'), '4-23');
+  assert.equal(allowedCpus('0,2-3', '0-7'), '1,4-7');
+  assert.equal(allowedCpus('0-3', '0-3,8-11'), '8-11');
 });

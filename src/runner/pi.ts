@@ -1,3 +1,5 @@
+import { setting } from '../setting.js';
+import { reservedCpuProperties } from '../reserved-cpus.js';
 import { sessionScopeProperties } from '../session-share.js';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { confinedRuntimeArgs } from '../worker-sandbox.js';
@@ -140,6 +142,7 @@ export function runContainment(input: { cgroup?: string | null; systemd?: () => 
   let cgroup = input.cgroup;
   if (cgroup === undefined) { try { cgroup = readFileSync('/proc/self/cgroup', 'utf8'); } catch { cgroup = null; } }
   const service = cgroup?.split(/\r?\n/).map(cgroupService).find(Boolean) ?? null;
+  if (setting('RESERVED_CPUS')?.trim()) return 'systemd';
   if (!service) return 'setsid';
   const reachable = input.systemd ?? (() => {
     if (systemdReachable === null) { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore', timeout: 5_000 }); systemdReachable = true; } catch { systemdReachable = false; } }
@@ -196,7 +199,7 @@ export function detachedLaunch(directory: string, id: string, command: string, a
     + `else printf '%s: command not found\\n' "$0" >${quoted(files.stderr)}; code=spawn; fi; ${watchdog ? 'kill -TERM "$watchdog" 2>/dev/null; ' : ''}printf '%s\\n' "$code" >${quoted(pending)} && mv -f ${quoted(pending)} ${quoted(files.exit)}`;
   const shell = ['/bin/sh', '-c', script, command, ...args];
   const unit = containment === 'systemd' ? `graphyard-run-${id}.scope` : null;
-  return unit ? { file: 'systemd-run', args: ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, ...scopeProperties, '--', ...shell], unit } : { file: shell[0], args: shell.slice(1), unit };
+  return unit ? { file: 'systemd-run', args: ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, ...scopeProperties, ...reservedCpuProperties(), '--', ...shell], unit } : { file: shell[0], args: shell.slice(1), unit };
 }
 
 /** GY-3438: an agent session's launch — a worker, reviewer or producer — whose scope carries the session's CPU and memory share. */
