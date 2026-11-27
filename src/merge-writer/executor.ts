@@ -615,8 +615,8 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
   // A rerun of failing test files (or a run on the base tip) re-runs no E2E case: the head's bound cases were judged by the first attempt, whose counts stand.
   const rerunInput = { ...input, e2eProofs: [] as const };
   // Only the run on the base tip reads counts: attribution reads failing files, so it spends no runner's time.
-  const retest = async (sha: string, failing: string[], e2eProofs: readonly string[] = [], counting?: 'count', e2eFrom?: string) => {
-    try { const rerun = await runTrial({ ...rerunInput, rerun: true, ...(counting ? { boundOnly: input.proofs.length ? 'tests' as const : true } : {}), files: failing, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
+  const retest = async (sha: string, failing: string[], e2eProofs: readonly string[] = [], counting?: 'count', e2eFrom?: string, candidateProofFiles?: readonly string[]) => {
+    try { const rerun = await runTrial({ ...rerunInput, rerun: true, ...(counting ? { boundOnly: input.proofs.length ? 'tests' as const : true } : {}), files: failing, selectFiles, e2eProofs, ...(e2eFrom ? { e2eFrom, candidateProofFiles } : {}), mergeSha: sha, changedFiles: failing, run, reporter, onAttempt: rerunAttempt, ...(counting ? { countProofs } : {}) }); return { run: rerun, tap, proofs: counted() }; }
     catch (error) { return error instanceof TrialCleanupError && error.verdict ? { run: error.verdict, tap, proofs: counted() } : null; }
   };
   const ownProofFiles = discovered ?? input.proofFiles;
@@ -629,13 +629,13 @@ export async function runMergeTrial(input: MergeTrialInput): Promise<MergeTrialR
 }
 
 /**
- * GY-2984, GY-3167: a feature or bug item's passing trial runs its proofs' files on the base tip (`input.baseTip`, else
+ * GY-2984, GY-3167: a feature or bug item's passing trial runs its proofs' files, as the candidate wrote them (GY-3982), on the base tip (`input.baseTip`, else
  * the merge commit's first parent), its E2E proofs' bound cases served from that tip. When every proof
  * ran there and none of its cases failed, the head is `notReproduced`. A proof file or case new on the
  * head, a proof with no case on the base or a base run that reached no verdict counts as failing there: nothing is refused.
  */
 async function reproduceOnBase(run: MergeTrialRun, input: MergeTrialInput, proofFiles: readonly string[], named: readonly string[], git: ChildRun,
-  retest: (sha: string, files: string[], e2eProofs: readonly string[], counting: 'count', e2eFrom: string) => Promise<{ run: TrialRun; proofs: ProofCounts } | null>): Promise<MergeTrialRun> {
+  retest: (sha: string, files: string[], e2eProofs: readonly string[], counting: 'count', e2eFrom: string, candidateProofFiles: readonly string[]) => Promise<{ run: TrialRun; proofs: ProofCounts } | null>): Promise<MergeTrialRun> {
   const e2eProofs = input.e2eProofs ?? [];
   let tip: string, files: string[], baseCases: string[];
   try {
@@ -645,7 +645,7 @@ async function reproduceOnBase(run: MergeTrialRun, input: MergeTrialInput, proof
   } catch { return run; }
   if (proofFiles.length && !files.length) return run;
   // GY-3267: the head's cases run on the tip (a case new on the head too, for its before screenshot); one new on the head still counts as failing there.
-  const onBase = await retest(tip, files, e2eProofs, 'count', input.mergeSha).catch(() => null);
+  const onBase = await retest(tip, files, e2eProofs, 'count', input.mergeSha, files.length ? files : named).catch(() => null);
   if (!onBase || onBase.run.build !== 'pass') return run;
   const passes = ({ executed, failed }: { executed: number; failed: number }) => executed > 0 && failed === 0;
   const checkProofs = input.checkProofs ?? [];
