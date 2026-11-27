@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,9 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { hostAddCommand, readHostReadings, sessionCooldown } from '../src/hosts.js';
 import { hostShimDigest, hostShimVerbs } from '../src/host-shim.js';
 import { builderSessionCounts, remoteSessionHost, runRemoteSession } from '../src/remote-session.js';
+import { masterStatusReport } from '../src/cli/master-status.js';
+import type { MasterConfig } from '../src/master/profiles.js';
+import { emptyDaemonState, writeDaemonState } from '../src/daemon/state.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
@@ -31,9 +34,11 @@ const probe = (shim: string, verbs: string) => ['shim ' + shim, 'verbs ' + verbs
 const reason = `${older}'s helper is older than this release and takes no sessions: run ${hostAddCommand(older)} first`;
 const added = '2026-11-20T00:00:00.000Z';
 
-test(`${proof} — a host whose helper lacks run-session is skipped with its reason in status, and stays ready for test shards`, async () => {
-  const directory = await temporaryDirectory('session-old-helper');
-  const file = join(directory, 'hosts.json');
+/** Two hosts opened to three sessions each, the first one's helper lacking run-session, in a config home of their own. */
+async function hosts() {
+  const config = join(await temporaryDirectory('session-old-helper'), 'config');
+  await mkdir(join(config, 'machine'), { recursive: true });
+  const file = join(config, 'machine', 'hosts.json');
   await writeFile(file, JSON.stringify([{ target: older, sessions: 3, addedAt: added }, { target: silent, sessions: 3, addedAt: added }]));
   const run: ChildRun = async (command, args) => {
     if (command === 'sh') return probe(hostShimDigest, hostShimVerbs.join(' '));
@@ -42,6 +47,11 @@ test(`${proof} — a host whose helper lacks run-session is skipped with its rea
     if (command === 'ssh' && target === silent) return probe(hostShimDigest, hostShimVerbs.join(' '));
     throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
   };
+  return { config, file, run };
+}
+
+test(`${proof} — a host whose helper lacks run-session is skipped with its reason in status, and stays ready for test shards`, async () => {
+  const { file, run } = await hosts();
   for (const kind of ['claude', 'codex', 'opencode', 'cursor']) assert.equal(await remoteSessionHost(kind, () => [], run, file), silent, `a ${kind} builder never goes to ${older}`);
   assert.equal(await remoteSessionHost('codex', () => [silent, silent, silent], run, file), null, `with ${silent} full the builder runs on the coordinator, never on ${older}`);
   const readings = await readHostReadings([], { file, run, local: 'here' });
@@ -173,4 +183,19 @@ process.exitCode = await runRemoteSession({ ...${JSON.stringify(input)}, run: ${
     await supervising;
     await store.close();
   }
+});
+
+test(`${proof} — master status names, beside the host the loop read, why it takes no builder`, async () => {
+  const { config, file, run } = await hosts();
+  const { root } = await gitRepo({ root: join(await temporaryDirectory('session-old-helper-status'), 'repo'), files: { 'base.txt': 'base' } });
+  const master = { url: 'http://127.0.0.1:5', repository: 'owner/fixture', credentialFile: join(dirname(dirname(config)), 'coordinator.token'), hostId: 'yard-box', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
+  const state = emptyDaemonState(master);
+  state.hosts = await readHostReadings([], { file, run, local: 'here' });
+  await writeDaemonState(master, state);
+  const previous = process.env.MAINWORKS_CONFIG_HOME;
+  process.env.MAINWORKS_CONFIG_HOME = config;
+  try {
+    const status = await masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '');
+    assert.deepEqual(status.builderSessions, { coordinator: 0, hosts: [{ host: older, running: 0, room: 3, takesNone: reason }, { host: silent, running: 0, room: 3 }] });
+  } finally { if (previous === undefined) delete process.env.MAINWORKS_CONFIG_HOME; else process.env.MAINWORKS_CONFIG_HOME = previous; }
 });
