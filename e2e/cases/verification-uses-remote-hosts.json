@@ -41,6 +41,12 @@
     },
     {
       "kind": "command",
+      "name": "Run a script check on a fake host whose first heat probe is hot and second cool, and on this machine with both values when it stays hot, on a fake clock",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/check-runs-on-host-after-one-hot-sample.test.ts",
+      "timeoutSeconds": 300
+    },
+    {
+      "kind": "command",
       "name": "Run a declared check with a service image built locally on the coordinator (never pushed) and verify it is sent once and answers on the compute host",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/declared-check-runs-with-local-only-image.test.ts",
       "timeoutSeconds": 600
