@@ -9,10 +9,10 @@ import { Store } from '../src/store.js';
 import { server } from '../src/server.js';
 import type { Principal, Work } from '../src/model.js';
 import { reconcileAutoDispatch } from '../src/model-boundary/dispatch.js';
-import { tokenRegistered } from '../src/server/review-verdict.js';
+import { launchTokenActor } from '../src/server/review-verdict.js';
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import { emptyDispatchCursor } from '../src/dispatch/cursor.js';
-import { loadMasterConfig, setupMaster } from '../src/master.js';
+import { loadMasterConfig, setupMaster } from '../src/master/config.js';
 import { saveReviewerProfile, controlPlaneVerdict } from '../src/reviewer.js';
 import { serveReviewHead } from '../src/review-serve.js';
 import { emptyRegistry, settleSessions, type FleetSession } from '../src/model/registry.js';
@@ -25,6 +25,8 @@ const H = 'a'.repeat(40), B = 'b'.repeat(40);
 const hashOf = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
 const freshToken = () => randomBytes(32).toString('hex');
 const now = () => new Date().toISOString();
+/** Whether a standing launch still authorizes this bearer. */
+const tokenRegistered = async (services: Parameters<typeof launchTokenActor>[0], tokenHash: string) => !!await launchTokenActor(services, tokenHash);
 
 const repository = 'owner/project';
 const coordinator: Principal = { id: 'graphyard-master', role: 'coordinator' };
