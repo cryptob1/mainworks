@@ -12,6 +12,7 @@ import type { InstallRecord } from '../src/install/secrets.js';
 import { checkoutRelease } from '../src/release.js';
 import { Store, advisoryLocks } from '../src/store.js';
 import { startPostgres } from './helpers/postgres.js';
+import { releaseBeforeNewestGeneration } from './helpers/release-before-newest-generation.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3538: `mainworks upgrade` backs up the database with the running release's CLI before it moves
@@ -29,7 +30,7 @@ async function cliCheckout() {
   git('init', '--quiet');
   await writeFile(join(root, '.git/objects/info/alternates'), `${join(own('rev-parse', '--path-format=absolute', '--git-common-dir'), 'objects')}\n`);
   const newer = own('rev-parse', 'HEAD');
-  const previous = own('rev-parse', `${own('log', '-1', '--format=%H', newer, '--', 'src/store/schema-lineage.ts')}^`);
+  const previous = releaseBeforeNewestGeneration(repositoryRoot, newer);
   git('checkout', '--quiet', '--detach', previous);
   let modules = repositoryRoot;
   while (!existsSync(join(modules, 'node_modules'))) modules = dirname(modules);
