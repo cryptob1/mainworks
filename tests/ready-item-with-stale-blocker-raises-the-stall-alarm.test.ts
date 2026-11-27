@@ -128,15 +128,17 @@ test(`${proof} — a ready item with an open blocker, no live session and no cha
 
   f.advance(15);
   await f.cycle();
+  assert.equal(alarmOf(f.state), alarm, 'the line holds still within the hour: nothing new to store, log or wake for');
   f.advance(30);
   await f.cycle();
   assert.equal(f.prompts.length, promptsBeforeStall + 1, 'no duplicate wake while under an hour since last wake');
 
-  // After a full hour (60 minutes since first wake): woken once more.
+  // After a full hour (60 minutes since first wake): woken once more, the line now reading the older age.
   f.advance(15);
   await f.cycle();
   assert.equal(f.prompts.length, promptsBeforeStall + 2, 'coordinator woken again once per hour while it lasts');
-  assert.ok(f.prompts.at(-1)!.includes('GY-218') && f.prompts.at(-1)!.includes('2h'));
+  assert.ok(alarmOf(f.state)!.includes('(2h)'), `the alarm reads the blocker's age: ${alarmOf(f.state)}`);
+  assert.ok(f.prompts.at(-1)!.includes('GY-218') && f.prompts.at(-1)!.includes(longBlocker.slice(0, 120)));
 });
 
 test(`${proof} — clearing the blocker clears the stall alarm and dispatches the item in the next cycle`, async () => {

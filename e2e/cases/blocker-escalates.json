@@ -117,6 +117,7 @@
       "kind": "browser",
       "name": "the fresh blocker still waits on the Lead",
       "action": "expectText",
+      "role": "button",
       "text": "Fresh worker blocker",
       "exact": false
     }

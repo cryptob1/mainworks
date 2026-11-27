@@ -96,14 +96,12 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
     if (key === 'disk-headroom') { if (action.state === 'failed') causes.push(cause('disk-headroom', action.detail)); continue; }
     // GY-3432: the stall alarm names no single item either; numbers and ids aside (a temperature, a request id), an unchanged alarm wakes once.
     // GY-3778: when the alarm is an empty board, ask the Lead to file work from the brief and repeat at most once per 30 minutes.
-    // GY-3996: a stale-blocker alarm repeats once an hour; its ages read as one, so an older age wakes nobody.
+    // GY-3996: a stale-blocker alarm repeats once an hour while it lasts.
     if (key === stallAlarmKey) {
       const empty = isEmptyBoardAlarm(action.detail);
-      const staleBlocker = isStaleBlockerAlarm(action.detail);
       const detail = empty ? `${action.detail} The board is empty: file new work from the product brief and goals so idle builders have work to build.` : action.detail;
-      const normalized = staleBlocker ? action.detail.replace(/\(\d+[dhm](?: \d+[hm])?\)/g, '(age)') : action.detail;
-      const repeatMs = empty ? emptyBoardWakeRepeatMs : staleBlocker ? staleBlockerWakeRepeatMs : undefined;
-      causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(normalized)).digest, ...(repeatMs ? { repeatMs } : {}) });
+      const repeatMs = empty ? emptyBoardWakeRepeatMs : isStaleBlockerAlarm(action.detail) ? staleBlockerWakeRepeatMs : undefined;
+      causes.push({ ...cause(key, detail), digest: cause(key, normalizeFailureReason(action.detail)).digest, ...(repeatMs ? { repeatMs } : {}) });
       continue;
     }
     // GY-3103: a failed runtime canary names its runtime, not an item the master would see open.

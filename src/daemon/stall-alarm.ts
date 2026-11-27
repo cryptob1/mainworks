@@ -7,7 +7,6 @@ import type { AgentRegistry } from '../model/registry.js';
 import { exhaustionEvidence } from '../model/account-quota.js';
 import { parkedOnHuman } from '../model/human-request.js';
 import { blockerSince } from '../model/work.js';
-import { formatAge } from '../model/duration.js';
 import { actionDetailMax, storeAction, type DaemonState } from './state.js';
 
 export const stallAlarmKey = 'stall-alarm';
@@ -119,12 +118,14 @@ export function stallAlarm(readings: StallReadings): string | null {
   const idle = open.filter(item => item.ready && item.stage !== 'done' && !item.blocker && !item.hold && !parkedOnHuman(item) && !item.dependencies.some(id => open.some(other => other.id === id)) && !live(item, now) && !merging.has(item.key)
     && !(stalled && ready.includes(item)) && now - Date.parse(item.updatedAt) >= noActorMs);
   for (const item of idle.slice(0, 5)) lines.push(item.stage === 'ready' && readings.gates?.get(item.key) || `${item.key} has no actor: at ${item.stage} with no lease and no session, unchanged since ${item.updatedAt}`);
-  // GY-3996: a ready item left with an open blocker for an hour is stalled too, with how long the blocker has stood.
+  // GY-3996: a ready item left with an open blocker for an hour is stalled too. Its age is whole hours, so
+  // the line holds still between wakes: the alarm is stored and logged again only when something really changed.
   const staleBlocked = open.filter(item => item.ready && item.stage !== 'done' && !!item.blocker && !item.hold && !waitsOnAsk(item)
     && !live(item, now) && now - Date.parse(item.updatedAt) >= noActorMs);
   for (const item of staleBlocked.slice(0, 5)) {
     const text = item.blocker!.replace(/\s+/g, ' ').trim().slice(0, 120);
-    lines.push(`${item.key} ${staleBlockerMarker}${formatAge(blockerSince(item) ?? item.updatedAt, now)}): ${text} — clear it with: mainworks master unblock ${item.key} REASON`);
+    const hours = Math.floor((now - (blockerSince(item) ?? Date.parse(item.updatedAt))) / 3_600_000);
+    lines.push(`${item.key} ${staleBlockerMarker}${hours}h): ${text} — clear it with: mainworks master unblock ${item.key} REASON`);
   }
   return lines.length ? `Stall: ${lines.join(' ')}` : null;
 }
