@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { cp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { liveEffects, upgradePlan } from '../src/cli/upgrade.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 
 // GY-3569: an in-place upgrade moved a CLI release named for an old commit to a new one, but its
@@ -15,7 +16,6 @@ import { listen } from './helpers/http-server.js';
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('..', import.meta.url));
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 test('integration:cli-identity-in-sandbox — after an in-place upgrade, a CLI that cannot run git reports the checked-out commit and status and complete meet no version refusal', async () => {
   let served = { version: '', commit: '' };
@@ -28,10 +28,9 @@ test('integration:cli-identity-in-sandbox — after an in-place upgrade, a CLI t
   const base = await temporaryDirectory('cli-identity-sandbox');
   try {
     // A Mainworks source checkout and a release worktree named for, and stamped with, its old commit.
-    const source = join(base, 'graphyard');
-    await mkdir(source, { recursive: true });
+    const { root: source } = await gitRepo({ root: join(base, 'graphyard') });
     for (const entry of ['src', 'bin', 'package.json']) await cp(join(repository, entry), join(source, entry), { recursive: true });
-    git(source, 'init', '-q', '-b', 'main'); git(source, 'add', '-A'); git(source, 'commit', '-q', '-m', 'old');
+    git(source, 'add', '-A'); git(source, 'commit', '-q', '-m', 'old');
     const old = git(source, 'rev-parse', 'HEAD');
     const release = join(base, 'install', 'deploy', 'build', '.graphyard', 'cli-releases', old);
     await mkdir(dirname(release), { recursive: true });

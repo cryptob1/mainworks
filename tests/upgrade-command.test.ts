@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cliChangesOf, healthVerdict, liveEffects, renderPlan, resolveTarget, runUpgrade, schemaAt, upgradePlan, type UpgradeInputs, type UpgradeStep } from '../src/cli/upgrade.js';
 import { installRequestFromArgs, redeployArguments } from '../src/install/index.js';
 import type { InstallRecord } from '../src/install/secrets.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-1962: `mainworks upgrade` moves CLI, server, loop and managed files to one release, in order.
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, encoding: 'utf8' }).trim();
 const order = ['backup', 'checkout', 'npm-ci', 'redeploy', 'restart', 'refresh', 'health'];
 const releaseSource = (generations: string[]) => `export const schemaGenerations: readonly (string | null)[] = [\n  ${generations.join(', ')},\n];\n`;
 type Entry = InstallRecord['principals'][number];
@@ -54,9 +53,7 @@ test('unit:upgrade-command-plan — the plan lists the ordered steps without act
   assert.match(renderPlan(migrating), /from the redeploy on: /);
 
   // The target and its generation come from the CLI checkout's tags and that revision's release.ts, read without moving HEAD.
-  const cli = await temporaryDirectory('upgrade-command');
-  git(cli, 'init', '--quiet'); await mkdir(join(cli, 'src'));
-  await writeFile(join(cli, 'src/release.ts'), 'export const schemaVersion = 3;\n'); git(cli, 'add', '.'); git(cli, 'commit', '--quiet', '-m', 'old'); git(cli, 'tag', '2026.9.1');
+  const { root: cli } = await gitRepo({ label: 'upgrade-command', files: { 'src/release.ts': 'export const schemaVersion = 3;\n' }, message: 'old' }); git(cli, 'tag', '2026.9.1');
   await writeFile(join(cli, 'src/release.ts'), releaseSource(['null', 'null', 'null', 'null', "'sha256:59c9'"])); git(cli, 'commit', '--quiet', '-am', 'new');
   git(cli, 'tag', '2026.10.17'); git(cli, 'tag', '2026.10.17.1');
   const head = git(cli, 'rev-parse', 'HEAD');

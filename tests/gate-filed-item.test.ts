@@ -11,7 +11,7 @@ import { masterConfigSchema } from '../src/master.js';
 import { proofPassesOnBasePrefix } from '../src/model/rework-ground.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3160: an item the batch gate files binds a pinning test named from its check, so its bug trial reproduces the defect on base.
 
@@ -36,15 +36,13 @@ const proof = pinningProof(filing.key);
 async function repository() {
   const root = await temporaryDirectory('gate-filed-repo', tmpdir());
   const write = (path: string, content: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); };
-  git(root, 'init', '-q', '-b', 'main');
-  write('package.json', JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }));
-  write('graphyard.json', JSON.stringify({ delivery: policy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${servePort}`, readySeconds: 10 } } }));
-  write('serve.js', `require('node:http').createServer((q, r) => { r.writeHead(200, {'Content-Type':'application/json'}); r.end(JSON.stringify({ created: true })); }).listen(${servePort}, '127.0.0.1');\n`);
-  write('e2e/cases/create-work-item.json', JSON.stringify({ id: 'create-work-item', title: 'Create a work item', target: 'any', required: false,
-    steps: [{ kind: 'http', method: 'GET', path: '/', status: 200, expect: [{ path: 'created', equals: true }] }] }));
-  write('test.js', `const fs = require('node:fs');\nif (fs.existsSync('tests/board.test.ts')) console.log((fs.existsSync('src/fixed') ? 'ok' : 'not ok') + ' 1 - ${proof} the board renders');\nelse console.log('ok 1 - other');\n`);
-  git(root, 'add', '-A'); git(root, 'commit', '-q', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
+  const { head: base } = await gitRepo({ root, files: {
+    'package.json': JSON.stringify({ name: 'fixture', scripts: { build: 'true', test: 'node test.js' } }),
+    'graphyard.json': JSON.stringify({ delivery: policy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'node serve.js', url: `http://127.0.0.1:${servePort}`, readySeconds: 10 } } }),
+    'serve.js': `require('node:http').createServer((q, r) => { r.writeHead(200, {'Content-Type':'application/json'}); r.end(JSON.stringify({ created: true })); }).listen(${servePort}, '127.0.0.1');\n`,
+    'e2e/cases/create-work-item.json': JSON.stringify({ id: 'create-work-item', title: 'Create a work item', target: 'any', required: false,
+      steps: [{ kind: 'http', method: 'GET', path: '/', status: 200, expect: [{ path: 'created', equals: true }] }] }),
+    'test.js': `const fs = require('node:fs');\nif (fs.existsSync('tests/board.test.ts')) console.log((fs.existsSync('src/fixed') ? 'ok' : 'not ok') + ' 1 - ${proof} the board renders');\nelse console.log('ok 1 - other');\n` } });
   git(root, 'checkout', '-q', '--detach');
   write('src/fixed', '');
   write('tests/board.test.ts', `// ${proof}\n`);

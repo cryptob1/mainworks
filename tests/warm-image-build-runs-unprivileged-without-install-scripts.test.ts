@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { ChildRun } from '../src/child-runner.js';
 import { ensureWarmImage, warmCommitOnHosts } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3914 AC-3: The warm-image build runs dependency installation with install scripts disabled,
 // as a non-root user, with all capabilities dropped, and the build step likewise; a head whose
@@ -18,26 +19,10 @@ after(async () => {
   for (const cleanup of cleanups) await cleanup().catch(() => {});
 });
 
-const identity = {
-  GIT_AUTHOR_NAME: 'Fixture',
-  GIT_AUTHOR_EMAIL: 'fixture@example.com',
-  GIT_COMMITTER_NAME: 'Fixture',
-  GIT_COMMITTER_EMAIL: 'fixture@example.com',
-};
-const git = (root: string, ...args: string[]) =>
-  execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-
 test('unit:warm-image-build-runs-unprivileged-without-install-scripts — warm-image build commands disable install scripts, drop all capabilities, and run as non-root', async () => {
-  const root = await temporaryDirectory('warm-image-flags-repo');
+  const { root, head: commit } = await gitRepo({ label: 'warm-image-flags-repo', files: { 'package.json': JSON.stringify({ name: 'fixture', version: '1.0.0' }) + '\n',
+    'package-lock.json': JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }) + '\n', 'bin/built-entry.mjs': 'console.log("built");\n' } });
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  git(root, 'init', '-q', '-b', 'main');
-  await mkdir(join(root, 'bin'), { recursive: true });
-  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '1.0.0' }) + '\n');
-  await writeFile(join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }) + '\n');
-  await writeFile(join(root, 'bin/built-entry.mjs'), 'console.log("built");\n');
-  git(root, 'add', '-A');
-  git(root, 'commit', '-qm', 'base');
-  const commit = git(root, 'rev-parse', 'HEAD');
 
   const dockerRunScripts: string[] = [];
   const image = 'mainworks-trial:unit-flags';

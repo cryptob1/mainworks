@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { Engine } from '../src/engine.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
@@ -28,12 +28,8 @@ const proof = 'integration:resubmit-without-verify';
 test(`${proof} — with every heavy-job slot held, the loop submits a recorded finished head in the same cycle`, { timeout: 60_000 }, async t => {
   const base = await realpath(await temporaryDirectory('resubmit-without-verify'));
   t.after(() => rm(base, { recursive: true, force: true }));
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const origin = join(base, 'origin.git'), checkout = join(base, 'checkout'), branch = 'graphyard/gy-1-1', worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', 'README.md'); git(checkout, 'commit', '-q', '-m', 'base');
-  git(checkout, 'push', '-q', 'origin', 'HEAD:main'); git(checkout, 'fetch', '-q', 'origin');
+  const checkout = join(base, 'checkout'), branch = 'graphyard/gy-1-1', worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
+  await gitRepo({ root: checkout, files: { 'README.md': '# Fixture\n' }, origin: true });
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree);
   // A store change is sensitive, so the submitted head owes review next.
   await mkdir(join(worktree, 'src', 'store'), { recursive: true });

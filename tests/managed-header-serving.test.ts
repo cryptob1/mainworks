@@ -1,12 +1,10 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { withDatabase } from './helpers/postgres.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { Store } from '../src/store.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -14,6 +12,7 @@ import { deployRecordPath } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
 import { ReleaseLine } from '../web/components/top-bar.js';
 import { listen } from './helpers/http-server.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2964: the dashboard header of a managed install names the managed repository's own serving —
 // what a deploy record naming it serves — never the control plane's own commit, and "not live yet"
@@ -27,12 +26,11 @@ const tokens = new Map([[operator.id, `operator-${'t'.repeat(32)}`]]);
 let store: Store, engine: Engine, close: (() => Promise<void>) | undefined, url: string, root: string;
 let tipB = '', main = '';
 
-const git = (args: string[], cwd = root) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 /** One commit on main; returns its sha. */
 const commit = async (what: string) => {
   await writeFile(join(root, 'game.txt'), `${what}\n`);
-  git(['add', '.']); git(['commit', '-q', '-m', what]);
-  return git(['rev-parse', 'HEAD']);
+  git(root, 'add', '.'); git(root, 'commit', '-q', '-m', what);
+  return git(root, 'rev-parse', 'HEAD');
 };
 const writeDeploy = async (record: Record<string, unknown>) => {
   await mkdir(join(root, '.graphyard'), { recursive: true });
@@ -41,10 +39,7 @@ const writeDeploy = async (record: Record<string, unknown>) => {
 
 before(async () => {
   // The shared checkout the header reads main's tip and the deploy record from.
-  root = await temporaryDirectory('managed-header-root');
-  git(['init', '-q', '-b', 'main']);
-  await writeFile(join(root, 'game.txt'), 'the game\n');
-  git(['add', '.']); git(['commit', '-q', '-m', 'the game']);
+  ({ root } = await gitRepo({ label: 'managed-header-root', files: { 'game.txt': 'the game\n' }, message: 'the game' }));
   tipB = await commit('second');
   main = await commit('third');
   process.env.GRAPHYARD_REPOSITORY_ROOT = root;

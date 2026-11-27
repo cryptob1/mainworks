@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -40,9 +39,7 @@ async function stubGh(directory: string) {
 /** A checkout whose origin is unreachable, so only the merge writer's explicit https URL can work. */
 async function mergeWriterCheckout(directory: string) {
   const origin = join(directory, 'repo.git'), checkout = join(directory, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  git(origin, 'config', 'http.receivepack', 'true');
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
+  git(directory, 'init', '-q', '--bare', '-b', 'main', origin); git(origin, 'config', 'http.receivepack', 'true'); git(directory, 'clone', '-q', origin, checkout);
   await writeFile(join(checkout, 'a.txt'), 'base\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base'); git(checkout, 'push', '-q', 'origin', 'main');
   const baseTip = git(checkout, 'rev-parse', 'HEAD');

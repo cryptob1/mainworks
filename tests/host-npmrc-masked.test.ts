@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { coordinatorConfinement, credentialMaskFor, sessionMountNamespaceWorks, type MaskProbe } from '../src/master/confinement.js';
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3248: the GY-3228 mask left the host user's package-manager credentials readable, so a
 // confined worker could print the owner's npm publish token from ~/.npmrc. Under real bubblewrap,
@@ -25,13 +26,7 @@ test('e2e:host-npmrc-masked — under real bwrap a confined worker cannot read ~
   process.env.HOME = home;
   try {
     const root = join(home, 'code', 'project'), worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
-    mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\nnode_modules/\n');
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '1.0.0', private: true }));
-    git(root, 'init', '-q', '-b', 'main');
-    git(root, 'add', '.');
-    git(root, 'commit', '-qm', 'seed');
+    await gitRepo({ root, files: { '.gitignore': '.graphyard/\nnode_modules/\n', 'package.json': JSON.stringify({ name: 'fixture', version: '1.0.0', private: true }) }, message: 'seed' });
     mkdirSync(dirname(worktree), { recursive: true });
     git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree, 'main');
     prepareConfinedGitPaths(root);

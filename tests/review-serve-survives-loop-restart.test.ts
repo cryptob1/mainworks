@@ -1,7 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { AgentRegistry } from '../src/agent-registry.js';
 import { proposedRuntimes } from '../src/model/registry.js';
 import { Engine } from '../src/engine.js';
@@ -46,24 +47,14 @@ before(async () => {
   engine.gitRunner = null;
   ({ url, close } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
 
-  root = await temporaryDirectory('review-serve-restart-root');
+  ({ root, head: base } = await gitRepo({ label: 'review-serve-restart-root', files: { 'README.md': 'project\n' } }));
   credentials = await temporaryDirectory('review-serve-restart-credentials');
   browserBin = await temporaryDirectory('review-serve-restart-bin');
   helperDir = await temporaryDirectory('review-serve-restart-helper');
 
   await writeFile(join(browserBin, 'agent-browser'), '#!/bin/sh\necho browser\n', { mode: 0o755 });
 
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const commit = (message: string) => {
-    git('add', '.');
-    git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', message);
-    return git('rev-parse', 'HEAD');
-  };
-  git('init', '-q', '--initial-branch=main');
-  git('remote', 'add', 'origin', 'https://github.com/owner/project.git');
-  await writeFile(join(root, 'README.md'), 'project\n');
-  base = commit('base');
-  git('update-ref', 'refs/remotes/origin/main', base);
+  git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git'); git(root, 'update-ref', 'refs/remotes/origin/main', base);
 
   await writeFile(join(root, 'graphyard.json'), JSON.stringify({
     e2e: { serve: { command: 'node serve-it.mjs', url: declaredUrl, readySeconds: 30 } },
@@ -80,8 +71,8 @@ srv.listen(port, '127.0.0.1', () => {
   console.log('listening', port);
 });
 `);
-  head = commit('candidate head');
-  git('checkout', '-q', base);
+  git(root, 'add', '.'); git(root, 'commit', '-qm', 'candidate head'); head = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', base);
 
   await setupMaster(root, {
     url, token: coordinatorToken, cliPath: launcher, credentialDirectory: credentials, herdrWorkspace: 'w',

@@ -13,7 +13,7 @@ import { TrialHeatError } from '../src/merge-writer/trial-load.js';
 import { serializeTrialError } from '../src/merge-writer/trial-run.js';
 import { acquireVerificationSlot, projectVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { until } from './helpers/until.js';
 
 // GY-3803: the batch gate takes the next freed heavy-job slot ahead of merge trials, and a batch
@@ -51,12 +51,8 @@ async function repoWorld(label: string, onLaunch: (request: { key: string; merge
   await writeFile(join(slots, 'limit'), '2\n');
   process.env[slotsDirectoryVariable] = slots;
   process.env[projectVariable] = repository;
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'graphyard.json'), '{}');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'base'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const verified = git(pusher, 'rev-parse', 'HEAD');
+  const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
+  const { origin, head: verified } = await gitRepo({ root: pusher, label: 'pusher', files: { 'graphyard.json': '{}' }, origin: true });
   await writeFile(join(pusher, 'src-a.ts'), 'export const a = 1;\n');
   await writeFile(join(pusher, 'src-b.ts'), 'export const b = 2;\n');
   git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'change 1'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');

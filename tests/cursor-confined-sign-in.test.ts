@@ -14,6 +14,7 @@ import { headlessArgs } from '../src/headless-session.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { chooseSession, emptyRegistry, foldObservations, proposedRuntimes, type AgentRegistry } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3329: on a host with no desktop keyring cursor-agent saves its sign-in to
 // `$XDG_CONFIG_HOME/cursor/auth.json` (falling back to `$HOME/.config/cursor/auth.json`) and never
@@ -52,15 +53,8 @@ const stubCursorAgent = (bin: string) => {
   return script;
 };
 
-function fixture(home: string) {
-  const root = join(home, 'code', 'project');
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  mkdirSync(root, { recursive: true });
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  writeFileSync(join(root, 'test.js'), 'console.log(\'the fixture test passes\');\n');
-  git(root, 'init', '-q', '-b', 'main');
-  git(root, 'add', '.');
-  git(root, 'commit', '-qm', 'seed');
+async function fixture(home: string) {
+  const { root } = await gitRepo({ root: join(home, 'code', 'project'), files: { '.gitignore': '.graphyard/\n', 'test.js': 'console.log(\'the fixture test passes\');\n' }, message: 'seed' });
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-3329-1');
   mkdirSync(dirname(worktree), { recursive: true });
   git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-3329-1', worktree, 'main');
@@ -100,7 +94,7 @@ function fixture(home: string) {
  * runtime's one-task form, and the coordinator confinement. A host whose sandbox cannot build
  * another mount namespace (an executor inside one already) still gets the same wrapper's words.
  */
-async function confinedCursorLaunch(f: ReturnType<typeof fixture>, account: { name: string; home: string }, interim: string) {
+async function confinedCursorLaunch(f: Awaited<ReturnType<typeof fixture>>, account: { name: string; home: string }, interim: string) {
   const contract = { ...proposedRuntimes.find(runtime => runtime.name === 'cursor')!.launch, environment: { XDG_CONFIG_HOME: interim } };
   const fleet: FleetLaunchAccount = { name: account.name, kind: 'cursor', home: account.home, key: null,
     fleet: { runtime: 'cursor', contract: contract as FleetLaunchAccount['fleet']['contract'], model: 'default', modelId: null, session: 'session-1', reason: 'confined worker launch', role: 'worker', revision: 1 } };
@@ -138,7 +132,7 @@ test('e2e:cursor-confined-sign-in — a confined cursor worker authenticates on 
   process.env.PATH = `${bin}:${savedPath ?? ''}`;
   const runsConfinement = await sessionMountNamespaceWorks();
   try {
-    const f = fixture(home);
+    const f = await fixture(home);
 
     // 1. A confined worker launch on cursor-b — the second cursor account, whose own home must win
     //    over the interim value a one-account role once pinned to cursor-a — authenticates.

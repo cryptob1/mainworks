@@ -8,6 +8,7 @@ import { credentialMaskFor, type MaskProbe } from '../src/master/confinement.js'
 import { sessionConfinement } from '../src/master/launch.js';
 import { runtimeLoginHomes } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3303: hwd-backend's Muse sessions exited at once — "failed to create session lock directory
 // for session …: Read-only file system" — because the confinement kept the host's XDG data
@@ -40,14 +41,10 @@ test('e2e:muse-writable-session-state — a confined Muse worker and reviewer lo
   process.env.HOME = home;
   delete process.env.XDG_DATA_HOME; delete process.env.XDG_CONFIG_HOME;
   try {
-    const root = join(home, 'code', 'project');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-    git(root, 'init', '-q', '-b', 'main'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'seed');
+    const { root, git } = await gitRepo({ root: join(home, 'code', 'project'), files: { '.gitignore': '.graphyard/\n' }, message: 'seed' });
     const worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1'), reviewCheckout = join(home, 'managed', 'review-gy-1');
     mkdirSync(dirname(worktree), { recursive: true });
-    git(root, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree, 'main');
+    git('worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree, 'main');
     mkdirSync(reviewCheckout, { recursive: true });
     const muse = join(home, 'bin', 'muse');
     mkdirSync(dirname(muse), { recursive: true });

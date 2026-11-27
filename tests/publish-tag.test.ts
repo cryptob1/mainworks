@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gateRecordPath, readGateRecord } from '../src/batch-gate.js';
 import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
@@ -16,32 +16,27 @@ import type { Work } from '../src/model.js';
 import { publishedVersion } from '../src/release.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 const identity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
-const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', env: identity, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** Mainworks's own coordinator checkout over a scratch origin, a trial that always passes, and `merge()` to land one more item on main. */
 async function gateFixture(repository = mainworksRepository, pushReleaseTag?: MergeWriterReads['pushReleaseTag']) {
   const base = await temporaryDirectory('publish-verified-gate');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
-  git(base, ['init', '-q', '--bare', '-b', 'main', origin]);
-  git(base, ['clone', '-q', origin, pusher]);
-  await mkdir(join(pusher, 'e2e', 'cases'), { recursive: true });
-  await writeFile(join(pusher, 'graphyard.json'), JSON.stringify({ gate: { core: ['smoke'] } }));
-  await writeFile(join(pusher, 'e2e', 'cases', 'smoke.json'), '{}');
-  git(pusher, ['add', '.']); git(pusher, ['commit', '-q', '-m', 'base']); git(pusher, ['push', '-q', 'origin', 'HEAD:main']);
-  git(base, ['clone', '-q', origin, coordinator]);
+  const pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
+  const { origin } = await gitRepo({ root: pusher, files: { 'graphyard.json': JSON.stringify({ gate: { core: ['smoke'] } }), 'e2e/cases/smoke.json': '{}' }, origin: true });
+  git(base, 'clone', '-q', origin, coordinator);
   const work: Work[] = [];
   const merge = async () => {
     const n = work.length + 1;
-    git(pusher, ['checkout', '-q', '-b', `item-${n}`]);
+    git(pusher, 'checkout', '-q', '-b', `item-${n}`);
     await writeFile(join(pusher, `f${n}.txt`), 'ok\n');
-    git(pusher, ['add', '.']); git(pusher, ['commit', '-q', '-m', `change ${n}`]); git(pusher, ['checkout', '-q', 'main']);
-    git(pusher, ['merge', '-q', '--no-ff', '-m', `Merge GY-${n}: change ${n}`, `item-${n}`]); git(pusher, ['push', '-q', 'origin', 'HEAD:main']);
+    git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', `change ${n}`); git(pusher, 'checkout', '-q', 'main');
+    git(pusher, 'merge', '-q', '--no-ff', '-m', `Merge GY-${n}: change ${n}`, `item-${n}`); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
     work.push({ id: `work-${n}`, key: `GY-${n}`, title: `change ${n}`, description: '', type: 'feature', priority: 2, criteria: [{ id: 'AC-1', text: 'works', proofs: ['e2e:smoke'] }], mergeLedger: null } as unknown as Work);
-    return git(pusher, ['rev-parse', 'HEAD']);
+    return git(pusher, 'rev-parse', 'HEAD');
   };
-  const run = (...args: string[]) => git(coordinator, args);
+  const run = (...args: string[]) => git(coordinator, ...args);
   const calls: { command: string; args: string[]; env?: NodeJS.ProcessEnv }[] = [];
   const deployKey = join(base, 'deploy-key');
   const production = mergeWriterReads({ repository, baseBranch: 'main', run: { mergeWriter: { deployKeyFile: deployKey } } } as any, coordinator,
@@ -87,12 +82,12 @@ test('unit:tests/publish-tag.test.ts — a verified deploy pushes exactly one ve
   await f.deploy(commit, { repository: 'owner/other' }); await f.gate();
   assert.equal(pushes().length, 0, 'another repository is not Mainworks deployment evidence');
   await f.deploy(commit); f.restart(); await f.gate();
-  const tag = `v${publishedVersion(commit, new Date(Number(git(f.coordinator, ['show', '-s', '--format=%ct', commit])) * 1000))}`;
+  const tag = `v${publishedVersion(commit, new Date(Number(git(f.coordinator, 'show', '-s', '--format=%ct', commit)) * 1000))}`;
   assert.equal(pushes().length, 1);
   assert.deepEqual(pushes()[0]!.args, ['-C', f.coordinator, 'push', 'origin', `${commit}:refs/tags/${tag}`]);
   assert.match(pushes()[0]!.env!.GIT_SSH_COMMAND!, new RegExp(`ssh -i ${f.deployKey} `));
   assert.equal(pushes()[0]!.env!.GITHUB_TOKEN, undefined);
-  assert.equal(git(f.origin, ['rev-parse', `refs/tags/${tag}`]), commit);
+  assert.equal(git(f.origin, 'rev-parse', `refs/tags/${tag}`), commit);
   assert.equal(readGateRecord(gateRecordPath(f.coordinator))!.releaseTagged, commit);
   for (let i = 0; i < 3; i++) { f.restart(); await f.gate(); }
   assert.equal(pushes().length, 1, 'the durable handoff prevents repeated pushes each cycle/restart');
@@ -108,7 +103,7 @@ test('unit:tests/publish-tag.test.ts — a successful deploy remains eligible wh
   const commit = await f.merge(); await f.gate();
   const steps: string[] = [];
   assert.equal(await deployOnce(deployRecordPath(f.coordinator), {
-    fetch: async () => commit, head: async () => git(f.coordinator, ['rev-parse', 'HEAD']),
+    fetch: async () => commit, head: async () => git(f.coordinator, 'rev-parse', 'HEAD'),
     build: async () => { steps.push('build'); }, restart: async () => { steps.push('restart'); },
     health: async () => { steps.push('health'); }, checkout: async () => { steps.push('checkout'); }, pin: async () => { steps.push('pin'); },
     prune: async () => {}, schema: async () => 1, database: async () => 1,
