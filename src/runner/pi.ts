@@ -176,6 +176,8 @@ const quoted = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
  * parameters, invoked literally through "$0" "$@" without a PTY. It handles TERM, INT and HUP so that a stop sent to the run's group still records Pi's exit. The
  * `confinement` words wrap Pi alone, never the shell: the run's directory lies under the
  * coordinator checkout the confinement makes read-only, so only the shell outside it can write there.
+ * With CPUs reserved for another project (GY-4006) the command starts under `taskset -c`, and a scope
+ * also names them (AllowedCPUs), so everything the run starts keeps off them.
  */
 export function detachedLaunch(directory: string, id: string, command: string, args: string[], containment: RunContainment, confinement: readonly string[] = [], boundSeconds?: number, scopeProperties: readonly string[] = [], stdinFile?: string) {
   if (confinement.length) args = confinedRuntimeArgs(command, args);
