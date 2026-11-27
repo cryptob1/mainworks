@@ -1,5 +1,8 @@
 // GY-4030: two installs on one machine that update together take turns building and exporting their
 // image under the host's real image lock, so neither build loses its BuildKit lease to the other.
+import { readFileSync } from 'node:fs';
+import { link, rm, writeFile } from 'node:fs/promises';
+import { takeLock } from '../src/host-lock.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -42,7 +45,10 @@ test('integration:two-installs-deploy-builds-take-turns — two installs whose d
   const waits: string[] = [];
   const core = deployOnce(deployRecordPath(coreRoot), install('core', coreRoot, () => fake.build('core')), () => {}, null);
   await delay(1000);
-  const huck = deployOnce(deployRecordPath(huckRoot), install('hello-huck-huck', huckRoot, () => fake.build('hello-huck-huck')), () => {}, null);
+  const huck = deployOnce(deployRecordPath(huckRoot), install('hello-huck-huck', huckRoot, async () => {
+    assert.equal(readControlPlaneRecord(controlPlaneRecordPath(huckRoot))?.waiting, null, 'waiting clears before this install starts its own build');
+    await fake.build('hello-huck-huck');
+  }), () => {}, null);
   for (let at = Date.now(); Date.now() - at < 2000 && !waits.length; await delay(50)) {
     const waiting = readControlPlaneRecord(controlPlaneRecordPath(huckRoot))?.waiting?.reason;
     if (waiting) waits.push(waiting);
@@ -64,4 +70,25 @@ test('integration:deploy-build-lease-error-retried-once — a build that loses i
   assert.equal(outcome, 'deployed');
   assert.equal(attempts, 2, 'one retry, no more');
   assert.equal(readControlPlaneRecord(controlPlaneRecordPath(root))?.retried, `The image build of ${b.slice(0, 12)} was retried once after a BuildKit lease error`);
+});
+
+// Pre-GY-4030 installs parse the entire lock file as a PID, including during rollback.
+test('integration:two-installs-deploy-builds-take-turns — an older install respects a named holder during rolling updates', async () => {
+  const root = await temporaryDirectory('take-turns-legacy');
+  const lock = `${root}/images.lock`;
+  const legacyMine = `${root}/legacy.lock`;
+  await writeFile(legacyMine, String(process.pid));
+  const legacyTakeLock = async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { await link(legacyMine, lock); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      try { process.kill(Number(readFileSync(lock, 'utf8')), 0); return false; } catch { await rm(lock, { force: true }); }
+    }
+    return false;
+  };
+  assert.equal(await takeLock(lock, 'core'), true);
+  assert.equal(await legacyTakeLock(), false, 'the old install must not remove a live named image lock');
+  assert.equal(readFileSync(lock, 'utf8'), String(process.pid), 'the shared lock stays PID-only');
+  await rm(lock);
+  assert.equal(await legacyTakeLock(), true, 'the old install can acquire after release');
+  assert.equal(await takeLock(lock, 'core'), false, 'the new install also respects the old PID-only lock');
 });

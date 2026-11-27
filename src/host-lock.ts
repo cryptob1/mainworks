@@ -5,14 +5,19 @@ import { link, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-/** Links the lock file into place holding this process's id (and, GY-4030, who holds it), atomically; a lock whose process is gone is taken over. */
+/** Links the lock file into place holding this process's id, atomically; a lock whose process is gone is taken over. */
 export async function takeLock(lock: string, holder = ''): Promise<boolean> {
   await mkdir(dirname(lock), { recursive: true });
   const mine = `${lock}.${process.pid}.${randomUUID()}`;
-  await writeFile(mine, `${process.pid} ${holder}`.trim());
+  await writeFile(mine, String(process.pid));
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      try { await link(mine, lock); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      try {
+        await link(mine, lock);
+        // Keep the shared lock PID-only for installs still running the older lock reader.
+        if (holder) await writeFile(`${lock}.holder`, `${process.pid} ${holder}`);
+        return true;
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       try { process.kill(Number(readFileSync(lock, 'utf8').split(' ')[0]), 0); return false; } catch { await rm(lock, { force: true }); } // the holder is gone
     }
     return false;
@@ -37,8 +42,14 @@ export async function withHostLock<T>(name: string, work: () => Promise<T>, opti
     if (waited) continue;
     waited = true;
     let holder = '';
-    try { holder = readFileSync(lock, 'utf8').split(' ').slice(1).join(' '); } catch { /* released meanwhile */ }
+    try {
+      const [pid, ...label] = readFileSync(`${lock}.holder`, 'utf8').split(' ');
+      if (pid === readFileSync(lock, 'utf8')) holder = label.join(' ');
+    } catch { /* released meanwhile */ }
     await options.onWait?.(holder || 'another install');
   }
-  try { return await heldLocks.run(new Set([...heldLocks.getStore() ?? [], name]), work); } finally { await rm(lock, { force: true }); }
+  try { return await heldLocks.run(new Set([...heldLocks.getStore() ?? [], name]), work); } finally {
+    await rm(`${lock}.holder`, { force: true });
+    await rm(lock, { force: true });
+  }
 }

@@ -377,7 +377,10 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   // GY-4030: installs on one machine take turns building and exporting their image under the host's image lock;
   // a build that still loses its BuildKit lease is tried once more after the other build ends.
   let retried: string | null = null;
-  const restartInTurn = (commit: string, noCache = false) => withHostLock(imageLock, () => ports.restart(commit, { noCache }), {
+  const restartInTurn = (commit: string, noCache = false) => withHostLock(imageLock, async () => {
+    await noteControl({ waiting: null });
+    return ports.restart(commit, { noCache });
+  }, {
     holder: ports.install ?? owner ?? 'another install',
     onWait: holder => {
       log(`[mainworks-deploy] waits for ${holder}'s image build to finish`);
