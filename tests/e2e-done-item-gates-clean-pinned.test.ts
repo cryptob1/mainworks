@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import WorkPage from '../web/pages/work.js';
+import WorkDetails from '../web/pages/work-details.js';
 import { workFixture } from './helpers/work-fixture.js';
 import type { Dashboard } from '../web/pages/dashboard.js';
 
@@ -33,4 +34,17 @@ test('unit:e2e-done-item-gates-clean-pinned — the case opens the delivered ite
   const at = html.indexOf(`>${text}</a>`);
   assert.ok(at >= 0, 'the Shipped today row shows the delivered item');
   assert.match(html.slice(html.lastIndexOf('<a', at), at), /href="#GY-9"/, 'its title links to the item page');
+});
+
+// GY-3976: the item page's Technical details fold sits in the Details tab's panel, hidden until that tab
+// is chosen, so the case clicks the Details tab before it unfolds Technical details.
+test('unit:e2e-done-item-gates-clean-pinned — the case opens the Details tab before unfolding Technical details', () => {
+  const html = renderToStaticMarkup(createElement(WorkDetails, { work: [item], board: null, status: {}, observedAt: NOW, jobs: [], events: [], item, setSelected: () => {}, setView: () => {} } as unknown as Dashboard & { item: typeof item }));
+  const panel = html.slice(html.indexOf('<div role="tabpanel" aria-label="Details"'));
+  assert.match(panel, /^<div role="tabpanel" aria-label="Details" class="task-panel" hidden="">/, 'the Details panel is hidden on open');
+  assert.ok(panel.indexOf('Technical details') > 0 && !html.slice(0, html.indexOf('<div role="tabpanel" aria-label="Details"')).includes('Technical details'), 'Technical details folds inside the Details panel');
+  const steps = JSON.parse(readFileSync('e2e/cases/done-item-gates-clean.json', 'utf8')).steps as { action: string; text?: string; role?: string }[];
+  const tab = steps.findIndex(step => step.action === 'click' && step.role === 'tab' && step.text === 'Details');
+  const unfold = steps.findIndex(step => step.action === 'click' && step.text === 'Technical details');
+  assert.ok(tab >= 0 && unfold > tab, 'the case clicks the Details tab before unfolding Technical details');
 });

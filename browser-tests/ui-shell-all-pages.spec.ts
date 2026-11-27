@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { signInDatabase } from '../tests/helpers/sign-in-database';
 import { signInProcess } from '../tests/helpers/sign-in-process';
+import { serveXterm } from './xterm';
 
 // GY-3322: every page in the dashboard router is built from the one page shell (web/style.css, GY-3321):
 // the page heading — h1 title, the primary fact under it, actions top right — cards (.panel) with their
@@ -65,6 +66,7 @@ for (const data of ['seeded', 'empty'] as const) for (const viewport of [{ width
         if (!response) return route.abort('connectionrefused').catch(() => {});
         await route.fulfill({ response }).catch(() => {});
       });
+      await serveXterm(page); // the Lead page's xterm.js, served locally; registered last, so it answers before the catch-all
       // The Master terminal's socket would reach the static preview server, not the plane: it is answered here and
       // left silent, as the terminal's own cases (master-page-terminal, master-terminal-fills-page) drive the real one.
       await page.routeWebSocket(/\/api\/terminal/, () => {});
