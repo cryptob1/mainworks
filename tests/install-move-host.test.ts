@@ -117,11 +117,9 @@ async function moveHost(startTarget: boolean) {
     assert.ok(moved.next.includes(moved.start.join(' && ')));
 
     if (startTarget) {
-      // Stand in for the target's filesystem and systemd, but run the printed shell, real Docker
-      // build and copied database. A private tag keeps the test away from the host's trial image.
-      const bin = join(scratch, 'bin'), tag = `mainworks-move-test:${ports.base}`;
+      // Stand in for Docker and systemd; execute the printed shell and serve the copied database.
+      const bin = join(scratch, 'bin'), built = join(scratch, 'image-built'), calls = join(scratch, 'docker-calls');
       await mkdir(bin);
-      const realDocker = execFileSync('sh', ['-c', 'command -v docker'], { encoding: 'utf8' }).trim();
       const bridge = await listen(createServer(async (request, response) => {
         try {
           if (request.url === '/start') running = await controlPlane(join(target, data), ports.base);
@@ -133,23 +131,44 @@ async function moveHost(startTarget: boolean) {
       await writeFile(join(bin, 'systemctl'), `#!/bin/sh\ncase "$*" in\n  "--user daemon-reload") exit 0;;\n  "--user enable --now "*) ${fetchCommand('start')};;\n  *) exit 1;;\nesac\n`, { mode: 0o755 });
       await writeFile(join(bin, 'mainworks'), `#!/bin/sh\n[ "$*" = "master status" ] || exit 1\n${fetchCommand('status')}\n`, { mode: 0o755 });
       await writeFile(join(bin, 'docker'), `#!/usr/bin/env node
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2).map(arg => arg === 'mainworks-trial:local' ? ${JSON.stringify(tag)} : arg);
-const result = spawnSync(${JSON.stringify(realDocker)}, args, { stdio: 'inherit' });
-process.exit(result.status ?? 1);
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
+const built = ${JSON.stringify(built)}, builder = built + '-builder';
+switch (args.slice(0, 2).join(' ')) {
+  case 'image inspect':
+    assert.deepEqual(args, ['image', 'inspect', 'mainworks-trial:local']);
+    process.exit(fs.existsSync(built) ? 0 : 1);
+  case 'buildx inspect':
+    assert.deepEqual(args, ['buildx', 'inspect', 'mainworks-trial']);
+    process.exit(fs.existsSync(builder) ? 0 : 1);
+  case 'buildx create':
+    assert.deepEqual(args, ['buildx', 'create', '--name', 'mainworks-trial', '--driver', 'docker-container']);
+    fs.writeFileSync(builder, '');
+    break;
+  case 'buildx build':
+    assert.deepEqual(args, ['buildx', 'build', ...${JSON.stringify(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : [])}, '--builder', 'mainworks-trial', '--load', '--target', 'trial', '--tag', 'mainworks-trial:local', ${JSON.stringify(join(target, root))}]);
+    assert.ok(fs.existsSync(builder));
+    assert.equal(fs.readFileSync(${JSON.stringify(join(target, root, 'Dockerfile'))}, 'utf8'), 'FROM scratch AS trial\\nCOPY README.md /README.md\\n');
+    fs.writeFileSync(built, '');
+    break;
+  default: throw new Error('Unexpected Docker command: ' + args.join(' '));
+}
 `, { mode: 0o755 });
-      try {
-        execFileSync(realDocker, ['image', 'rm', tag], { stdio: 'ignore' });
-      } catch { /* A fresh target has no image. */ }
+      const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+      assert.throws(() => execFileSync(join(bin, 'docker'), ['image', 'inspect', 'mainworks-trial:local'], { env, stdio: 'pipe' }), { status: 1 }, 'the target starts without a trial image');
       try {
         // Paths on the new machine keep their absolute names; prefix them only in this stand-in.
         const commands = moved.start.join(' && ').replaceAll(root, join(target, root));
-        await promisify(execFile)('sh', ['-ec', commands], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+        await promisify(execFile)('sh', ['-ec', commands], { env });
         assert.ok(running, 'the printed start commands start the copied install');
-        execFileSync(realDocker, ['image', 'inspect', tag], { stdio: 'pipe' });
+        execFileSync(join(bin, 'docker'), ['image', 'inspect', 'mainworks-trial:local'], { env, stdio: 'pipe' });
+        await promisify(execFile)('sh', ['-ec', moved.start[0]!.replaceAll(root, join(target, root))], { env });
+        const invocations = (await readFile(calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as string[]);
+        assert.equal(invocations.filter(args => args[0] === 'buildx' && args[1] === 'build').length, 1, 'first start builds the image; an existing image is reused');
       } finally {
         await bridge.close();
-        execFileSync(realDocker, ['image', 'rm', '-f', tag], { stdio: 'ignore' });
       }
     } else running = await controlPlane(join(target, data), ports.base);
     const moving = running!;
