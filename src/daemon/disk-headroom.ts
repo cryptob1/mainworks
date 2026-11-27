@@ -13,6 +13,7 @@ import type { DaemonEffects } from './effects.js';
 import { record, type DaemonAction, type DaemonState, type DiskKind, type DiskSample, type DiskUse } from './state.js';
 import { workerVerificationPrefix, workerVerificationRoot, workerVerificationTimeoutMs } from '../merge-writer/worker-verification.js';
 import { trialBuilder } from '../install/trial-image.js';
+import { whileNoHeavyJob } from '../master/verification-slots.js';
 import { warmImagesInUse, warmInUseDirectory } from '../merge-writer/remote-shards.js';
 import { composeProjectPrefix, sweepComposePreviews } from '../compose-preview.js';
 import { trialShareAllowance } from './cycle-merge-writer.js';
@@ -128,6 +129,7 @@ export async function diskHeadroomStep(cycle: { config: Pick<MasterConfig, 'run'
   if ((low.length || dockerLow) && effects.reclaimDisk) {
     const removed = await effects.reclaimDisk();
     tallyLeftovers(state, 'reclaimed', removed.length);
+    if (removed.skipped) performed.push(await record(state, 'disk-reclaim:skipped', { kind: 'reclaim', work: null, principal: null, state: 'waiting', attempts: 1, cycle: state.cycle, detail: removed.skipped }, now(), effects.persist));
     const after = await effects.diskVolumes();
     const beforeVolume = dockerVolume ?? low[0];
     const afterVolume = after.find(volume => volume.path === beforeVolume?.path);
@@ -179,7 +181,34 @@ const trialNetworkPrefix = `${composeProjectPrefix}trial-`;
  * anonymous volumes, preview and trial Compose projects whose owner is gone, trial networks no container uses, and Mainworks's own
  * trial-image build cache older than a day (its dedicated builder only). What was removed, by name.
  */
-export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[]; warmInUse?: string; pruneWarm?: boolean } = {}): Promise<string[]> {
+export async function reclaimJobLeftovers(run: ChildRun, roots: ReclaimRoots = {}): Promise<Reclaimed> {
+  const removed = await leftoversBesideImages(run, roots);
+  return withImageReclaim(removed, roots.slots, async () => [...await pruneWarmImages(run, roots.warmInUse), ...await pruneTrialBuildCache(run)]);
+}
+
+/** What a reclaim removed, by name; `skipped` says why its image and build-cache part did not run. */
+export type Reclaimed = string[] & { skipped?: string };
+export interface ReclaimRoots { temporary?: string[]; checkouts?: string[]; verification?: string[]; warmInUse?: string; /** The host heavy-job slots; absent, the joined budget's. */ slots?: string }
+
+/**
+ * GY-4026: images and build cache are removed only while no heavy job (deploy build, merge trial,
+ * batch gate, worker verification) holds a slot on this host, the reclaim holding one itself; else skipped.
+ */
+async function withImageReclaim(removed: string[], slots: string | undefined, images: () => Promise<string[]>): Promise<Reclaimed> {
+  const pass = await whileNoHeavyJob('image and build-cache reclaim', images, slots);
+  if ('ran' in pass) return [...removed, ...pass.ran];
+  return Object.assign(removed, { skipped: `The image and build-cache reclaim skipped: ${pass.heldBy.join(', ')} ${pass.heldBy.length > 1 ? 'hold heavy-job slots' : 'holds a heavy-job slot'}; it runs when none is held` });
+}
+
+async function pruneTrialBuildCache(run: ChildRun): Promise<string[]> {
+  try {
+    const pruned = String(await run('docker', ['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'], { timeoutMs: 60_000 })).split('\n').map(line => line.trim()).find(line => /^Total:/i.test(line));
+    if (pruned && !/:\s*0\s*B?$/i.test(pruned)) return [`trial build cache older than a day (${pruned.replace(/^Total:\s*/i, '')})`];
+  } catch { /* no trial builder on this host yet */ }
+  return [];
+}
+
+async function leftoversBesideImages(run: ChildRun, roots: ReclaimRoots): Promise<string[]> {
   const removed: string[] = [];
   for (const root of roots.temporary ?? trialTemporaryRoots()) removed.push(...await reclaimTrialCheckouts(root, [trialTemporaryPrefix, 'gy-h']));
   for (const root of roots.checkouts ?? trialCheckoutRoots()) removed.push(...await reclaimTrialCheckouts(root, [trialCheckoutPrefix]));
@@ -201,11 +230,6 @@ export async function reclaimJobLeftovers(run: ChildRun, roots: { temporary?: st
       try { await docker(['network', 'rm', name]); removed.push(`network ${name}`); } catch { /* attached since, or already gone */ }
     }
   } catch { /* no Docker on this host */ }
-  if (roots.pruneWarm !== false) removed.push(...await pruneWarmImages(run, roots.warmInUse));
-  try {
-    const pruned = (await docker(['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'])).find(line => /^Total:/i.test(line));
-    if (pruned && !/:\s*0\s*B?$/i.test(pruned)) removed.push(`trial build cache older than a day (${pruned.replace(/^Total:\s*/i, '')})`);
-  } catch { /* no trial builder on this host yet */ }
   return removed;
 }
 
@@ -236,9 +260,14 @@ export async function pruneWarmImages(run: ChildRun, inUseDirectory = warmInUseD
  * Keep the current trial image, every container image and warm images marked by in-flight trials. Ended attempts' worktrees and
  * settled managed checkouts are already removed by the close step itself.
  */
-export async function reclaimMainworksLeftovers(run: ChildRun, roots: { temporary?: string[]; checkouts?: string[]; verification?: string[]; warmInUse?: string } = {}): Promise<string[]> {
-  const removed = await reclaimJobLeftovers(run, { ...roots, pruneWarm: false });
-  const inUse = await warmImagesInUse(roots.warmInUse);
+export async function reclaimMainworksLeftovers(run: ChildRun, roots: ReclaimRoots = {}): Promise<Reclaimed> {
+  const removed = await leftoversBesideImages(run, roots);
+  return withImageReclaim(removed, roots.slots, async () => [...await pruneTrialBuildCache(run), ...await unusedImages(run, roots.warmInUse)]);
+}
+
+async function unusedImages(run: ChildRun, warmInUse?: string): Promise<string[]> {
+  const removed: string[] = [];
+  const inUse = await warmImagesInUse(warmInUse);
   const docker = async (args: string[]) => String(await run('docker', args, { timeoutMs: 20_000 })).split('\n').map(line => line.trim()).filter(Boolean);
   try {
     const current = trialImage();
