@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { supervise } from '../src/session-watch.js';
@@ -27,7 +27,7 @@ async function run(script: string, waitForOutput: boolean, ticks: number) {
     return { updatedAt: new Date(0).toISOString(), lease: { epoch: 1, expiresAt: new Date(120 * minute).toISOString() } };
   };
   let done = false;
-  const supervising = supervise(process.execPath, ['-e', script], 1, renew, { intervalMs: minute, graceMs: 50, clock, log, session: { surrender: async cause => { causes.push(cause); } } });
+  const supervising = supervise(process.execPath, ['-e', script], 1, renew, { intervalMs: minute, graceMs: 50, clock, log, worktree: dirname(log), session: { surrender: async cause => { causes.push(cause); } } });
   void supervising.finally(() => { done = true; });
   // The stand-in prints its first line before any time passes.
   while (size(log) === 0) await delay(5);
@@ -51,8 +51,8 @@ async function run(script: string, waitForOutput: boolean, ticks: number) {
 test('integration:idle-builder-session-ends — a session that prints once and then sleeps is stopped after 30 silent minutes and its lease released naming the idle time', { timeout: 60_000 }, async () => {
   const result = await run("console.log('started'); setInterval(() => {}, 1000)", false, 120);
   assert.equal(result.code, 1);
-  assert.deepEqual(result.causes, ['the session wrote no output for 30 minutes']);
-  assert.ok(result.minutes >= 30 && result.minutes < 32, `stopped at minute ${result.minutes}`);
+  assert.deepEqual(result.causes, ['the session wrote no output, used no CPU and changed no file for 30 minutes']);
+  assert.ok(result.minutes >= 30 && result.minutes < 33, `stopped at minute ${result.minutes}`);
   assert.match(result.log, /started/);
 });
 
