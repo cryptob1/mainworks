@@ -169,9 +169,9 @@ type CatalogRun = { failed: string[]; details: Record<string, string>; outputs: 
  * `deadline`, the 45-minute limit.
  * GY-3974: a shard runs its cases one after another, so a test machine takes one shard per six of
  * its free cores, and every case it may run stays off this machine, the slowest and busiest one,
- * which runs its own cases in lanes of at most `laneCases` cases. Cases are dealt by weight, from
- * the commit's own timing baseline, so the lanes are cut the same way after a loop restart and
- * each lane's run is found again.
+ * which runs its own cases in lanes of at most `laneCases` cases, at most `lanesHere` at once. Cases are
+ * dealt by weight, from the commit's own timing baseline, so the lanes are cut the same way after a
+ * loop restart and each lane's run is found again.
  */
 const laneCases = 75, lanesHere = 4;
 /** GY-3974: the shards a test machine runs at once, from one to four: a heavy job takes six cores (machineSlots). */
