@@ -833,11 +833,11 @@ async function catalogImage(input: { root: string; commit: string; baseTip?: str
  * host list and reads, and keeps each case's screenshot.
  */
 export async function catalogHosts(input: { root: string; commit: string; baseTip?: string; run: ChildRun; deadline: number; screenshots?: boolean; image?: string;
-  hosts?: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; signal?: AbortSignal }) {
+  hosts?: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; heatRereadMs?: number; heatSleep?: (ms: number) => Promise<void>; signal?: AbortSignal }) {
   const targets = input.hosts ?? await shardHosts();
   const transport = shardSshSession(input.run);
   const read = async (named: readonly string[]) => (await (input.read ?? ((names, shared) => readShardHosts(names, input.run, availableParallelism(), shared)))(named, transport)).slice(1);
-  const readings = targets.length ? await rereadHotHosts(await read(targets), read, { signal: input.signal }) : [];
+  const readings = targets.length ? await rereadHotHosts(await read(targets), read, { delayMs: input.heatRereadMs, sleep: input.heatSleep, signal: input.signal }) : [];
   const image = input.image ?? trialImage();
   const session = remoteShardSession({ root: input.root, sha: input.commit, image, run: input.run, deadline: input.deadline, signal: input.signal, transport, hosts: readings,
     warm: version => catalogImage({ root: input.root, commit: input.commit, baseTip: input.baseTip, image, run: input.run, deadline: input.deadline, version }) });
@@ -884,7 +884,7 @@ export async function hostableTrialCase(worktree: string, name: string): Promise
  * start, comes back in `here`, for the coordinator to run once as it always has; `faults` names each host fault.
  */
 export async function trialE2eOnHosts(input: { root: string; commit: string; baseTip?: string; proofs: readonly string[]; run: ChildRun; deadline: number; image?: string;
-  hosts: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; signal?: AbortSignal }) {
+  hosts: readonly string[]; read?: (targets: readonly string[], transport: ShardSshSession) => Promise<HostReading[]>; heatRereadMs?: number; heatSleep?: (ms: number) => Promise<void>; signal?: AbortSignal }) {
   const here: string[] = [], faults: string[] = [], cases: TrialE2eCase[] = [];
   const remote = await catalogHosts({ ...input, screenshots: true });
   try {

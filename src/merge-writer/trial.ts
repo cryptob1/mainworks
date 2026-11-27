@@ -1651,7 +1651,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
         for (const proof of hosts.length ? input.e2eProofs! : []) (await hostableTrialCase(worktree, proof.slice(4)) ? hostable : stay).push(proof);
         if (!hostable.length) return here(input.e2eProofs!);
         const [remote, local] = await Promise.all([
-          trialE2eOnHosts({ root: input.root, commit: input.mergeSha, baseTip: input.baseTip, proofs: hostable, run, deadline, image: runImage, hosts, read: input.remote?.read, signal: input.signal })
+          trialE2eOnHosts({ root: input.root, commit: input.mergeSha, baseTip: input.baseTip, proofs: hostable, run, deadline, image: runImage, hosts, read: input.remote?.read, heatRereadMs: input.remote?.heatRereadMs, heatSleep: input.remote?.heatSleep, signal: input.signal })
             .catch(error => { log.push(`[remote] e2e cases run on this machine: ${error instanceof Error ? error.message : String(error)}`); return { cases: [], here: hostable, faults: [] }; }),
           here(stay),
         ]);
