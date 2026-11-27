@@ -642,6 +642,11 @@ test('unit:settled-sessions-end-without-a-launch — the loop\'s registry read s
     const row = (await store.pool.query("SELECT payload FROM events WHERE kind = 'agent-registry.selected' ORDER BY seq DESC LIMIT 1")).rows[0].payload;
     assert.equal('registry' in row, false, 'the event carries the change, not the whole document');
     assert.deepEqual([row.revision, row.fields.includes('sessions')], [stored.revision, true], 'and the revision and the fields it changed');
+    // The next write records no end again.
+    await fleetRoleHealth(fleet.config, 'worker', fleet.probe);
+    await ok('agent-registry/select', coordinator, { role: 'worker', host: HOST, work: `GY-${++items + 900}`, principal: 'implementer', observations: [] });
+    const later = await ok('agent-registry/history?limit=500', auditor);
+    assert.equal(later.slice(0, later.length - history.length).flatMap((entry: any) => entry.change.ended ?? []).filter((entry: any) => fleet.keys.includes(entry.work)).length, 0, 'an ended session is recorded once');
   } finally { await fleet.cleanup(); }
 });
 
