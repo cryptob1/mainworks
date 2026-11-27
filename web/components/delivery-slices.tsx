@@ -33,7 +33,7 @@ export function DeliveryDefaults({ status }: { status: any }) {
   const apps = delivery?.applications.length ?? 0;
   return <><PageHeader title="Delivery" fact={delivery ? `${previewLabel[delivery.previews] ?? delivery.previews} · ${apps ? `${apps} ${apps === 1 ? 'application' : 'applications'} declared` : 'no application declared'} · ${delivery.productionVerification ? 'live release verified' : 'no production verification'}.`
       : project?.error ? 'The delivery declaration is refused.' : status ? 'Delivery settings show here once the control plane reports them.' : 'Reading the delivery settings…'}/>
-    <section className="panel" aria-label="Delivery defaults"><h2>Delivery defaults</h2>
+    {(delivery || project?.error || (status?.deploy && status.deploy.configured !== true)) && <section className="panel" aria-label="Delivery defaults"><h2>Delivery defaults</h2>
       {project?.error && <p className="error" role="alert">The project's delivery declaration is refused: {project.error}</p>}
       {delivery && <dl className="facts">
         <dt>Previews</dt><dd>{previewLabel[delivery.previews] ?? delivery.previews}</dd>
@@ -42,7 +42,7 @@ export function DeliveryDefaults({ status }: { status: any }) {
         <dt>Merge writer</dt><dd>The control plane (GitHub only a mirror)</dd>
       </dl>}
       {status?.deploy && status.deploy.configured !== true && <p className="muted" data-deploy="none">No deploy configured{typeof status.deploy.main === 'string' && status.deploy.main ? <> · main <span className="mono" title={status.deploy.main}>{status.deploy.main.slice(0, 8)}</span></> : null}</p>}
-    </section>
+    </section>}
     {delivery && <section className="panel" aria-label="Applications"><h2>Applications</h2>
       {delivery.applications.length ? <ul>{delivery.applications.map((application: any) => {
         const cases = Object.entries(delivery.cases ?? {}).filter(([, id]) => id === application.id).map(([id]) => id);
