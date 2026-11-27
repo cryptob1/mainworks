@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { defineCommands } from './registry.js';
+import { claudeKnownTools } from '../harness.js';
 import { setting } from '../setting.js';
 
 /**
@@ -15,9 +16,13 @@ import { setting } from '../setting.js';
  * GY-4033: resolve the investigator's runtime the way worker launches do — from the control-plane
  * registry's account, program path and environment — rather than spawning a bare `claude` on the
  * caller's PATH; when no runtime can start, name every runtime tried and why each failed.
+ * GY-4056: build Claude's read-only permission lists from claudeKnownTools so removed or legacy
+ * tool names (MultiEdit, Task) never cause Claude Code to exit on startup.
  */
+const claudeReadTools = ['Read', 'Grep', 'Glob'] as const;
+const claudeDisallowedTools = claudeKnownTools.filter(tool => !(claudeReadTools as readonly string[]).includes(tool));
 const readOnlyArgs: Record<string, string[]> = {
-  claude: ['-p', '--output-format', 'text', '--allowedTools', 'Read,Grep,Glob', '--disallowedTools', 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task'],
+  claude: ['-p', '--output-format', 'text', '--allowedTools', claudeReadTools.join(','), '--disallowedTools', claudeDisallowedTools.join(',')],
   codex: ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-'],
 };
 const defaultHomeVariable: Record<string, string> = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME' };
