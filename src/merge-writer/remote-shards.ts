@@ -866,9 +866,11 @@ export async function hostableTrialCase(worktree: string, name: string): Promise
   const declared = declaredServe(worktree);
   const application = declared.applications.find(entry => entry.id === declared.bindings[name]) ?? (declared.serve ? null : declared.applications.length === 1 ? declared.applications[0]! : null);
   if (application?.kind === 'compose') return false;
-  const named = [...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
+  // What the case runs decides, not its prose: a step's name or the description may say Docker.
+  const runs = definition.steps.flatMap(step => step.kind === 'command' ? [step.run] : []).join('\n');
+  const named = [...new Set(runs.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
   const tests = await Promise.all(named.map(file => readFile(join(worktree, file), 'utf8').catch(() => '')));
-  return !localOnlyTestPattern.test(text) && tests.every(remoteableTestFile);
+  return !localOnlyTestPattern.test(runs) && tests.every(remoteableTestFile);
 }
 
 /**

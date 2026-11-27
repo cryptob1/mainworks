@@ -1,3 +1,4 @@
+// mainworks: runs on a test machine; its local-only words are text, not use.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
