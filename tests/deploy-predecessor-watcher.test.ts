@@ -149,6 +149,8 @@ test('integration:deploy-predecessor-watcher — a running predecessor watcher u
   await writeFile(join(directory, 'install.json'), JSON.stringify({ version: 1, installId: 'owner-project', repository: 'owner/project', provider: 'compose', baseBranch: 'main', createdAt: 'now', updatedAt: 'now' }));
   const previousHome = process.env.GRAPHYARD_CONFIG_HOME;
   process.env.GRAPHYARD_CONFIG_HOME = configHome;
+  // GY-4003: the handover window is a minute; three seconds keeps the true-mismatch case short.
+  process.env.GRAPHYARD_RELEASE_HANDOVER_MS = '3000';
   let releaseInstall!: () => void, started!: () => void, releaseBuild!: () => void, buildStarted!: () => void;
   let waitForInstall = Promise.resolve(), installStarted = Promise.resolve(), failInstall = false, unhealthy: string | null = null;
   let waitForBuild = Promise.resolve();
@@ -282,7 +284,8 @@ test('integration:deploy-predecessor-watcher — a running predecessor watcher u
     const callsBefore = apiCalls; served = 'f'.repeat(40);
     const mismatch = await load(legacy);
     assert.equal(mismatch.code, 1); assert.match(mismatch.err, /CLI commit .* and server commit .* differ/);
-    assert.equal((mismatch.err.match(/release handover: retry/g) ?? []).length, 3);
+    assert.ok((mismatch.err.match(/release handover: retry/g) ?? []).length >= 1);
+    assert.match(mismatch.err, /still serves another commit after 3s; giving up/);
     assert.equal(apiCalls, callsBefore, 'true mismatch never reaches the API');
   } finally {
     releaseInstall?.(); releaseBuild?.();
@@ -291,5 +294,6 @@ test('integration:deploy-predecessor-watcher — a running predecessor watcher u
     for (const session of sessions.values()) await session.close();
     await close();
     if (previousHome === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previousHome;
+    delete process.env.GRAPHYARD_RELEASE_HANDOVER_MS;
   }
 });
