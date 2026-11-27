@@ -1,7 +1,7 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hostPrepareScript } from '../src/hosts.js';
 import { dockerCalls, dockerEveryCall, git, shardHosts, type ShardHostsFixture } from './helpers/shard-hosts.js';
@@ -43,6 +43,12 @@ before(async () => {
   repo = join(hosts.home('box'), '.graphyard', 'runs', run, 'repo');
   mkdirSync(repo, { recursive: true });
   writeFileSync(join(repo, '..', 'image'), 'graphyard-warm:000000000000-none');
+  // The host holds that image, as prepare-run confirmed before writing its name.
+  const stateFile = join(hosts.state('box'), 'state.json');
+  const state = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : { images: {}, image_ids: [], containers: {} };
+  state.images['graphyard-warm:000000000000-none'] = 'sha256:warm';
+  mkdirSync(hosts.state('box'), { recursive: true });
+  writeFileSync(stateFile, JSON.stringify(state));
   git(repo, 'init', '-q', '-b', 'main');
   writeFileSync(join(repo, 'compose.json'), JSON.stringify(service));
   writeFileSync(join(repo, 'changed.json'), JSON.stringify(service));
