@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { buildPlan, coreEnv, installRequestFromArgs, materializeInstall, prepareInstall, type InstallSession } from '../src/install/index.js';
@@ -61,12 +61,26 @@ async function localFixture(supervisor: LocalSupervisor, port: number, fixture?:
   return { fixture: harnessed, deps: { ...harnessed.deps, fetch, localSupervisor: supervisor }, inputs: { repository: 'owner/project', provider: 'local' as const, port } };
 }
 
-/** The provider half of `install --apply` (performInstall), which is all the local provider adds. */
-async function applyProvider(session: InstallSession) {
+/**
+ * The provider half of `install --apply` (performInstall), which is all the local provider adds.
+ * GY-4015: measured in this file, each cold cluster spent 2–4 s in initdb's fsync and 1.5–2 s in its
+ * first shutdown checkpoint (twice that in merge trials). These clusters are throwaway, so once the
+ * provider has created one it runs with fsync off (src/e2e/warm-postgres.ts does the same), and a test
+ * whose subject is not creating the cluster (`seed`) has it made by initdb --no-sync with the provider's arguments.
+ */
+async function applyProvider(session: InstallSession, { seed = false } = {}) {
   await materializeInstall(session);
   const { adapter, context } = session;
+  const { paths } = context.local!;
   const observation = await adapter.observe(context);
+  if (seed && !existsSync(join(paths.data, 'PG_VERSION'))) {
+    const { postgresBinaries } = await runtimeModule();
+    await mkdir(paths.postgres, { recursive: true, mode: 0o700 });
+    execFileSync((await postgresBinaries()).initdb, [`--pgdata=${paths.data}`, '--auth=scram-sha-256', '--username=graphyard', `--pwfile=${paths.passwordFile}`, '--encoding=UTF8', '--locale=C', '--no-sync'], { stdio: 'ignore' });
+  }
   await adapter.provision(context, observation);
+  const conf = join(paths.data, 'postgresql.auto.conf');
+  if (!(await readFile(conf, 'utf8')).includes('fsync = off')) await appendFile(conf, 'fsync = off\n');
   await adapter.setEnv(context, coreEnv(session));
   await adapter.deploy(context);
   const url = await adapter.url(context);
@@ -214,7 +228,7 @@ test('integration:local-runtime-restart — the supervised process starts the cl
   setRepositoryPolicy({ ...policyBefore, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
   try {
     const session = await prepareInstall(fixture.root, inputs, deps, 'apply');
-    await applyProvider(session);
+    await applyProvider(session, { seed: true });
     await systemd.stop();
     const directory = join(fixture.configHome, INSTALL), paths = localPaths(directory);
     const environment = JSON.parse(await readFile(paths.environment, 'utf8'));
@@ -301,4 +315,15 @@ test('unit:local-provider-credentials-outside-repo — the local provider writes
     const inside = { ...deps, configHome: join(fixture.root, '.graphyard', 'config') };
     await assert.rejects(prepareInstall(fixture.root, inputs, inside, 'apply'), /Refusing to store installation credentials inside the managed repository/);
   } finally { await fixture.cleanup(); }
+});
+
+test('unit:install-local-provider — stopping the local control plane does not wait out its observation workers\' idle second', async () => {
+  const { startObservationWorkers } = await import('../src/server/main.js');
+  const idle = { store: { hasDueJob: async () => false, pool: { options: { max: 2 } } } } as unknown as Parameters<typeof startObservationWorkers>[0];
+  const workers = startObservationWorkers(idle, 2);
+  await new Promise(accept => setTimeout(accept, 50));
+  const started = performance.now();
+  await workers.stop();
+  const ms = performance.now() - started;
+  assert.ok(ms < 500, `stop waited ${Math.round(ms)} ms for idle workers`);
 });
