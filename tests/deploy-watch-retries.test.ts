@@ -3,7 +3,9 @@
 // and clears controlPlaneUpdate.failedStep.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { controlPlaneRecordPath, deployRecordPath, readControlPlaneRecord, readDeployRecord, watchMain } from '../src/deploy-watch.js';
+import fsPromises from 'node:fs/promises';
+import Module from 'node:module';
+import { controlPlaneRecordPath, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, watchMain } from '../src/deploy-watch.js';
 import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
@@ -38,3 +40,36 @@ test('integration:deploy-watch-retries — a build and then a restart that each 
     const control = readControlPlaneRecord(controlPlaneRecordPath(root))!;
     assert.deepEqual([control.commit, control.failedStep, readDeployRecord(file)?.failed], [b, null, null], 'the first success clears the failure');
   } finally { controller.abort(); await watch; await close(); } });
+
+// GY-4049: deployPass wrote deploy.json before control-plane.json, so a reader that woke up as soon
+// as deploy.json reported the new tip could read the previous pass's stale commit and failedStep.
+test('unit:deploy-watch-retries-pinned — control-plane.json is already updated and cleared the moment deploy.json publishes the served tip', async () => {
+  const root = await temporaryDirectory('deploy-watch-retries-pinned'), file = deployRecordPath(root);
+  const controlFile = controlPlaneRecordPath(root);
+  let failRestart = true, running = a;
+  const ports = deployPorts(b, a, {
+    restart: async commit => { if (failRestart) { failRestart = false; throw new Error('docker compose up timed out'); } running = commit; },
+    health: async commit => { if (running !== commit) throw new Error(`serves ${running.slice(0, 12)}`); },
+    retryBackoffMs: [0],
+  });
+  assert.equal(await deployOnce(file, ports, () => {}), 'rolled-back');
+  assert.equal(readControlPlaneRecord(controlFile)?.failedStep, 'restart');
+
+  let observedAtDeployPublish: [string | null, string | null] | null = null;
+  const originalRename = fsPromises.rename;
+  fsPromises.rename = async (oldPath, newPath) => {
+    await originalRename(oldPath, newPath);
+    if (newPath === file && readDeployRecord(file)?.tip === b) {
+      const control = readControlPlaneRecord(controlFile);
+      observedAtDeployPublish = [control?.commit ?? null, control?.failedStep ?? null];
+    }
+  };
+  Module.syncBuiltinESMExports();
+  try {
+    assert.equal(await deployOnce(file, ports, () => {}), 'deployed');
+  } finally {
+    fsPromises.rename = originalRename;
+    Module.syncBuiltinESMExports();
+  }
+  assert.deepEqual(observedAtDeployPublish, [b, null], 'control-plane.json must already clear failedStep and name the served commit when deploy.json publishes it');
+});

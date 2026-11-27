@@ -463,16 +463,17 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   if (await ports.serves?.(tip).catch(() => false)) {
     await ports.checkout(tip);
     await ports.pin(tip);
-    await write({ tip, failed: null, reason: null, verified: gated === tip });
     await noteControl({ commit: tip, failedStep: null, failedReason: null, failedAt: null });
+    await write({ tip, failed: null, reason: null, verified: gated === tip });
     log(`[mainworks-deploy] ${tip.slice(0, 12)} already serves healthy; recorded as serving`);
     return 'unchanged';
   }
   const before = await ports.database().catch(() => null);
   try {
     await run(tip);
-    await write({ tip, failed: null, reason: null, verified: gated === tip });
+    // GY-4049: update control-plane.json before deploy.json so readers waking on deploy.json.tip never see stale commit/failedStep.
     await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: null, failedReason: null, failedAt: null, retried });
+    await write({ tip, failed: null, reason: null, verified: gated === tip });
     log(`[mainworks-deploy] serving ${tip.slice(0, 12)}`);
   } catch (error) {
     const reason = message(error), step = (error as { step?: string }).step;
@@ -495,8 +496,8 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
         await ports.pin(tip).catch(failed => log(`[mainworks-deploy] the pin of ${tip.slice(0, 12)} failed: ${message(failed)}`));
         // The server serves the kept tip, so the CLI checkout follows it too, best-effort like the pin.
         await ports.checkout(tip).catch(failed => log(`[mainworks-deploy] the checkout of ${tip.slice(0, 12)} failed: ${message(failed)}`));
-        await write({ tip, failed: null, reason: `${reason}; kept because ${why}` });
         await noteControl({ commit: tip, updatedAt: new Date().toISOString(), failedStep: step ?? null, failedReason: `${reason}; kept because ${why}`.slice(0, 2000), failedAt: new Date().toISOString() });
+        await write({ tip, failed: null, reason: `${reason}; kept because ${why}` });
         return 'kept';
       }
     }
