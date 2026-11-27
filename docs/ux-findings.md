@@ -21,8 +21,9 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 
 | Where | What a newcomer sees | Rule | Sev | Status |
 |---|---|---|---|---|
-| Header strip and filters | "2 merged today" in the strip and "Shipped today 2" on the filter chip on one page | twice | 2 | Open |
-| Header strip | "2 shipped · 0 going live" counts the week, "2 merged today" counts today, with no word on which is which | plain | 2 | Open |
+| Header strip and filters | "18 merged today" in the strip and "Shipped today 18" on the filter chip (kept: other cases pin both) | twice | 2 | Open |
+| Header line and filters | "3 in flight" opens the header line and the "In flight 3" chip repeats it (kept: pinned as matching) | twice | 2 | Open |
+| Header strip | "18 shipped · 0 going live" counts the week, "18 merged today" counts today, with no word on which is which | plain | 2 | Open |
 | Now column | "Running merge trial on latest main", "checking diff and proofs" | internal | 2 | Open |
 | Flow line | "3.4 attempts an hour · 74% first pass": builder metrics before the owner's question "is it moving" | plain | 3 | Open |
 | Under the heading | A rotating quote ("Real artists ship.") takes a line above the work | plain | 3 | Open |
