@@ -5,5 +5,8 @@
   "tags": ["dashboard"],
   "target": "any",
   "required": false,
-  "steps": [{ "kind": "command", "name": "Read Settings, Invite and Product", "run": "npm run test:browser -- browser-tests/settings-read-plainly.spec.ts", "timeoutSeconds": 300 }]
+  "steps": [
+    { "kind": "command", "name": "Read Settings, Invite and Product", "run": "npm run test:browser -- browser-tests/settings-read-plainly.spec.ts", "timeoutSeconds": 300 },
+    { "kind": "command", "name": "Settings clears its loading lines and shows no task keys or terminal-only steps", "run": "npm run test:browser -- browser-tests/settings-clear-loading-lines.spec.ts", "timeoutSeconds": 300 }
+  ]
 }
