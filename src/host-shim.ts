@@ -454,7 +454,8 @@ else:
     if verb in ('run-shard', 'run-check'):
         name_image(open(os.path.join(run, 'image')).read().strip())
     def launch(network, command, variables={}, **options):
-        cores = os.cpu_count() or 1
+        # The CPUs this process may use, as the probe's nproc counts them: a shim kept off some of the host's CPUs (GY-4006) clamps a shard to the rest.
+        cores = len(os.sched_getaffinity(0))
         cap = max(2, max(${minimumTrialContainers}, cores // 2))
         memory = next((int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemTotal:')), 4 << 20) // 1024 // cap
         spec = {'image': open(os.path.join(run, 'image')).read().strip(), 'mounts': [[run, run, False]], 'network': network,
