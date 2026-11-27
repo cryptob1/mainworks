@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { withDatabase } from '../tests/helpers/postgres';
 import { temporaryDirectory } from '../tests/helpers/temp-dirs';
 import { Engine } from '../src/engine';
+import { pointRepositoryRoot } from '../tests/helpers/repository-root';
 import { server } from '../src/server';
 import { onboardingServe } from '../src/model/onboarding-work';
 import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
@@ -16,8 +17,7 @@ test('e2e:real-app-onboarding — Setup names the placeholder fault and recogniz
   git('init', '-q', '-b', 'main');
   const save = async (config: object) => { await writeFile(join(root, 'graphyard.json'), JSON.stringify(config)); git('add', '.'); git('commit', '-qm', 'app declaration'); };
   await save({ e2e: { serve: onboardingServe } });
-  const previous = process.env.GRAPHYARD_REPOSITORY_ROOT;
-  process.env.GRAPHYARD_REPOSITORY_ROOT = root;
+  const restoreRoot = pointRepositoryRoot(root);
   const store = await withDatabase('real_app_onboarding');
   await store.init();
   const engine = new Engine(store, 120, 'owner/Lumina');
@@ -50,6 +50,6 @@ test('e2e:real-app-onboarding — Setup names the placeholder fault and recogniz
     http.closeAllConnections();
     await new Promise<void>(resolve => http.close(() => resolve()));
     await store.close();
-    if (previous === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = previous;
+    restoreRoot();
   }
 });

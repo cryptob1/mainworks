@@ -237,9 +237,17 @@ elif command == 'create':
     joined = next((word[len('--network=container:'):].split('.')[0] for word in args if word.startswith('--network=container:')), None)
     if joined:
         # glibc resolves each of the project's service names to this machine through HOSTALIASES.
+        services = list(s.get('projects', {}).get(joined, {}))
         env['HOSTALIASES'] = os.path.join(STATE, 'aliases-' + joined)
         with open(env['HOSTALIASES'], 'w') as aliases:
-            aliases.write(''.join(name + ' localhost\\n' for name in s.get('projects', {}).get(joined, {})))
+            aliases.write(''.join(name + ' localhost\\n' for name in services))
+        # GY-3992: glibc applies HOSTALIASES only in its DNS lookup, and a remote shard (--network=none) has no resolver,
+        # so a node command resolves the service names to 127.0.0.1 itself, as Docker's embedded DNS would answer.
+        resolve = os.path.join(STATE, 'resolve-' + joined + '.cjs')
+        with open(resolve, 'w') as preload:
+            preload.write("const dns = require('node:dns'), names = new Set(" + json.dumps(services) + "), lookup = dns.lookup;\\n"
+                "dns.lookup = function (host, ...rest) { return lookup.call(this, names.has(host) ? '127.0.0.1' : host, ...rest); };\\n")
+        env['NODE_OPTIONS'] = (env.get('NODE_OPTIONS', '') + ' --require ' + json.dumps(resolve)).strip()
     image_name = args[at + 2]
     # As Docker does (it would try to pull), a container is never created from an image this host lacks.
     if image_name not in s['images'] and image_name not in s['image_ids']:

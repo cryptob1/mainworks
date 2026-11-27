@@ -33,9 +33,14 @@ export const storedToken = () => sessionStorage.getItem(HUMAN_SESSION_KEY) ?? lo
 export const SIGN_IN_NEEDED = 'Sign in to do that.';
 /** The sign-in form opens at once for `/?sign-in` and for a sign-in or claim link; otherwise the dashboard first tries the local viewer. */
 export const wantsSignIn = () => new URLSearchParams(location.search).has('sign-in') || !!signInCode(location.hash) || !!claimFromHash(location.hash);
-/** The operator's line: run the command (a click copies it) on the Mainworks host. */
+/**
+ * GY-3989: the owner's line is plain; the command that signs them in without a token (GY-738) waits in a
+ * fold, so the first screen shows no terminal command. A click on the command copies it.
+ */
 function SignInCommand() {
-  return <p className="login-help">Operator? Run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> on the {PRODUCT_NAME} host, or {COMMAND_NAME} login to print a link to open elsewhere.</p>;
+  return <details className="login-help login-no-token"><summary>How do I get a token?</summary>
+    <p>On the computer running {PRODUCT_NAME}, run <code className="login-command" title="Click to copy" onClick={() => void navigator.clipboard?.writeText(SIGN_IN_COMMAND).catch(() => {})}>{SIGN_IN_COMMAND}</code> to sign in there, or {COMMAND_NAME} login to print a link to open on another device.</p>
+  </details>;
 }
 const LINK_REFUSED_NOTICE = 'That sign-in link has expired or was already used. Ask for a new one.';
 

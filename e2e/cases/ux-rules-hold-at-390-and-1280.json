@@ -1,7 +1,7 @@
 {
   "id": "ux-rules-hold-at-390-and-1280",
-  "title": "Home, Work, a change and Lead keep the newcomer rules at 390 and 1280 px",
-  "description": "A real browser on the built dashboard over the README's demo data (scripts/docs-media-demo.mjs): at 390 and 1280 px, Home, Work, a change's Checks and diff, Live session and Lead tabs, and Lead's Conversation, Live session, History and Product show no internal id, task key, commit hash, model id, agent account or proof id outside a Details area, never scroll sideways, show no counter or status line twice, and every empty or waiting line says what happens next in one sentence; a fresh install's empty Home, Work and Lead do too, and the demo Work line reads at least 3 merges an hour.",
+  "title": "Home, Work, a change, Lead, Setup and Sign-in keep the newcomer rules at 390 and 1280 px",
+  "description": "A real browser on the built dashboard over the README's demo data (scripts/docs-media-demo.mjs): at 390 and 1280 px, Home, Work, a change's Checks and diff, Live session and Lead tabs, and Lead's Conversation, Live session, History and Product show no internal id, task key, commit hash, model id, agent account or proof id outside a Details area, never scroll sideways, show no counter or status line twice, and every empty or waiting line says what happens next in one sentence; a fresh install's empty Home, Work and Lead do too, and the demo Work line reads at least 3 merges an hour. Setup, Sign-in and the first-run steps show no terminal command outside a fold (GY-3989); Setup's count names the next step and every open step has its action.",
   "tags": [
     "dashboard"
   ],
@@ -10,8 +10,14 @@
   "steps": [
     {
       "kind": "command",
-      "name": "the four newcomer rules hold on Home, Work, a change and Lead at 390 and 1280 px",
+      "name": "the newcomer rules hold on Home, Work, a change, Lead, Setup and Sign-in at 390 and 1280 px",
       "run": "npm run test:browser -- browser-tests/ux-rules-hold-at-390-and-1280.spec.ts",
+      "timeoutSeconds": 420
+    },
+    {
+      "kind": "command",
+      "name": "Sign-in, Setup and the first-run steps show no terminal command outside a fold and name the next step at 390 and 1280 px",
+      "run": "npm run test:browser -- browser-tests/ux-first-screens.spec.ts",
       "timeoutSeconds": 420
     },
     {

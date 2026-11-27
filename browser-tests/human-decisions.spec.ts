@@ -65,9 +65,12 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
 test('integration:sign-in-screen-command the sign-in screen names the one command, mainworks open, that signs the operator in', async ({ page }) => {
   await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Rejected' } }));
   await page.goto('/');
-  const line = page.locator('.login-help', { hasText: 'Operator?' });
-  await expect(line).toHaveText('Operator? Run mainworks open on the Mainworks host, or mainworks login to print a link to open elsewhere.');
-  await expect(line.locator('code')).toHaveText('mainworks open');
+  // GY-3989: the command waits behind "How do I get a token?", out of the first screen.
+  const fold = page.locator('.login-help', { hasText: 'How do I get a token?' });
+  await expect(fold.locator('code')).toBeHidden();
+  await fold.getByText('How do I get a token?').click();
+  await expect(fold.locator('p')).toHaveText('On the computer running Mainworks, run mainworks open to sign in there, or mainworks login to print a link to open on another device.');
+  await expect(fold.locator('code')).toHaveText('mainworks open');
 });
 
 test('the local viewer sees the dashboard without a login wall and is offered Sign in for a human-only decision', async ({ page }) => {
