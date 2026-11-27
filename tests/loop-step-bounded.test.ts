@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { gateRecordPath, readGateRecord } from '../src/batch-gate.js';
+import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import { Launcher, runCycle, tickWaitMs } from '../src/daemon/cycle.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import { daemonEffects, type DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
+import { mainworksRepository } from '../src/scenarios.js';
+import { gateFixture } from './helpers/publish-tag-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3397: removing an ended attempt's worktree (its dependency install included) can outlast the
@@ -105,4 +109,58 @@ test('unit:loop-step-bounded — a dispatcher tick still launching a session run
   await cycle;
   assert.ok(!lines.some(line => line.includes('the dispatch step failed')), lines.join('\n'));
   assert.ok(persisted > 0, 'the cycle persisted');
+});
+
+// GY-3957: the release tag push was awaited inside the merge writer step, bounded only by the 90 s
+// child default, so a slow remote took the step past its 60 s timeout. The push runs beside the cycle.
+test('unit:loop-step-bounded — a slow release tag push runs beside the cycle: the merge writer step settles, the push is not started twice, and its tag is recorded when it ends', async () => {
+  let pushes = 0, finish!: () => void;
+  const f = await gateFixture(mainworksRepository, async () => { pushes++; await new Promise<void>(resolve => { finish = resolve; }); return 'v-slow'; });
+  await f.gate();
+  const commit = await f.merge(); await f.gate();
+  await f.deploy(commit);
+  const step = () => Promise.race([batchGateStep(f.cycle()), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the step waited on the tag push')), 2_000).unref())]);
+  const first = await step();
+  assert.equal(pushes, 1, 'the push started');
+  await step();
+  assert.equal(pushes, 1, 'a push still running is not started again');
+  finish();
+  await first!.tag;
+  assert.equal(readGateRecord(gateRecordPath(f.coordinator))!.releaseTagged, commit);
+  assert.ok(f.lines.some(line => line.includes('Pushed v-slow')), f.lines.join('\n'));
+  await step();
+  assert.equal(pushes, 1, 'a tagged release is not pushed again');
+});
+
+// GY-3980: measuring disk use by kind (walking worktrees, trial runs, CLI releases and running
+// `docker system df -v`, whose own timeout is 60 s) was awaited inside diskHeadroomStep in the
+// close step, so a slow reading took the close step past its 60 s timeout and started again on the
+// next cycle before the first settled. The reading now runs beside the cycle, one at a time.
+test('unit:loop-step-bounded — a slow disk-use-by-kind reading runs beside the cycle: the close step settles, the reading is not started twice, and its result is recorded when it ends', async () => {
+  const now = Date.parse('2030-04-02T12:00:00Z');
+  let finish!: (kinds: { kind: string; bytes: number }[]) => void;
+  let reads = 0, persisted = 0;
+  const effects: DaemonEffects = {
+    snapshot: async () => ({ work: [], now: new Date(now).toISOString() }),
+    agents: () => [], credentials: async () => ({}), closeSession: () => {}, dispatch: async () => {},
+    persist: async () => { persisted++; },
+    diskVolumes: async () => [{ path: '/home', freeBytes: 100e9 }],
+    diskUseByKind: () => { reads++; return new Promise(resolve => { finish = resolve; }); },
+  };
+  const state = emptyDaemonState(config), launcher = new Launcher(), lines: string[] = [];
+  const cycle = () => Promise.race([runCycle(config, state, effects, () => now, launcher, line => lines.push(line)),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the cycle waited on diskUseByKind')), 2_000).unref())]);
+  await cycle();
+  assert.equal(reads, 1, 'the disk-use reading started');
+  assert.ok(!lines.some(line => line.includes('the close step failed')), lines.join('\n'));
+  await cycle();
+  assert.equal(reads, 1, 'a disk-use reading still running is not started again');
+  const beforeFinish = persisted;
+  finish([{ kind: 'worktrees', bytes: 4e9 }, { kind: 'build cache', bytes: 9e9 }]);
+  await launcher.idle();
+  assert.equal(state.diskUse?.freeBytes, 100e9);
+  assert.deepEqual(state.diskUse?.top, [{ kind: 'build cache', bytes: 9e9 }, { kind: 'worktrees', bytes: 4e9 }]);
+  assert.ok(persisted > beforeFinish, 'the settled disk-use reading is persisted');
+  await cycle();
+  assert.equal(reads, 1, 'a fresh disk-use reading is not started again within the hour');
 });
