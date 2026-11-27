@@ -5,6 +5,8 @@ import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const previous = 'a'.repeat(40), next = 'b'.repeat(40), blob = `sha256:042822a3${'c'.repeat(56)}`;
+// GY-4052: isolate the image lock from the host's real lock and sibling tests in the same smoke step.
+process.env.MAINWORKS_LOCK_ROOT = await temporaryDirectory('bad-blob-locks');
 for (const failure of ['lease does not exist: not found', 'failed to ingest']) {
   test(`integration:deploy-build-recovers-from-bad-blob — ${failure} retries this build once without cache and names the blob`, { timeout: 15_000 }, async () => {
     const root = await temporaryDirectory('bad-blob');

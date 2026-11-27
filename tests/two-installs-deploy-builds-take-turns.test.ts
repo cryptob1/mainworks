@@ -11,6 +11,8 @@ import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40);
+// GY-4052: the image lock lives in this file's own lock root, so a real deploy, a trial image build or another test holding the host's lock never decides which install builds first.
+process.env.MAINWORKS_LOCK_ROOT = await temporaryDirectory('take-turns-locks');
 
 /** A fake builder whose export fails the way BuildKit does when another export runs beside it. */
 function builder(exportMs: number) {
