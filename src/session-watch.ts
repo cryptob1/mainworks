@@ -542,7 +542,7 @@ export async function supervise(command: string, args: string[], epoch: number, 
               restarting = true;
               await new Promise(done => { exited.once('close', done); setTimeout(done, 1000).unref(); });
               restarting = false;
-              if (unresumable(readFileSync(options.log).subarray(logStart).toString('utf8')) && !stopping) {
+              if (unresumable(stderrSince(options.log, logStart)) && !stopping) {
                 const [next, ...rest] = fresh; fresh = null;
                 appendRunLogLine(options.log, 'stderr', 'mainworks: the earlier conversation could not be resumed; starting a fresh session with the usual prompt');
                 launch(next!, rest);
@@ -595,12 +595,16 @@ export async function supervise(command: string, args: string[], epoch: number, 
 }
 
 /** GY-4018: whether a run's output says its runtime could not find the conversation it was asked to resume. */
-export const unresumable = (output: string) => /no rollout found for thread id|no conversation found/i.test(output);
+const unresumable = (output: string) => /no rollout found for thread id|no conversation found/i.test(output);
 /** The fresh command line a resumed run's launcher left beside its run log (`fresh.json`), or null. */
 function freshCommand(log: string): string[] | null {
   try { const words = JSON.parse(readFileSync(join(dirname(log), 'fresh.json'), 'utf8')); return Array.isArray(words) && words.length && words.every(word => typeof word === 'string') ? words : null; }
   catch { return null; }
 }
+/** What a run printed on standard error to its run log from byte `from`: the runtime's own errors, not the agent's work on stdout. */
+const stderrSince = (log: string, from: number) => readFileSync(log).subarray(from).toString('utf8').split('\n').flatMap(line => {
+  try { const entry = JSON.parse(line); return entry.stream === 'stderr' ? [String(entry.text)] : []; } catch { return []; }
+}).join('\n');
 const fileSize = (file: string) => { try { return statSync(file).size; } catch { return 0; } };
 const appendRunLogLine = (file: string, stream: 'stdout' | 'stderr', text: string) => { try { appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), stream, text: maskSecrets(text) })}\n`, { mode: 0o600 }); } catch { /* a full disk never stops the agent */ } };
 
