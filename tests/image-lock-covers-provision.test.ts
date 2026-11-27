@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -66,6 +67,8 @@ const local = (sha: string) => `mainworks-local:${sha.slice(0, 12)}`;
 test('integration:image-lock-covers-provision — a deploy whose image exists provisions without building while another install removes old images; a deploy that builds holds the image lock against old-image removal', async () => {
   const old = randomBytes(20).toString('hex'), from = randomBytes(20).toString('hex'), to = randomBytes(20).toString('hex'), other = randomBytes(20).toString('hex');
   process.env.GRAPHYARD_VERSION = '2026.11.23'; process.env.GRAPHYARD_BUILD_REVISION = to;
+  // GY-4040: the test's own lock directory, so it never waits on or holds the host's image lock that real deploys take.
+  const locks = process.env.MAINWORKS_LOCK_ROOT = await temporaryDirectory('image-lock-locks');
   try {
     const host = dockerHost([local(old), local(from)]);
 
@@ -91,12 +94,13 @@ test('integration:image-lock-covers-provision — a deploy whose image exists pr
     const third = await install(host, 'third', to, other);
     const building = third.deploy();
     await delay(50);
+    assert.ok(existsSync(join(locks, 'graphyard-local-images.lock')), 'the build holds the image lock in the test\'s own lock directory');
     await pruneImages(host.run, [to, other], () => {});
     assert.equal(await building, 'deployed', third.log.join('\n'));
     assert.equal(host.builds.filter(tag => tag === local(other)).length, 1, 'one build of the new commit image');
     const events = host.events.slice(host.events.indexOf(`build ${local(other)}`));
     assert.ok(events.indexOf(`rm ${local(old)}`) > events.indexOf(`built ${local(other)}`), `old-image removal waits for the build: ${events.join(', ')}`);
   } finally {
-    delete process.env.GRAPHYARD_VERSION; delete process.env.GRAPHYARD_BUILD_REVISION;
+    delete process.env.GRAPHYARD_VERSION; delete process.env.GRAPHYARD_BUILD_REVISION; delete process.env.MAINWORKS_LOCK_ROOT;
   }
 });
