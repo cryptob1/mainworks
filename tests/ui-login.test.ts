@@ -111,7 +111,10 @@ test('unit:login-verify-states verifying shows progress and resolves as pending,
     assert.ok(network.calls[0].init.signal!.aborted, 'the unanswered read is abandoned');
     const page = tree({ kind: 'unreachable', host: HOST });
     const alert = all(page).find(host => host.props.role === 'alert')!;
-    assert.equal(text(alert), `Can't reach the control plane at ${HOST}`);
+    assert.equal(text(alert), `Can't reach the control plane at ${HOST}; check it is running, then retry.`);
+    // GY-3962: a server that answered with an error is never called unreachable; its own words are shown.
+    const answered = all(tree({ kind: 'unreachable', host: HOST, problem: 'The control plane is restarting' })).find(host => host.props.role === 'alert')!;
+    assert.equal(text(answered), `The control plane at ${HOST} answered with an error (The control plane is restarting); retry in a minute.`);
     assert.deepEqual(buttons(page).map(text), ['Retry', 'Use another token']);
     assert.ok(!classes(named(page, 'Retry')!).includes('text-button'), 'Retry is the primary action');
     assert.ok(classes(named(page, 'Use another token')!).includes('text-button'), 'Use another token is a secondary link');
@@ -174,7 +177,7 @@ test('unit:login-verify-states verifying shows progress and resolves as pending,
     const clock = fakeClock(), network = fakeFetch();
     const seen = await outcomeOf(verifyToken('token-1', network.fetcher, clock, async () => { throw failure; }).result);
     network.reply(ok()); await settle(); await settle();
-    assert.deepEqual(seen(), { kind: expected }); assert.equal(clock.pending(), 0);
+    assert.deepEqual(seen(), expected === 'unreachable' ? { kind: expected, problem: failure.message } : { kind: expected }); assert.equal(clock.pending(), 0);
   }
 });
 

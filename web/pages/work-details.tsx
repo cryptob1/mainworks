@@ -57,11 +57,8 @@ export function ProductReviewPanel({ item, token }: { item: Work; token: string 
   const bindsHead = !!item.candidate && review?.sha === item.candidate.sha;
   return <section className="panel" aria-label="Product review"><h2>Product review <small>{review ? productWords[review.verdict] : 'not reviewed yet'}</small></h2>
     {review ? <>
-      <dl className="facts">
-        <div><dt>Head</dt><dd><span className="mono">{review.sha.slice(0, 8)}</span>{bindsHead ? ' · the current head' : item.candidate ? ' · an earlier head; the current one is reviewed afresh unless only non-UI files changed' : ''}</dd></div>
-        <div><dt>Reviewer</dt><dd>{review.reviewer} · {new Date(review.at).toLocaleString()}</dd></div>
-      </dl>
-      <p className="product-findings" style={{ whiteSpace: 'pre-wrap' }}>{review.findings}</p>
+      <p data-review-line>{friendlyName(review.reviewer) ?? 'The reviewer'} reviewed {bindsHead ? 'this version' : item.candidate ? 'an earlier version; the current one is reviewed again unless only non-UI files changed' : 'it'}, {formatAge(review.at, Date.now())} ago.</p>
+      {review.findings && <details className="product-findings-fold"><summary>Reviewer's notes</summary><p className="product-findings" style={{ whiteSpace: 'pre-wrap' }}>{review.findings}</p></details>}
       {review.screenshots.length > 0 && <div className="product-screenshots">{review.screenshots.map(shot => <ProductScreenshot key={`${review.sha}:${review.at}:${shot}`} item={item} name={shot} token={token}/>)}</div>}
     </> : <p className="muted">A user-facing feature is product-reviewed before it merges: a reviewer walks the head's preview — or the served app against the head's diff where no preview runs — and approves it, asks for changes, or rejects it.</p>}
   </section>;
@@ -313,9 +310,7 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <div className="item-meta">
         <span data-task-state>{trialFailed ? <StatusBadge group="blocked">Stuck</StatusBadge> : group && <StatusBadge group={group}/>} <strong>{trialFailed ? 'Test merge failed' : stageLabel(item, now, release, serve)}</strong>{inState && <> · <StatusAge held={inState}/></>}</span>
         {builderName && <span data-builder title={builder!}>Builder {builderName}</span>}
-        {model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}
         {files && files.length > 0 && <span className="mono" data-diff-stats>+{add} −{del} · {files.length} {files.length === 1 ? 'file' : 'files'}</span>}
-        <small className="mono muted" data-task-ids>{item.key}{item.candidate ? ` · ${item.candidate.sha.slice(0, 8)}` : ''}</small>
       </div>
       {lead !== item.title && <p className="item-title-full" data-lead-sentence data-why={whySentence ? 'true' : 'false'} data-plain-summary={!whySentence && plainSentence ? 'true' : 'false'}>{lead}</p>}
     </div>
@@ -340,12 +335,14 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       <p className="muted">{builderRun.principal === builder ? builderName : friendlyName(builderRun.principal) ?? builderRun.principal}'s session on {builderRun.host}, read-only.</p>
       <LiveRun workId={item.id} run={transcriptRun(builderRun.transcript)!} token={token}/>
       <WorkerRunsPanel item={item} token={token}/>
-    </> : <p className="muted">No Builder has started a session on this task yet.</p>)}
+    </> : <p className="muted" data-no-session>{!builderName ? 'No Builder has started yet; one starts when this task is released for work.'
+      : item.stage === 'ready' || item.stage === 'build' ? `${builderName}'s output shows here once its session starts writing.`
+      : `${builderName} finished building; no session runs on this task now.`}</p>)}
     {panel('Lead', <LeadDecisions events={events} now={now}/>)}
     {panel('Details', <>
       {whatChanged && <p className="what-changed" data-what-changed><strong>What changed:</strong> {whatChanged}</p>}
       {item.simplest && <p className="item-title-full muted" data-simplest><strong>Simplest:</strong> {item.simplest}</p>}
-      <div className="item-meta">{item.owner && <span>Owner · {item.owner}</span>}<span>{item.type.replace(/^./, c => c.toUpperCase())}</span><Priority item={item} disabled={busy} onChange={mayChangePriority(status?.actor) ? priority => { void action(item.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/><span className="mono">{item.id}</span></div>
+      <div className="item-meta"><small className="mono muted" data-task-ids>{item.key}{item.candidate ? ` · ${item.candidate.sha.slice(0, 8)}` : ''}</small>{model && <span data-model={model.differs ? 'differs' : 'same'} className={model.differs ? 'amber' : undefined}>Model <span className="mono">{model.model}</span>{model.differs ? ` ▲ not the account's ${model.accountModel}` : ''}</span>}{item.owner && <span>Owner · {item.owner}</span>}<span>{item.type.replace(/^./, c => c.toUpperCase())}</span><Priority item={item} disabled={busy} onChange={mayChangePriority(status?.actor) ? priority => { void action(item.id, 'priority', { priority, source: 'dashboard' }); } : undefined}/><span className="mono">{item.id}</span></div>
     <details className="panel item-details-fold" aria-label="Description and criteria"><summary>Description and criteria</summary>
       {item.description ? <p className="item-description">{item.description}</p> : <p className="muted">No description.</p>}
       <section className="requirements" aria-label="Requirements"><h2>Requirements <small>{item.criteria.length} · {proofs.filter(p => p.status === 'passed').length} of {proofs.length} proofs passed</small></h2>
@@ -426,15 +423,15 @@ export default function WorkDetails({ item, work, status, token, observedAt, job
       {(() => { const ledger = obligationLedger(work); return ledger.length > 0 && <><h3>Bootstrap obligations ({ledger.length})</h3><p className="muted">Deferred proofs still owed across this repository. An obligation clears only when a delivered change produces trusted passing evidence for it; no operator command retires one.</p>{ledger.map(o => <div className="criterion" key={`${o.workId}:${o.criterionId}:${o.proof}`}><strong>{o.proof} · owed by {o.key} {o.criterionId}</strong><p>{shortShas(o.reason)} · contract {o.contractPaths.join(', ')} · declared by {o.declaredBy} on {new Date(o.declaredAt).toLocaleString()} at policy v{o.policyRevision}</p><p>{o.inheritedBy.length ? `Inherited by ${o.inheritedBy.join(', ')}` : 'No planned work touches this contract yet'}</p></div>)}</>; })()}
       {!!item.releaseDeliveries?.length && <><h3>Observed delivery</h3>{item.releaseDeliveries.map(d => <p key={d.environment}>Verified in {d.environment} · release {d.releaseId} r{d.releaseRevision} · generation {d.generation} · {new Date(d.verifiedAt).toLocaleString()}</p>)}<p className="muted">Independently observed runtime identity over a common interval, recorded once per environment. The merge above is a separate fact.</p></>}
       <h3>Evidence ({item.evidence.length})</h3>{item.evidence.map(e => <div className="criterion evidence-row" key={e.id}><strong>{e.revocation ? '⦸' : e.result === 'pass' ? '✓' : '×'} {e.proof}</strong><p>{e.trusted ? 'Trusted producer' : 'Worker assertion'} · {e.producer} · {e.sha.slice(0, 8)} · {e.executed} executed / {e.skipped} skipped</p>{e.reason && <p>Attested: {e.reason}</p>}{e.revocation && <p className="amber">Revoked by {e.revocation.actor}: {shortShas(e.revocation.reason)}</p>}{e.reuse && <p className="muted">Reused from the pass observed {new Date(e.reuse.observedAt).toLocaleString()} on {e.reuse.sourceSha.slice(0, 8)} (attempt sequence {e.reuse.sequence}, policy {e.reuse.policy.id} r{e.reuse.policy.revision}); a newer live attempt supersedes it.</p>}<EvidenceArtifacts evidence={e} token={token} observedAt={observedAt}/></div>)}
+      {/* A change the control plane observed itself is never pushed: its head lives only in the install's object store, so it is checked out by its commit into a worktree of the install's checkout under /tmp, which leaves that checkout — the control plane's own files — as it is. */}
+      {(builderRun || item.candidate) && <div className="task-commands muted"><span>From your terminal:</span>
+        {builderRun && <code>tail -f .graphyard/worker-runs/{transcriptRun(builderRun.transcript)}/log.jsonl</code>}
+        {item.candidate && (item.observation?.source === 'control-plane'
+          ? timings?.checkout && <code>git -C {timings.checkout} worktree add /tmp/{item.key} {item.candidate.sha}</code>
+          : <code>git fetch origin {item.candidate.branch} && git checkout FETCH_HEAD</code>)}
+      </div>}
     </details>
     </>)}
-    {/* A change the control plane observed itself is never pushed: its head lives only in the install's object store, so it is checked out by its commit into a worktree of the install's checkout under /tmp, which leaves that checkout — the control plane's own files — as it is. */}
-    {(builderRun || item.candidate) && <div className="task-commands muted"><span>From your terminal:</span>
-      {builderRun && <code>tail -f .graphyard/worker-runs/{transcriptRun(builderRun.transcript)}/log.jsonl</code>}
-      {item.candidate && (item.observation?.source === 'control-plane'
-        ? timings?.checkout && <code>git -C {timings.checkout} worktree add /tmp/{item.key} {item.candidate.sha}</code>
-        : <code>git fetch origin {item.candidate.branch} && git checkout FETCH_HEAD</code>)}
-    </div>}
   </article>;
 }
 const tabs = ['Checks and diff', 'Live session', 'Lead', 'Details'] as const;

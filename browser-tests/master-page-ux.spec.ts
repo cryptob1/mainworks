@@ -203,8 +203,9 @@ test(`e2e:master-page-ux — history, fitting, native input, clipboard, reconnec
     await expect(page.locator('.xterm-rows')).toContainText(f.current.gap, settled);
     f.current.master.pane = 'w1:replacement'; f.current.master.account = 'second-account'; f.current.status = 'working'; await f.save();
     await expect(page.locator('.xterm-rows')).toContainText('screen of w1:replacement');
-    await expect(page.getByRole('status')).toContainText('Working · second-account');
-    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'codex · w1:replacement');
+    // GY-3962: the account id is the hover title, not the label.
+    await expect(page.locator('.terminal-session')).toHaveText('Working');
+    await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'second-account · codex · w1:replacement');
     f.current.master.pane = null; f.current.master.agentName = ''; await f.save();
     await expect(page.getByRole('status')).toContainText('Lead is restarting…');
     f.child.send('drop-terminals');

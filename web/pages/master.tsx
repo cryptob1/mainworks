@@ -186,7 +186,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
     {stall && <p className="stall-alarm" role="alert">{stall}</p>}
     {owes.length > 0 && <section className="panel" aria-label="Blockers the Lead owes"><h2>Blocked ({owes.length})</h2>
       <ul className="master-owes">{owes.map(entry => <li key={entry.id}>
-        <button className="text-button" onClick={() => setSelected(entry.id)}>{entry.key} <span data-title>{entry.title}</span></button>
+        <button className="text-button" onClick={() => setSelected(entry.id)}><span data-title>{entry.title}</span></button>
         <span className="muted">{entry.since !== null ? `blocked ${formatAge(entry.since, now)}` : 'blocked'}</span>
         <span className="muted master-owes-blocker" title={entry.blocker}>{entry.blocker}</span>
       </li>)}</ul>
@@ -272,7 +272,7 @@ export default function MasterPage({ work, observedAt, token, api, setSelected, 
           <aside className="lead-rail" aria-label="Lead context">
             <div>
               <h3>Goal order</h3>
-              {goalOrder(work).length ? <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}>{goal.key} <span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals.</p>}
+              {goalOrder(work).length ? <ol>{goalOrder(work).map(goal => <li key={goal.id}><button className="text-button" onClick={() => setSelected(goal.id)}><span data-title>{goal.title}</span></button></li>)}</ol> : <p className="muted">No open goals.</p>}
             </div>
             <div>
               <h3>Waiting on you</h3>

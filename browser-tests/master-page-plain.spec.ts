@@ -51,13 +51,14 @@ test('e2e:master-page-plain — blockers and the terminal first, install message
       await liveTab.click();
       const status = page.getByRole('status');
       await expect(status).toContainText('You can type here', settled);
-      await expect(page.locator('.terminal-session')).toHaveText('Working · master-agent');
-      await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'claude · w1:master');
+      await expect(page.locator('.terminal-session')).toHaveText('Working');
+      await expect(page.locator('.terminal-session')).toHaveAttribute('title', 'master-agent · claude · w1:master');
 
-      // Blockers: 'Blocked (1)', key, title and age; the blocker one line, its full text in its title.
+      // Blockers: 'Blocked (1)', title and age (no key, GY-3962); the blocker one line, its full text in its title.
       const owes = page.getByRole('region', { name: 'Blockers the Lead owes' });
       await expect(owes.getByRole('heading')).toHaveText('Blocked (1)', settled);
-      await expect(owes).toContainText(`${item.key} Watch a worker`);
+      await expect(owes).toContainText('Watch a worker');
+      await expect(owes).not.toContainText(item.key);
       await expect(owes).toContainText(/blocked \S+/);
       const line = owes.locator(`[title="${blocker}"]`);
       await expect(line).toHaveText(blocker);

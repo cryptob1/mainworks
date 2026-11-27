@@ -323,20 +323,26 @@ export function buildDemoState(heroPhase = 'static') {
       id: '00000000-0000-4000-8000-000000000106',
       key: 'DEMO-106',
       title: 'Add a second test machine for merge trials',
+      work: 'DEMO-106',
       waitedMs: 14 * min,
       rule: 'human-request',
+      decision: 'Money or accounts',
+      refusal: 'Only the owner decides spending.',
       request: {
         id: 'hr-demo-106',
         kind: 'money-or-accounts',
         ask: 'Approve adding one dedicated test machine (~$65/month) to keep merge-trial wait under 3 minutes?',
         recommendation: 'Approve — test queue peaked at 8 minutes this morning.',
+        needed: 'A yes or no on one more test machine.',
+        reason: 'Merge trials queued up to 8 minutes this morning.',
+        requestedBy: 'Lead',
         at: at(-14 * min),
       },
       choices: [
         { label: 'Approve spend', input: 'none', recommended: true, body: { decision: 'approve' } },
         { label: 'Keep current machines', input: 'none', recommended: false, body: { decision: 'decline' } },
       ],
-      answer: { post: { command: 'resolve', field: 'answer' } },
+      answer: { cli: 'mainworks answer DEMO-106 "yes"', decline: 'mainworks answer DEMO-106 --decline', dashboard: 'Work → Needs you → Answer', api: 'POST /api/work/DEMO-106/answer', post: { command: 'answer', body: { request: 'hr-demo-106', outcome: 'provided' }, field: 'answer', submit: 'Answer and resume DEMO-106' } },
     },
   ];
 
@@ -360,7 +366,7 @@ export function buildDemoState(heroPhase = 'static') {
       serving: { onboarding: { onboarded: true } },
       fleet: {
         roles: [{ role: 'worker', accounts: ['claude-demo'] }, { role: 'reviewer', accounts: [] }],
-        accounts: [{ name: 'claude-demo', enabled: true, loggedIn: true, eligible: true }],
+        accounts: [{ name: 'claude-demo', enabled: true, loggedIn: true, eligible: true, roles: [{ role: 'worker' }] }],
       },
     } : {}),
     delegation: {
@@ -443,5 +449,13 @@ export function buildDemoState(heroPhase = 'static') {
     { who: 'You', at: at(-30 * min), text: 'Prioritize login rate limiting before dark mode.' },
   ];
 
+  if (heroPhase === 'empty') {
+    // A fresh install's first run: nothing filed, nothing waiting, no flow yet.
+    return {
+      work: [], board: { groups: { 'needs-you': [], blocked: [], moving: [], 'up-next': [], backlog: [] } },
+      status: { ...status, humanOnly: [], checksRunning: 0, live: { commit: null, waiting: [] } },
+      flow: null, item103, item103Timings, item103Diff, leadEvents: [], typed: [],
+    };
+  }
   return { work, board, status, flow, item103, item103Timings, item103Diff, leadEvents, typed };
 }

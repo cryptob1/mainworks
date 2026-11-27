@@ -71,27 +71,21 @@ for (const width of [1280, 390]) {
     const { writes, end } = await open(page, width);
     const task = page.locator('article.item-page'), header = task.locator('.task-header');
 
-    // AC-1: title, state with time in state, pull request, Builder, model with its mark, diff stats, one action, key and commit small.
+    // AC-1: title, state with time in state, pull request, Builder, diff stats and one action; the model, key and commit sit in Details (GY-3962).
     await expect(header.getByRole('heading', { level: 1 })).toHaveText(item.title);
     // Its time in state counts from when the trial failed, two minutes ago, not from when the change was handed in; the badge says it is stuck.
     await expect(header.locator('[data-task-state]')).toHaveText(/^Stuck\s*Test merge failed · 2m$/);
     await expect(header.getByRole('link', { name: /PR #412/ })).toHaveAttribute('href', 'https://github.com/fixture/repository/pull/412');
     await expect(header.locator('[data-builder]')).toHaveText(`Builder ${friendlyName(builder)}`);
-    const model = header.locator('[data-model]');
-    await expect(model).toContainText('claude-opus-5-5');
-    await expect(model).toHaveAttribute('data-model', 'differs');
-    await expect(model).toContainText('not the account\'s claude-sonnet-5-5');
+    await expect(header.locator('[data-model], [data-task-ids]')).toHaveCount(0);
     await expect(header.locator('[data-diff-stats]')).toHaveText('+86 −31 · 3 files');
     await expect(header.getByRole('button')).toHaveCount(1);
     await expect(header.getByRole('button', { name: 'Hold task' })).toBeVisible();
-    const small = header.locator('[data-task-ids]');
-    await expect(small).toHaveText(`GY-3588 · ${head.slice(0, 8)}`);
-    expect(await small.evaluate(element => parseFloat(getComputedStyle(element).fontSize) < parseFloat(getComputedStyle(document.querySelector('.task-header h1')!).fontSize))).toBe(true);
     // Stuck: one sentence why, one on what happens next.
     // The why gives the counts; the failing output is shown once, under Checks.
     await expect(task.locator('[data-stuck-why]')).toHaveText('Why: Its merge trial failed: 1 of 40 test files failed.');
     await expect(task.locator('[data-stuck-next]')).toHaveText(/^Next: It goes back to a Builder/);
-    for (const part of [header.getByRole('heading', { level: 1 }), header.locator('[data-task-state]'), header.getByRole('link', { name: /PR #412/ }), header.locator('[data-builder]'), model, header.locator('[data-diff-stats]'), small, task.locator('[data-stuck-why]'), task.locator('[data-stuck-next]')])
+    for (const part of [header.getByRole('heading', { level: 1 }), header.locator('[data-task-state]'), header.getByRole('link', { name: /PR #412/ }), header.locator('[data-builder]'), header.locator('[data-diff-stats]'), task.locator('[data-stuck-why]'), task.locator('[data-stuck-next]')])
       await expect(part).toBeVisible();
 
     // AC-2: each stage with this task's time in it, the total beside the median, the trial's counts and its slowest file.
@@ -147,6 +141,11 @@ for (const width of [1280, 390]) {
     await tabs.getByRole('tab', { name: 'Details' }).click();
     const details = task.getByRole('tabpanel', { name: 'Details' });
     await expect(details).toContainText('A hot local host keeps its room');
+    const model = details.locator('[data-model]');
+    await expect(model).toContainText('claude-opus-5-5');
+    await expect(model).toHaveAttribute('data-model', 'differs');
+    await expect(model).toContainText('not the account\'s claude-sonnet-5-5');
+    await expect(details.locator('[data-task-ids]')).toHaveText(`GY-3588 · ${head.slice(0, 8)}`);
     await expect(details).toContainText('unit:remote-shards');
     await expect(details).toContainText('w-3588');
     await expect(details).toContainText('assignment 3');
@@ -155,7 +154,8 @@ for (const width of [1280, 390]) {
     await expect(details.locator('summary', { hasText: /^Details$/ })).toHaveCount(0);
     expect(await noSideScroll(page)).toBe(true);
 
-    // The footer: follow the log, check the branch out.
+    // The end of Technical details: follow the log, check the branch out.
+    await details.locator('details.more-details > summary').click();
     const footer = task.locator('.task-commands');
     await expect(footer.locator('code')).toHaveText([`tail -f .graphyard/worker-runs/${run}/log.jsonl`, 'git fetch origin graphyard/gy-3588-3 && git checkout FETCH_HEAD']);
     await expect(footer).toBeVisible();
