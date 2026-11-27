@@ -129,7 +129,8 @@ test('unit:risk-class-delta-source — riskOf reads the landing files when the l
   const typed: Partial<Work> = { risk: 'normal' };
   assert.equal(typed.risk, 'normal');
   assert.doesNotMatch(await read('src/model/work.ts'), /\brisk\??:/, 'work.ts declares no risk field');
-  assert.match(await read('src/model/risk-class.ts'), /declare module '\.\/work\.js'/);
+  // The \s+ keeps complete's import scanner (src/cli/relative-imports.ts) from reading this regex as an import of ./work.js.
+  assert.match(await read('src/model/risk-class.ts'), /declare module\s+'\.\/work\.js'/);
 });
 
 const fixture = () => (fixtureWork() as Work[]).map(live) as Work[];
