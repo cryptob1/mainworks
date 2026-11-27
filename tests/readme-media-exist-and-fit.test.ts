@@ -145,6 +145,6 @@ test('unit:readme-media-exist-and-fit — docs/media holds hero.gif+hero.mp4, wo
     assert.deepEqual(moving, [...withAgent, ...testing].map(item => item.key).sort(), `${phase}: the board's moving rows are the in-progress rows`);
     for (const item of work.filter(item => item.stage === 'done')) assert.ok(item.delivery?.mergedAt, `${phase}: ${item.key} shown done is merged`);
     // GY-3987: the Work capture's Now column reads owner-first, never the merge writer's or reviewer's own words.
-    for (const entry of board.groups.moving!) assert.doesNotMatch(entry.does, /merge trial|latest main|diff and proofs/i, `${phase}: ${entry.key} Now reads plainly: "${entry.does}"`);
+    for (const { key, does } of board.groups.moving! as { key: string; does: string }[]) assert.doesNotMatch(does, /merge trial|latest main|diff and proofs/i, `${phase}: ${key} Now reads plainly: "${does}"`);
   }
 });
