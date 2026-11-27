@@ -210,6 +210,13 @@
     },
     {
       "kind": "browser",
+      "name": "open the fold of cases whose items are not built yet",
+      "action": "click",
+      "text": "of items not built yet",
+      "exact": false
+    },
+    {
+      "kind": "browser",
       "name": "a case with many linked items folds the rest",
       "action": "expectText",
       "text": "more items",
