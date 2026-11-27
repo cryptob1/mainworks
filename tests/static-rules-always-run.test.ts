@@ -6,7 +6,7 @@ import { changedDeclarations, changedExports, dependencyMap, listTestFiles, repo
 import { allowlist, audit } from './architecture.test.js';
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3826: fast static rule tests always run in item merge trials and the release check,
 // whatever narrow selection the change otherwise picks.
@@ -39,11 +39,7 @@ test('integration:static-rules-always-run — a one-file trial and the release c
     };
     for (const rule of staticRuleTests) seeded[rule] = '// static rule test\n';
 
-    git(root, 'init', '-q');
-    await writeFiles(root, seeded);
-    git(root, 'add', '.');
-    git(root, 'commit', '-qm', 'base');
-    const base = git(root, 'rev-parse', 'HEAD');
+    const { head: base } = await gitRepo({ root, files: seeded });
 
     // AC-1: a one-file body edit selects all six static rule tests besides its own selection,
     // in both an item trial (GRAPHYARD_SELECTION_BASE + GRAPHYARD_SELECTION_IMPORTERS) and the

@@ -7,6 +7,7 @@ import { coordinatorConfinement, sessionMountNamespaceWorks } from '../src/maste
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { grantWorkerPaths, runtimeSandboxes, workerPaths, writablePaths } from '../src/worker-sandbox.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2977: GY-2967 made the outer bubblewrap layer re-expose the common git directory writable for
 // packed-refs.lock, but each runtime's own sandbox (Codex --add-dir) still omitted it, so a worker
@@ -15,27 +16,16 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // config, hooks and non-mainworks refs keep the base branch and checkout protected.
 
 /** A coordinator checkout whose every ref is packed, with an assignment worktree on a packed mainworks branch and a second packed branch carrying another commit. */
-function fixture(base: string) {
-  const root = join(base, 'coordinator');
-  const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  writeFileSync(join(root, 'shared.txt'), 'base\n');
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  run('init', '-b', 'main');
-  run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Mainworks');
-  run('add', '.');
-  run('commit', '-m', 'coordinator');
+async function fixture(base: string) {
+  const { root, git: run } = await gitRepo({ root: join(base, 'coordinator'), files: { 'src/loop.ts': 'export const loop = 1;\n', 'shared.txt': 'base\n', '.gitignore': '.graphyard/\n' }, message: 'coordinator' });
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2977-1');
   mkdirSync(dirname(worktree), { recursive: true });
   run('worktree', 'add', '-b', 'graphyard/gy-2977-1', worktree, 'main');
   const other = join(root, '.graphyard', 'worktrees', 'gy-2977-2');
   run('worktree', 'add', '-b', 'graphyard/gy-2977-2', other, 'main');
   writeFileSync(join(other, 'other.txt'), 'other\n');
-  execFileSync('git', ['-C', other, 'add', '.']);
-  execFileSync('git', ['-C', other, 'commit', '-m', 'other branch work']);
-  const otherTip = execFileSync('git', ['-C', other, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  git(other, 'add', '.'); git(other, 'commit', '-m', 'other branch work');
+  const otherTip = git(other, 'rev-parse', 'HEAD');
   run('worktree', 'remove', other);
   run('branch', 'graphyard/gy-2977-gone', 'main');
   run('pack-refs', '--all');
@@ -98,7 +88,7 @@ test('unit:runtime-sandbox-ref-updates-on-packed-refs — Codex uses the outer f
     if (kind === 'codex') {
       const oldBase = await temporaryDirectory('runtime sandbox packed refs old');
       try {
-        const { root, worktree, otherTip } = fixture(oldBase);
+        const { root, worktree, otherTip } = await fixture(oldBase);
         const paths = workerPaths(worktree);
         const oldWritable = writablePaths(paths).filter(path => path !== paths.commonDir);
         const oldArgs = grantWorkerPaths(kind, ['--sandbox', 'workspace-write'], oldWritable, worktree);
@@ -120,7 +110,7 @@ test('unit:runtime-sandbox-ref-updates-on-packed-refs — Codex uses the outer f
 
     const fixedBase = await temporaryDirectory(`runtime sandbox packed refs ${kind}`);
     try {
-      const { root, worktree, main, otherTip } = fixture(fixedBase);
+      const { root, worktree, main, otherTip } = await fixture(fixedBase);
       const paths = workerPaths(worktree);
       const writable = writablePaths(paths);
       assert.ok(paths.commonDir && writable.includes(paths.commonDir), `${kind} grant list includes the common Git directory`);

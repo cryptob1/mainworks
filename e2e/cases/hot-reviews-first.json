@@ -1,14 +1,14 @@
 {
   "id": "hot-reviews-first",
-  "title": "Reviews and trials launch before workers, hot or not",
-  "description": "GY-3501 deleted GY-3437's heat tiers: with a fixture CPU temperature of 86C and low pressure, the worker, the review and the queued trial all launch in one cycle and master status shows no hold; below 80C nothing changes; and with free capacity and both kinds ready, reviews and trials launch before workers.",
+  "title": "Reviews, trials and workers launch in one cycle, hot or not",
+  "description": "GY-3501 deleted GY-3437's heat tiers: with a fixture CPU temperature of 86C and low pressure, the worker, the review and the queued trial all launch in one cycle and master status shows no hold; below 80C nothing changes. A worker launch never waits for the cycle's reviews and trials (GY-3965).",
   "tags": ["dispatch"],
   "target": "any",
   "required": false,
   "steps": [
     {
       "kind": "command",
-      "name": "everything launches at 86C, reviews and trials first",
+      "name": "everything launches at 86C in one cycle",
       "run": "node --import tsx tests/helpers/run-tests.ts tests/hot-reviews-first.test.ts",
       "timeoutSeconds": 300
     }

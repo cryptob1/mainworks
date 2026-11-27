@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, rmSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { chmodSync, existsSync, rmSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial, trialHostFaultHost } from '../src/merge-writer/trial.js';
 import { repositoryTrialImage, repositoryTrialImageTag, trialDockerfile, trialRepositoryImageFault, TrialRepositoryImageError } from '../src/merge-writer/repository-trial-image.js';
@@ -31,11 +31,8 @@ const gofake = '#!/bin/sh\n[ "$1" = verify ] && exit 0\nexit 1\n';
 
 /** A fixture repository whose base tip already carries the file, and the managed root its trial checks out under. */
 async function repository(files: Record<string, string>) {
-  const root = await temporaryDirectory('trial-image-repo'), base = await temporaryDirectory('trial-image-base');
-  git(root, 'init', '-q', '-b', 'main');
-  for (const [path, content] of Object.entries(files)) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), content); }
-  if (files.gofake) chmodSync(join(root, 'gofake'), 0o755); // git records the bit, so the image's COPY carries it
-  git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
+  const { root } = await gitRepo({ label: 'trial-image-repo', files }), base = await temporaryDirectory('trial-image-base');
+  if (files.gofake) { chmodSync(join(root, 'gofake'), 0o755); git(root, 'commit', '-qa', '--amend', '--no-edit'); } // git records the bit, so the image's COPY carries it
   return { root, base, tip: git(root, 'rev-parse', 'HEAD') };
 }
 /** One head on the base tip: `change` edits the working tree, and the commit is the head a trial merges. */

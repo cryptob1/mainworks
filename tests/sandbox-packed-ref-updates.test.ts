@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { coordinatorConfinement, sessionMountNamespaceWorks } from '../src/master/confinement.js';
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-2967: git takes the common git directory's packed-refs lock for every ref update or delete of
 // a ref present in packed-refs, so once anything packs the repository's refs (git gc does), every
@@ -16,18 +17,8 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 // so every ref update works on packed refs.
 
 /** A coordinator checkout whose every ref is packed, with an assignment worktree on a packed mainworks branch and a second packed branch carrying another commit. */
-function fixture(base: string) {
-  const root = join(base, 'coordinator');
-  const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'loop.ts'), 'export const loop = 1;\n');
-  writeFileSync(join(root, 'shared.txt'), 'base\n');
-  writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-  run('init', '-b', 'main');
-  run('config', 'user.email', 'graphyard@localhost');
-  run('config', 'user.name', 'Mainworks');
-  run('add', '.');
-  run('commit', '-m', 'coordinator');
+async function fixture(base: string) {
+  const { root, git: run } = await gitRepo({ root: join(base, 'coordinator'), message: 'coordinator', files: { 'src/loop.ts': 'export const loop = 1;\n', 'shared.txt': 'base\n', '.gitignore': '.graphyard/\n' } });
   const worktree = join(root, '.graphyard', 'worktrees', 'gy-2967-1');
   mkdirSync(dirname(worktree), { recursive: true });
   run('worktree', 'add', '-b', 'graphyard/gy-2967-1', worktree, 'main');
@@ -35,8 +26,7 @@ function fixture(base: string) {
   const other = join(root, '.graphyard', 'worktrees', 'gy-2967-2');
   run('worktree', 'add', '-b', 'graphyard/gy-2967-2', other, 'main');
   writeFileSync(join(other, 'other.txt'), 'other\n');
-  execFileSync('git', ['-C', other, 'add', '.']);
-  execFileSync('git', ['-C', other, 'commit', '-m', 'other branch work']);
+  git(other, 'add', '.'); git(other, 'commit', '-m', 'other branch work');
   run('worktree', 'remove', other);
   // A packed mainworks branch nobody has checked out, for the confined update-ref -d.
   run('branch', 'graphyard/gy-2967-gone', 'main');
@@ -57,7 +47,7 @@ function fixture(base: string) {
 test('unit:sandbox-ref-updates-work-on-packed-refs — inside the worker confinement every ref update works on packed refs: commit, merge, reset --hard, branch -f and update-ref -d each succeed while the coordinator checkout and the base branch stay protected', async () => {
   const base = await temporaryDirectory('sandbox packed refs');
   try {
-    const { root, worktree, main, otherTip } = fixture(base);
+    const { root, worktree, main, otherTip } = await fixture(base);
     const confinement = await coordinatorConfinement({ kind: 'pi', args: [], coordinatorRoot: root, sessionDirectory: worktree, platform: 'linux', mountNamespaceWorks: true, bwrap: 'bwrap' });
     assert.ok(confinement, 'the worker launch carries a confinement');
     assert.equal(confinement.mechanism, 'read-only-mount');

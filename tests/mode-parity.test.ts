@@ -17,7 +17,7 @@ import type { Observation, Work } from '../src/model/work.js';
 
 // GY-3037: the fixtures here file items, and every item owes an e2e proof; they declare the serve one needs.
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
@@ -95,15 +95,12 @@ after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fi
 
 /** A coordinator-like checkout whose base holds src/app.ts and src/other.ts, and a worker head in its object store that changes both. */
 async function checkoutWithHead(root: string, branch: string) {
-  const origin = join(root, 'origin.git'), checkout = join(root, 'checkout');
-  git(root, 'init', '-q', '--bare', '-b', 'main', origin); git(root, 'clone', '-q', origin, checkout);
+  const { root: checkout } = await gitRepo({ root: join(root, 'checkout'), files: { 'src/app.ts': 'export const app = 1;\n', 'src/other.ts': 'export const other = 1;\n' }, origin: true });
   const write = async (cwd: string, files: Record<string, string>, message: string) => {
     for (const [path, text] of Object.entries(files)) { await mkdir(join(cwd, path, '..'), { recursive: true }); await writeFile(join(cwd, path), text); git(cwd, 'add', '--', path); }
     git(cwd, 'commit', '-q', '-m', message);
     return git(cwd, 'rev-parse', 'HEAD');
   };
-  await write(checkout, { 'src/app.ts': 'export const app = 1;\n', 'src/other.ts': 'export const other = 1;\n' }, 'base');
-  git(checkout, 'push', '-q', 'origin', 'main');
   const worktree = join(checkout, '.graphyard', 'worktrees', 'parity');
   git(checkout, 'worktree', 'add', '-q', '-b', branch, worktree);
   const changed = await write(worktree, { 'src/app.ts': 'export const app = 2;\n', 'src/other.ts': 'export const other = 2;\n' }, 'change');

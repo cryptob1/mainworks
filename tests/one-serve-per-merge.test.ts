@@ -1,8 +1,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mergeOne, type MergePorts, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
 import { mergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
@@ -10,6 +9,7 @@ import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { masterConfigSchema } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-3032 AC-1: a merge serves and tests its head once. The trial serves the head from
@@ -19,21 +19,15 @@ import { workFixture } from './helpers/work-fixture.js';
 
 const made: string[] = [];
 after(async () => { for (const directory of made) await rm(directory, { recursive: true, force: true }); });
-const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 test('unit:one-serve-per-merge — one merge of a static-site head starts one serve: the trial\'s, whose bound case passes, and none after it', { timeout: 60_000 }, async () => {
   const root = await realpath(await temporaryDirectory('one-serve')); made.push(root);
-  const repo = join(root, 'repo'), base = join(root, 'worktrees'), counter = join(root, 'serves');
+  const base = join(root, 'worktrees'), counter = join(root, 'serves');
   await mkdir(base);
-  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
-  git(repo, 'config', 'user.email', 't@example.com'); git(repo, 'config', 'user.name', 'T');
   const build = `echo serve >> ${counter} && mkdir -p dist && cp -R site/. dist/`;
-  const write = async (path: string, content: unknown) => { await mkdir(join(repo, path, '..'), { recursive: true }); await writeFile(join(repo, path), typeof content === 'string' ? content : JSON.stringify(content)); };
-  await write('site/index.html', '<h1>Play</h1>');
-  await write('graphyard.json', { delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'dist', build }], cases: { home: 'site' } } });
-  await write('e2e/cases/home.json', { id: 'home', title: 'The home page answers', tags: ['api'], target: 'any', required: false, steps: [{ kind: 'http', name: 'home', method: 'GET', path: '/', status: 200 }] });
-  git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'site and its case');
-  const mergeSha = git(repo, 'rev-parse', 'HEAD');
+  const { root: repo, head: mergeSha } = await gitRepo({ root: join(root, 'repo'), message: 'site and its case', files: { 'site/index.html': '<h1>Play</h1>',
+    'graphyard.json': JSON.stringify({ delivery: { mode: 'local', applications: [{ id: 'site', kind: 'static', directory: 'dist', build }], cases: { home: 'site' } } }),
+    'e2e/cases/home.json': JSON.stringify({ id: 'home', title: 'The home page answers', tags: ['api'], target: 'any', required: false, steps: [{ kind: 'http', name: 'home', method: 'GET', path: '/', status: 200 }] }) } });
 
   // The trial: a checkout of the merge, its bound cases run against the head served there.
   const trial = async (input: { mergeSha: string; e2eProofs?: readonly string[] }): Promise<MergeTrialRun> => {

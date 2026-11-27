@@ -12,6 +12,7 @@ import { publishOnboarding } from '../src/up.js';
 import { fileOnboardingWork } from '../src/onboarding.js';
 import { onboardingBranch } from '../src/model/onboarding-work.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 
 /**
@@ -34,16 +35,8 @@ before(async () => {
   // onboarding files `init --scan --apply` wrote sitting untracked in the checkout.
   fixtureRoot = await realpath(await temporaryDirectory('onboarding-head'));
   const origin = join(fixtureRoot, 'origin.git');
-  checkout = join(fixtureRoot, 'checkout');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  git(['config', 'user.email', 't@example.com'], checkout);
-  git(['config', 'user.name', 'T'], checkout);
-  await writeFile(join(checkout, 'README.md'), '# Fixture\n');
-  git(['add', '--', 'README.md'], checkout);
-  git(['commit', '-q', '-m', 'base'], checkout);
-  git(['push', '-q', 'origin', 'main'], checkout);
-  baseTip = git(['rev-parse', 'refs/remotes/origin/main'], checkout);
+  ({ root: checkout, head: baseTip } = await gitRepo({ root: join(fixtureRoot, 'checkout'), files: { 'README.md': '# Fixture\n' } }));
+  git(['init', '-q', '--bare', '-b', 'main', origin]); git(['remote', 'add', 'origin', origin], checkout); git(['push', '-q', '-u', 'origin', 'main'], checkout);
   await writeFile(join(checkout, 'AGENTS.md'), '# Coordination\n');
   await writeFile(join(checkout, '.gitignore'), '.graphyard/\n');
   await writeFile(join(checkout, 'graphyard.json'), '{}\n');

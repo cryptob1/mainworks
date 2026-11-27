@@ -119,11 +119,12 @@ const doneAt = (item: Pick<Work, 'stageEnteredAt' | 'updatedAt' | 'delivery' | '
 /**
  * GY-3693: the standing repair item for `faultKey` — any open item with that fault key, else the
  * most recently delivered or closed item with that fault key within the last 24 hours.
+ * GY-3973: `openOnly` leaves the done ones out.
  */
-function existingFaultItem(work: readonly Work[], faultKey: string, now: number): Work | null {
+function existingFaultItem(work: readonly Work[], faultKey: string, now: number, openOnly = false): Work | null {
   const matching = work.filter(item => item.faultKey === faultKey);
   const open = matching.find(item => item.stage !== 'done');
-  if (open) return open;
+  if (open || openOnly) return open ?? null;
   const recent = matching
     .filter(item => { const at = doneAt(item); return Number.isFinite(at) && now - at < faultCooldownMs; })
     .sort((a, b) => doneAt(b) - doneAt(a));
@@ -134,6 +135,7 @@ function existingFaultItem(work: readonly Work[], faultKey: string, now: number)
  * GY-3693: the one shared filing helper for loop- and release-check-filed repair items.
  * Before filing, looks for an item with the same `faultKey` that is open, or reached done
  * (delivered or closed) within the last 24 hours, and records an observation note on it instead.
+ * GY-3973: `openOnly` — a recurrence after its recorded item is done — notes an open item only.
  */
 export async function fileLoopFault(
   ports: {
@@ -145,8 +147,9 @@ export async function fileLoopFault(
   item: FaultItem,
   observation: string,
   idempotencyKey = item.faultKey,
+  openOnly = false,
 ): Promise<{ action: 'noted'; item: string } | { action: 'filed'; item: string | null } | { action: 'unwired' }> {
-  const existing = existingFaultItem(ports.work, item.faultKey, ports.now);
+  const existing = existingFaultItem(ports.work, item.faultKey, ports.now, openOnly);
   if (existing) {
     if (ports.note) await ports.note(existing, observation.slice(0, 1000), `fault-note:${item.faultKey}:${randomUUID()}`);
     return { action: 'noted', item: existing.key };

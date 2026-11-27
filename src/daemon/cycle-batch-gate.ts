@@ -323,15 +323,20 @@ async function recordRepaired(record: GateRecord, work: readonly Work[], attest:
 /** The gate's ports over the merge writer's reads. */
 export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null): GatePorts & { diagnose: DiagnosePort } {
   const git = reads.git;
-  const file = async (input: { title: string; description: string; key: string }) => {
+  // GY-3973: the work a run holds predates its own filings, so an item these ports filed is open to them until a later cycle's work says otherwise.
+  const filed = new Set<string>();
+  const file = async ({ refile, ...input }: { title: string; description: string; key: string; refile?: string }) => {
     const ref = trusted() ?? `refs/remotes/origin/${reads.baseBranch}`;
     const capabilities = await readProjectCapabilities(git, ref).catch(() => undefined);
     const result = await fileLoopFault(
       { work, now: reads.now(), createWork: reads.createWork, note: reads.note },
       gateFiledItem(input, reads.baseBranch, reads.gate?.repository ?? '', capabilities),
       input.description,
-      input.key,
+      // A recurrence after a done item goes under a key naming that item: the store holds the bare key for it.
+      refile ? `${input.key}:${refile}` : input.key,
+      !!refile,
     );
+    if (result.action === 'filed' && result.item) filed.add(result.item);
     return { item: result.action === 'unwired' ? null : result.item };
   };
   const seen = { assertions: {} as Record<string, string>, flaked: new Set<string>() };
@@ -413,6 +418,8 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
     },
     file,
     faultDedup: key => work.some(item => item.faultKey === key),
+    // GY-3973: an item the cycle's work lists is open until it is done; a closed one is not listed at all.
+    open: item => filed.has(item) || work.some(entry => entry.key === item && entry.stage !== 'done'),
     flaky: check => openFlakyItem(work, check)?.key ?? null,
     // The full suite (a package.json change selects every test) and the whole catalog, each its own trial so the catalog's time is its own; then the preview cases, in a repository that holds them.
     diagnose: async commit => {

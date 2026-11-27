@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
@@ -77,12 +77,8 @@ test('integration:worker-verification-error-details — a failing verification s
 test('e2e:worker-verification-error-details — forced runner failure surfaces exit status and masked output in the verification response and durable history; successful verification still enforces required proofs', { timeout: 120_000 }, async t => {
   const base = await realpath(await temporaryDirectory('verification-error-e2e', process.cwd()));
   const allocations = await temporaryDirectory('trials', base);
-  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
-  const origin = join(base, 'origin.git'), checkout = join(base, 'checkout'), worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, checkout], { stdio: 'ignore' });
-  await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', 'README.md'); git(checkout, 'commit', '-q', '-m', 'base');
-  git(checkout, 'push', '-q', 'origin', 'HEAD:main'); git(checkout, 'fetch', '-q', 'origin');
+  const { root: checkout } = await gitRepo({ root: join(base, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true }), worktree = join(checkout, '.graphyard', 'worktrees', 'GY-1-1');
+  git(checkout, 'fetch', '-q', 'origin');
   git(checkout, 'worktree', 'add', '-q', '-b', 'graphyard/gy-1-1', worktree);
   await writeFile(join(checkout, '.git', 'info', 'exclude'), '.graphyard/\n');
   await mkdir(join(worktree, 'src'), { recursive: true });

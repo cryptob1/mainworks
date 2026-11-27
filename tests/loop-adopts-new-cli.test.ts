@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,6 +10,7 @@ import { loopCodeRoot } from '../src/daemon/checkout-state.js';
 import { readRelease } from '../src/protocol-version.js';
 import { liveMasterConfig, masterConfigSchema, type MasterConfig } from '../src/master.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3454: a deploy installs a new CLI release and moves master.json's cliPath to it. The running
 // loop is bound to its loaded cliPath, so the reload is refused — and the loop used to stay on the
@@ -21,18 +21,13 @@ const start = Date.parse('2030-07-01T00:00:00Z');
 
 /** A CLI release directory: a git checkout holding one commit; returns its launcher path and commit. */
 async function release(root: string, name: string) {
-  const directory = join(root, '.graphyard', 'cli-releases', name);
-  await mkdir(join(directory, 'bin'), { recursive: true });
-  execFileSync('git', ['init', '-q', '-b', 'main', directory]);
-  await writeFile(join(directory, 'bin', 'graphyard.mjs'), `// ${name}\n`);
-  execFileSync('git', ['-C', directory, 'add', '.']);
-  execFileSync('git', ['-C', directory, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', name]);
-  return { cliPath: join(directory, 'bin', 'graphyard.mjs'), commit: execFileSync('git', ['-C', directory, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() };
+  const { root: directory, head: commit } = await gitRepo({ root: join(root, '.graphyard', 'cli-releases', name), files: { 'bin/graphyard.mjs': `// ${name}\n` }, message: name });
+  return { cliPath: join(directory, 'bin', 'graphyard.mjs'), commit };
 }
 
 test('integration:loop-adopts-new-cli — a deploy moves master.json cliPath to the serving release, and the running loop restarts through its supervisor unit within one cycle, leaving its in-flight trials for the next loop to adopt', { timeout: 60_000 }, async () => {
   const root = await temporaryDirectory('loop-adopts-new-cli');
-  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  await gitRepo({ root });
   const old = await release(root, 'old'), served = await release(root, 'new');
   const config = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', credentialFile: join(root, 'coordinator.token'), cliPath: old.cliPath,
     repository: 'owner/project', baseBranch: 'main', githubAppId: 1234, hostId: 'machine-a', masterAgentName: 'graphyard-master-project', workers: [] });

@@ -1,39 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import type { CliContext } from '../src/cli/context.js';
 
 // GY-1925: explicit --head submission attempts no git push, so a worker sandbox that cannot
 // push still completes. A pre-push hook records and fails every attempt, making the no-push
 // assertion observable. GY-2999 default-head and PR-refusal regressions live in complete-default-head.
 
-const git = (cwd: string, ...args: string[]) => {
-  const result = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
-  return result.stdout.trim();
-};
-
 /** A worktree on `branch` whose origin holds the branch's first commit and whose every later push is failed by a pre-push hook recording the attempt. */
 async function repository(branch: string) {
   const root = await temporaryDirectory('complete-head');
-  const origin = join(root, 'origin.git'), work = join(root, 'work'), attempts = join(root, 'push-attempts');
-  assert.equal(spawnSync('git', ['init', '--bare', '--quiet', '-b', 'main', origin]).status, 0);
-  assert.equal(spawnSync('git', ['init', '--quiet', work]).status, 0);
-  git(work, 'checkout', '-q', '-b', branch);
-  git(work, 'commit', '-q', '--allow-empty', '-m', 'one');
-  git(work, 'remote', 'add', 'origin', origin);
-  git(work, 'push', '-q', '-u', 'origin', branch);
+  const attempts = join(root, 'push-attempts'), { root: work, git } = await gitRepo({ root: join(root, 'work'), branch, files: {}, message: 'one', origin: true });
   const hook = join(work, '.git', 'hooks', 'pre-push');
   await writeFile(hook, `#!/bin/sh\nprintf 'attempt\\n' >> ${JSON.stringify(attempts)}\nexit 1\n`);
   await chmod(hook, 0o755);
   await writeFile(join(work, '.gitignore'), '.graphyard/\n');
-  git(work, 'add', '.gitignore');
-  git(work, 'commit', '-q', '-m', 'two');
-  return { attempts, head: git(work, 'rev-parse', 'HEAD'), work };
+  git('add', '.gitignore'); git('commit', '-q', '-m', 'two');
+  return { attempts, head: git('rev-parse', 'HEAD'), work };
 }
 
 test('unit:complete-explicit-head-no-push — complete GY-N EPOCH --head SHA attempts no git push and submits the head even though every push would fail', async () => {

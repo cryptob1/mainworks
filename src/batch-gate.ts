@@ -259,10 +259,16 @@ export interface GatePorts {
   revert(landing: ServeLanding & { item: Work }, tip: string, check: string, prior?: readonly (ServeLanding & { item: Work })[], onStep?: (step: string) => void): Promise<{ revertSha: string } | { held: string } | { retry: string; revertSha?: string }>;
   /** GY-3849: what `run` saw so far: each failing file's first assertion line, and the files its own trials reran and passed. */
   seen?: { assertions: Record<string, string>; flaked: Set<string> };
-  /** Files an item owning a failure, once per `key`; answers the item it filed, when it names one. */
-  file(input: { title: string; description: string; key: string }): Promise<{ item: string | null } | void>;
+  /**
+   * Files an item owning a failure, once per `key`; answers the item it filed, when it names one.
+   * `refile` (GY-3973) names the done item a recurrence files after: that filing notes no done item
+   * and goes under a key of its own, since the store already holds `key` for that item.
+   */
+  file(input: { title: string; description: string; key: string; refile?: string }): Promise<{ item: string | null } | void>;
   /** GY-3693: when true for `key`, `file` checks existing items (open or done within 24h) and notes instead of re-filing. */
   faultDedup?(key: string): boolean;
+  /** GY-3973: whether the item a failure was filed as is still open; a recorded item that is not open is filed again. */
+  open?(item: string): boolean;
   /** GY-3431: the key of the open "Flaky check on main" item for `check`, or null when none is open. */
   flaky?(check: string): string | null;
   /**
@@ -304,14 +310,18 @@ const reusedFilingKey = (error: unknown) => /Idempotency key reused with differe
 
 /**
  * Files the item owning one gate failure, once per case (GY-3147): a binding the record keeps says
- * the case has its item and is reused, never re-filed — a later run's filing text differs, as the
- * tip it names moves — a key the control plane already holds is already filed, and any other filing
- * failure is a gate note. A refused or failed filing never aborts the run's verdict.
+ * the case has its item and is reused while that item is open — once it is done, a recurrence files
+ * anew (GY-3973) — a later run's filing text differs, as the tip it names moves — a key the control
+ * plane already holds is already filed, and any other filing failure is a gate note. A refused or
+ * failed filing never aborts the run's verdict.
  */
-async function fileFailure(ports: Pick<GatePorts, 'file' | 'faultDedup'>, record: Pick<GateRecord, 'filed' | 'notes'>, at: string, input: { title: string; description: string; key: string }) {
-  if (!ports.faultDedup?.(input.key) && input.key in (record.filed ?? {})) { clearGateNote(record, input.key); return; } // the case has its item: reuse it
+async function fileFailure(ports: Pick<GatePorts, 'file' | 'faultDedup' | 'open'>, record: Pick<GateRecord, 'filed' | 'notes'>, at: string, input: { title: string; description: string; key: string }) {
+  const recorded = record.filed?.[input.key]?.item;
+  // GY-3973: the recorded item is reused only while it is open; a failure whose item is done files again.
+  const refile = recorded && ports.open && !ports.open(recorded) ? recorded : null;
+  if (!refile && !ports.faultDedup?.(input.key) && input.key in (record.filed ?? {})) { clearGateNote(record, input.key); return; } // the case has its open item: reuse it
   try {
-    const filed = await ports.file(input);
+    const filed = await ports.file(refile ? { ...input, refile } : input);
     (record.filed ??= {})[input.key] = { item: typeof filed === 'object' && filed !== null ? filed.item : null, at };
     clearGateNote(record, input.key);
   } catch (error) {
@@ -739,7 +749,7 @@ export type DiagnosePort = (commit: string) => Promise<{ failed: string[]; catal
 const onboardingCheck = 'onboarding:first-merge';
 
 /** The scheduled diagnostics, when due: each failure files an item; nothing here touches the gate. */
-export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { diagnose: DiagnosePort }, record: GateRecord): Promise<string[] | null> {
+export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file' | 'faultDedup' | 'open'> & { diagnose: DiagnosePort }, record: GateRecord): Promise<string[] | null> {
   const verified = record.verified;
   if (!verified || (record.diagnosticsAt && ports.now() - Date.parse(record.diagnosticsAt) < diagnosticsIntervalMs)) return null;
   const started = ports.now();
@@ -751,7 +761,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file'> & { 
   // A preview case that failed or was not covered reaches an owner like any failing check.
   const failed = [...new Set([...checks, ...previewCases.filter(run => run.verdict !== 'passed').map(run => `e2e:${run.case}`), ...(slowOnboarding ? [onboardingCheck] : [])])];
   // GY-3264: each failure's commit and failing step are recorded before filing, so a check filed
-  // before — whose item is reused, never re-filed — still has its newest detail readable in status.
+  // before — whose open item is reused — still has its newest detail readable in status.
   record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, 1000) ?? null, at }]));
   if (record.notes?.length) record.notes = record.notes.filter(note => !isDiagnosticNote(note));
   for (const check of failed) {

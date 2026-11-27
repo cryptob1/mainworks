@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,17 +10,16 @@ import { daemonStatePath } from '../src/daemon/state.js';
 import type { MasterConfig } from '../src/master.js';
 import { freePort } from '../src/cli/test-isolation.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3208: onboarding's placeholder e2e.serve answers with graphyard.json, so a case run against it
 // exercises nothing. The merge trial fails such a case naming the placeholder, and master status
 // says the placeholder is in force; a declared real serve runs the same case, and it passes.
 
 const sha = 'd'.repeat(40);
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
 
 test('e2e:placeholder-serve-fails — a case against the placeholder serve fails naming it and master status shows it; a declared serve passes it', async () => {
-  const root = await temporaryDirectory('placeholder-serve');
-  git(root, 'init', '-q', '-b', 'main');
+  const { root } = await gitRepo({ label: 'placeholder-serve' });
   const policy = { mode: 'local' as const, mergeGate: { preMerge: [], perCandidate: [] }, candidateSchedule: null, deploy: { adapter: 'command' as const, project: null, uat: null, production: null } };
   assert.equal((await applyDelivery(root, policy, 'node')).wroteServe, true);
   assert.deepEqual(JSON.parse(await readFile(join(root, 'graphyard.json'), 'utf8')).e2e.serve, onboardingServe);
@@ -29,8 +27,7 @@ test('e2e:placeholder-serve-fails — a case against the placeholder serve fails
   await mkdir(join(root, 'e2e/cases'), { recursive: true });
   await writeFile(join(root, 'e2e/cases/app-home.json'), JSON.stringify({ id: 'app-home', title: 'The app home answers', target: 'any', required: false,
     steps: [{ kind: 'http', name: 'the home answers', method: 'GET', path: '/', status: 200 }] }));
-  git(root, 'add', '.');
-  git(root, 'commit', '-q', '-m', 'onboarded');
+  git(root, 'add', '.'); git(root, 'commit', '-q', '-m', 'onboarded');
   const credentials = await temporaryDirectory('placeholder-serve-credentials');
   const master = { url: 'http://127.0.0.1:5', repository: 'owner/fixture', credentialFile: join(credentials, 'coordinator.token'), hostId: 'test-host', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
   await writeFile(daemonStatePath(master), JSON.stringify({ version: 1, url: master.url, repository: master.repository }));

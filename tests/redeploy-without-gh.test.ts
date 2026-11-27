@@ -16,7 +16,7 @@ import { Store } from '../src/store.js';
 import { startPostgres } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { harness, type Harness } from './install-harness.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3653: the deploy watch's restart of an existing install whose deploy key is already registered
 // never needs the GitHub CLI, so a missing or unauthenticated gh login never stops a verified commit
@@ -85,13 +85,8 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
   const store = new Store(databaseUrl.href);
   try { await store.init(); } finally { await store.close(); }
 
-  const base = await temporaryDirectory('redeploy-without-gh-git');
-  const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), checkout = join(base, 'checkout');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, pusher);
-  await writeFile(join(pusher, 'release.txt'), 'A\n');
-  git(pusher, 'add', '.'); git(pusher, 'commit', '-q', '-m', 'A'); git(pusher, 'push', '-q', 'origin', 'HEAD:main');
-  const commitA = git(pusher, 'rev-parse', 'HEAD');
+  const base = await temporaryDirectory('redeploy-without-gh-git'), checkout = join(base, 'checkout');
+  const { root: pusher, origin, head: commitA } = await gitRepo({ root: join(base, 'pusher'), files: { 'release.txt': 'A\n' }, message: 'A', origin: true });
   git(base, 'clone', '-q', origin, checkout);
   git(checkout, 'checkout', '-q', '--detach', commitA);
 

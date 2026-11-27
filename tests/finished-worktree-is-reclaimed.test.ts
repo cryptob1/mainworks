@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -12,6 +11,7 @@ import { runCycle } from '../src/daemon/cycle.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3691: the loop's close step removes a finished item's working copy within a cycle, and an
 // item's earlier attempt's once a later attempt holds the item, never one a live session or lease
@@ -20,12 +20,7 @@ const HOST = 'loop-host';
 const scratchBytes = 5 * 1024 * 1024;
 
 test('e2e:finished-worktree-is-reclaimed — a done item\'s working copy with 5 MB of scratch is gone within two cycles and the reported disk figure falls by at least that much; an earlier attempt goes, the live one stays', async () => {
-  const install = await temporaryDirectory('finished-worktree-install');
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: install, encoding: 'utf8' }).trim();
-  git('init', '-q', '-b', 'main');
-  await writeFile(join(install, '.gitignore'), '.graphyard/\n');
-  git('add', '.gitignore');
-  git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'base');
+  const { root: install, git } = await gitRepo({ label: 'finished-worktree-install', files: { '.gitignore': '.graphyard/\n' } });
   const credentialFile = join(await temporaryDirectory('finished-worktree-credentials'), 'coordinator.token');
   await writeFile(credentialFile, `${'c'.repeat(40)}\n`, { mode: 0o600 });
   const worktrees = join(install, '.graphyard', 'worktrees');

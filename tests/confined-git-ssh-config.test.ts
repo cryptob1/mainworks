@@ -9,6 +9,7 @@ import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { pushEnvironment } from '../src/merge-writer/executor.js';
 import { fetchRefusalLine } from '../src/daemon/cycle-batch-gate.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3470: Huck's confined coordinator fetched its base branch mainworks-main over SSH and ssh
 // refused before dialling anything: "Bad owner or permissions on
@@ -32,17 +33,11 @@ async function confinedFixture(run: (fixture: { spawn: (script: string) => Retur
   process.env.HOME = home;
   try {
     const realSsh = execFileSync('sh', ['-c', 'command -v ssh'], { encoding: 'utf8' }).trim();
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
     // The origin: a bare repository whose non-default base branch carries the project's check.
     const remote = join(home, 'remote'), origin = join(remote, 'huck.git'), seed = join(remote, 'seed'), key = join(remote, 'deploy-key'), bin = join(remote, 'bin');
     mkdirSync(bin, { recursive: true });
-    execFileSync('git', ['init', '-q', '--bare', '-b', 'mainworks-main', origin]);
-    mkdirSync(seed);
-    git(seed, 'init', '-q', '-b', 'mainworks-main');
-    writeFileSync(join(seed, 'check.sh'), 'echo VERIFIED-GRAPHYARD-MAIN\n');
-    git(seed, 'add', '.');
-    git(seed, 'commit', '-qm', 'base');
-    git(seed, 'push', '-q', origin, 'mainworks-main');
+    git(remote, 'init', '-q', '--bare', '-b', 'mainworks-main', origin);
+    (await gitRepo({ root: seed, branch: 'mainworks-main', files: { 'check.sh': 'echo VERIFIED-GRAPHYARD-MAIN\n' } })).git('push', '-q', origin, 'mainworks-main');
     execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'gy-3470-fixture', '-f', key]);
     // The door: real ssh resolves its whole configuration with the options git hands it, refusing
     // as ssh would (its stderr passes through); only then is the deploy key and host-key checking
@@ -60,12 +55,7 @@ async function confinedFixture(run: (fixture: { spawn: (script: string) => Retur
     ].join('\n') + '\n');
     chmodSync(join(bin, 'ssh'), 0o755);
     // The coordinator checkout with its SSH origin, and the session's own worktree.
-    const root = join(home, 'code', 'hello-huck');
-    mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, '.gitignore'), '.graphyard/\n');
-    git(root, 'init', '-q', '-b', 'main');
-    git(root, 'add', '.');
-    git(root, 'commit', '-qm', 'seed');
+    const { root } = await gitRepo({ root: join(home, 'code', 'hello-huck'), files: { '.gitignore': '.graphyard/\n' }, message: 'seed' });
     git(root, 'remote', 'add', 'origin', 'git@github.com:cryptob1/hello-huck.git');
     const worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1');
     mkdirSync(dirname(worktree), { recursive: true });

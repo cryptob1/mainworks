@@ -12,6 +12,7 @@ import { runDispatchTick } from '../src/dispatch/tick.js';
 import { cliUnreachableRefusal, launchReview, readReviewLedger, saveReviewerProfile } from '../src/reviewer.js';
 import { fleet, requested } from './helpers/review-fleet.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-2995: a self-deployed install runs its CLI from a checkout under the operator config home
@@ -31,13 +32,9 @@ const appSecret = 'reviewer-app-secret-'.padEnd(44, 'x');
 const siblingSecret = 'other-install-secret-'.padEnd(48, 'x');
 
 /** A coordinator checkout, a reviewer session checkout outside the config home, and an install whose CLI and reviewer credentials live under the config home. */
-function maskedFixture(base: string) {
-  const root = join(base, 'coordinator');
-  mkdirSync(join(root, 'src'), { recursive: true });
-  writeFileSync(join(root, 'src', 'a.ts'), 'export const a = 1;\n');
-  spawnSync('git', ['init', '-q', '-b', 'main', root]);
-  for (const args of [['config', 'user.email', 't@l'], ['config', 'user.name', 'T'], ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], ['add', '.'], ['commit', '-m', 'one']])
-    spawnSync('git', ['-C', root, ...args]);
+async function maskedFixture(base: string) {
+  const { root } = await gitRepo({ root: join(base, 'coordinator'), files: { 'src/a.ts': 'export const a = 1;\n' }, message: 'one' });
+  git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git');
   const checkout = join(base, 'managed', 'review-gy-2995');
   mkdirSync(checkout, { recursive: true });
   // The install under the config home: its deploy checkout with the CLI launcher, its coordinator
@@ -74,7 +71,7 @@ test('integration:masked-session-reaches-own-cli — under the reviewer mask a s
     // The session shape the reviewer launches share: the binding directory is the
     // session's GH_CONFIG_DIR, the launcher sits in the install's deploy checkout, and the working
     // directory is a managed checkout outside the config home.
-    const f = maskedFixture(base);
+    const f = await maskedFixture(base);
     const config = { cliPath: f.cli, credentialFile: f.coordinatorCredential };
     const mask = credentialMaskFor(config, { credentialFile: f.sessionDirectory, runtimeHomes: [f.runtimeHome] }, f.configHome);
     assert.deepEqual(mask.cli, [f.deployCheckout], 'the mask keeps the deploy checkout the CLI runs from');
@@ -140,17 +137,12 @@ test('unit:masked-cli-refusal-judges-the-sandbox — the refusal names a launche
 
 /** A master whose install runs its CLI from a deploy checkout beside its credentials, with one reviewer profile and a base tip. */
 async function cliMaster(label: string) {
-  const root = await temporaryDirectory(label), credentials = await temporaryDirectory(`${label}-cred`);
-  spawnSync('git', ['init', '-q', root]);
-  spawnSync('git', ['-C', root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git']);
+  const { root, git } = await gitRepo({ label, files: { 'a.txt': 'one\n' }, message: 'one' }), credentials = await temporaryDirectory(`${label}-cred`);
+  git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   const deployCheckout = join(credentials, 'acme-mainworks', 'deploy', 'build');
   const cli = join(deployCheckout, 'bin', 'graphyard.mjs');
   mkdirSync(dirname(cli), { recursive: true });
   writeFileSync(cli, '#!/usr/bin/env node\n');
-  writeFileSync(join(root, 'a.txt'), 'one\n');
-  spawnSync('git', ['-C', root, 'add', '.']);
-  spawnSync('git', ['-C', root, 'commit', '-m', 'one']);
-  spawnSync('git', ['-C', root, 'update-ref', 'refs/remotes/origin/main', spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()]);
   const coordinator = async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }));
   await setupMaster(root, { url: 'https://graphyard.example', token: 'coordinator-token-'.padEnd(40, 'x'), cliPath: cli, credentialDirectory: credentials }, coordinator as typeof fetch);
   await saveReviewerProfile(root, { name: 'claude-reviewer', agentName: 'review-claude-1', kind: 'claude' });

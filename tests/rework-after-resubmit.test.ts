@@ -5,7 +5,7 @@ import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { git } from './helpers/git-repo.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { gitRunnerFor } from '../src/merge-writer/local-observation.js';
 import { assertDispatchable } from '../src/master/dispatch.js';
@@ -27,13 +27,9 @@ const proof = 'integration:rework-after-resubmit';
 test(`${proof} — the rework of a resubmitted head reserves the candidate's branch, and a worker completes on it`, { timeout: 120_000 }, async t => {
   const base = await realpath(await temporaryDirectory('rework-after-resubmit'));
   t.after(() => rm(base, { recursive: true, force: true }));
-  const origin = join(base, 'origin.git'), checkout = join(base, 'checkout'), branch = 'graphyard/gy-1-1';
+  const { root: checkout } = await gitRepo({ root: join(base, 'checkout'), files: { 'README.md': '# Fixture\n' }, origin: true }), branch = 'graphyard/gy-1-1';
   const attempt = join(checkout, '.graphyard', 'worktrees', 'GY-1-1'), rework = join(checkout, '.graphyard', 'worktrees', 'GY-1-3');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin); git(base, 'clone', '-q', origin, checkout);
-  git(checkout, 'config', 'user.email', 't@example.com'); git(checkout, 'config', 'user.name', 'T');
-  await mkdir(join(checkout, 'src', 'store'), { recursive: true });
-  await writeFile(join(checkout, 'README.md'), '# Fixture\n'); git(checkout, 'add', 'README.md'); git(checkout, 'commit', '-q', '-m', 'base');
-  git(checkout, 'push', '-q', 'origin', 'main'); git(checkout, 'fetch', '-q', 'origin');
+  await mkdir(join(checkout, 'src', 'store'), { recursive: true }); git(checkout, 'fetch', '-q', 'origin');
   git(checkout, 'worktree', 'add', '-q', '-b', branch, attempt);
   // A store change is sensitive under the test process's policy, so every head here owes its
   // review: the resubmitted one and the rework's new one both continue through the same gates.

@@ -1,11 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { gitRepo } from './helpers/git-repo.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import type { Store } from '../src/store.js';
@@ -50,10 +50,7 @@ async function install(name: string, peer: string) {
   await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
   const scratch = await temporaryDirectory(`cross-install-${name}`, join(process.cwd(), '.graphyard'));
   const root = await temporaryDirectory('coordinator', scratch);
-  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
-  git('init', '-q', '--initial-branch=main'); git('remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
-  await writeFile(join(root, 'README.md'), 'Fixture.\n');
-  git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+  (await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } })).git('remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
   await setupMaster(root, { url, token: token(coordinator), cliPath: cli, credentialDirectory: await temporaryDirectory('credentials', scratch), run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
   // The reporter token this install issues its peer, handed over as a file.
   const issued = join(scratch, `${peer}.token`);

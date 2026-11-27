@@ -1,11 +1,11 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { chmod, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3914 AC-1: The loop never writes inside the candidate's tree during selection: the base
 // selector script is written to and run from the trial's temporary directory. With the selector
@@ -17,23 +17,6 @@ const cleanups: (() => Promise<void>)[] = [];
 after(async () => {
   for (const cleanup of cleanups) await cleanup().catch(() => {});
 });
-
-const identity = {
-  GIT_AUTHOR_NAME: 'Fixture',
-  GIT_AUTHOR_EMAIL: 'fixture@example.com',
-  GIT_COMMITTER_NAME: 'Fixture',
-  GIT_COMMITTER_EMAIL: 'fixture@example.com',
-};
-
-const git = (root: string, ...args: string[]) =>
-  execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
-
-const writeFiles = async (root: string, files: Record<string, string>) => {
-  for (const [path, content] of Object.entries(files)) {
-    await mkdir(dirname(join(root, path)), { recursive: true });
-    await writeFile(join(root, path), content, 'utf8');
-  }
-};
 
 const baseFixtureFiles = {
   'package.json': JSON.stringify({ name: 'fixture', type: 'module', scripts: {} }, null, 2) + '\n',
@@ -107,11 +90,7 @@ test('integration:selector-script-never-written-into-the-candidate-tree — syml
   await chmod(outsideFile, 0o640);
   const beforeStat = await stat(outsideFile);
 
-  git(root, 'init', '-q', '-b', 'main');
-  await writeFiles(root, baseFixtureFiles);
-  git(root, 'add', '-A');
-  git(root, 'commit', '-qm', 'base');
-  const baseSha = git(root, 'rev-parse', 'HEAD');
+  const { head: baseSha } = await gitRepo({ root, files: baseFixtureFiles });
 
   // Candidate replaces scripts/ci-tests.mjs with a symlink to outsideFile and breaks src/alpha.mjs.
   git(root, 'checkout', '-q', '-b', 'candidate');
@@ -167,14 +146,10 @@ test('integration:selector-script-never-written-into-the-candidate-tree — two 
     () => rm(trialRoot, { recursive: true, force: true }),
   );
 
-  git(root, 'init', '-q', '-b', 'main');
-  await writeFiles(root, {
+  const { head: baseSha } = await gitRepo({ root, files: {
     ...baseFixtureFiles,
     'package-lock.json': JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }) + '\n',
-  });
-  git(root, 'add', '-A');
-  git(root, 'commit', '-qm', 'base');
-  const baseSha = git(root, 'rev-parse', 'HEAD');
+  } });
 
   // Candidate tampers with scripts/ci-tests.mjs so it prints nothing; unapproved trials must use base selector.
   git(root, 'checkout', '-q', '-b', 'candidate');

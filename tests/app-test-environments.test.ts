@@ -10,6 +10,7 @@ import type { Work } from '../src/model.js';
 import type { LifecycleExec } from '../src/app-environments.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { gitRepo } from './helpers/git-repo.js';
 
 // GY-3296: app test environments — where the app under test runs. A case naming a declared
 // environment gets an instance provisioned by the batch gate through the environment's up command
@@ -51,7 +52,6 @@ const policy = (environment: Record<string, unknown>, extra: Record<string, unkn
 async function fixture(options: { maxConcurrent?: number; secretsMode?: number } = {}) {
   const home = await temporaryDirectory('app-environments'); made.push(home);
   const repo = join(home, 'repo'), provider = join(home, 'provider'), configHome = join(home, 'config');
-  await mkdir(join(repo, 'env'), { recursive: true }); await mkdir(join(repo, 'e2e/cases'), { recursive: true });
   await mkdir(join(provider, 'instances'), { recursive: true }); await mkdir(join(configHome, 'fixture-app'), { recursive: true });
   const app = { healthy: true, hits: 0 };
   const { url, close } = await listen((request, response) => { app.hits++; response.writeHead(app.healthy ? 200 : 500, { 'content-type': 'application/json' }); response.end(JSON.stringify({ ok: app.healthy, path: request.url })); });
@@ -59,15 +59,9 @@ async function fixture(options: { maxConcurrent?: number; secretsMode?: number }
   const secretsFile = join(configHome, 'fixture-app', 'app-environments.env');
   await writeFile(secretsFile, `PROVIDER_TOKEN=${sentinel}\nPROVIDER_DIR=${provider}\nAPP_URL="${url}"\n`, { mode: options.secretsMode ?? 0o600 });
   await chmod(secretsFile, options.secretsMode ?? 0o600);
-  git(home, ['init', '-q', '-b', 'main', repo]);
-  git(repo, ['config', 'user.email', 'fixture@example.test']); git(repo, ['config', 'user.name', 'fixture']);
   const staging = { up: 'sh env/up.sh', down: 'sh env/down.sh', list: 'sh env/list.sh', maxConcurrent: options.maxConcurrent ?? 1 };
-  await writeFile(join(repo, 'graphyard.json'), policy(staging));
-  await writeFile(join(repo, 'env/up.sh'), upScript); await writeFile(join(repo, 'env/down.sh'), downScript); await writeFile(join(repo, 'env/list.sh'), listScript);
-  await writeFile(join(repo, 'e2e/cases/staged-app.json'), httpCase('staged-app', 'staging'));
-  await writeFile(join(repo, 'e2e/cases/local-app.json'), httpCase('local-app'));
-  git(repo, ['add', '-A']); git(repo, ['commit', '-q', '-m', 'base']);
-  const base = git(repo, ['rev-parse', 'HEAD']).trim();
+  const { head: base } = await gitRepo({ root: repo, files: { 'graphyard.json': policy(staging), 'env/up.sh': upScript, 'env/down.sh': downScript, 'env/list.sh': listScript,
+    'e2e/cases/staged-app.json': httpCase('staged-app', 'staging'), 'e2e/cases/local-app.json': httpCase('local-app') } });
   // The candidate: lifecycle scripts and config rewritten to read and emit the secret, a case naming
   // an environment nobody declares, and one naming an environment only the candidate declares.
   await writeFile(join(repo, 'env/up.sh'), candidateUp);

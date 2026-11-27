@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { bootstrapGate, catalogFits, gateRecordPath, readGateRecord, runGate, writeGateRecord, type GatePorts } from '../src/batch-gate.js';
@@ -8,7 +8,7 @@ import { batchGateStep } from '../src/daemon/cycle-batch-gate.js';
 import type { MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import { emptyDaemonState } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
-import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { git, gitRepo } from './helpers/git-repo.js';
 
 const start = Date.parse('2030-01-01T00:00:00Z'), short = 464_165;
 const repository = 'owner/project', verified = 'a'.repeat(40), tip = 'b'.repeat(40);
@@ -36,17 +36,10 @@ test('integration:release-check-timeout-recovers — a prior whole-catalog timeo
 });
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 test('e2e:release-check-timeout-recovers — on a running test install a release check that timed out on the whole catalog runs the affected subset next and verifies a commit', async () => {
-  const base = await temporaryDirectory('release-check-timeout-recovers'), origin = join(base, 'origin.git'), checkout = join(base, 'install');
-  git(base, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(base, 'clone', '-q', origin, checkout);
-  await mkdir(join(checkout, 'e2e', 'cases'), { recursive: true });
-  await writeFile(join(checkout, 'graphyard.json'), '{}');
-  for (const id of ['smoke', 'unrelated']) await writeFile(join(checkout, 'e2e', 'cases', `${id}.json`), JSON.stringify({ id, steps: [] }));
-  git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'base');
-  const before = git(checkout, 'rev-parse', 'HEAD');
+  const { root: checkout, head: before } = await gitRepo({ label: 'release-check-timeout-recovers', origin: true,
+    files: { 'graphyard.json': '{}', ...Object.fromEntries(['smoke', 'unrelated'].map(id => [`e2e/cases/${id}.json`, JSON.stringify({ id, steps: [] })])) } });
   await writeFile(join(checkout, 'app.ts'), 'export const recovered = true;\n');
   git(checkout, 'add', '.'); git(checkout, 'commit', '-qm', 'fix release check'); git(checkout, 'push', '-q', 'origin', 'HEAD:main');
   const head = git(checkout, 'rev-parse', 'HEAD'), file = gateRecordPath(checkout);
