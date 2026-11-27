@@ -12,13 +12,9 @@ import { leadHoldRefusal } from './delegation.js';
 import { answerCommand, describeHumanRequest, parkedOnHuman } from './human-request.js';
 import { humanAsk } from './human-ask.js';
 import { formatAge } from './duration.js';
-// The vocabulary lives in `action-kinds.ts` and the accounting vocabulary in
-// `action-account.ts`; each is re-exported here so what an item needs next is still read from
-// one place. `action-account.ts` is the one exception: it imports the computation below, so it
-// is imported from directly rather than re-exported through the module it depends on.
-export type {  NextAction,  NextActionKind } from './action-kinds.js';
-// What stands beside an action lives in `concerns.ts`, re-exported here likewise.
-;
+// The vocabulary lives in `action-kinds.ts`; its types are re-exported here so what an item needs
+// next is still read from one place. What stands beside an action lives in `concerns.ts`.
+export type { NextAction, NextActionKind } from './action-kinds.js';
 
 /**
  * The typed next action.
