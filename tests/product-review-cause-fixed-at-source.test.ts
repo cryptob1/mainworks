@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { flowNumbers } from '../src/flow-numbers.js';
-import { oldPlannerNameLines } from './helpers/old-planner-name.js';
+import { oldPlannerNameLines } from './no-old-name.test.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-4024: Help text that still called the planner "the Master" was product review's largest rework
