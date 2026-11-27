@@ -564,7 +564,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
     build: async commit => {
       await withHeavyJob(`deploy build ${commit.slice(0, 12)}`, () => prepareCliRelease(directory, cliRoot, commit, input.run), { reserved: true });
     },
-    restart: commit => withHeavyJob(`deploy restart ${commit.slice(0, 12)}`, async () => {
+    restart: (commit, options) => withHeavyJob(`deploy restart ${commit.slice(0, 12)}`, async () => {
       const inputs = inputsFor(commit);
       // The watch's own code is the release that matches the database; inputs.cliRoot is the new build.
       if (process.env.DATABASE_URL) await backupTo(process.env.DATABASE_URL, inputs.backupFile);
@@ -575,7 +575,7 @@ export async function watchPorts(input: { cliRoot: string; repoRoot: string; rep
       // redeployArguments quotes sourceRoot for shell commands; this invocation takes literal argv.
       const args = [...redeployArguments(install, inputs.image!).slice(0, -1), '--source-root', build, '--apply'];
       // GY-4030: the deploy watch holds the host's image lock over this restart; the install it runs builds under it.
-      const invoke = (flags: string[]) => run(process.execPath, ['--import', loader, join(build, 'src', 'cli.ts'), 'install', ...flags], repoRoot, { ...process.env, GRAPHYARD_VERSION: stamp.version, GRAPHYARD_BUILD_REVISION: stamp.revision, [heldLocksVariable]: imageLock });
+      const invoke = (flags: string[]) => run(process.execPath, ['--import', loader, join(build, 'src', 'cli.ts'), 'install', ...flags], repoRoot, { ...process.env, GRAPHYARD_VERSION: stamp.version, GRAPHYARD_BUILD_REVISION: stamp.revision, [heldLocksVariable]: imageLock, MAINWORKS_BUILD_NO_CACHE: options?.noCache ? '1' : '' });
       await invoke([...args.slice(0, -1), '--plan']);
       const started = Date.now();
       await invoke(args);

@@ -360,7 +360,7 @@ export const composeAdapter: ProviderAdapter = {
       await ctx.transport.exec('docker', ['image', 'rm', published.server], { allowFailure: true });
       return;
     }
-    await ctx.transport.exec('docker', ['build', ...imageBuildArgs(ctx.sourceRoot), '--tag', ctx.image, ctx.sourceRoot], { timeout: 1_800_000 });
+    await ctx.transport.exec('docker', ['build', ...(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : []), ...imageBuildArgs(ctx.sourceRoot), '--tag', ctx.image, ctx.sourceRoot], { timeout: 1_800_000 });
   }),
   async setEnv(ctx, values) {
     for (const file of composeBundle(ctx, values)) await ctx.transport.putFile(file.path, file.content, file.mode, file.owner);

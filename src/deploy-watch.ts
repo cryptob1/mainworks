@@ -222,7 +222,7 @@ export interface DeployWatchPorts {
   /** Builds the commit in the deploy's own build checkout; the watched checkout does not move for this. */
   build(commit: string): Promise<void>;
   /** Restarts the container or unit the control plane runs in. */
-  restart(commit: string): Promise<void>;
+  restart(commit: string, options?: { noCache?: boolean }): Promise<void>;
   /** /healthz answers healthy at the commit. */
   health(commit: string): Promise<void>;
   /** GY-3700: one quick /healthz probe: the commit already serves healthy. */
@@ -377,7 +377,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   // GY-4030: installs on one machine take turns building and exporting their image under the host's image lock;
   // a build that still loses its BuildKit lease is tried once more after the other build ends.
   let retried: string | null = null;
-  const restartInTurn = (commit: string) => withHostLock(imageLock, () => ports.restart(commit), {
+  const restartInTurn = (commit: string, noCache = false) => withHostLock(imageLock, () => ports.restart(commit, { noCache }), {
     holder: ports.install ?? owner ?? 'another install',
     onWait: holder => {
       log(`[mainworks-deploy] waits for ${holder}'s image build to finish`);
@@ -386,10 +386,19 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
   }).finally(() => noteControl({ waiting: null }));
   const restartStep = async (commit: string) => {
     try { await restartInTurn(commit); } catch (error) {
-      if (!/lease does not exist/i.test(message(error))) throw error;
-      log(`[mainworks-deploy] the image build of ${commit.slice(0, 12)} lost its BuildKit lease; retrying once: ${message(error)}`);
-      retried = `The image build of ${commit.slice(0, 12)} was retried once after a BuildKit lease error`;
-      await restartInTurn(commit);
+      if (!/lease does not exist|failed to ingest/i.test(message(error))) throw error;
+      const failure = /lease does not exist/i.test(message(error)) ? 'lease' : 'ingest';
+      log(`[mainworks-deploy] the image build of ${commit.slice(0, 12)} had a BuildKit ${failure} error; retrying once: ${message(error)}`);
+      retried = `The image build of ${commit.slice(0, 12)} was retried once after a BuildKit ${failure} error`;
+      await noteControl({ retried });
+      try { await restartInTurn(commit); } catch (retryError) {
+        const blob = message(error).match(/sha256:[a-f0-9]{64}/i)?.[0];
+        if (!blob || !message(retryError).includes(blob) || !/lease does not exist|failed to ingest/i.test(message(retryError))) throw retryError;
+        retried = `The image build of ${commit.slice(0, 12)} was retried without build cache after repeated BuildKit errors for blob ${blob}`;
+        log(`[mainworks-deploy] ${retried}`);
+        await noteControl({ retried });
+        await restartInTurn(commit, true);
+      }
     }
   };
   const run = async (commit: string) => {

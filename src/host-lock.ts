@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { link, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -23,13 +24,14 @@ export const imageLock = 'graphyard-local-images';
 
 /** GY-4030: a child process runs under the host locks its parent holds, named in this variable. */
 export const heldLocksVariable = 'MAINWORKS_HELD_LOCKS';
+const heldLocks = new AsyncLocalStorage<ReadonlySet<string>>();
 
 /**
  * GY-3710: runs `work` holding the host-wide lock `name` (under /tmp, whatever an install's TMPDIR), waiting while another process or install holds it.
  * GY-4030: the lock names its `holder`; `onWait` hears the current holder once, when this caller starts waiting.
  */
 export async function withHostLock<T>(name: string, work: () => Promise<T>, options: { holder?: string; onWait?: (holder: string) => unknown } = {}): Promise<T> {
-  if (process.env[heldLocksVariable]?.split(',').includes(name)) return work();
+  if (heldLocks.getStore()?.has(name) || process.env[heldLocksVariable]?.split(',').includes(name)) return work();
   const lock = join('/tmp', 'mainworks-locks', `${name.replace(/[^\w.-]/g, '_')}.lock`);
   for (let waited = false; !await takeLock(lock, options.holder); await delay(1000)) {
     if (waited) continue;
@@ -38,5 +40,5 @@ export async function withHostLock<T>(name: string, work: () => Promise<T>, opti
     try { holder = readFileSync(lock, 'utf8').split(' ').slice(1).join(' '); } catch { /* released meanwhile */ }
     await options.onWait?.(holder || 'another install');
   }
-  try { return await work(); } finally { await rm(lock, { force: true }); }
+  try { return await heldLocks.run(new Set([...heldLocks.getStore() ?? [], name]), work); } finally { await rm(lock, { force: true }); }
 }
