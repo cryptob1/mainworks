@@ -564,6 +564,8 @@ export function masterHarnessPlan(input: { harness: string; root: string; cliPat
     note: `Mainworks generates harness permissions for Claude Code and trust configuration for Codex; ${input.harness} has no generated rules, so its own approval configuration applies.` };
   const cli = `node ${input.cliPath}`;
   const allow: HarnessRule[] = [
+    { rule: `Bash(${cli} lead:*)`, why: 'Run the lead\'s own commands: status, dispatch, review, reviewer, harness, run, merge, and guide.' },
+    { rule: `Bash(${cli} lead review:*)`, why: 'The reviewer launcher. Listed on its own because the classifier reads launching a second agent as a permission grant; the launched reviewer holds a read-only, hour-long App token and no Mainworks credential.' },
     { rule: `Bash(${cli} master:*)`, why: 'Run the master\'s own coordinator commands: status, dispatch, review, reviewer, harness, run, merge, and guide.' },
     { rule: `Bash(${cli} master review:*)`, why: 'The reviewer launcher. Listed on its own because the classifier reads launching a second agent as a permission grant; the launched reviewer holds a read-only, hour-long App token and no Mainworks credential.' },
     { rule: `Bash(${cli} status:*)`, why: 'Read control-plane and work-item status without an operator keypress.' },
