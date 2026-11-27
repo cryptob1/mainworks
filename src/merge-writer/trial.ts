@@ -1656,13 +1656,13 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const edited = kept ? proofOverlay : await editedProofFiles(worktree);
     if (!edited.length) return testChecks(checks);
     await run('git', ['-C', worktree, 'restore', '--source', input.e2eFrom!, '--staged', '--worktree', '--', ...edited], { timeoutMs: remaining() });
-    try { return await testChecks(checks); }
+    try { return await testChecks(checks, true); }
     finally {
       try { await run('git', ['-C', worktree, 'restore', '--source', input.mergeSha, '--staged', '--worktree', '--', ...edited], { timeoutMs: remaining() }); }
       finally { if (needsExclusive) await releaseKeptLock(); }
     }
   };
-  const testChecks = async (checks: RepositoryTrialCheck[]): Promise<TrialRun> => {
+  const testChecks = async (checks: RepositoryTrialCheck[], localOnly = false): Promise<TrialRun> => {
     if (!checks.length) {
       if (!nodePackage) return finishTests('pass', { passed: 0, failed: [], files: 0 });
       enter('tests');
@@ -1693,7 +1693,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       // GY-3921: a bound-only run starts a check for a check: proof or to run its bound test files, never one nobody reads.
       if (input.boundOnly && !requestedChecks.has(check.check) && !covers(check) && !(viaRunner && !check.selection && (check.check === 'test' || check.argv.includes('test')))) continue;
       if (check.selection) {
-        const selected = await withServices(check, () => runSelected(check));
+        const selected = await withServices(check, () => runSelected(check, localOnly));
         if ('services' in selected) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: selected.services }; runnerExit = null; break; }
         passed += selected.tests.passed; files += selected.tests.files;
         failed.push(...selected.tests.failed); groups.push(...(selected.groups ?? []));
@@ -1705,7 +1705,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
       }
       files++;
       enterStep(`tests: ${check.check}`);
-      const ran = (check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
+      const ran = (!localOnly && check.services?.length ? await onHost(check) : null) ?? await withServices(check, () => onThisMachine(() => child('tests', check.argv[0]!, check.argv.slice(1))));
       if ('services' in ran) { checkResults[check.check] = 'fail'; failed.push(check.check); detail = { failingCase: ran.services }; runnerExit = null; break; }
       if (hostEnded(ran)) throw runnerFailure('tests', ran);
       if (!ran.ok) {
@@ -1724,7 +1724,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const logTail = failingOutput && log.join('\n').length > tailLength ? failureTail([failingOutput]) : tail();
     return withMeta(await finishTests('pass', { passed, failed, files }, runnerExit, groups.length ? groups : undefined, logTail, detail));
   };
-  const runSelected = async (check: RepositoryTrialCheck): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
+  const runSelected = async (check: RepositoryTrialCheck, localOnly = false): Promise<Pick<TrialRun, 'tests' | 'runnerExit' | 'groups' | 'logTail' | 'slowest'>> => {
     const result = (tests: TrialRun['tests'], runnerExit: number | null = null, groups?: TrialGroup[], logTail = tail()) => ({ tests, runnerExit, groups, logTail });
     const strategy = check.selection!;
     const selector = checkCommandArgv(strategy.command)!, pattern = new RegExp(strategy.pattern);
@@ -1827,7 +1827,7 @@ export async function runTrialAttempt(input: RunTrialInput): Promise<TrialRun> {
     const cores = cpu.cores();
     // GY-3412: with added hosts, every host is read once and the selection is cut for this machine's
     // lanes plus the real free cores of every remote host under its heat limit.
-    const hosts = input.remote?.hosts ?? await shardHosts();
+    const hosts = localOnly ? [] : (input.remote?.hosts ?? await shardHosts());
     // GY-3534: one SSH transport carries the probe and every shard, over a few multiplexed connections per host.
     const transport = hosts.length ? shardSshSession(run) : undefined;
     const readHosts = (named: readonly string[]) => (input.remote?.read ?? ((targets, shared) => readShardHosts(targets, run, cores, shared)))(named, transport!);
