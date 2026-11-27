@@ -1,4 +1,3 @@
-import { setting } from '../setting.js';
 // Concern: GY-3159 — a merge trial's verification run, detached from the loop's process so the
 // restart onto a newly served release (GY-3148) never kills a trial in progress. The run leads its
 // own session (and, under systemd, its own transient scope, like a headless run), writes its steps
@@ -17,6 +16,7 @@ import { setTrialAttempts, TrialCancelledError, TrialTimeoutError, TrialRunnerEr
 import { TrialHeatError } from './trial-load.js';
 import { harnessModules } from './trial-container.js';
 import { heldJobEnvironment } from '../master/verification-slots.js';
+import { setting } from '../setting.js';
 import type { MergeTrialRun } from './executor.js';
 import { stateDirectory } from '../install/layout.js';
 

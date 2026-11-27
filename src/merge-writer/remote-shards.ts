@@ -1,4 +1,3 @@
-import { allowedCpus } from '../reserved-cpus.js';
 // Concern: GY-3412 — a trial's test shards fanned out across hosts over SSH. The hosts are the one host
 // list `mainworks host add` keeps (GY-3407); this machine is always one. Each trial reads every host
 // once, places each shard on the host with the most real free CPU under its heat limit, and runs it
@@ -11,6 +10,7 @@ import { basename, dirname, join } from 'node:path';
 import { availableParallelism, homedir, hostname, tmpdir } from 'node:os';
 import type { ChildRun } from '../child-runner.js';
 import { shellQuote } from '../shell-quote.js';
+import { allowedCpus } from '../reserved-cpus.js';
 import { probeShimVerbs, supportsCheckImages, supportsRunShardNonce, supportsWarmImageV2 } from '../host-shim.js';
 import { hostAddCommand, hostKnownHostsFile, hostLoginTarget, probeHost, readHosts, sshTarget, type HostReading as HostProbe } from '../hosts.js';
 import { generateTrialVerdictNonce, harnessModules, parseTrialVerdict, trialImage, trialVerdictMissingNonce } from './trial-container.js';

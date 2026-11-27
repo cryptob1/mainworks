@@ -1,4 +1,3 @@
-import { allowedCpus } from '../reserved-cpus.js';
 // The outer trial has a private filesystem, rather than a host Landlock domain:
 // its tests can establish their own mount namespaces before applying Landlock.
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
@@ -15,6 +14,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { trialAdmission, type TrialLoad } from './trial-load.js';
 import { appArmorEnabled, trialAppArmorProfile } from './trial-apparmor.js';
 import { setting } from '../setting.js';
+import { allowedCpus } from '../reserved-cpus.js';
 import { stateDirectory } from '../install/layout.js';
 
 export const trialContainerImage = 'mainworks-trial:local', legacyTrialContainerImage = 'graphyard-trial:local';
