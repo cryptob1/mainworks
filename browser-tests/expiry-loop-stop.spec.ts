@@ -29,9 +29,11 @@ test('e2e:expiry-loop-stop — three startup deaths read as one plain line with 
       await f.engine.reconcile();
     }
 
+    // GY-3997: a reset connection (a keep-alive one the server had just closed) is retried, not aborted: the page does
+    // not retry a failed sign-in, so one aborted redemption left it off the Work page for good.
     await page.route('**/api/**', async route => {
       const { pathname, search } = new URL(route.request().url());
-      const response = await route.fetch({ url: f.url + pathname + search }).catch(() => null);
+      const response = await route.fetch({ url: f.url + pathname + search, maxRetries: 1 }).catch(() => null);
       await (response ? route.fulfill({ response }) : route.abort()).catch(() => {});
     });
     const { code } = await f.ok('sign-in-links', {});
