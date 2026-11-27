@@ -79,8 +79,8 @@ function nextStepOwner(item: Work, all: readonly Work[], now: number): NextStepO
   const sessions = (item.sessions ?? []).filter(s => s.state === 'running');
   const backedOff = (item.actionQueue?.actions ?? []).some(a => a.state === 'pending' && !!a.retryAt && Date.parse(a.retryAt) <= now && !(a.claim && Date.parse(a.claim.expiresAt) > now));
   if ((backedOff || item.blocker) && !sessions.length) return 'nobody';
-  // Ready or building work with no blocker waits on a builder (a slot, a lease or a session), judged by the stage's usual time.
-  if (sessions.some(s => s.kind === 'implementation') || item.stage === 'ready' || item.stage === 'build') return 'a builder';
+  // Ready work with no blocker waits in the queue for a builder slot, judged by the ready stage's usual time.
+  if (sessions.some(s => s.kind === 'implementation') || item.stage === 'ready' || (!!item.lease && Date.parse(item.lease.expiresAt) > now && item.stage === 'build')) return 'a builder';
   if (item.stage === 'review') return sessions.some(s => s.kind === 'review') ? 'a reviewer' : 'nobody';
   return item.stage === 'test' || item.stage === 'merge' || item.stage === 'acceptance' ? 'the merge step' : 'nobody';
 }
