@@ -27,6 +27,7 @@ Rules: *plain* (one plain sentence per idea, owner first), *next* (state, number
 | Now column | "Running merge trial on latest main", "checking diff and proofs" | internal | 2 | Open |
 | Flow line | "3.4 attempts an hour · 74% first pass": builder metrics before the owner's question "is it moving" | plain | 3 | Open |
 | Under the heading | A rotating quote ("Real artists ship.") takes a line above the work | plain | 3 | Open |
+| Rotating line | "Fresh worktree, fresh start." or "Agents drift through the worktree like rain down a window." on some loads (found by the rules case, not the captures) | internal | 3 | Fixed |
 | 390 px | The fixed bottom menu covers the first row of the goal table when scrolled | fit | 3 | Open |
 
 ## A change: Checks and diff (and every tab's header)

@@ -42,11 +42,12 @@ export const LINES = [
   'Every item has a builder, a reviewer and a happy ending.', 'Proof beats promises.', 'Small changes, big days.',
   'The robots are building. You are deciding.', 'File it before you forget it. Ship it before you need it.', 'Somebody always has the next item.',
   'Main stays green. Spirits stay high.', 'Good software is a thousand small yeses.', 'From “what if” to “it’s live” in one sitting.',
-  'The crew loves a clear acceptance criterion.', 'Fresh worktree, fresh start.', 'Building software is fun again.',
+  'The crew loves a clear acceptance criterion.', 'A fresh start for every change.', 'Building software is fun again.',
   // The noir voice (GY-3272): the same lines, wearing a coat.
+  // GY-3962: every line is primary view, so none names a builder's tool (a worktree, a lease, a gate).
   'The rain never stops. Neither does the merge queue.', 'Somewhere a reviewer is reading your diff in the dark.',
   'Every shard of neon in this city is a green check somewhere.', 'The commit log remembers what the city forgets.',
-  'Agents drift through the worktree like rain down a window.', 'Two merges in the night. Neither saw the other.',
+  'Agents drift through the code like rain down a window.', 'Two merges in the night. Neither saw the other.',
   'The queue is long but the streetlights are on.', 'Ship it before the fog rolls in.',
   '“The best way to predict the future is to invent it.” — Alan Kay', '“Simplicity is prerequisite for reliability.” — Edsger Dijkstra',
   '“Make it work, make it right, make it fast.” — Kent Beck', '“Real artists ship.” — Steve Jobs', '“Done is better than perfect.” — Sheryl Sandberg',
