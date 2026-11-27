@@ -6,9 +6,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import pg from 'pg';
 import { freePort } from '../src/cli/test-isolation.js';
-import { gitWatchPorts } from '../src/cli/upgrade.js';
-import { defaultChildRun } from '../src/child-runner.js';
-import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall, redeployArguments } from '../src/install/index.js';
 import { DEPLOY_KEY_FILE } from '../src/install/deploy-key.js';
 import { installDirectory, readInstallRecord, tokenFile } from '../src/install/secrets.js';
@@ -16,6 +14,7 @@ import { Store } from '../src/store.js';
 import { startPostgres } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { harness, type Harness } from './install-harness.js';
+import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 
 // GY-3653: the deploy watch's restart of an existing install whose deploy key is already registered
@@ -142,12 +141,9 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
     const recordDir = await temporaryDirectory('redeploy-without-gh-record');
     await mkdir(recordDir, { recursive: true });
     const deployFile = deployRecordPath(recordDir);
-    const tree = gitWatchPorts(checkout, defaultChildRun);
     let redeployGhCalls: string[] = [];
 
-    const ports: DeployWatchPorts = {
-      ...tree,
-      build: async () => {},
+    const ports = gitDeployPorts(checkout, {
       restart: async commit => {
         // The deploy watch's restart path: install --plan then install --apply with gh failing.
         const redeploy = await harness({
@@ -178,11 +174,7 @@ test('e2e:redeploy-without-gh — a newly verified commit reaches the control pl
           throw new Error(`/healthz answered ${response.status} for ${body.commit ?? 'unknown'}`);
         }
       },
-      pin: async () => {},
-      prune: async () => {},
-      schema: async () => 1,
-      database: async () => 1,
-    };
+    });
 
     const watchLogs: string[] = [];
     await watchMain(deployFile, ports, { intervalMs: 100, once: true, log: line => watchLogs.push(line) });

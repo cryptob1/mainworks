@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { gitWatchPorts, renderPlan, resolveTarget, upgradeCommands, upgradePlan } from '../src/cli/upgrade.js';
-import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
-import { defaultChildRun } from '../src/child-runner.js';
+import { renderPlan, resolveTarget, upgradeCommands, upgradePlan } from '../src/cli/upgrade.js';
+import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
+import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -37,11 +37,7 @@ test('unit:deploy-watch-follows-mainworks-main — with a managed repository on 
   const b = await mainworks.commit('B');
 
   const deployed: string[] = [];
-  const ports: DeployWatchPorts = {
-    ...gitWatchPorts(checkout, defaultChildRun),
-    build: async () => {}, restart: async commit => { deployed.push(commit); }, health: async () => {},
-    pin: async () => {}, prune: async () => {}, schema: async () => 1, database: async () => 1,
-  };
+  const ports = gitDeployPorts(checkout, { restart: async commit => { deployed.push(commit); } });
   const file = deployRecordPath(repoRoot);
   await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });
   assert.equal(git(checkout, 'rev-parse', 'refs/remotes/origin/main'), b, 'the fetch read Mainworks\'s origin/main');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -31,4 +31,10 @@ test('unit:knip-clean-pinned — the exports and binary main reported stay unrep
     'ensureWarmImageV1', 'selectWarmImage', 'revertStartMs', 'piKeyEnvironment', 'DiagnosticsRun'];
   const { output } = knip();
   assert.deepEqual(names.filter(name => new RegExp(`^${name}\\s`, 'm').test(output)), [], `knip reported:\n${output}`);
+});
+
+// GY-4039: a deploy test builds its ports on tests/helpers/deploy-ports.ts and names only what its case varies.
+test('unit:knip-clean — no test file spells a DeployWatchPorts object inline', () => {
+  const inline = readdirSync(join(root, 'tests'), { recursive: true, encoding: 'utf8' }).filter(path => /\.test\.ts$/.test(path) && /DeployWatchPorts\s*=\s*\{|:\s*DeployWatchPorts\s*=>\s*\(\{/.test(readFileSync(join(root, 'tests', path), 'utf8')));
+  assert.deepEqual(inline, [], 'test files that still spell their deploy-watch ports inline');
 });

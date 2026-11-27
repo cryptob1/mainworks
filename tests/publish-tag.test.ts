@@ -11,6 +11,7 @@ import type { MasterConfig } from '../src/master/profiles.js';
 import { publishedVersion } from '../src/release.js';
 import { mainworksRepository } from '../src/scenarios.js';
 import { gateFixture, runGit as git } from './helpers/publish-tag-fixture.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 test('unit:tests/publish-tag.test.ts — a verified deploy pushes exactly one version tag with the deploy key, including across restart', async () => {
@@ -45,12 +46,10 @@ test('unit:tests/publish-tag.test.ts — a successful deploy remains eligible wh
   await f.gate();
   const commit = await f.merge(); await f.gate();
   const steps: string[] = [];
-  assert.equal(await deployOnce(deployRecordPath(f.coordinator), {
-    fetch: async () => commit, head: async () => git(f.coordinator, ['rev-parse', 'HEAD']),
+  assert.equal(await deployOnce(deployRecordPath(f.coordinator), deployPorts(commit, () => git(f.coordinator, ['rev-parse', 'HEAD']), {
     build: async () => { steps.push('build'); }, restart: async () => { steps.push('restart'); },
     health: async () => { steps.push('health'); }, checkout: async () => { steps.push('checkout'); }, pin: async () => { steps.push('pin'); },
-    prune: async () => {}, schema: async () => 1, database: async () => 1,
-  }, () => {}, mainworksRepository), 'deployed');
+  }), () => {}, mainworksRepository), 'deployed');
   assert.deepEqual(steps, ['build', 'restart', 'health', 'checkout', 'pin']);
   // Simulate a gate that finished while deploy was completing and before its next observation.
   const later = await f.merge();

@@ -2,7 +2,8 @@
 // a kept tip keeps its failed step and reason, and a failed rollback reads as a failure, never unconfigured.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { controlPlaneRecordPath, controlPlaneUpdateAttention, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, servingReport, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { controlPlaneRecordPath, controlPlaneUpdateAttention, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, servingReport } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40), repo = 'owner/app';
@@ -12,15 +13,13 @@ async function pass(throwAt: 'prune' | 'restart' | 'health' | 'rollback') {
   const logs: string[] = [];
   let database = 1;
   const migrates = throwAt === 'restart' || throwAt === 'health';
-  const ports: DeployWatchPorts = {
-    fetch: async () => b, head: async () => a,
+  const ports = deployPorts(b, a, {
     build: async commit => { if (throwAt === 'rollback' && commit === a) throw new Error('image for a is gone'); },
     restart: async commit => { if (migrates && commit === b) database = 2; if (throwAt === 'restart' && commit === b) throw new Error('compose up timed out'); },
     health: async commit => { if ((throwAt === 'health' || throwAt === 'restart' || throwAt === 'rollback') && commit === b) throw new Error('/healthz unhealthy'); },
-    checkout: async () => {}, pin: async () => {},
     prune: async () => { if (throwAt === 'prune') throw new Error('docker rmi refused'); },
     schema: async commit => commit === b && migrates ? 2 : 1, database: async () => database,
-  };
+  });
   const outcome = await deployOnce(file, ports, line => logs.push(line), repo);
   const control = readControlPlaneRecord(controlPlaneRecordPath(root));
   return { outcome, logs, record: readDeployRecord(file)!, attention: controlPlaneUpdateAttention(control), report: await servingReport(root, repo, 'main') };

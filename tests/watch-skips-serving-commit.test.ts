@@ -2,26 +2,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { deployOnce, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, readDeployRecord } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40);
 
 /** A control plane already serving `serving`; the deploy record (if any) still names the older commit a. */
 function plane(serving: string) {
   const state = { serving, builds: [] as string[], restarts: [] as string[] };
-  const ports: DeployWatchPorts = {
-    fetch: async () => b,
-    head: async () => a,
+  const ports = deployPorts(b, a, {
     build: async commit => { state.builds.push(commit); if (commit === b) throw new Error('io: read/write on closed pipe'); },
     restart: async commit => { state.restarts.push(commit); state.serving = commit; },
     health: async commit => { if (state.serving !== commit) throw new Error(`/healthz answers ${state.serving.slice(0, 7)}`); },
     serves: async commit => state.serving === commit,
-    checkout: async () => {},
-    pin: async () => {},
-    prune: async () => {},
-    schema: async () => 1,
-    database: async () => 1,
-  };
+  });
   return { state, ports };
 }
 

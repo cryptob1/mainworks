@@ -6,7 +6,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { composeAdapter, type AdapterContext } from '../src/install/adapters.js';
 import type { Transport } from '../src/install/transport.js';
-import { deployOnce, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, readDeployRecord } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 
 // GY-3710: two installs on one host that deploy the same commit at once run one image build;
 // the second waits for the first and reuses its image.
@@ -36,9 +37,7 @@ function dockerHost() {
 /** An install on that host: its own deploy record and lock, a restart that provisions the commit's image and serves it. */
 async function install(host: ReturnType<typeof dockerHost>, log: string[], name: string, from: string, to: string) {
   const directory = await temporaryDirectory(`one-image-build-${name}`), state = { serving: from };
-  const ports: DeployWatchPorts = {
-    fetch: async () => to, head: async () => from,
-    build: async () => {},
+  const ports = deployPorts(to, from, {
     restart: async commit => {
       const image = `graphyard-local:${commit.slice(0, 12)}`;
       await composeAdapter.provision({ sourceRoot: directory, image, transport: host.transport } as unknown as AdapterContext, {} as never);
@@ -46,9 +45,7 @@ async function install(host: ReturnType<typeof dockerHost>, log: string[], name:
       state.serving = commit;
     },
     health: async commit => { if (state.serving !== commit) throw new Error(`/healthz answers ${state.serving.slice(0, 7)}`); },
-    checkout: async () => {}, pin: async () => {}, prune: async () => {},
-    schema: async () => 1, database: async () => 1,
-  };
+  });
   return { file: join(directory, '.graphyard', 'deploy.json'), ports, state, log: (line: string) => log.push(`${name}: ${line}`) };
 }
 

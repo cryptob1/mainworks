@@ -13,6 +13,7 @@ import { masterStatusReport } from '../src/cli/master-status.js';
 import type { MasterConfig } from '../src/master/profiles.js';
 import { gateRecordPath, readGateRecord } from '../src/batch-gate.js';
 import { cycleUntil, git, pipelineWorld, rollout, worldLoop } from './helpers/pipeline-world.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3199: every install updates its own control plane — the Mainworks server, loop and CLI — to
@@ -26,17 +27,11 @@ const a = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', b = 'bbbbbbbbbbbbbbbbbbbbb
 const unverified = 'dddddddddddddddddddddddddddddddddddddddd';
 
 /** The watch's ports over a record root, with the verified ref and health scripted. */
-function ports(input: { head: string; verified: string | null; fetched?: string; onHealth?: (commit: string) => void }): DeployWatchPorts & { healthCalls: string[] } {
-  const healthCalls: string[] = [];
-  return {
-    fetch: async () => input.fetched ?? unverified,
+function ports(input: { head: string; verified: string | null; fetched?: string; onHealth?: (commit: string) => void }): DeployWatchPorts {
+  return deployPorts(() => input.fetched ?? unverified, input.head, {
     verifiedUpstream: async () => input.verified,
-    head: async () => input.head,
-    build: async () => {}, restart: async () => {}, checkout: async () => {}, pin: async () => {}, prune: async () => {},
-    health: async commit => { healthCalls.push(commit); input.onHealth?.(commit); },
-    schema: async () => 7, database: async () => 7,
-    healthCalls,
-  };
+    health: async commit => { input.onHealth?.(commit); },
+  });
 }
 
 /** GY-3746: the last update, moved back past the hour a following install waits between updates. */
@@ -167,16 +162,15 @@ test('e2e:install-daily-upgrade — an install for another repository upgrades i
   git(cli, 'checkout', '-q', '--detach', yard.base);
   const built: string[] = [];
   const health = { failing: false };
-  const watch = (): DeployWatchPorts => ({
-    fetch: async () => { git(cli, 'fetch', '-q', 'origin', 'main'); return git(cli, 'rev-parse', 'refs/remotes/origin/main'); },
-    verifiedUpstream: () => fetchVerifiedRef(async (...args: string[]) => git(cli, ...args), yard.origin),
-    head: async () => git(cli, 'rev-parse', 'HEAD'),
-    contains: async (ancestor, commit) => { try { git(cli, 'merge-base', '--is-ancestor', ancestor, commit); return true; } catch { return false; } },
-    build: async commit => { built.push(commit); },
-    restart: async () => {}, checkout: async () => {}, pin: async () => {}, prune: async () => {},
-    health: async commit => { if (health.failing && commit === verifiedRef()) throw new Error('/healthz reports the server unhealthy'); },
-    schema: async () => 7, database: async () => 7,
-  });
+  const watch = () => deployPorts(
+    () => { git(cli, 'fetch', '-q', 'origin', 'main'); return git(cli, 'rev-parse', 'refs/remotes/origin/main'); },
+    () => git(cli, 'rev-parse', 'HEAD'),
+    {
+      verifiedUpstream: () => fetchVerifiedRef(async (...args: string[]) => git(cli, ...args), yard.origin),
+      contains: async (ancestor, commit) => { try { git(cli, 'merge-base', '--is-ancestor', ancestor, commit); return true; } catch { return false; } },
+      build: async commit => { built.push(commit); },
+      health: async commit => { if (health.failing && commit === verifiedRef()) throw new Error('/healthz reports the server unhealthy'); },
+    });
   const pass = () => deployOnce(deployRecordPath(root), watch(), () => {}, mainworksRepository);
   const control = () => readControlPlaneRecord(controlPlaneRecordPath(root));
   const verifiedRef = () => git(yard.origin, 'rev-parse', '--verify', mainworksVerifiedRef);

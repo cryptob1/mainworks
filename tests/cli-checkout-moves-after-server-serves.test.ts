@@ -7,10 +7,11 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { applyInstall, buildPlan, installRequestFromArgs, prepareInstall } from '../src/install/index.js';
 import { gitWatchPorts, watchPorts } from '../src/cli/upgrade.js';
-import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
 import { cliReleasePath } from '../src/install/cli-release.js';
 import { defaultChildRun } from '../src/child-runner.js';
 import { harness } from './install-harness.js';
+import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
@@ -45,8 +46,7 @@ test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and r
   }));
   const tree = gitWatchPorts(checkout, defaultChildRun);
   const samples: string[] = [];
-  const ports: DeployWatchPorts = {
-    ...tree,
+  const ports = gitDeployPorts(checkout, {
     checkout: async sha => { samples.push(`checkout ${short(sha)} @ ${short(head(checkout))}`); await tree.checkout(sha); },
     build: async sha => { samples.push(`build ${short(sha)} @ ${short(head(checkout))}`); },
     restart: async sha => { samples.push(`restart ${short(sha)} @ ${short(head(checkout))}`); served = sha; },
@@ -56,9 +56,7 @@ test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and r
       if (!response.ok || !body.ok || body.commit !== sha) throw new Error(`health failed: /healthz answered ${response.status} for ${body.commit.slice(0, 7)}`);
     },
     pin: async sha => { samples.push(`pin ${short(sha)} @ ${short(head(checkout))}`); },
-    prune: async () => {},
-    schema: async () => 7, database: async () => 7,
-  };
+  });
   const root = await temporaryDirectory('cli-checkout-record'), file = deployRecordPath(root);
   try {
     // The server reports the new commit healthy only after the restart, and the checkout moves then — never before.

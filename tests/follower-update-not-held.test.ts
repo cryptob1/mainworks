@@ -2,12 +2,13 @@
 // followed project's merge trials, and the project-less file declarations they make, never hold it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { controlPlaneRecordPath, deployRecordPath, readDeployRecord, watchMain, writeControlPlaneRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { controlPlaneRecordPath, deployRecordPath, readDeployRecord, watchMain, writeControlPlaneRecord } from '../src/deploy-watch.js';
 import { installInFlight } from '../src/cli/upgrade.js';
 import { loopStateContext } from '../src/loop-state.js';
 import { acquireVerificationSlot, heldSlots, testMergeLabel } from '../src/master/verification-slots.js';
 import { declareTrialFiles } from '../src/merge-writer/trial.js';
 import { mainworksRepository } from '../src/scenarios.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40);
@@ -41,13 +42,12 @@ test('e2e:follower-update-not-held — a running deploy watch serves the newer v
 
   let running = a;
   const restarts: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => a, head: async () => a, verifiedUpstream: async () => b,
+  const ports = deployPorts(a, a, {
+    verifiedUpstream: async () => b,
     busy: () => installInFlight(root, 'owner/consumer', slots), hotfix: async () => false,
-    build: async () => {}, restart: async commit => { restarts.push(commit); running = commit; },
+    restart: async commit => { restarts.push(commit); running = commit; },
     health: async commit => { if (running !== commit) throw new Error(`serves ${running.slice(0, 12)}`); },
-    checkout: async () => {}, pin: async () => {}, prune: async () => {}, schema: async () => 1, database: async () => 1,
-  };
+  });
   const controller = new AbortController();
   await quietLedgers(async () => {
     const watch = watchMain(file, ports, { intervalMs: 20, signal: controller.signal, log: () => {}, repository: mainworksRepository });
