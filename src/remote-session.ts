@@ -10,8 +10,8 @@
 // channel and run here in the worktree. The worktree here mirrors the host's checkout while the session
 // runs (its commits and, uncommitted, its changed files), so the loop's attempt bound sees its progress,
 // a stop keeps its uncommitted work as a local session's, and `complete` submits a head held here. A host that drops ends the SSH channel, so the
-// runtime exits and its `watch` supervisor releases the lease: the item returns to the queue. A session that fails before the agent wrote anything
-// (GY-4057's failed preparation, GY-4062's host that cannot run it) never spends the attempt: the same supervisor starts it here instead.
+// runtime exits and its `watch` supervisor releases the lease: the item returns to the queue. A host that cannot run the session (GY-4057's failed
+// preparation, GY-4062's agent that exits at once with nothing written) never spends the attempt: the same supervisor starts it here instead.
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -336,10 +336,10 @@ async function runOnHost(input: RemoteSession): Promise<number> {
       child.on('error', error => { preparationError = error.message; resolve(droppedExit); });
       child.on('close', status => { void queue.then(() => resolve(status ?? droppedExit)); });
     }));
-    // GY-4057: the helper's own failure before the agent started. GY-4062: a failed session that ended before the agent wrote a line — a host
-    // that cannot run it starts the agent, which exits at once with nothing said — is the same setup failure, so the attempt goes on elsewhere
-    // and is not spent. A session that exits 0 finished, whatever it printed.
-    if (code !== 0 && (!agentStarted || !printed)) throw new SessionPreparationError(preparationError.trim() || (agentStarted ? `the agent exited ${code} before writing any output` : `helper exited ${code} before the agent started`));
+    // GY-4057: the helper's own failure before the agent started. GY-4062: an agent that starts on a host which cannot run it and exits at
+    // once with nothing written is the same setup failure, so the attempt goes on elsewhere and is not spent. A session that exits 0 finished,
+    // whatever it printed, and a host that drops (exit 255) still ends the attempt as before: that is a lost connection, not a host's refusal.
+    if (code !== 0 && (!agentStarted || (!printed && code !== droppedExit))) throw new SessionPreparationError(preparationError.trim() || (agentStarted ? `the agent exited ${code} before writing any output` : `helper exited ${code} before the agent started`));
     if (code === droppedExit) errors.write(`The session on ${input.target} ended: the host dropped, so the attempt ends and the item returns to the queue\n`);
     return code;
   } finally {

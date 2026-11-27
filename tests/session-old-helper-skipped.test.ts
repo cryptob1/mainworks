@@ -24,7 +24,8 @@ import { supervise } from '../src/session-watch.js';
 // spent. A host opened to sessions whose helper lacks run-session is skipped for sessions and
 // status says why, while it stays ready for test shards. A session that fails before the agent wrote
 // anything is a setup failure: the same attempt starts on this machine under its own supervisor and
-// lease, and the host takes no session for 30 minutes. One that exits 0 finished, whatever it wrote.
+// lease, and the host takes no session for 30 minutes. One that exits 0 finished, whatever it wrote,
+// and a host that drops still ends the attempt as it always did.
 
 const proof = 'integration:session-old-helper-skipped';
 const older = 'gy-compute@older-helper', silent = 'gy-compute@silent-exit';
@@ -118,22 +119,26 @@ test(`${proof} — a session that fails before it writes anything starts the sam
   } finally { process.env.PATH = previous; }
 });
 
-test(`${proof} — a session that exits 0 with nothing written finished: nothing starts here and the host is not paused`, async () => {
-  const { directory, root, file, bin } = await silentHost(0);
-  const previous = process.env.PATH, localRan = join(directory, 'local-command');
-  process.env.PATH = `${bin}:${previous}`;
-  let printed = '';
-  const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
-  try {
-    const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
-      localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
-      env: {}, run: prepare, hostsFile: file, output: sink, errors: sink });
-    assert.equal(code, 0, printed);
-    assert.equal(existsSync(localRan), false, 'a session that finished is not run again here');
-    assert.equal(await sessionCooldown(silent, file), null, 'nor is its host paused');
-    assert.equal(await remoteSessionHost('codex', () => [], prepare, file), silent, 'the host keeps taking sessions');
-  } finally { process.env.PATH = previous; }
-});
+// Neither is a failed setup: a session that exits 0 finished, and a host that drops is a lost connection whose attempt ends as before
+// (tests/remote-session-login pins it). Both wrote nothing only because the incident's host answered before the agent could.
+for (const [exit, ended] of [[0, 'exits 0'], [255, 'is dropped by its host']] as const)
+  test(`${proof} — a session that ${ended} with nothing written is not a failed setup: nothing starts here and the host is not paused`, async () => {
+    const { directory, root, file, bin } = await silentHost(exit);
+    const previous = process.env.PATH, localRan = join(directory, 'local-command');
+    process.env.PATH = `${bin}:${previous}`;
+    let printed = '';
+    const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
+    try {
+      const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
+        localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
+        env: {}, run: prepare, hostsFile: file, output: sink, errors: sink });
+      assert.equal(code, exit, printed);
+      assert.equal(existsSync(localRan), false, 'the session is not run again here');
+      assert.equal(await sessionCooldown(silent, file), null, 'nor is its host paused');
+      assert.equal(await remoteSessionHost('codex', () => [], prepare, file), silent, 'the host keeps taking sessions');
+      if (exit === 255) assert.match(printed, /The session on gy-compute@silent-exit ended: the host dropped, so the attempt ends and the item returns to the queue/);
+    } finally { process.env.PATH = previous; }
+  });
 
 test(`${proof} — the supervisor keeps the claimed epoch and records no failed attempt while the fallback agent runs`, { timeout: 30_000 }, async () => {
   const store = await withDatabase('session-old-helper');
