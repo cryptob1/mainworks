@@ -240,6 +240,9 @@ elif command == 'create':
         with open(env['HOSTALIASES'], 'w') as aliases:
             aliases.write(''.join(name + ' localhost\\n' for name in s.get('projects', {}).get(joined, {})))
     image_name = args[at + 2]
+    # As Docker does (it would try to pull), a container is never created from an image this host lacks.
+    if image_name not in s['images'] and image_name not in s['image_ids']:
+        sys.exit('Unable to find image ' + repr(image_name) + ' locally')
     warm_dir = s['warm'].get(image_name)
     if warm_dir and os.path.isdir(warm_dir):
         env['GRAPHYARD_WARM_DIR'] = warm_dir
