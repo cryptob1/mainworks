@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { imageLock, takeLock, withHostLock } from './host-lock.js';
+import { withHeavyJob } from './master/verification-slots.js';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { GitRunner } from './merge-writer/local-observation.js';
@@ -374,8 +375,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
     const current = readControlPlaneRecord(controlFile) ?? { commit: previous, checkedAt: null, updatedAt: null, verified: null, verifiedSeenAt: null, failedStep: null, failedReason: null, failedAt: null };
     await writeControlPlaneRecord(controlFile, { ...current, commit: current.commit ?? previous, ...entry });
   };
-  // GY-4030: installs on one machine take turns building and exporting their image under the host's image lock;
-  // a build that still loses its BuildKit lease is tried once more after the other build ends.
+  // GY-4030: installs on one machine take turns building and exporting their image under the host's image lock.
   let retried: string | null = null;
   const restartInTurn = (commit: string, noCache = false) => withHostLock(imageLock, async () => {
     await noteControl({ waiting: null });
@@ -387,24 +387,20 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
       return noteControl({ waiting: { tip: commit, reason: `Waits for ${holder}'s image build to finish`, since: new Date().toISOString() } });
     },
   }).finally(() => noteControl({ waiting: null }));
+  // GY-4047: a BuildKit lease or ingest error, on any blob, retries this build once without its build cache.
   const restartStep = async (commit: string) => {
     try { await restartInTurn(commit); } catch (error) {
       if (!/lease does not exist|failed to ingest/i.test(message(error))) throw error;
       const failure = /lease does not exist/i.test(message(error)) ? 'lease' : 'ingest';
-      log(`[mainworks-deploy] the image build of ${commit.slice(0, 12)} had a BuildKit ${failure} error; retrying once: ${message(error)}`);
-      retried = `The image build of ${commit.slice(0, 12)} was retried once after a BuildKit ${failure} error`;
+      const blob = message(error).match(/sha256:[a-f0-9]{64}/i)?.[0];
+      retried = `The image build of ${commit.slice(0, 12)} was retried once without build cache after a BuildKit ${failure} error${blob ? ` on blob ${blob}` : ''}`;
+      log(`[mainworks-deploy] ${retried}; retrying: ${message(error)}`);
       await noteControl({ retried });
-      try { await restartInTurn(commit); } catch (retryError) {
-        const blob = message(error).match(/sha256:[a-f0-9]{64}/i)?.[0];
-        if (!blob || !message(retryError).includes(blob) || !/lease does not exist|failed to ingest/i.test(message(retryError))) throw retryError;
-        retried = `The image build of ${commit.slice(0, 12)} was retried without build cache after repeated BuildKit errors for blob ${blob}`;
-        log(`[mainworks-deploy] ${retried}`);
-        await noteControl({ retried });
-        await restartInTurn(commit, true);
-      }
+      await restartInTurn(commit, true);
     }
   };
-  const run = async (commit: string) => {
+  // GY-4047: the deploy holds its heavy-job slot from the build until the pin, so no reclaim pass runs between its attempts.
+  const run = (commit: string) => withHeavyJob(`deploy ${commit.slice(0, 12)}`, async () => {
     for (const step of steps) {
       log(`[mainworks-deploy] ${step} ${commit.slice(0, 12)}`);
       try { await (step === 'restart' ? restartStep(commit) : ports[step](commit)); } catch (error) {
@@ -413,7 +409,7 @@ async function deployPass(file: string, ports: DeployWatchPorts, log: (line: str
         throw Object.assign(new Error(`${step} failed: ${message(error)}`), { step });
       }
     }
-  };
+  }, { reserved: true });
   const restore = async (previous: string, failed: string, reason: string, attempts: number) => {
     try { await run(previous); } catch (error) {
       log(`[mainworks-deploy] the rollback to ${previous.slice(0, 12)} failed (attempt ${attempts}): ${message(error)}`);
