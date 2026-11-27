@@ -9,7 +9,8 @@
 // not. A host with no directory refuses the connection exactly as OpenSSH words it. GY-3440: a
 // `tailscale` host's port 22 is Tailscale SSH (auth none: any account gets a plain shell, keys
 // ignored); another port answers only as the sshd_graphyard_config the script wrote says (Port,
-// AllowUsers, ForceCommand). `ssh -G` and connections resolve aliases from $HOME/.ssh/config.
+// AllowUsers, ForceCommand). `ssh -G` and connections resolve aliases from $HOME/.ssh/config; `ssh-keyscan`
+// prints one host key per host directory, so two names for one host read as one machine (GY-4009).
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -413,6 +414,12 @@ if [ "$user" = ${ownerLogin} ] && [ -d "$dir/standins" ]; then
   last=$(printf '%s' "$last" | sed "s#/usr/local/bin/graphyard-host-shim#$dir/usr-local-bin/graphyard-host-shim#g; s#/etc/ssh/#$dir/etc/ssh/#g; s#/etc/systemd/system/#$dir/etc/systemd/system/#g")
 fi
 exec sh -c "$last"
+`);
+  // GY-4009: each host answers with its own host key (from its fixture name), whatever name or port reaches it.
+  await executable(join(bin, 'ssh-keyscan'), `#!/bin/sh
+for host in "$@"; do :; done
+[ -d "${root}/hosts/$host" ] && printf '%s ssh-ed25519 %s\\n' "$host" "$(printf %s "$host" | base64)"
+exit 0
 `);
   return { root, bin, publicKey: fixturePublicKey, host: (name: string) => join(root, 'hosts', name), home: (name: string, user = hostUser) => join(root, 'hosts', name, 'home', user), prepareOutput: (name: string) => outputs.get(name) ?? '',
     prepare: async (name: string, install?: PrepareInstall) => runPrepareScript(byName.get(name)!, join(root, 'hosts', name), install) };
