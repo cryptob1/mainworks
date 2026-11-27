@@ -21,7 +21,7 @@ const identity = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t'
 const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', env: identity, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /** Mainworks's own coordinator checkout over a scratch origin, a trial that always passes, and `merge()` to land one more item on main. */
-async function gateFixture(repository = mainworksRepository) {
+async function gateFixture(repository = mainworksRepository, pushReleaseTag?: MergeWriterReads['pushReleaseTag']) {
   const base = await temporaryDirectory('publish-verified-gate');
   const origin = join(base, 'origin.git'), pusher = join(base, 'pusher'), coordinator = join(base, 'coordinator');
   git(base, ['init', '-q', '--bare', '-b', 'main', origin]);
@@ -59,7 +59,7 @@ async function gateFixture(repository = mainworksRepository) {
       e2e: item.criteria.flatMap(criterion => criterion.proofs).map(proof => ({ proof, case: proof.slice(4), executed: 1, failed: 0 })) }) as unknown as MergeTrialRun,
     push: async () => 'pushed', holds: async () => true, record: async () => undefined, createWork: async () => null,
     gate: { root: coordinator, repository },
-    pushReleaseTag: production.pushReleaseTag,
+    pushReleaseTag: pushReleaseTag ?? production.pushReleaseTag,
   };
   let state = emptyDaemonState({ url: 'http://127.0.0.1:1', repository } as any), lines: string[] = [];
   const cycle = () => ({ state, effects: { mergeWriter: reads } as any, snapshot: { work, now: new Date().toISOString() } as any, now: Date.now, log: (line: string) => lines.push(line) });
@@ -68,11 +68,11 @@ async function gateFixture(repository = mainworksRepository) {
     const first = await batchGateStep(cycle());
     await first!.gate; await first!.diagnostics;
     const next = await batchGateStep(cycle());
-    await next!.gate; await next!.diagnostics;
+    await next!.gate; await next!.diagnostics; await next!.tag;
   };
   const deploy = async (tip: string, extra = {}) => writeFile(deployRecordPath(coordinator), JSON.stringify({ repository, tip, failed: null, reason: null, at: new Date().toISOString(), ...extra }));
   const restart = () => { state = emptyDaemonState({ url: 'http://127.0.0.1:1', repository } as any); };
-  return { coordinator, origin, merge, gate, deploy, restart, calls, deployKey, lines };
+  return { coordinator, origin, merge, gate, deploy, restart, calls, deployKey, lines, cycle };
 }
 
 test('unit:tests/publish-tag.test.ts — a verified deploy pushes exactly one version tag with the deploy key, including across restart', async () => {
@@ -163,4 +163,25 @@ test('unit:tests/publish-tag.test.ts — status shows npm latest beside the cont
   assert.equal(report.serving.commit, null, 'Mainworks release is not the managed project release');
   assert.equal(await npmPublishedVersion(async () => { throw new Error('E404'); }), 'not published');
   assert.equal(await npmPublishedVersion(async () => { throw new Error('offline'); }), 'unavailable');
+});
+
+// GY-3957: the release tag push was awaited inside the merge writer step, bounded only by the 90 s
+// child default, so a slow remote took the step past its 60 s timeout. The push runs beside the cycle.
+test('unit:loop-step-bounded — a slow release tag push runs beside the cycle: the merge writer step settles, the push is not started twice, and its tag is recorded when it ends', async () => {
+  let pushes = 0, finish!: () => void;
+  const f = await gateFixture(mainworksRepository, async () => { pushes++; await new Promise<void>(resolve => { finish = resolve; }); return 'v-slow'; });
+  await f.gate();
+  const commit = await f.merge(); await f.gate();
+  await f.deploy(commit);
+  const step = () => Promise.race([batchGateStep(f.cycle()), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the step waited on the tag push')), 2_000).unref())]);
+  const first = await step();
+  assert.equal(pushes, 1, 'the push started');
+  await step();
+  assert.equal(pushes, 1, 'a push still running is not started again');
+  finish();
+  await first!.tag;
+  assert.equal(readGateRecord(gateRecordPath(f.coordinator))!.releaseTagged, commit);
+  assert.ok(f.lines.some(line => line.includes('Pushed v-slow')), f.lines.join('\n'));
+  await step();
+  assert.equal(pushes, 1, 'a tagged release is not pushed again');
 });
