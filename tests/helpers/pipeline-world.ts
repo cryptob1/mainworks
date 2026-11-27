@@ -8,6 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listen } from './http-server.js';
+import { deployPorts } from './deploy-ports.js';
 import { bootstrapGate, gateRecordPath, readGateRecord, writeGateRecord, type GateRecord } from '../../src/batch-gate.js';
 import { fileFlakyCheck } from '../../src/daemon/control-plane.js';
 import { defaultChildRun, type ChildRun } from '../../src/child-runner.js';
@@ -223,14 +224,11 @@ export async function cycleUntil(loop: Omit<ReturnType<typeof pipelineLoop>, 're
  * provider would once the image runs.
  */
 export function watchPorts(world: Pick<World, 'checkout' | 'base'>, built: string[]): DeployWatchPorts {
-  return {
-    fetch: async () => { git(world.checkout, 'fetch', '-q', 'origin', 'main'); return git(world.checkout, 'rev-parse', 'refs/remotes/origin/main'); },
-    head: async () => world.base,
+  return deployPorts(() => { git(world.checkout, 'fetch', '-q', 'origin', 'main'); return git(world.checkout, 'rev-parse', 'refs/remotes/origin/main'); }, world.base, {
     contains: async (ancestor, commit) => { try { git(world.checkout, 'merge-base', '--is-ancestor', ancestor, commit); return true; } catch { return false; } },
     build: async commit => { built.push(commit); },
-    restart: async () => {}, health: async () => {}, checkout: async () => {}, pin: async () => {}, prune: async () => {},
     schema: async () => null, database: async () => null,
-  };
+  });
 }
 
 /** One deploy-watch pass over the checkout: what it did and the commit its record serves. */

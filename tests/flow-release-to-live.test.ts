@@ -12,8 +12,9 @@ import { server } from '../src/server.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { herdrSubcommand, isHerdrCommand } from '../src/master/herdr.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
-import { deployOnce, deployRecordPath, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, deployRecordPath } from '../src/deploy-watch.js';
 import type { Principal } from '../src/model.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { listen } from './helpers/http-server.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { apiOk } from './helpers/api.js';
@@ -75,21 +76,6 @@ async function report() {
   return masterStatusReport(repoRoot, config, masterApi, async (command, args) => isHerdrCommand(command) ? (herdrSubcommand(args)[1] === 'list' ? JSON.stringify({ agents: [] }) : '') : `${git(repoRoot, 'rev-parse', 'HEAD')}\n`);
 }
 
-function fakePorts(tip: string, head: string, failBuild = false): DeployWatchPorts {
-  return {
-    fetch: async () => tip,
-    head: async () => head,
-    checkout: async () => {},
-    build: async () => { if (failBuild) throw new Error('build broke'); },
-    restart: async () => {},
-    health: async () => {},
-    pin: async () => {},
-    prune: async () => {},
-    schema: async () => 1,
-    database: async () => 1,
-  };
-}
-
 test('integration:flow-release-to-live — live station reports median, p90, samples and oldest unserved merge from first containing deploy', async () => {
   const base = git(repoRoot, 'rev-parse', 'HEAD');
   const m1 = await commitFile(repoRoot, 'm1.txt', 'one\n');
@@ -124,7 +110,7 @@ test('integration:flow-release-to-live — live station reports median, p90, sam
   assert.ok(Math.abs(live.oldest.minutes - 15) <= 1, `expected oldest ~15 min, got ${live.oldest.minutes}`);
 
   // A failed deploy of M3 via deployOnce rolls back to M2 and does not mark M3 as live.
-  assert.equal(await deployOnce(deployRecordPath(repoRoot), fakePorts(m3, m2, true), () => {}, repository), 'rolled-back');
+  assert.equal(await deployOnce(deployRecordPath(repoRoot), deployPorts(m3, m2, { build: async () => { throw new Error('build broke'); } }), () => {}, repository), 'rolled-back');
   forgetFlow(store);
   const afterRollback = (await call(adminToken, 'flow'))['24h'].stations.live;
   assert.equal(afterRollback.oldest.key, third.key);
@@ -137,7 +123,7 @@ test('e2e:flow-release-to-live — after a merge deploys, master status shows a 
   await seedMerged('Deployed merge', m4, 5);
 
   // Deploy m4 through the real deployOnce watch pass.
-  assert.equal(await deployOnce(deployRecordPath(repoRoot), fakePorts(m4, previous), () => {}, repository), 'deployed');
+  assert.equal(await deployOnce(deployRecordPath(repoRoot), deployPorts(m4, previous), () => {}, repository), 'deployed');
 
   forgetFlow(store);
   const status = await report();

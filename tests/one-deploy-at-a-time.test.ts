@@ -3,16 +3,15 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { deployOnce, readDeployRecord, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce, readDeployRecord } from '../src/deploy-watch.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40);
 
 /** One control plane: one server, whose restart refuses while another restart is under way (as compose does). */
 function plane(options: { restartFails?: (commit: string) => boolean } = {}) {
   const state = { serving: a, restarting: false, restarts: [] as string[] };
-  const ports = (): DeployWatchPorts => ({
-    fetch: async () => b,
-    head: async () => a,
+  const ports = () => deployPorts(b, a, {
     build: async () => { await delay(30); },
     restart: async commit => {
       if (state.restarting) throw new Error('the container is already being recreated');
@@ -24,11 +23,6 @@ function plane(options: { restartFails?: (commit: string) => boolean } = {}) {
       state.serving = commit;
     },
     health: async commit => { if (state.serving !== commit) throw new Error(`/healthz answers ${state.serving.slice(0, 7)}`); },
-    checkout: async () => {},
-    pin: async () => {},
-    prune: async () => {},
-    schema: async () => 1,
-    database: async () => 1,
   });
   return { state, ports };
 }

@@ -4,8 +4,9 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { controlPlaneRecordPath, controlPlaneSummary, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, updateNowPath, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { controlPlaneRecordPath, controlPlaneSummary, deployOnce, deployRecordPath, readControlPlaneRecord, readDeployRecord, updateNowPath } from '../src/deploy-watch.js';
 import { mainworksRepository } from '../src/scenarios.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 const a = 'a'.repeat(40), b = 'b'.repeat(40), c = 'c'.repeat(40);
@@ -15,12 +16,11 @@ async function install(core = false) {
   const root = await temporaryDirectory('consumer-quiet'), file = deployRecordPath(root);
   let upstream = b, busy: string | null = null, titles = 'Merge GY-1: a change';
   const restarts: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => c, head: async () => a, verifiedUpstream: async () => upstream,
+  const ports = deployPorts(c, a, {
+    verifiedUpstream: async () => upstream,
     busy: async () => busy, hotfix: async () => /\bhotfix:/i.test(titles),
-    build: async () => {}, restart: async commit => { restarts.push(commit); }, health: async () => {},
-    checkout: async () => {}, pin: async () => {}, prune: async () => {}, schema: async () => 1, database: async () => 1,
-  };
+    restart: async commit => { restarts.push(commit); },
+  });
   if (core) {
     await mkdir(dirname(file), { recursive: true });
     await writeFile(`${dirname(file)}/main-gate.json`, JSON.stringify({ repository: mainworksRepository, verified: b }));

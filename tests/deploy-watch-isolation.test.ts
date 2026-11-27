@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { gitWatchPorts } from '../src/cli/upgrade.js';
-import { deployRecordPath, readDeployRecord, watchMain, type DeployWatchPorts } from '../src/deploy-watch.js';
-import { defaultChildRun } from '../src/child-runner.js';
+import { deployRecordPath, readDeployRecord, watchMain } from '../src/deploy-watch.js';
+import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
@@ -34,14 +33,11 @@ test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD anoth
   let version = '';
   const { url, close } = await listen(createHttpServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, healthy: true, version })); }));
   const moveTo = a;
-  const ports: DeployWatchPorts = {
-    ...gitWatchPorts(checkout, defaultChildRun),
-    build: async () => {}, pin: async () => {}, prune: async () => {},
+  const ports = gitDeployPorts(checkout, {
     // The other install's rollback moves the shared HEAD once the restart has stamped the image.
     restart: async sha => { version = `unreleased ${sha.slice(0, 12)}`; git(checkout, 'checkout', '-q', '--detach', moveTo); },
     health: deployHealth(checkout, url, 1, 0),
-    schema: async () => 7, database: async () => 7,
-  };
+  });
   const file = deployRecordPath(await temporaryDirectory('deploy-health-commit'));
   try {
     await watchMain(file, ports, { intervalMs: 1000, once: true, log: () => {} });

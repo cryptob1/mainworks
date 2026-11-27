@@ -7,8 +7,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { composeAdapter, type AdapterContext } from '../src/install/adapters.js';
 import type { Transport } from '../src/install/transport.js';
-import { deployOnce, type DeployWatchPorts } from '../src/deploy-watch.js';
+import { deployOnce } from '../src/deploy-watch.js';
 import { pruneImages } from '../src/cli/upgrade.js';
+import { deployPorts } from './helpers/deploy-ports.js';
 
 // GY-3718: an install whose release image already exists provisions without building, and old-image
 // removal by any install on the host waits for the image lock another install's provisioning holds.
@@ -45,9 +46,7 @@ function dockerHost(tags: string[]) {
 /** An install on that host: a restart that provisions the commit's image and serves it, and a prune of old images. */
 async function install(host: ReturnType<typeof dockerHost>, name: string, from: string, to: string) {
   const directory = await temporaryDirectory(`image-lock-${name}`), state = { serving: from }, log: string[] = [];
-  const ports: DeployWatchPorts = {
-    fetch: async () => to, head: async () => from,
-    build: async () => {},
+  const ports = deployPorts(to, from, {
     restart: async commit => {
       const image = `mainworks-local:${commit.slice(0, 12)}`;
       await composeAdapter.provision({ sourceRoot: directory, image, transport: host.transport } as unknown as AdapterContext, {} as never);
@@ -55,10 +54,8 @@ async function install(host: ReturnType<typeof dockerHost>, name: string, from: 
       state.serving = commit;
     },
     health: async commit => { if (state.serving !== commit) throw new Error(`/healthz answers ${state.serving.slice(0, 7)}`); },
-    checkout: async () => {}, pin: async () => {},
     prune: keep => pruneImages(host.run, keep, line => log.push(line)),
-    schema: async () => 1, database: async () => 1,
-  };
+  });
   return { file: join(directory, '.graphyard', 'deploy.json'), ports, state, log, deploy: () => deployOnce(join(directory, '.graphyard', 'deploy.json'), ports, line => log.push(line)) };
 }
 
