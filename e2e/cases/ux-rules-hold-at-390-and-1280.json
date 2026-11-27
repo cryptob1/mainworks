@@ -1,7 +1,7 @@
 {
   "id": "ux-rules-hold-at-390-and-1280",
   "title": "Home, Work, a change and Lead keep the newcomer rules at 390 and 1280 px",
-  "description": "A real browser on the built dashboard over the README's demo data (scripts/docs-media-demo.mjs): at 390 and 1280 px, Home, Work, a change's Checks and diff, Live session and Lead tabs, and Lead's Conversation, Live session, History and Product show no internal id, task key, commit hash, model id, agent account or proof id outside a Details area, never scroll sideways, show no counter or status line twice, and every empty or waiting line says what happens next in one sentence; a fresh install's empty Home, Work and Lead do too, and the demo Work line reads at least 3 merges an hour.",
+  "description": "A real browser on the built dashboard over the README's demo data (scripts/docs-media-demo.mjs): at 390 and 1280 px, Home, Work, a change's Checks and diff, Live session and Lead tabs, and Lead's Conversation, Live session, History and Product show no internal id, task key, commit hash, model id, agent account or proof id outside a Details area, never scroll sideways, show no counter or status line twice, and every empty or waiting line says what happens next in one sentence; a fresh install's empty Home, Work and Lead do too, and the demo Work line reads at least 3 merges an hour; on Work the In flight and Shipped today counts show only on their filters, the top strip says \"shipped this week\" and the Now column has no merge-writer or reviewer wording; a change's Now line does not repeat its state word, its Next line names an action, and Details labels the priority picker.",
   "tags": [
     "dashboard"
   ],
