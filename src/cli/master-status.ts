@@ -397,8 +397,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     sessions,
     // GY-3405: the latest sessions that ran on an added host, running or ended: which item, where, and how it stands.
     remoteSessions: remoteWorkerRuns(root).slice(0, 10),
-    // GY-4004: builder sessions running on each host open to sessions, of its room, and on this machine.
-    builderSessions: builderSessionCounts(runningWorkerPlaces(root), await Promise.all((await readHosts().catch(() => [])).map(async host => ({ ...host, sessionCooldown: await sessionCooldown(host.target) })))),
+    // GY-4004: builder sessions running on each host open to sessions, of its room, and on this machine; GY-4062: why one opened to sessions takes none, as the loop last read it.
+    builderSessions: builderSessionCounts(runningWorkerPlaces(root), await Promise.all((await readHosts().catch(() => [])).map(async host => ({ ...host, sessionCooldown: await sessionCooldown(host.target), takesNone: state?.hosts.find(reading => reading.host === host.target)?.takesNone })))),
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }

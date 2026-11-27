@@ -49,7 +49,8 @@ test(`${proof} — a host whose helper lacks run-session is skipped with its rea
   assert.equal(old.away, false, `${older} keeps taking test shards`);
   assert.equal(old.takesNone, reason, 'status names why the host takes no builder');
   assert.equal(good.takesNone, undefined, 'a host whose helper runs sessions needs no reason');
-  assert.deepEqual(builderSessionCounts([silent], [old, good]), { coordinator: 0, hosts: [{ host: older, running: 0, room: 3, takesNone: reason }, { host: silent, running: 1, room: 3 }] });
+  assert.deepEqual(builderSessionCounts([silent], [{ target: older, sessions: 3, takesNone: old.takesNone }, { target: silent, sessions: 3, takesNone: good.takesNone }]),
+    { coordinator: 0, hosts: [{ host: older, running: 0, room: 3, takesNone: reason }, { host: silent, running: 1, room: 3 }] }, 'master status carries the reason beside the host');
 });
 
 /** A stand-in `ssh` whose run-session answers as the incident's host did: the agent starts, then the session exits 1 with nothing written. */
