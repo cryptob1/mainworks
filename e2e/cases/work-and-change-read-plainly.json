@@ -1,0 +1,9 @@
+{
+  "id": "work-and-change-read-plainly",
+  "title": "Work and a change show each count once, plain Now words and a real next step",
+  "description": "A real browser on the built dashboard over the README's demo data (scripts/docs-media-demo.mjs) at 390 and 1280 px: on Work the In flight and Shipped today counts show only on their filters, not in the header line or the top strip; the top strip says 'shipped this week'; the Now column has no merge-writer or reviewer wording ('merge trial', 'latest main', 'diff and proofs'). On a change, the Now line does not repeat the state word beside the title, the Next line names an action (never a bare 'Mainworks (automatic)'), Details labels the priority picker 'Priority', and nothing scrolls sideways.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "Read Work and a change at 390 and 1280 px", "run": "npm run test:browser -- browser-tests/work-and-change-read-plainly.spec.ts", "timeoutSeconds": 300 }]
+}

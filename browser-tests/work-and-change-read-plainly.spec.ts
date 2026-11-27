@@ -5,7 +5,7 @@ import { NOW, buildDemoState, demoAnswer } from '../scripts/docs-media-demo.mjs'
 // shipped count is the week's and reads its Now column owner-first; a change's Now line does not
 // repeat its state word, its Next line names an action, and Details labels the priority picker.
 for (const width of [390, 1280]) {
-  test(`e2e:ux-rules-hold-at-390-and-1280 — Work and a change say each thing once, plainly, with a real next step at ${width} px`, async ({ page }) => {
+  test(`e2e:work-and-change-read-plainly — Work and a change show each count once, plain Now words and a Next line naming the action at ${width} px`, async ({ page }) => {
     test.setTimeout(120_000);
     const state = buildDemoState('static');
     await page.setViewportSize({ width, height: 900 });
