@@ -5,6 +5,8 @@ import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { detachedLaunch } from '../src/runner/pi.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+// GY-4006: the launch words these tests pin are the ones with no reserved CPUs, whatever the host reserves.
+delete process.env.MAINWORKS_RESERVED_CPUS; delete process.env.GRAPHYARD_RESERVED_CPUS;
 
 /**
  * GY-1432: every self-upgrade restart of graphyard-master.service hung in 'final-sigterm' for the

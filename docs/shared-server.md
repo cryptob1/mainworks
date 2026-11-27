@@ -32,6 +32,8 @@ Environment=MAINWORKS_RESERVED_CPUS=0-3
 systemctl --user restart graphyard-master-OWNER-NAME.service
 ```
 
+A running session's scope names its CPUs (`systemctl --user show -p AllowedCPUs` on it), and each of its processes says where the kernel lets it run (`Cpus_allowed_list` in `/proc/PID/status`).
+
 ## Sharing the machine over Tailscale
 
 Install Tailscale on the server, sign in, rerun `mainworks up`: every install is served on the tailnet with `tailscale serve --bg --http=PORT` — never `tailscale funnel`; nothing is public. To let a person in, press **Invite** in the top bar. The first time it asks once for a Tailscale API key, which the browser seals to this machine; each invite then makes the Tailscale device invite itself (multi-use when it names several people). Until then a machine share link saved earlier (Tailscale admin console: Machines, this machine, Share) is used; Tailscale expires an unused one 30 days after it was made.
