@@ -144,7 +144,7 @@ export function SetupView({ status, work, workUnread, now, onConnect, infra }: {
     {supervised && <p className="notice" data-supervised>An agent reviews each change and {PRODUCT_NAME} merges it; no agent approves decisions on your behalf, so you answer each one.</p>}
     <PageSection title="Checklist" label="Setup checklist"><SetupChecklist items={items} onConnect={onConnect} onboarding={onboarding}/></PageSection>
     {!!infra?.length && <PageSection title="Repository and hosting changes" label="Repository and hosting changes"><InfraActionsPanel actions={infra}/></PageSection>}
-    <PageSection title="Be told when the yard stops" label="Be told when the yard stops"><AlertsLine status={status}/></PageSection>
+    <PageSection title="Be told when work stops" label="Be told when work stops"><AlertsLine status={status}/></PageSection>
     <section className="panel" aria-label="Watch agents in a terminal"><MoreDetails summary="Watch agents in a terminal"><HerdrConnect watch={paneServer(status)}/></MoreDetails></section>
     <section className="panel" aria-label="Where things run"><MoreDetails summary="Where things run"><WhereThingsRunPanel where={status?.setup?.where ?? null} panes={status?.setup?.panes ?? null}/></MoreDetails></section>
   </>;
