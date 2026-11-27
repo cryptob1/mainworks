@@ -13,6 +13,11 @@ import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
+
+// The item this test files carries an e2e proof, so the policy in force says how a head is served for
+// it; the policy is read once per process, and nothing reads it ahead of this line.
+setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 // GY-3599: the Task page's evidence, from a real control plane on isolated Postgres with a git fixture:
 // the trial's step timings and slowest file from the merge ledger, the changed files and one file's
