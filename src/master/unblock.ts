@@ -1,6 +1,8 @@
 // Concern: `master unblock` clearing a blocker, retried when the item's revision moved under it.
 import { randomUUID } from 'node:crypto';
 import type { Work } from '../model.js';
+import { answerCommand, parkedOnHuman } from '../model/human-request.js';
+import { blockerAuthor, blockerSince } from '../model/work.js';
 import { setting } from '../setting.js';
 
 /** How many times `master unblock` writes before a stale-revision refusal is reported (GY-1103). */
@@ -31,4 +33,20 @@ export async function unblockWithRetry<T>(work: Work, write: (work: Work, attemp
       work = fresh;
     }
   }
+}
+
+/**
+ * GY-3996: one line printed after `master release` when the released item still carries an open
+ * recorded blocker — its first 120 characters, who recorded it and when (each as the item records
+ * it), and the command that clears it: the Lead's unblock, or the owner's answer while the item
+ * waits on a human decision. Null when no blocker remains.
+ */
+export function remainingBlockerNotice(work: Pick<Work, 'key' | 'blocker' | 'blockedAt' | 'agentRequests' | 'capacity' | 'humanRequest' | 'humanRequests' | 'pipeline'> | null | undefined): string | null {
+  if (!work?.blocker) return null;
+  const text = work.blocker.replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!text) return null;
+  const who = blockerAuthor(work), since = blockerSince(work);
+  const recorded = [who && `by ${who}`, work.blockedAt ? `at ${work.blockedAt}` : since !== null ? `at ${new Date(since).toISOString()}` : null].filter(Boolean).join(' ');
+  const clear = parkedOnHuman(work) ? `the owner answers it with: ${answerCommand(work.key, work.humanRequest!)}` : `clear it with: mainworks master unblock ${work.key} REASON`;
+  return `Note: ${work.key} still has an open blocker${recorded ? ` (recorded ${recorded})` : ''}: ${text} — ${clear}`;
 }
