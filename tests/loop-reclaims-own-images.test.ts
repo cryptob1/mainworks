@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
-import { diskHeadroomStep, diskHeadroomSummary, reclaimMainworksLeftovers } from '../src/daemon/disk-headroom.js';
-import { emptyDaemonState } from '../src/daemon/state.js';
+import { diskHeadroomStep, diskHeadroomSummary, mainworksVolumes, reclaimMainworksLeftovers } from '../src/daemon/disk-headroom.js';
+import { emptyDaemonState, type DaemonAction } from '../src/daemon/state.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { trialBuilder } from '../src/install/trial-image.js';
 import { trialImage } from '../src/merge-writer/trial-container.js';
@@ -43,13 +43,16 @@ test('integration:loop-reclaims-own-images — low Docker space removes only sta
   };
   const config = masterConfigSchema.parse({ version: 1, url: 'http://localhost:1', credentialFile: '/token', cliPath: '/cli', repository: 'owner/repo', baseBranch: 'main', hostId: 'core', masterAgentName: 'master', workers: [] });
   const state = emptyDaemonState(config);
-  const cycle = { config, state, now: () => Date.parse('2026-11-27T11:00:00Z'), performed: [], effects: {
+  let sample: (() => Promise<void>) | undefined;
+  const cycle = { launcher: { submit: (_key: string, _holds: string[], body: (sink: DaemonAction[]) => Promise<void>) => { sample = () => body([]); return true; } }, config, state, now: () => Date.parse('2026-11-27T11:00:00Z'), performed: [], effects: {
     snapshot: async () => ({ work: [], now: new Date().toISOString() }), agents: () => [], credentials: async () => ({}), closeSession: () => {}, dispatch: async () => {},
     persist: async () => {},
-    diskVolumes: async () => [{ path: '/docker', freeBytes: free, totalBytes: 1000 * GB, docker: true }],
+    diskUseByKind: async () => [],
+    diskVolumes: async () => [{ path: '/checkout', freeBytes: 600 * GB, totalBytes: 1000 * GB }, { path: '/docker', freeBytes: free, totalBytes: 1000 * GB, docker: true }],
     reclaimDisk: () => reclaimMainworksLeftovers(run, { temporary: [], checkouts: [], verification: [], warmInUse }),
   } };
   await diskHeadroomStep(cycle);
+  await sample!(); // A slow hourly sample must not replace the post-reclaim free-space reading.
   assert.deepEqual(removed.sort(), stale.sort());
   assert.deepEqual([...images].sort(), [current, 'huck-engineer:latest', flight, 'mainworks-trial:container-used'].sort());
   assert.equal(prunes.length, 1, 'only the dedicated builder cache is pruned');
@@ -64,4 +67,20 @@ test('integration:loop-reclaims-own-images — low Docker space removes only sta
   free = 150 * GB;
   await diskHeadroomStep(cycle);
   assert.equal(prunes.length, 1, 'at exactly 15% nothing is pruned');
+});
+
+
+test('integration:loop-reclaims-own-images — measure the Docker data volume, including its capacity, before deduplicating devices', async () => {
+  const dockerRoot = await temporaryDirectory('docker-data-volume');
+  const checkout = await temporaryDirectory('checkout-volume');
+  const volumes = await mainworksVolumes([checkout], async (command, args) => {
+    assert.equal(command, 'docker');
+    assert.deepEqual(args, ['info', '--format', '{{.DockerRootDir}}']);
+    return dockerRoot;
+  });
+  assert.equal(volumes.length, 1, 'both fixture paths are on the same device');
+  assert.equal(volumes[0]!.path, dockerRoot);
+  assert.equal(volumes[0]!.docker, true);
+  assert.ok(volumes[0]!.totalBytes! > 0);
+  assert.ok(volumes[0]!.freeBytes! >= 0);
 });
