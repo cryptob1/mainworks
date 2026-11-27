@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import { defineCommands } from './registry.js';
 
 /** GY-3407: lend a spare machine's compute, nothing else; merge trials send it test shards (GY-3412). */
@@ -21,7 +22,7 @@ export const hostCommands = defineCommands([{
   ],
   readsConnection: () => false,
   async run(context) {
-    const [{ addHost, hostPrepareScript, localPublicKey, probeHost, readHosts, removeHost, sessionHelperProblem, setHostSessions, shareHost }, { runRemoteSession }] = await Promise.all([
+    const [{ addHost, hostPrepareScript, localPublicKey, probeHost, readHosts, removeHost, sessionHelperProblem, setHostSessions, shareHost, sessionCooldown }, { runRemoteSession }] = await Promise.all([
       import('../hosts.js'), import('../remote-session.js'),
     ]);
     const [target] = context.args;
@@ -48,7 +49,14 @@ export const hostCommands = defineCommands([{
       if (separator < 0 || !cli || !context.args[separator + 1]) throw new Error('Usage: mainworks host session USER@HOST [--home DIR]... [--env NAME]... --cli PATH -- COMMAND ARGS');
       const env = Object.fromEntries(values('--env').flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]!]]));
       const confine = values('--confine')[0];
-      process.exitCode = await runRemoteSession({ target, worktree: process.cwd(), homes: values('--home'), cli, argv: context.args.slice(separator + 1), env, confine: confine ? JSON.parse(confine) as string[] : [] });
+      const local = values('--local')[0], record = values('--record')[0];
+      process.exitCode = await runRemoteSession({ target, worktree: process.cwd(), homes: values('--home'), cli, argv: context.args.slice(separator + 1), env, confine: confine ? JSON.parse(confine) as string[] : [], ...(local ? { localArgv: JSON.parse(local) as string[] } : {}), onLocal: () => {
+        if (record) {
+          const session = JSON.parse(readFileSync(record, 'utf8'));
+          delete session.host;
+          writeFileSync(record, JSON.stringify(session), { mode: 0o600 });
+        }
+      } });
     } else if ((context.id === 'share' || context.id === 'unshare') && target && context.args[1]) {
       // HOST may be a recorded target or its host name; an unrecorded name means gy-compute there.
       const host = (await readHosts()).find(entry => entry.target === target || entry.target.replace(/^.*@/, '').replace(/:\d+$/, '') === target)?.target ?? (target.includes('@') ? target : `gy-compute@${target}`);
@@ -59,10 +67,10 @@ export const hostCommands = defineCommands([{
     } else if (context.id === 'list' || !context.id) {
       const hosts = await readHosts();
       const lines = await Promise.all(hosts.map(async host => {
-        const [problem, probe] = await Promise.all([host.sessions ? sessionHelperProblem(host.target) : null, probeHost(host.target)]);
+        const [problem, probe, cooldown] = await Promise.all([host.sessions ? sessionHelperProblem(host.target) : null, probeHost(host.target), sessionCooldown(host.target)]);
         // GY-4008: whether turbo or boost is off there now; nothing on a CPU with neither or a host not answering.
         const turbo = probe.ok && probe.turboOff !== null ? `, turbo ${probe.turboOff ? 'off' : 'on'}` : '';
-        return `${host.target}  added ${host.addedAt}${turbo}${host.sessions ? (problem ? `, set to ${host.sessions} sessions but takes none: ${problem}` : `, takes ${host.sessions} sessions`) : ''}`;
+        return `${host.target}  added ${host.addedAt}${turbo}${cooldown ? `, sessions paused until ${cooldown.until}: ${cooldown.reason}` : ''}${host.sessions && !cooldown ? (problem ? `, set to ${host.sessions} sessions but takes none: ${problem}` : `, takes ${host.sessions} sessions`) : ''}`;
       }));
       console.log(hosts.length ? lines.join('\n') : 'No host added: this machine runs all work. Add one with mainworks host add YOU@HOST in a terminal.');
     } else throw new Error('Usage: mainworks host add USER@HOST[:PORT] | host add ALIAS | host share HOST PUBLIC-KEY | host unshare HOST PUBLIC-KEY | host prepare | host sessions USER@HOST N | host remove USER@HOST | host list');

@@ -29,12 +29,24 @@ import { shellQuote } from './install/transport.js';
 /** `sessions` (GY-3405): how many agent sessions the host takes at once; absent or 0, it takes test shards only. `login` (GY-3836): the owner's USER@HOST login the host was added with. */
 export interface HostRecord { target: string; addedAt: string; sessions?: number; login?: string }
 /** GY-3517: `at` is when this probe read the host; `update` marks one away only because its shim lacks a trial verb. */
-export interface HostReading { host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; /** GY-4008: turbo or boost is off; absent on a CPU with neither. */ turboOff?: boolean; stat?: { total: number; steal: number } | null }
+export interface HostReading { sessionCooldown?: SessionCooldown; host: string; local?: boolean; at?: string; away: boolean; /** GY-3601: when an away host stopped answering. */ since?: string; update?: boolean; /** GY-3780: why it did not take this release's helper; GY-3896: when, so the loop retries at most hourly. */ updateError?: string; updateFailedAt?: string; /** GY-3744: its helper's digest is not this release's. */ older?: boolean; /** GY-3891: updated through update-shim:1 without sudo; the root-installed helper is still the previous one. */ migrated?: boolean; /** GY-3836: the owner's login target (`USER@HOST`) for hints. */ login?: string; reason?: string; cores: number | null; celsius: number | null; steal: number | null; runs: number | null; /** GY-3528: cores busy (the 1-minute load). */ busy?: number | null; /** GY-4008: turbo or boost is off; absent on a CPU with neither. */ turboOff?: boolean; stat?: { total: number; steal: number } | null }
 
 /** Machine-wide, beside the machine-share link (team-access.ts): every install's loop on this machine reads the same hosts. */
 export const hostsFile = (home = configHome()) => join(home, 'machine', 'hosts.json');
 /** GY-3698: compute host keys live beside hosts.json in the machine folder, so a confined master with no ~/.ssh records and verifies them. */
 export const hostKnownHostsFile = (home = configHome()) => join(home, 'machine', 'known_hosts');
+/** Session placement failures survive CLI exits and coordinator restarts, without changing shard readiness. */
+export interface SessionCooldown { reason: string; until: string }
+const sessionCooldownFile = (target: string, file = hostsFile()) => join(dirname(file), `session-cooldown-${createHash('sha256').update(target).digest('hex')}.json`);
+export async function sessionCooldown(target: string, file?: string): Promise<SessionCooldown | null> {
+  const cooldown = JSON.parse(await readFile(sessionCooldownFile(target, file), 'utf8').catch(() => 'null')) as SessionCooldown | null;
+  return cooldown && Date.parse(cooldown.until) > Date.now() ? cooldown : null;
+}
+export async function coolSessionHost(target: string, reason: string, file?: string): Promise<void> {
+  const path = sessionCooldownFile(target, file);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify({ reason: reason.slice(-500), until: new Date(Date.now() + 30 * 60_000).toISOString() }));
+}
 /** SSH options that pin compute host keys to the machine folder with accept-new. */
 const hostKeySshOptions = (knownHosts = hostKnownHostsFile()) => ['-o', `UserKnownHostsFile=${knownHosts}`, '-o', 'StrictHostKeyChecking=accept-new'];
 /** USER@HOST, USER@HOST:PORT, or an ssh-config alias. */
@@ -536,7 +548,8 @@ export async function readHostReadings(previous: HostReading[], options: { file?
         if (updateError) updateFailedAt = new Date().toISOString();
       }
     }
-    const failure = updateError ? { updateError, updateFailedAt } : {};
+    const cooldown = target ? await sessionCooldown(target, options.file) : null;
+    const failure = { ...(updateError ? { updateError, updateFailedAt } : {}), ...(cooldown ? { sessionCooldown: cooldown } : {}) };
     const at = new Date().toISOString();
     if (!probe.ok) {
       if (target && !login) login = await resolveLoginTarget(target, { run: options.run });
