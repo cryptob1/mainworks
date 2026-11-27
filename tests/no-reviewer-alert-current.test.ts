@@ -26,10 +26,11 @@ test('integration:no-reviewer-alert-current — the no-reviewer line stays after
   const lines = async () => reviewLaunchAttention([item], cursor, Date.now(), (await readReviewLedger(root)).reviews).map(line => line.text);
 
   // A failed launch, and only a session on an older head: no reviewer runs on the current head.
-  await saveReviewLedger(root, { version: 1, reviews: [record(older)] });
+  const olderRecord = record(older);
+  await saveReviewLedger(root, { version: 1, reviews: [olderRecord] });
   assert.deepEqual(await lines(), [`GY-40's review of ${head.slice(0, 12)} has no reviewer: the claude-a launch failed`]);
 
   // The next launch runs a reviewer on the current head: the line goes.
-  await saveReviewLedger(root, { version: 1, reviews: [record(older), record(head)] });
+  await saveReviewLedger(root, { version: 1, reviews: [olderRecord, record(head)] });
   assert.deepEqual(await lines(), [], 'a reviewer session is live on the current head');
 });

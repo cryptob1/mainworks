@@ -1,4 +1,5 @@
-import { loopStateClient, migrateLoopFile, ledgerSnapshot, saveLedger } from './loop-state.js';
+import { loopStateClient, migrateLoopFile, ledgerSnapshot, reapplyChanges, saveLedger } from './loop-state.js';
+import { Refusal } from './model/refusal.js';
 import { atomicPrivateWrite, readCredentialFile } from './private-file.js';
 import { writeFailure } from './disk-space.js';
 import type { ReviewCriterion } from './review-prompt.js';
@@ -68,6 +69,8 @@ export const reviewRecordSchema = z.object({
   key: z.string().min(1).max(40),
   pr: z.number().int().positive(),
   sha: sha40, baseSha: sha40, policyRevision: z.number().int().nonnegative(),
+  /** GY-3990: the control plane's revision of this record; a save is applied only onto the revision it read. */
+  revision: z.number().int().nonnegative().optional(),
   /** The Herdr session name: the profile's fixed agent name, or one derived per request when the profile runs several sessions (GY-107, sessionAgentName). */
   profile: z.string().min(1).max(80), agentName: z.string().min(1).max(120),
   headless: z.object({ id: z.string(), kind: z.string(), reason: z.string().optional() }).optional(),
@@ -214,92 +217,32 @@ export async function readReviewLedger(root: string): Promise<ReviewLedger> {
   const reviews = (await client.read('reviews')).map(record => reviewRecordSchema.parse(record));
   return ledgerSnapshot({ version: 1, reviews }, reviews);
 }
-export async function saveReviewLedger(root: string, ledger: ReviewLedger) {
-  await saveLedger(await loopStateClient(root), 'reviews', ledger, retainSessionRecords(ledger.reviews));
-}
-
 /**
- * Every launcher runs in its own process — the loop's dispatch tick, a stateless executor's
- * request-review handler, the daemon's failover relaunch, `master review` — and each used to read
- * the ledger, decide the request had no session, start one, and write the ledger back from its
- * own read. Two of them in the same few seconds both found no session, both started one, and the
- * later write dropped the earlier record (GY-124). Every read-modify-write of the ledger now holds
- * this lock, so the check that a request has no session and the record that reserves it are one
- * step no other launcher can interleave with.
- *
- * The lock is kept under the installation's managed data root, keyed by the checkout, rather than
- * beside the ledger (GY-1303): the coordinator checkout may be mounted read-only, and a lock that
- * had to be written there failed every reconcile pass with EROFS. A lock location this process
- * cannot write still never fails the read-modify-write: it runs without the lock, as the single
- * writer it then is.
+ * Every launcher runs in its own process, and none holds a lock (GY-3990). A record's first save is
+ * its reservation: the control plane takes the head-and-kind slot in the same conditional insert, so
+ * exactly one launcher's record lands. A save sends only changed records at the revision they were
+ * read at; on a conflict it re-reads and reapplies only the fields it changed.
  */
-const ledgerLockFile = (root: string, environment: Record<string, string | undefined> = process.env) =>
-  resolve(dataDirectory(environment), 'review-ledger', `${createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12)}.lock`);
-/** A holder that has not released the lock in this long is dead or wedged; its lock is broken. */
-export const reviewLedgerLockStaleMs = 60_000;
-const lockWaitMs = 30_000;
-export interface ReviewLedgerLockOptions {
-  environment?: Record<string, string | undefined>;
-  /** The filesystem calls the lock makes; node:fs/promises by default. */
-  fs?: Pick<typeof import('node:fs/promises'), 'mkdir' | 'open' | 'readFile' | 'unlink' | 'rm'>;
-  /** How long a held lock is waited for before the write is refused; 30 seconds by default. */
-  waitMs?: number;
-  /** Told why a read-modify-write runs without the lock, when its location cannot be written. */
-  onLockless?: (reason: string) => void;
-}
-/** A held ledger lock's release; `lockless` names why the write runs without one, when the lock location could not be written. */
-type LedgerLockRelease = (() => Promise<void>) & { lockless?: string };
-/** Takes the ledger lock, waiting out a live holder: its release, which `lockless` marks when the lock location could not be written. */
-async function acquireLedgerLock(root: string, options: ReviewLedgerLockOptions = {}): Promise<LedgerLockRelease> {
-  const fs = options.fs ?? await import('node:fs/promises');
-  const file = ledgerLockFile(root, options.environment);
-  const lockless = (error: any): LedgerLockRelease => {
-    const reason = `the review ledger lock ${file} cannot be written (${error.code}: ${String(error.message ?? '').split('\n')[0]!.slice(0, 200)})`;
-    options.onLockless?.(reason);
-    return Object.assign(async () => {}, { lockless: reason });
-  };
-  try { await fs.mkdir(dirname(file), { recursive: true, mode: 0o700 }); }
-  catch (error: any) { if (unwritableLockCodes.has(error.code)) return lockless(error); throw error; }
-  const deadline = Date.now() + (options.waitMs ?? lockWaitMs);
-  for (;;) {
-    try {
-      const handle = await fs.open(file, 'wx', 0o600);
-      try { await handle.writeFile(`${process.pid} ${Date.now()}`); }
-      catch (error: any) { await handle.close().catch(() => {}); await fs.rm(file, { force: true }).catch(() => {}); if (unwritableLockCodes.has(error.code)) return lockless(error); throw error; }
-      await handle.close();
-      return async () => { await fs.rm(file, { force: true }); };
-    } catch (error: any) {
-      if (unwritableLockCodes.has(error.code)) return lockless(error);
-      if (error.code !== 'EEXIST') throw error;
-    }
-    const [pid, at] = (await fs.readFile(file, 'utf8').catch(() => '')).split(' ').map(Number);
-    let alive = true;
-    try { if (pid) process.kill(pid, 0); } catch (error: any) { alive = error.code !== 'ESRCH'; }
-    if (!alive || Number.isFinite(at) && Date.now() - at > reviewLedgerLockStaleMs) { await fs.unlink(file).catch(() => {}); continue; }
-    if (Date.now() > deadline) throw new Error(`The review ledger lock ${file} is held by process ${pid || 'unknown'}; another reviewer launch or reconciliation is in progress`);
-    await new Promise(done => setTimeout(done, 20 + Math.random() * 30));
+export async function saveReviewLedger(root: string, ledger: ReviewLedger) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await saveOnce(root, ledger); }
+    catch (error) { if (!staleRevision(error, attempt)) throw error; Object.assign(ledger, reapplyChanges(ledger, await readReviewLedger(root))); }
   }
 }
-/** Read the ledger under the lock, apply one change, and write it back before the lock is released. */
-export async function updateReviewLedger<T>(root: string, change: (ledger: ReviewLedger) => T | Promise<T>, options: ReviewLedgerLockOptions = {}): Promise<T> {
-  const release = await acquireLedgerLock(root, options);
-  try {
+const saveOnce = async (root: string, ledger: ReviewLedger) => saveLedger(await loopStateClient(root), 'reviews', ledger, retainSessionRecords(ledger.reviews));
+const refusalCode = (error: unknown) => error instanceof Refusal ? error.details?.code : undefined;
+const staleRevision = (error: unknown, attempt: number) => refusalCode(error) === 'loop-state-revision' && attempt < 9;
+/** Read the ledger, apply one change, and save what it changed; a stale save applies the change again to a fresh read. */
+export async function updateReviewLedger<T>(root: string, change: (ledger: ReviewLedger) => T | Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
     const ledger = await readReviewLedger(root);
     const result = await change(ledger);
-    await saveReviewLedger(root, ledger);
-    return result;
-  } finally { await release(); }
+    try { await saveOnce(root, ledger); return result; }
+    catch (error) { if (!staleRevision(error, attempt)) throw error; }
+  }
 }
-/**
- * Write back the records one pass changed, onto the ledger as it stands now. A pass that read the
- * ledger, spent seconds on GitHub and Herdr, and saved its whole copy would drop every record a
- * launcher reserved in the meantime; only what this pass changed is taken from its copy.
- */
-async function saveChangedRecords(root: string, mine: ReviewRecord[], before: Map<string, string>, lock?: ReviewLedgerLockOptions) {
-  const changed = new Map(mine.filter(record => JSON.stringify(record) !== before.get(record.id)).map(record => [record.id, record]));
-  if (!changed.size) return;
-  await updateReviewLedger(root, ledger => { ledger.reviews = ledger.reviews.map(record => changed.get(record.id) ?? record); }, lock);
-}
+/** The lock file the lock-era code kept for this checkout; left behind, it is removed. */
+const legacyLedgerLock = (root: string) => resolve(dataDirectory(), 'review-ledger', `${createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12)}.lock`);
 
 /** A reservation whose launcher never confirmed the runtime within this long died mid-launch. */
 export const reviewLaunchReservationMs = 10 * 60_000;
@@ -1020,6 +963,9 @@ export async function launchReview(root: string, work: Work, profileName: string
       mode: 'control-plane', verdictTokenHash, ...(postMerge ? { postMerge: true } : {}), ...(product ? { product: true } : {}) });
     ledger.reviews.push(record);
     return { record, failedAccounts, replacedSession };
+  }).catch(error => {
+    if (refusalCode(error) !== 'review-reserved') throw error;
+    return { refusal: new ReviewSessionPending(`A reviewer session for ${work.key} on ${binding.sha.slice(0, 7)} is already reserved by another launch; one review request is answered by one session, so no second one is launched`, work.key, { sha: binding.sha, agentName: String((error as Refusal).details?.agentName ?? 'unknown') }) };
   });
   if ('refusal' in reservation) throw reservation.refusal;
   const { agentName } = reservation.record;
@@ -1447,15 +1393,13 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   agents?: HerdrAgent[] | null;
   /** Retries a session that stopped without a verdict; the default prompts it in Herdr. */
   retry?: (record: ReviewRecord, message: string) => void | Promise<void>;
-  /** How the pass takes the review ledger lock; the managed data root and node:fs/promises by default. */
-  ledgerLock?: ReviewLedgerLockOptions;
   /** The agent registry document the tick read (GY-3234); null or absent when it could not be read. */
   registry?: Pick<AgentRegistry, 'sessions'> | null;
 } = {}) {
+  await rm(legacyLedgerLock(root), { force: true }).catch(() => {});
   const ledger = await readReviewLedger(root);
   const notLive: { key: string; sha: string; requestId?: string; id: string; agentName: string; account?: string; session?: string; resolution: string }[] = [];
   if (!ledger.reviews.length) return { reviews: ledger.reviews, changed: 0, released: [] as { pane: string; agentName: string }[], notLive };
-  const before = new Map(ledger.reviews.map(record => [record.id, JSON.stringify(record)]));
   const reviewer = 'control-plane';
   const readVerdict = dependencies.observe;
   // A substituted read that fails is that read's failure, not the pass's: the record stays as it was
@@ -1619,9 +1563,6 @@ export async function reconcileReviews(root: string, config: MasterConfig, depen
   }
   // A request the control plane no longer holds open releases its records to the retention window.
   if (dependencies.work) changed += releaseClosedRequests(ledger.reviews, dependencies.work, now);
-  if (changed) await saveChangedRecords(root, ledger.reviews, before, dependencies.ledgerLock);
+  if (changed) await saveReviewLedger(root, ledger);
   return { reviews: changed ? (await readReviewLedger(root)).reviews : ledger.reviews, changed, released, notLive };
 }
-
-/** Errors under which the existing host lock runs lockless. */
-const unwritableLockCodes = new Set(['EROFS', 'EACCES', 'EPERM']);

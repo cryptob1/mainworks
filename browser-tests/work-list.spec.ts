@@ -57,8 +57,8 @@ const rowKeys = (page: Page, scope = page.locator('main')) => scope.locator('[da
 for (const width of [1280, 390]) {
   test(`e2e:work-list — at ${width}px: header, Needs you, goal groups, columns, filters with counts and search by PR`, async ({ page }) => {
     await open(page, width);
-    // The header line: in flight (Needs you, Stuck and moving), merges an hour over 6 hours, median review-to-live.
-    await expect(page.locator('[data-work-header]')).toHaveText('5 in flight · 0.2 merges/hour (6h) · 1h 40m median review to live');
+    // The header line: merges an hour over 6 hours, median review-to-live; the counts are the filter chips', shown once (GY-3987).
+    await expect(page.locator('[data-work-header]')).toHaveText('0.2 merges/hour (6h) · 1h 40m median review to live');
 
     // Needs you sits above the filters: the question, how long it waited, one verb-and-object button.
     const needs = page.getByRole('region', { name: 'Needs you' });
@@ -150,7 +150,8 @@ for (const width of [1280, 390]) {
     await expect(page.locator('[data-goal="A dashboard anyone understands"] [data-row="GY-105"]')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Needs you' })).toHaveCount(0);
     await expect(page.locator('[data-need]')).toHaveCount(0);
-    await expect(page.locator('[data-work-header]')).toHaveText('4 in flight · 0.2 merges/hour (6h) · 1h 40m median review to live');
+    await expect(page.locator('[data-work-header]')).toHaveText('0.2 merges/hour (6h) · 1h 40m median review to live');
+    await expect(page.getByRole('group', { name: 'Filter work' }).getByRole('button', { name: 'In flight 4', exact: true })).toBeVisible();
     await noSideScroll(page);
   });
 }
