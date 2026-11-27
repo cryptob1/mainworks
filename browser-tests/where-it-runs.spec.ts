@@ -5,6 +5,7 @@ import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withDatabase } from '../tests/helpers/postgres';
 import { Engine } from '../src/engine';
+import { pointRepositoryRoot } from '../tests/helpers/repository-root';
 import { server } from '../src/server';
 import { gitRunnerFor } from '../src/merge-writer/local-observation';
 
@@ -31,8 +32,7 @@ async function repository(config: object) {
 
 /** The real control plane reading that repository, serving the built dashboard's API reads. */
 async function plane(context: BrowserContext, root: string) {
-  const previous = process.env.GRAPHYARD_REPOSITORY_ROOT;
-  process.env.GRAPHYARD_REPOSITORY_ROOT = root;
+  const restoreRoot = pointRepositoryRoot(root);
   const store = await withDatabase(`where_it_runs_${Date.now()}`);
   await store.init();
   const engine = new Engine(store, 120, 'fixture/shop');
@@ -47,7 +47,7 @@ async function plane(context: BrowserContext, root: string) {
   });
   const close = async () => {
     await context.unrouteAll(); await new Promise<void>(resolve => http.close(() => resolve())); await store.close();
-    if (previous === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = previous;
+    restoreRoot();
   };
   return { url, close };
 }
