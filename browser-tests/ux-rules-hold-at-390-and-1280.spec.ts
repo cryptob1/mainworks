@@ -2,7 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { NOW, at, buildDemoState, demoAnswer } from '../scripts/docs-media-demo.mjs';
 import { serveXterm } from './xterm';
 
-// GY-3962: a newcomer's four rules on Home, Work, a change and Lead, over the README's demo data
+// GY-3962: a newcomer's four rules on Home, Work, a change and Lead (GY-3989: and Sign-in, Setup and the
+// first-run steps), over the README's demo data
 // (scripts/docs-media-demo.mjs) at 390 and 1280 px:
 //   1. no internal id, commit hash, model id or agent-to-agent phrase outside a Details area;
 //   2. no sideways scroll;
@@ -17,6 +18,8 @@ const internal: [string, RegExp][] = [
   ['an agent account', /\b(?:builder|reviewer|lead|master|worker)-[a-z0-9]+\b/i],
   ['a proof id', /\b(?:unit|integration|e2e|manual):[a-z0-9-]+/i],
   ['agent-to-agent words', /\b(?:lease|epoch|dispatch|worktree|gate)s?\b/i],
+  // GY-3989: a newcomer's first screens need no terminal; a command waits in a fold.
+  ['a terminal command', /\bmainworks [a-z]/],
 ];
 // A line naming nothing (or nothing yet) is an empty or waiting state: it says what comes next.
 const empty = /^(?:no|nothing|not yet|none)\b/i;
@@ -41,7 +44,7 @@ function judge(name: string, { sideways, text }: { sideways: number; text: strin
   return found;
 }
 
-async function open(page: Page, phase: 'static' | 'empty', width: number) {
+async function open(page: Page, phase: 'static' | 'empty' | 'setup', width: number) {
   const state = buildDemoState(phase);
   await page.setViewportSize({ width, height: 900 });
   await page.clock.setFixedTime(new Date(NOW));
@@ -109,6 +112,8 @@ for (const width of [390, 1280]) {
     await open(page, 'empty', width);
     await expect(page.getByRole('main')).toContainText(/\S/, { timeout: 15_000 });
     await settle(page);
+    // Step 2 says what the check does in plain words, with no model talk.
+    await expect(page.locator('.first-run-lead')).toHaveText('Mainworks sends your Builder account one test request to check it answers before it starts work.');
     found.push(...judge('first-run Home', await read(page), width));
     await nav(page, 'Work');
     await expect(page.getByRole('heading', { name: 'Work', level: 1 })).toBeVisible();
@@ -121,5 +126,34 @@ for (const width of [390, 1280]) {
       found.push(...judge(`empty Lead · ${tab}`, await read(page), width));
     }
     expect(found, `empty states at ${width} px`).toEqual([]);
+  });
+
+  test(`e2e:ux-rules-hold-at-390-and-1280 — Sign-in and Setup name the next step without a terminal command at ${width} px`, async ({ page }) => {
+    test.setTimeout(120_000);
+    const found: string[] = [];
+    // Setup with the writing account connected and the reviewing one not: the count names the one step left.
+    await open(page, 'setup', width);
+    await page.evaluate(() => { location.hash = 'setup'; });
+    await expect(page.getByRole('heading', { name: 'Set up Mainworks', level: 1 })).toBeVisible();
+    await settle(page);
+    await expect(page.locator('.page-fact')).toHaveText('1 of 4 steps left. Next: Let an account review the code.');
+    // One account can do both: the review row says so rather than reading as a second account to buy.
+    await expect(page.locator('[data-setup-item="account:reviewer"]')).toContainText('The account that writes can also review');
+    found.push(...judge('Setup', await read(page), width));
+    // Every open step has its action, or says who does it.
+    await open(page, 'static', width);
+    await page.evaluate(() => { location.hash = 'setup'; });
+    await expect(page.getByRole('heading', { name: 'Set up Mainworks', level: 1 })).toBeVisible();
+    await settle(page);
+    for (const row of await page.locator('[data-setup-item][data-done="no"]').all()) await expect(row.locator('[data-setup-action]')).toBeVisible();
+    found.push(...judge('Setup (fresh)', await read(page), width));
+    // Sign-in: no token stored and every read refused.
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Rejected' } }));
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.goto('/?sign-in');
+    await expect(page.getByLabel('Access token')).toBeVisible();
+    found.push(...judge('Sign-in', await read(page), width));
+    expect(found, `Sign-in and Setup at ${width} px`).toEqual([]);
   });
 }

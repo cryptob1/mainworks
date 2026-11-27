@@ -32,7 +32,8 @@ export function initialView(pages: readonly string[]): string {
 
 function ItemAction({ item, onConnect }: { item: SetupItem; onConnect: () => void }) {
   const action = item.action;
-  if (!action) return null;
+  // GY-3989: an open step with nothing for the owner to press says who does it.
+  if (!action) return item.done ? null : <span className="muted" data-setup-action={item.id}>{PRODUCT_NAME} does this step.</span>;
   if (action.kind === 'link') return <a className="connect-button" data-setup-action={item.id} href={action.href} target="_blank" rel="noreferrer">{action.label}</a>;
   if (action.kind === 'connect') return <button className="connect-button" data-setup-action={item.id} onClick={onConnect}>{action.label}</button>;
   return <span className="muted" data-setup-action={item.id}>{action.label}</span>;
@@ -139,8 +140,12 @@ export function SetupView({ status, work, workUnread, now, onConnect, infra }: {
   const open = onboarding && !onboarding.merged ? 1 : 0;
   const green = checklistGreen(items) && !open && !workUnread;
   const total = items.length + (onboarding ? 1 : 0), left = items.filter(entry => !entry.done).length + open;
+  // GY-3989: the count names the one step that needs the owner, or says none does.
+  const yours = items.find(entry => !entry.done && entry.human);
+  const fact = green ? 'Everything is ready.' : !left ? 'Checking whether the onboarding change has merged.'
+    : `${left} of ${total} steps left. ${yours ? `Next: ${yours.title}.` : `Nothing needs you; ${PRODUCT_NAME} finishes the rest.`}`;
   return <>
-    <PageHeader title={`Set up ${PRODUCT_NAME}`} fact={green ? 'Everything is ready.' : !left ? 'Checking whether the onboarding change has merged.' : `${left} of ${total} steps left.`}/>
+    <PageHeader title={`Set up ${PRODUCT_NAME}`} fact={fact}/>
     {supervised && <p className="notice" data-supervised>An agent reviews each change and {PRODUCT_NAME} merges it; no agent approves decisions on your behalf, so you answer each one.</p>}
     <PageSection title="Checklist" label="Setup checklist"><SetupChecklist items={items} onConnect={onConnect} onboarding={onboarding}/></PageSection>
     {!!infra?.length && <PageSection title="Repository and hosting changes" label="Repository and hosting changes"><InfraActionsPanel actions={infra}/></PageSection>}
