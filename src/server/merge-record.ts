@@ -56,7 +56,8 @@ export const mergeRecordBodySchema = z.discriminatedUnion('kind', [
   // GY-1832: a trial is a verdict, with its phases' times and the attempts before it that reached none, or a final no-verdict outcome naming its phase and reason.
   z.discriminatedUnion('outcome', [
     z.object({ kind: z.literal('trial'), head: sha, baseTip: sha, mergeSha: sha, outcome: z.literal('verdict'), build: z.enum(['pass', 'fail']), tests,
-      files: z.array(z.string().max(500)).max(1000),
+      // GY-3984: every test file the trial ran, uncapped; a trial of the whole suite runs ~1500, and the writer reads them back as its stale-trial watch set.
+      files: z.array(z.string().max(500)),
       proofs: z.record(z.string().max(200), z.object({ executed: z.number().int().min(0), failed: z.number().int().min(0), reason: z.string().max(200).optional() }).strict()), durationMs: z.number().int().min(0),
       phases: trialPhaseDurations.optional(), attempts: trialAttempts,
       // GY-2965: how each bound E2E case ran against the served head; a run of one becomes a trusted record on the item and a run in the case's history.
