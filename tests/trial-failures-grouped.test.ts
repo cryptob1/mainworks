@@ -40,7 +40,7 @@ test('integration:trial-failures-grouped — test files that failed trials witho
     { check: 'tests/f5.test.ts', count: 2, assertion: 'five' },
   ]);
   assert.deepEqual(flow.flakyChecks, [{ check: 'tests/flaky.test.ts', count: 2, assertion: null }]);
-  const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, asOf: at(0), ageSeconds: 0 } }));
+  const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, onboarding: [], asOf: at(0), ageSeconds: 0 } }));
   assert.match(html, /data-trial-failures[^>]*>Failing checks: tests\/f4\.test\.ts 3 · tests\/f1\.test\.ts 2/);
 });
 

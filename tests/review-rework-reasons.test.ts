@@ -48,7 +48,7 @@ test('integration:review-rework-reasons — review and product-review rework of 
   const flow = flowNumbers(items, 6, now);
   assert.equal(flow.rework.review + flow.rework['product review'], 7);
   assert.deepEqual(flow.reviewReasons, [{ label: 'missing test', count: 3 }, { label: 'criterion unmet', count: 2 }, { label: 'UI defect', count: 1 }]);
-  const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, asOf: at(0), ageSeconds: 0 } }));
+  const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, onboarding: [], asOf: at(0), ageSeconds: 0 } }));
   assert.match(html, /data-review-reasons[^>]*>[^<]*Missing test 3/);
   assert.match(html, /Criterion unmet 2/);
   assert.match(html, /UI defect 1/);
