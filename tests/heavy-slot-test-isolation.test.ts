@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -48,10 +49,8 @@ async function deadHolder(directory: string) {
 async function statusHolders(directory: string) {
   const checkout = await temporaryDirectory('heavy-slot-status');
   const master = { url: 'http://127.0.0.1:5', repository: 'owner/fixture', credentialFile: join(checkout, 'coordinator.token'), hostId: 'yard-box', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = directory;
-  try { return (await masterStatusReport(checkout, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '')).heavyJobs.holders.map(holder => holder.label); }
-  finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  return withEnv({ [slotsDirectoryVariable]: directory }, async () =>
+    (await masterStatusReport(checkout, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '')).heavyJobs.holders.map(holder => holder.label));
 }
 
 test('integration:heavy-slot-test-isolation — a test file that starts merge trials, run with a session\'s environment, never registers in the host\'s slots', { timeout: 120_000 }, async () => {
@@ -96,8 +95,7 @@ test('integration:heavy-slot-test-isolation — a holder whose process exited is
 test('e2e:heavy-slot-test-isolation — after a test run that creates merge trials, the next merge trial starts without waiting for a slot', { timeout: 120_000 }, async () => {
   const { slots } = await sessionTestRun('tests/concurrent-affected-trials.test.ts');
   assert.deepEqual(await statusHolders(slots), []);
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = slots;
-  try { assert.equal(await heavyTrial('GY-9', step => assert.fail(step), undefined, async () => 'started'), 'started'); }
-  finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  await withEnv({ [slotsDirectoryVariable]: slots }, async () => {
+    assert.equal(await heavyTrial('GY-9', step => assert.fail(step), undefined, async () => 'started'), 'started');
+  });
 });

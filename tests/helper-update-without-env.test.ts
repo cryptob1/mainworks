@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -15,10 +16,8 @@ import { listen } from './helpers/http-server.js';
 const proof = 'integration:helper-update-without-env e2e:helper-update-without-env';
 
 test(`${proof} — the shipped helper under the previous launcher updates without optional settings and remains signed-only`, async t => {
-  const saved = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = await temporaryDirectory('missing-signers-config');
-  try {
-    const hosts = await shardHosts('missing-signers', ['box'], {});
+  patchEnv({ GRAPHYARD_CONFIG_HOME: await temporaryDirectory('missing-signers-config') }, t);
+  const hosts = await shardHosts('missing-signers', ['box'], {});
     const target = 'gy-compute@box';
     const file = join(hosts.root, 'hosts.json');
     await writeFile(file, JSON.stringify([{ target, login: 'vish@box', addedAt: '2026-11-20T00:00:00Z' }]));
@@ -91,8 +90,4 @@ exec /usr/bin/env -i HOME="$HOME" PATH="$PATH" SSH_ORIGINAL_COMMAND="$SSH_ORIGIN
     });
     assert.equal(shared.status, 1);
     assert.match(shared.stderr, /graphyard-host-shim refuses:/);
-  } finally {
-    if (saved === undefined) delete process.env.GRAPHYARD_CONFIG_HOME;
-    else process.env.GRAPHYARD_CONFIG_HOME = saved;
-  }
 });
