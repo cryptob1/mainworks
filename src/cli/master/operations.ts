@@ -20,6 +20,7 @@ import { heavyDrainLine, heavyJobsDirectory, requestHeavyDrain, resumeHeavyDrain
 import { setting } from '../../setting.js';
 import { controlPlaneRecordPath, readControlPlaneRecord, updateNowPath } from '../../deploy-watch.js';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { hostCausesClearPath } from '../../dispatch/cursor.js';
 import { dirname } from 'node:path';
 
 /** Whether this command runs inside the master session's confinement (GY-1658): its wrapper sets the variable. */
@@ -50,6 +51,12 @@ export async function operationsCommand(session: MasterSession, effects: Recover
   if (id === 'resume') {
     const lifted = resumeHeavyDrain(heavyJobsDirectory());
     return print({ resumed: !!lifted, lifted, detail: lifted ? 'New heavy jobs start again from the next loop cycle, each with all its gates' : 'Heavy work was not drained' });
+  }
+  // GY-4121: the operator fixed the host: every standing host cause lifts on the loop's next dispatch tick and its retries resume.
+  if (id === 'host-causes') {
+    if (args[0] !== 'clear') throw new Error('Use master host-causes clear once the host is fixed');
+    await writeFile(hostCausesClearPath(master), `${new Date().toISOString()}\n`, { mode: 0o600 });
+    return print({ cleared: true, detail: 'Retries of every host cause resume on the next dispatch tick' });
   }
   // GY-3917: the Lead turns the public link off; only the owner turns it on, from the dashboard.
   if (id === 'public-link') {

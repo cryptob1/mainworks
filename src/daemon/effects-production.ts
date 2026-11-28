@@ -91,6 +91,12 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
   let hostsReading: Promise<void> | null = null, hostsLatest: HostReading[] | null = null;
   const fetcher = deps.fetcher ?? fetch;
   const mutate = deps.mutate;
+  // GY-3101: one plain-text message POSTed to the operator's alert webhook (run.alertUrl) — any receiver that takes a body, such as an ntfy topic; GY-3529: a Slack incoming webhook gets {"text": ...}.
+  // GY-4073: and each alert also posts to the factory's Slack channel once its app is connected. GY-4121: dispatch's host causes alert through it too.
+  const alert = async (text: string) => {
+    const url = current().run.alertUrl, slack = slackDirectory();
+    await Promise.all([url ? postAlert(fetcher, url, text) : null, slackAlertsOn(slack) ? postSlackText(slack, text) : null]);
+  };
   /** One call as the master's own operator-agent identity — the identity that applies its decisions. */
   const asOperatorAgent = async (path: string, body: unknown, idempotencyKey: string = randomUUID()) => {
     const config = current();
@@ -291,7 +297,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // the tick would make while the host's CPU is saturated.
     dispatchTick: (snapshot, held) => ticking ??= (async () => {
       cursor ??= await readDispatchCursor(root, current());
-      return runDispatchTick(current(), cursor, dispatchEffects(root, current, { snapshot: async () => snapshot, mutate, run, headless: deps.headless, coordinatorRoot: deps.coordinatorRoot }), Date.now, dispatchReadTimeoutMs, launchBoundMs(current()), held);
+      return runDispatchTick(current(), cursor, { ...dispatchEffects(root, current, { snapshot: async () => snapshot, mutate, run, headless: deps.headless, coordinatorRoot: deps.coordinatorRoot }), alert }, Date.now, dispatchReadTimeoutMs, launchBoundMs(current()), held);
     })().finally(() => { ticking = null; }),
     personalMasterSession: config => ({
       ...masterSessionEffects(root, () => config, run),
@@ -346,12 +352,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     notify: async state => { await run('systemd-notify', state === 'ready' ? ['--ready'] : ['WATCHDOG=1']); },
     // GY-3233: control-plane faults go to the upstream install while the live configuration names one.
     get fileUpstream() { const upstream = current().upstream; return upstream ? upstreamFiler(upstream, fetcher) : undefined; },
-    // GY-3101: one plain-text message POSTed to the operator's alert webhook (run.alertUrl) — any receiver that takes a body, such as an ntfy topic; GY-3529: a Slack incoming webhook gets {"text": ...}.
-    // GY-4073: and each alert also posts to the factory's Slack channel once its app is connected.
-    alertWebhook: async text => {
-      const url = current().run.alertUrl, slack = slackDirectory();
-      await Promise.all([url ? postAlert(fetcher, url, text) : null, slackAlertsOn(slack) ? postSlackText(slack, text) : null]);
-    },
+    alertWebhook: alert,
     slackConnected: () => slackAlertsOn(slackDirectory()),
     persist,
   } satisfies DaemonEffects, {});

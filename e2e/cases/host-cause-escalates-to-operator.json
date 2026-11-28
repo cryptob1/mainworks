@@ -1,0 +1,16 @@
+{
+  "id": "host-cause-escalates-to-operator",
+  "title": "A host fault reads next: operator, alerts once and pauses its retries",
+  "description": "GY-4121: three stand-in reviews fail on one missing tool. The operator gets one alert, each item reads next: operator with a one-line host fix, nothing retries, and master status names the cause once with the 3 items it blocks. Clearing it resumes the retries.",
+  "tags": ["review", "attention"],
+  "target": "any",
+  "required": true,
+  "steps": [
+    {
+      "kind": "command",
+      "name": "host cause escalates to the operator",
+      "run": "node --import tsx tests/helpers/run-tests.ts tests/host-cause-escalates-to-operator.test.ts",
+      "timeoutSeconds": 600
+    }
+  ]
+}

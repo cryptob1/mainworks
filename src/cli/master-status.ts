@@ -53,7 +53,7 @@ import { humanAsk } from '../model/human-ask.js';
 import { blockerSince } from '../model/work.js';
 import { formatAge } from '../model/duration.js';
 import { loadProjectDelivery, parseProjectDelivery } from '../model-boundary/project-applications.js';
-import { backedOffProfiles, readDispatchCursor, type DispatchCursor } from '../dispatch/cursor.js';
+import { backedOffProfiles, readDispatchCursor, standingHostCauses, type DispatchCursor } from '../dispatch/cursor.js';
 import { liveReviewRequest } from '../model/dispatch.js';
 import { remoteWorkerRuns, runningWorkerPlaces } from '../headless-session.js';
 import { readHosts, sessionCooldown } from '../hosts.js';
@@ -327,7 +327,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       : { on: true },
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...unconfirmedWriteAttention(state?.mergeWriter, now), ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...databaseAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now),
+    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...unconfirmedWriteAttention(state?.mergeWriter, now), ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...(cursor ? hostCauseAttention(cursor) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...databaseAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now),
       // GY-4070: observation polling slowed at the share of the hourly GitHub limit.
       ...(github?.slowed ? [{ subject: 'GitHub API', text: github.detail!, next: 'Nothing is owed: polling speeds up as the hour drains. To give this install more of the token, mainworks lead config githubCallSharePercent=N; the rest stays for whoever shares it' }] : []), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
@@ -422,6 +422,10 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     freeWorkers: health.filter(entry => entry.healthy).map(entry => entry.profile.name),
   };
 }
+/** GY-4121: each host cause once, with how many items it blocks and the operator's one-line fix. */
+export const hostCauseAttention = (cursor: Pick<DispatchCursor, 'hostCauses' | 'failures'>) => standingHostCauses(cursor).map(cause => ({ subject: 'this host',
+  text: `${cause.key[0]!.toUpperCase()}${cause.key.slice(1)} blocks ${cause.items.length} item${cause.items.length === 1 ? '' : 's'} (${cause.items.join(', ')}); their retries are paused`,
+  next: `${cause.fix}, or mainworks master host-causes clear once fixed` }));
 /** GY-3757: one line naming the slowest database query of the last 10 minutes, when the server reports one past 3 s. */
 export const slowQueryAttention = (slowest: SlowQuery | null, now: number) => slowest ? [{ subject: 'database',
   text: `The slowest database query of the last 10 minutes took ${(slowest.ms / 1000).toFixed(1)} s, ${formatAge(slowest.at, now)} ago${slowest.caller ? `, asked by ${slowest.caller}` : ''}: ${slowest.name}`,
@@ -436,11 +440,13 @@ export const lockHoldAttention = (hold: LockHold | null, now: number) => hold ? 
  * eligible and what would make one eligible. GY-3729: none while a reviewer session is live on the
  * item's current head — the same pending record master review refuses a second launch for.
  */
-export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<DispatchCursor, 'failures' | 'abandoned' | 'capacity'>, now: number, reviews: readonly ReviewRecord[] = []) {
+export function reviewLaunchAttention(open: readonly Work[], cursor: Pick<DispatchCursor, 'failures' | 'abandoned' | 'capacity'> & Partial<Pick<DispatchCursor, 'hostCauses'>>, now: number, reviews: readonly ReviewRecord[] = []) {
   const capacity = cursor.capacity.review && Date.parse(cursor.capacity.review.recheckAt) > now ? cursor.capacity.review : null;
   return open.flatMap(item => {
     const request = liveReviewRequest(item);
     const live = reviews.some(record => record.state === 'pending' && record.key === item.key && !staleReviewReason(record, [...open]));
+    // GY-4121: a refusal for a standing host cause is named once, on the cause's own line.
+    if (request && cursor.hostCauses?.[cursor.failures[request.id]?.hostCause ?? '']) return [];
     const reason = request && !live && ((cursor.abandoned[request.id] ?? cursor.failures[request.id])?.reason ?? capacity?.reason);
     return reason ? [{ subject: item.key, text: `${item.key}'s review of ${request.sha.slice(0, 12)} has no reviewer: ${reason}`,
       next: `Make a reviewer account eligible — log it in, wait for its reset, or add one to the reviewer role (mainworks master registry role set reviewer ACCOUNT[,ACCOUNT…] --reason R) — then mainworks master review ${item.key}` }] : [];

@@ -15,7 +15,8 @@ import { answeredByPendingReview, LauncherUnavailableError, UnknownReviewerProfi
 import { launchRefusalProbeDue, owedPostMergeReviews, postMergeRefusalProbeMs } from '../model/post-merge-review.js';
 import { answeredByPendingSession, independentProducerProfiles, sessionRetry } from '../producer.js';
 import { unexercisedFindings } from '../model/mechanical-proofs.js';
-import { cursorTextLimit, bounded, closeFailureReasons, type DispatchLaunch, type DispatchWait, dispatchAttemptCeiling, type DispatchFailure, type DispatchCursor, dispatchRetryMinMs, dispatchRetryMaxMs, capacityRecheckMs, dispatchReadTimeoutMs, attributePersistFailure, tickWaits, capacityReasonLimit, dispatchFailureReasonLimit, closureFailureReasonLimit, dispatchFailureLimit, verdictIngestGraceMs, backedOffProfiles, probeBackoffFailures, probeBackoffMs } from './cursor.js';
+import { hostCause, hostCausesClearedAt, onPath } from './host-cause.js';
+import { hostCausesClearPath, cursorTextLimit, bounded, closeFailureReasons, type DispatchLaunch, type DispatchWait, dispatchAttemptCeiling, type DispatchFailure, type DispatchCursor, dispatchRetryMinMs, dispatchRetryMaxMs, capacityRecheckMs, dispatchReadTimeoutMs, attributePersistFailure, tickWaits, capacityReasonLimit, dispatchFailureReasonLimit, closureFailureReasonLimit, dispatchFailureLimit, verdictIngestGraceMs, backedOffProfiles, probeBackoffFailures, probeBackoffMs } from './cursor.js';
 import { describeAttempts, unactedProducerSession, requestSpentAt, preferFreshProfiles, requestSessions, limitNoticeExit, type DispatchedSession } from './attempts.js';
 import { selectReviewerProfile, launchWithFailover, type InstantExit } from './launch-failover.js';
 import { liveSessions } from '../model/registry.js';
@@ -79,6 +80,13 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   const observedAt = snapshot.now;
   const clock = Number.isFinite(Date.parse(observedAt)) ? Date.parse(observedAt) : now();
   const tick: DispatchTick = { at: new Date(clock).toISOString(), launched: [], refused: [], waiting: [], skipped: 0, closed: [], closeFailures: [] };
+  // GY-4121: a host cause lifts once its tool is on PATH or the operator cleared it after it was recorded; its refusals then retry at once.
+  const clearedAt = hostCausesClearedAt(hostCausesClearPath(config)), hostSignals: string[] = [];
+  for (const [key, cause] of Object.entries(cursor.hostCauses)) {
+    if (!(cause.tool && onPath(cause.tool)) && !(clearedAt !== null && clearedAt >= Date.parse(cause.at))) continue;
+    delete cursor.hostCauses[key];
+    for (const [id, failure] of Object.entries(cursor.failures)) if (failure.hostCause === key) delete cursor.failures[id];
+  }
   const inventoryRead = await effects.inventory?.();
   const herdr = inventoryRead ? (inventoryRead.available ? sessionAgents(inventoryRead) : null) : await effects.agents();
   // GY-1490: the loop sleeping beside this tick is woken for what its next cycle acts on, within one tick of it appearing.
@@ -184,6 +192,14 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
     const attempts = Math.min(previous?.attempts ?? 0, dispatchAttemptCeiling - 1) + 1;
     // Bounded below the cursor's cap: the wait sentence that wraps it on later ticks must fit too.
     const failure: DispatchFailure = { kind, work: item.key, sha: request.sha, attempts, reason: bounded(message(error), dispatchFailureReasonLimit), at: new Date(now()).toISOString(), nextAt: new Date(now() + retryDelay(attempts)).toISOString() };
+    const cause = hostCause(failure.reason);
+    if (cause) {
+      failure.hostCause = cause.key;
+      if (!cursor.hostCauses[cause.key]) {
+        cursor.hostCauses[cause.key] = { tool: cause.tool, fix: cause.fix, detail: failure.reason, at: failure.at };
+        hostSignals.push(`Mainworks ${config.repository}: ${cause.key} on this host stops ${kind === 'review' ? 'reviews' : 'proofs'} (${item.key}). Fix: ${cause.fix}`);
+      }
+    }
     cursor.failures[request.id] = failure;
     // A refusal is the role answering with something other than spent quota, so any hold the
     // previous tick armed is stale: withdraw it rather than let the summary keep reporting a
@@ -236,7 +252,14 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       partialWork: { state: 'not-applicable', detail: 'the session exited at launch on the provider limit notice: it read nothing and edited nothing' } }).catch(() => { /* the hold stands; a record the control plane refused is not a failed failover */ });
     return `${profile.name}: ${account ?? `${profile.name}'s own account`} exited at launch on its provider's limit notice (${reason}); held ${resetsAt ? `until ${resetsAt}` : 'for its reset'}`;
   };
-  const retryable = (request: DispatchRequest) => { const failure = cursor.failures[request.id]; return !failure || failure.attempts < dispatchFailureLimit && Date.parse(failure.nextAt) <= now(); };
+  // GY-4121: a refusal for a standing host cause is never retried; the item waits on the operator's one-line fix.
+  const hostHeld = (request: DispatchRequest) => { const key = cursor.failures[request.id]?.hostCause; return key ? cursor.hostCauses[key] : undefined; };
+  const retryable = (request: DispatchRequest) => { const failure = cursor.failures[request.id]; return !failure || !hostHeld(request) && failure.attempts < dispatchFailureLimit && Date.parse(failure.nextAt) <= now(); };
+  const refusedWait = (request: DispatchRequest, spentTail: string) => {
+    const failure = cursor.failures[request.id], cause = hostHeld(request);
+    return cause ? `next: operator — ${cause.fix}; retries pause until the host changes (${failure.reason})`
+      : `launch refused ${failure.attempts} time(s): ${failure.reason}; ${failure.attempts >= dispatchFailureLimit ? spentTail : `next attempt at ${failure.nextAt}`}`;
+  };
   // A request whose automatic sessions all ended unanswered is left to the master, once, naming
   // every attempt; the wait says no further attempt follows, and status raises the attention item.
   const abandon = (kind: 'review' | 'producer', item: Work, request: DispatchRequest, records: DispatchedSession[], why: string) => {
@@ -356,7 +379,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
     if (reviewedAfterMerge(item)) wait('review', item, review, postMergeWaitReason);
     else if (!session('review', item, review, reviews)) { /* settled, or waiting to relaunch */ }
     else if (spent('review')) wait('review', item, review, capacityWait('review'));
-    else if (!retryable(review)) wait('review', item, review, `launch refused ${cursor.failures[review.id].attempts} time(s): ${cursor.failures[review.id].reason}; ${cursor.failures[review.id].attempts >= dispatchFailureLimit ? 'no further automatic attempt, launch it with master review once the cause is fixed' : `next attempt at ${cursor.failures[review.id].nextAt}`}`);
+    else if (!retryable(review)) wait('review', item, review, refusedWait(review, 'no further automatic attempt, launch it with master review once the cause is fixed'));
     else {
       // Every review is a control-plane review (GY-1525): it posts through the API under a one-time token, so a profile answers it with no reviewer App.
       const { profile, reason } = reviewerProfile();
@@ -407,7 +430,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
     if (!session('review', item, request, reviews)) { /* settled, or waiting to relaunch */ }
     else if (spent('review')) wait('review', item, request, capacityWait('review'));
     else if (!effects.launchProductReview) wait('review', item, request, 'this dispatcher launches no product reviews');
-    else if (!retryable(request)) wait('review', item, request, `launch refused ${cursor.failures[request.id].attempts} time(s): ${cursor.failures[request.id].reason}; ${cursor.failures[request.id].attempts >= dispatchFailureLimit ? 'no further automatic attempt, launch it with master review once the cause is fixed' : `next attempt at ${cursor.failures[request.id].nextAt}`}`);
+    else if (!retryable(request)) wait('review', item, request, refusedWait(request, 'no further automatic attempt, launch it with master review once the cause is fixed'));
     else {
       const { profile, reason } = reviewerProfile();
       const candidates = profile ? [profile, ...withReviewerDefaults(config).reviewers.filter(other => other.name !== profile.name)] : [];
@@ -465,7 +488,7 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
           if (!session('producer', item, request, producers)) continue;
           if (!herdr) { wait('producer', item, request, 'Herdr session inventory is unavailable'); continue; }
           if (spent('producer')) { wait('producer', item, request, capacityWait('producer')); continue; }
-          if (!retryable(request)) { wait('producer', item, request, `launch refused ${cursor.failures[request.id].attempts} time(s): ${cursor.failures[request.id].reason}; ${cursor.failures[request.id].attempts >= dispatchFailureLimit ? 'no further automatic attempt' : `next attempt at ${cursor.failures[request.id].nextAt}`}`); continue; }
+          if (!retryable(request)) { wait('producer', item, request, refusedWait(request, 'no further automatic attempt')); continue; }
           // Independence is per item, never per process: a profile whose principal held an assignment
           // on this item is skipped for this item however many slots it has, and the launcher selects
           // among the rest up to each one's concurrency.
@@ -575,6 +598,9 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   const live = new Set([...snapshot.work.flatMap(work => [...(work.autoDispatch?.review ? [work.autoDispatch.review.id] : []), ...(work.autoDispatch?.product ? [work.autoDispatch.product.id] : []), ...(work.autoDispatch?.producers ?? []).map(request => request.id)]), ...owed.map(item => postMergeRequest(item).id)]);
   for (const id of Object.keys(cursor.failures)) if (!live.has(id)) delete cursor.failures[id];
   for (const id of Object.keys(cursor.abandoned)) if (!live.has(id)) delete cursor.abandoned[id];
+  for (const key of Object.keys(cursor.hostCauses)) if (!Object.values(cursor.failures).some(failure => failure.hostCause === key)) delete cursor.hostCauses[key];
+  // One alert per cause, when it is first recorded; a failed alert leaves the status line to carry it.
+  for (const text of hostSignals) await effects.alert?.(text).catch(() => null);
   cursor.ticks += 1; cursor.lastTickAt = cursor.lastSuccessAt = new Date(now()).toISOString(); cursor.consecutiveFailures = 0;
   cursor.lastTick = { at: tick.at, launched: tick.launched.length, refused: tick.refused.length, waiting: tick.waiting.length, settled: tick.skipped,
     closed: tick.closed.length, closeFailures: closeFailureReasons(tick.closeFailures),
