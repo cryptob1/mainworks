@@ -74,6 +74,10 @@ export const masterCommands = defineCommands([
       '                                session: the token lands under that install\'s config directory with',
       '                                mode 0600 and each Lead records the peer; a session launched before',
       '                                the peer names the rerun after its pane is closed and relaunched',
+      '  lead slack connect CHANNEL-ID OWNER-SLACK-ID  Connect the factory\'s Slack app: its app and bot',
+      '                                tokens on stdin, kept in the install directory; the channel\'s',
+      '                                messages reach the Lead and its replies post in thread',
+      '  lead slack allow SLACK-ID…    The people besides the owner whose Slack messages reach the Lead',
       '  lead send NAME TEXT           Message a peer install\'s Lead; --reply MESSAGE-ID answers one of its messages',
       '  lead priority GY-N 0|1|2|3 REASON  Change priority with an audit reason',
       '  lead attest GY-N PROOF REASON  Attest a manual: proof on the exact current head',
@@ -96,6 +100,10 @@ export const masterCommands = defineCommands([
         return console.log(`${masterInstructions}\n${masterGuide}`);
       }
       if (id === 'init') return masterInit(context, root);
+      if (id === 'slack') {
+        const [{ slackCommand }, { loadStoredMasterConfig }, { installDirectory }, { installIdFor }] = await Promise.all([import('./master/slack.js'), import('../master/config.js'), import('../install/secrets.js'), import('../install/types.js')]);
+        return slackCommand(context.args, installDirectory(installIdFor((await loadStoredMasterConfig(root)).repository)));
+      }
       if (id === 'setup') {
         const [{ masterSetupCommand }, { loadStoredMasterConfig }] = await Promise.all([import('./master-setup.js'), import('../master/config.js')]);
         return masterSetupCommand(context, root, await loadStoredMasterConfig(root));

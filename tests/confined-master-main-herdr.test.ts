@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -66,9 +67,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
 
   let store: Store | null = null, closeHttp: (() => Promise<void>) | undefined, url = '';
   let herdrServer: ReturnType<typeof createServer> | null = null;
-  const saved = { HOME: process.env.HOME, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME, PATH: process.env.PATH };
-  process.env.HOME = home;
-  process.env.GRAPHYARD_CONFIG_HOME = join(home, '.config', 'graphyard');
+  const restoreEnv = patchEnv({ HOME: home, GRAPHYARD_CONFIG_HOME: join(home, '.config', 'graphyard'), PATH: process.env.PATH });
   try {
     // The control plane the fixture install answers to, with the item its master session reviews.
     store = await withDatabase('confined-master-main-herdr');
@@ -247,9 +246,7 @@ test(`e2e:confined-master-main-herdr — a fixture install migrated from its pri
   } finally {
     if (herdrServer) await new Promise<void>(resolve => (herdrServer as NonNullable<typeof herdrServer>).close(() => resolve()));
     await closeHttp?.();
-    for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) delete (process.env as Record<string, string | undefined>)[name]; else (process.env as Record<string, string | undefined>)[name] = value;
-    }
+    restoreEnv();
     rmSync(home, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }

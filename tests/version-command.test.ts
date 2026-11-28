@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
@@ -32,11 +33,9 @@ test('unit:version-command — a checkout is the latest dated tag on its HEAD, e
   assert.deepEqual(checkoutRelease(outside, 'f'.repeat(40)), { version: `unreleased ${'f'.repeat(12)}`, revision: 'f'.repeat(40), released: false });
 });
 
-test('unit:version-command — /healthz reports the version field the CLI reports, and a stamped image its date version', async () => {
-  const saved = { version: process.env.GRAPHYARD_VERSION, revision: process.env.GRAPHYARD_BUILD_REVISION };
-  try {
-    delete process.env.GRAPHYARD_VERSION;
-    const own = checkoutRelease(resolve('.'));
+test('unit:version-command — /healthz reports the version field the CLI reports, and a stamped image its date version', async t => {
+  patchEnv({ GRAPHYARD_VERSION: undefined, GRAPHYARD_BUILD_REVISION: process.env.GRAPHYARD_BUILD_REVISION }, t);
+  const own = checkoutRelease(resolve('.'));
     assert.deepEqual(releaseInfo(), { version: own.version, revision: process.env.GRAPHYARD_BUILD_REVISION || 'unknown' }, 'a checkout claims no served revision it was not stamped with');
     let answered: any;
     const client = { query: async () => ({}), release: () => {} };
@@ -51,12 +50,9 @@ test('unit:version-command — /healthz reports the version field the CLI report
     assert.equal(releaseInfo().version, own.version, 'the Dockerfile\'s default stamp is no release');
     process.env.GRAPHYARD_VERSION = '0.1.0'; process.env.GRAPHYARD_BUILD_REVISION = 'e'.repeat(40);
     assert.deepEqual(releaseInfo(), { version: '0.1.0', revision: 'e'.repeat(40) }, 'a stamped image reports the version it was stamped with');
-  } finally {
-    for (const [name, value] of [['GRAPHYARD_VERSION', saved.version], ['GRAPHYARD_BUILD_REVISION', saved.revision]] as const) if (value === undefined) delete process.env[name]; else process.env[name] = value;
-  }
 });
 
-test('unit:version-command — an image without .git is the release its build stamped, for the command, /healthz and the install default alike', () => {
+test('unit:version-command — an image without .git is the release its build stamped, for the command, /healthz and the install default alike', t => {
   const noRevision = () => { throw new Error('a stamped revision needs no checkout'); };
   const dated = stampedRelease({ GRAPHYARD_VERSION: '2026.10.17.1', GRAPHYARD_BUILD_REVISION: 'a'.repeat(40) }, noRevision);
   assert.deepEqual(dated, { version: '2026.10.17.1', revision: 'a'.repeat(40), released: true });
@@ -66,14 +62,9 @@ test('unit:version-command — an image without .git is the release its build st
   assert.equal(candidate?.released, false);
   for (const unstamped of [{}, { GRAPHYARD_VERSION: '' }, { GRAPHYARD_VERSION: '0.0.0-dev' }, { GRAPHYARD_VERSION: 'stable' }]) assert.equal(stampedRelease(unstamped, noRevision), null);
   assert.equal(stampedRelease({ GRAPHYARD_VERSION: '2026.10.17' }, () => 'd'.repeat(40))?.revision, 'd'.repeat(40), 'without a stamped revision the checkout\'s names it');
-  const saved = { version: process.env.GRAPHYARD_VERSION, revision: process.env.GRAPHYARD_BUILD_REVISION };
-  try {
-    process.env.GRAPHYARD_VERSION = '2026.10.17.1'; process.env.GRAPHYARD_BUILD_REVISION = 'a'.repeat(40);
-    assert.deepEqual(cliRelease(), dated, 'mainworks version reports the stamp');
-    assert.deepEqual(releaseInfo(), { version: dated!.version, revision: dated!.revision }, '/healthz reports the same release');
-  } finally {
-    for (const [name, value] of [['GRAPHYARD_VERSION', saved.version], ['GRAPHYARD_BUILD_REVISION', saved.revision]] as const) if (value === undefined) delete process.env[name]; else process.env[name] = value;
-  }
+  patchEnv({ GRAPHYARD_VERSION: '2026.10.17.1', GRAPHYARD_BUILD_REVISION: 'a'.repeat(40) }, t);
+  assert.deepEqual(cliRelease(), dated, 'mainworks version reports the stamp');
+  assert.deepEqual(releaseInfo(), { version: dated!.version, revision: dated!.revision }, '/healthz reports the same release');
 });
 
 test('unit:version-command — the report names the CLI release and commit, and the server\'s from /healthz when connected', async () => {

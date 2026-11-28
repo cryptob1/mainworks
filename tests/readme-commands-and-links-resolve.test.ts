@@ -51,7 +51,7 @@ test('unit:readme-commands-and-links-resolve — the README opens with the promi
 
   assert.deepEqual(
     [...readme.matchAll(/^## (.+)$/gm)].map(match => match[1]),
-    ['Why this exists', 'What it looks like', 'How it works', 'Try it', 'How fast is it?', 'What to run it on', 'Is it safe to let agents do this?', 'Learn more'],
+    ['Why this exists', 'What it looks like', 'How it works', 'Try it', 'How fast is it?', 'What to run it on', 'Is it safe to let agents do this?', 'Work with a factory from Slack', 'Learn more'],
   );
 
   const steps = readme.split('\n## How it works\n')[1]!.split('\n## ')[0]!.trim().split('\n').filter(line => /^\d+\. /.test(line)).map(line => line.toLowerCase());

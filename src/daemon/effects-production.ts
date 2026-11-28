@@ -37,6 +37,7 @@ import { mergeRecordKey, mergeWriterReads, type GithubCallsOptions } from './cyc
 import { runServedPreviewCases } from '../merge-writer/served-previews.js';
 import { runOnboardingTime } from '../onboarding-time.js';
 import { postAlert } from './delivery-alerts.js';
+import { postSlackText, slackAlertsOn } from '../master/slack.js';
 import { readServeRecord, serveRecordPath } from '../serve-app.js';
 import type { RelandInput } from '../merge-writer/serve-revert.js';
 import { worktreeRoot } from '../install/worktree-root.js';
@@ -84,6 +85,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
   github?: GithubCallsOptions;
 }): DaemonEffects {
   const current = typeof source === 'function' ? source : () => source;
+  const slackDirectory = () => installDirectory(installIdFor(current().repository));
   const run = deps.run ?? childRunner({ timeoutMs: 90_000 });
   let leftoversSweptAt = 0, releasesSweptAt = 0;
   let hostsReading: Promise<void> | null = null, hostsLatest: HostReading[] | null = null;
@@ -345,7 +347,12 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // GY-3233: control-plane faults go to the upstream install while the live configuration names one.
     get fileUpstream() { const upstream = current().upstream; return upstream ? upstreamFiler(upstream, fetcher) : undefined; },
     // GY-3101: one plain-text message POSTed to the operator's alert webhook (run.alertUrl) — any receiver that takes a body, such as an ntfy topic; GY-3529: a Slack incoming webhook gets {"text": ...}.
-    alertWebhook: text => postAlert(fetcher, current().run.alertUrl!, text),
+    // GY-4073: and each alert also posts to the factory's Slack channel once its app is connected.
+    alertWebhook: async text => {
+      const url = current().run.alertUrl, slack = slackDirectory();
+      await Promise.all([url ? postAlert(fetcher, url, text) : null, slackAlertsOn(slack) ? postSlackText(slack, text) : null]);
+    },
+    slackConnected: () => slackAlertsOn(slackDirectory()),
     persist,
   } satisfies DaemonEffects, {});
 }

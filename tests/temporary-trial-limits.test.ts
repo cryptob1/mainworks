@@ -1,4 +1,5 @@
 import { after, test } from 'node:test';
+import { patchEnv, withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -195,11 +196,9 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   assert.deepEqual(heldSlots(yard.directory), []);
 
   // A trial's own serve and test containers run on its slot: no deadlock at a cap of 1.
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = yard.directory;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: yard.directory }, async () => {
     assert.equal(await withHeavyJob('merge trial GY-9', () => withHeavyJob('serve GY-9', () => withHeavyJob('session tests GY-9', async () => 'nested ran'))), 'nested ran');
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  });
 
   // At 85C or more no new run starts under the strict cap; it starts once the CPU reads cooler.
   yard.celsius(90);
@@ -227,12 +226,11 @@ test('integration:temporary-trial-limits — a host-wide strict cap of 1 seriali
   for (const job of holders) assert.equal(await job.closed, 0, job.stderr());
 });
 
-test('e2e:temporary-trial-limits — master config sets a temporary trial cap, heat limit and host strict cap; master status shows each with its expiry, and they revert at expiry', { timeout: 60_000 }, async () => {
+test('e2e:temporary-trial-limits — master config sets a temporary trial cap, heat limit and host strict cap; master status shows each with its expiry, and they revert at expiry', { timeout: 60_000 }, async t => {
   const root = await install(), data = await temporaryDirectory('temporary-limits-data'), expiry = Date.now() + 3600_000;
-  const directory = join(data, 'heavy-jobs'), previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = directory;
-  try {
-    const stored = masterConfigSchema.parse(JSON.parse(readFileSync(join(root, '.graphyard/master.json'), 'utf8'))) as MasterConfig;
+  const directory = join(data, 'heavy-jobs');
+  patchEnv({ [slotsDirectoryVariable]: directory }, t);
+  const stored = masterConfigSchema.parse(JSON.parse(readFileSync(join(root, '.graphyard/master.json'), 'utf8'))) as MasterConfig;
     const printed: unknown[] = [];
     const config = (args: string[]) => fleetCommand({ id: 'config', args, root, master: stored, print: (value: unknown) => { printed.push(value); return value; }, coordinator: { actor: { id: 'graphyard-master-app' } } } as never);
     await config(['trialCap=2', 'launchHotCelsius=80', 'hostHeavyJobs=1', `until=${iso(expiry)}`]);
@@ -252,5 +250,4 @@ test('e2e:temporary-trial-limits — master config sets a temporary trial cap, h
     const cleared = masterConfigSchema.parse(JSON.parse(readFileSync(join(root, '.graphyard/master.json'), 'utf8'))) as MasterConfig;
     assert.deepEqual((await status(root, cleared, Date.now())).temporaryLimits, { trialCap: null, launchHotCelsius: null, hostHeavyJobs: null });
     assert.equal(heavyJobLimit(directory), 2);
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
 });

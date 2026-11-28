@@ -77,7 +77,7 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
     // It fits the width and adds no Settings page.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
-    await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help']);
+    await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Slack', 'Setup', 'Delivery', 'Help']);
 
     // The same block answers at phone width: every row still readable, nothing overflows, and it still adds no Settings page.
     await page.setViewportSize({ width: 390, height: 844 });
@@ -89,7 +89,7 @@ test('e2e:app-test-environments — the Tests view\'s Where tests run block show
     await expect(staging).toContainText('environment fault, retried 5 min ago in 42 s');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await mainNav.getByRole('link', { name: 'Settings', exact: true }).click();
-    await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help']);
+    await expect(tabs.getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Slack', 'Setup', 'Delivery', 'Help']);
   } finally {
     restoreRoot();
     http.closeAllConnections();

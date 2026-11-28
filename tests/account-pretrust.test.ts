@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
@@ -79,9 +80,7 @@ test('integration:account-pretrust — creating or logging in an agent environme
   await writeFile(join(unitDir, 'graphyard-master-app-a.service'), `[Service]\nWorkingDirectory=${checkoutA}\nExecStart=/usr/bin/node /bin/graphyard master run\n`);
   await writeFile(join(unitDir, 'graphyard-master-app-b.service'), `[Service]\nWorkingDirectory=${checkoutB}\nExecStart=/usr/bin/node /bin/graphyard master run\n`);
 
-  const previousXdg = process.env.XDG_CONFIG_HOME;
-  process.env.XDG_CONFIG_HOME = hostXdg;
-  try {
+  await withEnv({ XDG_CONFIG_HOME: hostXdg }, async () => {
     // 1. Creating a new Claude environment records folder trust for every install checkout on the host.
     const createdClaude = await createAgentEnvironment(envRoot, 'claude', []);
     const claudeConfig = JSON.parse(await readFile(join(createdClaude.home, '.claude.json'), 'utf8'));
@@ -113,10 +112,7 @@ test('integration:account-pretrust — creating or logging in an agent environme
     assert.equal(afterLogin.projects?.[realpathSync(checkoutA)]?.hasTrustDialogAccepted, true, 'checkoutA re-trusted after login');
     assert.equal(afterLogin.projects?.[realpathSync(checkoutB)]?.hasTrustDialogAccepted, true, 'checkoutB re-trusted after login');
     assert.deepEqual(await prepareAgentEnvironment(createdClaude), [], 'preparing an already-trusted environment is idempotent');
-  } finally {
-    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-    else process.env.XDG_CONFIG_HOME = previousXdg;
-  }
+  });
 });
 
 test('integration:account-pretrust — two identical launch failures for the master on one account make the loop pick the next eligible account, with one plain line saying why', async () => {

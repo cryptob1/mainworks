@@ -28,7 +28,7 @@ describe('headless-claude-usage-limit', { concurrency: true }, () => {
   describe('headless-claude-usage-limit claude and reviewer', { concurrency: 1 }, () => {
     let workers: HeadlessWorkers;
     before(async () => { workers = await headlessWorkers('headless-claude-usage-limit'); });
-    after(async () => { await workers.stop(); });
+    after(async () => { await workers?.stop(); });
 
     test('e2e:headless-claude-usage-limit — a headless claude usage-credits result holds its account and the same dispatch moves on', async () => {
       await workers.configure([{ name: 'claude-spent', kind: 'claude', result: 'Switch to another model, or manage usage credits at https://claude.ai/settings/usage' }, { name: 'next', kind: 'codex', wait: true }]);
@@ -72,7 +72,7 @@ describe('headless-claude-usage-limit', { concurrency: true }, () => {
   describe('headless-claude-usage-limit passed reset', () => {
     let workers: HeadlessWorkers;
     before(async () => { workers = await headlessWorkers('headless-claude-usage-limit-stale', 120, 'eng-c', false); });
-    after(async () => { await workers.stop(); });
+    after(async () => { await workers?.stop(); });
 
     test('e2e:headless-claude-usage-limit — a headless opencode worker exiting on the Z.AI quota line after its named reset has passed keeps that reset on the record', async () => {
       await workers.configure([{ name: 'opencode-spent', kind: 'opencode', printed: staleQuota }, { name: 'next-stale', kind: 'codex', wait: true }]);
@@ -95,7 +95,7 @@ describe('headless-claude-usage-limit', { concurrency: true }, () => {
   for (const [shape, printed, key] of [['quota line', zaiQuota, 'GY-9671'], ['quota error event', zaiQuotaEvent, 'GY-9674']] as const) describe(`headless-claude-usage-limit opencode ${shape}`, () => {
     let opencode: HeadlessWorkers;
     before(async () => { opencode = await headlessWorkers(`headless-claude-usage-limit-${key.slice(3)}`, 120, `eng-${key.slice(3)}`, false); });
-    after(async () => { await opencode.stop(); });
+    after(async () => { await opencode?.stop(); });
 
     test(`e2e:headless-claude-usage-limit — a headless opencode worker exiting on the Z.AI ${shape} is held until its reset and the same dispatch moves on`, async () => {
       await opencode.configure([{ name: 'opencode-spent', kind: 'opencode', printed }, { name: 'next-z', kind: 'codex', wait: true }]);

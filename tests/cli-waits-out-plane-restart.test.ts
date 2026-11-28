@@ -1,4 +1,5 @@
 import { listen } from './helpers/http-server.js';
+import { patchEnv } from './helpers/env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
@@ -78,10 +79,8 @@ test('integration:cli-waits-out-plane-restart — CLI survives refusal during re
 });
 
 test('integration:cli-waits-out-plane-restart — HTTP errors and invalid requests are never retried; exhausted connection failures name the URL', async t => {
-  const originalUrl = process.env.GRAPHYARD_URL, originalToken = process.env.GRAPHYARD_TOKEN, originalFile = process.env.GRAPHYARD_TOKEN_FILE;
-  process.env.GRAPHYARD_URL = 'http://127.0.0.1:4310'; process.env.GRAPHYARD_TOKEN = 'test-only'; delete process.env.GRAPHYARD_TOKEN_FILE;
-  try {
-    for (const status of [400, 401, 403, 409, 429, 500, 503]) {
+  patchEnv({ GRAPHYARD_URL: 'http://127.0.0.1:4310', GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_TOKEN_FILE: undefined }, t);
+  for (const status of [400, 401, 403, 409, 429, 500, 503]) {
       let calls = 0;
       const mocked = t.mock.method(globalThis, 'fetch', async (url: string) => {
         if (url.endsWith('/healthz')) return new Response('{}');
@@ -118,9 +117,4 @@ test('integration:cli-waits-out-plane-restart — HTTP errors and invalid reques
     const context = await createContext('status', undefined, [], false);
     await assert.rejects(context.api('status'), /Control plane unreachable at http:\/\/127\.0\.0\.1:4310\/api\/status after 60 seconds/);
     assert.equal(calls, 1, 'no retry after the deadline');
-  } finally {
-    for (const [key, value] of Object.entries({ GRAPHYARD_URL: originalUrl, GRAPHYARD_TOKEN: originalToken, GRAPHYARD_TOKEN_FILE: originalFile })) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
-  }
 });
