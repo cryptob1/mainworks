@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -390,9 +391,7 @@ test('unit:doctor-flags-loop-on-other-code — the reading judges the units agai
   // A simulated host: the managed checkout, its master configuration, a unit directory whose loop
   // unit still names the pilot checkout, and the pilot commit on the cursor.
   const base = await temporaryDirectory('mainworks-doctor-loop-code');
-  const configHome = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = join(base, 'config');
-  try {
+  await withEnv({ GRAPHYARD_CONFIG_HOME: join(base, 'config') }, async () => {
     const root = join(base, 'repo'), unitDirectory = join(base, 'units'), home = join(base, 'home'), cliCheckout = join(base, 'cli'), pilot = join(base, 'pilot');
     for (const directory of [join(root, '.graphyard'), unitDirectory, home, join(cliCheckout, 'bin'), join(pilot, 'bin'), join(base, 'config', 'acme-shop', 'coordinator')]) await mkdir(directory, { recursive: true });
     await gitRepo({ root, files: { 'file.txt': 'x\n' }, message: 'one' });
@@ -461,9 +460,7 @@ test('unit:doctor-flags-loop-on-other-code — the reading judges the units agai
     assert.ok(status.loopCode && typeof status.loopCode.cli.root === 'string', 'doctor reads what the units run');
     assert.equal(status.loopCode!.loop, null, 'under the test runner the operator\'s real units are never read');
     
-  } finally {
-    if (configHome === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = configHome;
-  }
+  });
 });
 
 test('unit:doctor-loop-code-pinned-snapshot — a loop unit starting the install\'s pinned coordinator snapshot is this install\'s own checkout: green when it holds this CLI\'s commit, stale naming both commits when it holds another, foreign on any other path', async () => {
@@ -476,9 +473,7 @@ test('unit:doctor-loop-code-pinned-snapshot — a loop unit starting the install
   // coordinator snapshot under the install directory (the deploy unit pins it), not this CLI's
   // checkout — the healthy shape every install now runs, which the path check used to call foreign.
   const base = await temporaryDirectory('mainworks-doctor-loop-pinned-snapshot');
-  const configHome = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = join(base, 'config');
-  try {
+  await withEnv({ GRAPHYARD_CONFIG_HOME: join(base, 'config') }, async () => {
     const root = join(base, 'repo'), unitDirectory = join(base, 'units'), home = join(base, 'home'), cliCheckout = join(base, 'cli'), stranger = join(base, 'stranger');
     const installDir = join(base, 'config', 'acme-shop'), snapshot = join(installDir, 'coordinator', COMMIT.slice(0, 12)), current = join(installDir, 'coordinator', 'current');
     for (const directory of [join(root, '.graphyard'), unitDirectory, home, join(cliCheckout, 'bin'), join(stranger, 'bin'), join(snapshot, 'dist')]) await mkdir(directory, { recursive: true });
@@ -526,9 +521,7 @@ test('unit:doctor-loop-code-pinned-snapshot — a loop unit starting the install
     const foreign = await read(JSON.stringify({ release: { commit: OLD_COMMIT, dirty: false } }));
     assert.match(foreign.loopStale ?? '', new RegExp(`starts the CLI in ${quote(stranger)} at ${OLD_COMMIT.slice(0, 12)}, not this checkout \\(${quote(cliCheckout)}\\) at ${COMMIT.slice(0, 12)}`), 'an unrelated checkout is named with both paths and both commits');
     assert.equal(foreign.loopReplace, 'unit', 'a unit on another checkout is rewritten');
-  } finally {
-    if (configHome === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = configHome;
-  }
+  });
 });
 
 test('unit:doctor-loop-code-setup-line — setupFromZero carries the loop-code line: one FAIL naming both paths and the rerun, a PASS once the units run this checkout, a FAIL for an unreadable record, and no line while no unit of this install stands', async () => {

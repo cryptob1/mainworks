@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { connect, createServer } from 'node:net';
 import { composeBundle, type AdapterContext } from '../src/install/adapters.js';
@@ -28,8 +29,7 @@ test('integration:local-view-without-login — local reads need no session; fore
     upstream.on('error', () => client.destroy());
     client.on('close', () => upstream.destroy());
   }));
-  const previousPort = process.env.GRAPHYARD_LOCAL_VIEW_PORT;
-  delete process.env.GRAPHYARD_LOCAL_VIEW_PORT;
+  const restoreEnv = patchEnv({ GRAPHYARD_LOCAL_VIEW_PORT: undefined });
   try {
     const work = await engine.execute(operator, 'create', null, { type: 'chore', title: 'Visible without login', criteria: [{ id: 'AC-1', text: 'Shown', proofs: ['unit:shown', 'e2e:fixture'] }] }, randomUUID());
     assert.equal((await localRequest(`http://127.0.0.1:${publishedPort}`, '/api/board')).status, 401, 'undeclared publication cannot bypass the socket boundary');
@@ -76,8 +76,7 @@ test('integration:local-view-without-login — local reads need no session; fore
       assert.equal((await localRequest(url, '/api/work', { method: 'POST', body: { type: 'chore', title: 'Anonymous mutation' } })).status, 401);
     }
   } finally {
-    if (previousPort === undefined) delete process.env.GRAPHYARD_LOCAL_VIEW_PORT;
-    else process.env.GRAPHYARD_LOCAL_VIEW_PORT = previousPort;
+    restoreEnv();
     await close();
     await closeProxy();
     await database.close();

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -195,11 +196,10 @@ test('integration:runtime-calls-bounded — a hung agent runtime fails its step,
   const stubs = await temporaryDirectory('supervision-runtime');
   const directory = await temporaryDirectory('supervision-runtime-state');
   const root = await repository();
-  const previousPath = process.env.PATH;
+  const restoreEnv = patchEnv({ PATH: `${stubs}:${process.env.PATH}` });
   try {
     // A runtime that accepts the call and never answers: the failure this bound exists for.
     await writeFile(join(stubs, 'herdr'), '#!/bin/sh\nexec sleep 600\n', { mode: 0o755 });
-    process.env.PATH = `${stubs}:${previousPath}`;
     // The loop's own runner, at a bound short enough to measure; the shipped default is far longer.
     const bounded = childRunner({ timeoutMs: 400 });
 
@@ -246,7 +246,7 @@ test('integration:runtime-calls-bounded — a hung agent runtime fails its step,
       for (const [call] of defaults) assert.match(call, /timeoutMs:/, `${file} bounds every command the loop runs: ${call}`);
     }
   } finally {
-    process.env.PATH = previousPath;
+    restoreEnv();
     await rm(stubs, { recursive: true, force: true }); await rm(directory, { recursive: true, force: true }); await rm(root, { recursive: true, force: true });
   }
 });
@@ -256,10 +256,10 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
   const credentialDirectory = await temporaryDirectory('supervision-explicit-credentials');
   const scratch = await temporaryDirectory('supervision-explicit');
   const home = join(scratch, 'home');
-  const previous = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
   // The unit under the real user home, as it stands: this proof reads it and must leave it exactly so.
   const realUnit = join(loopUnitDirectory({ env: { ...process.env } }), legacyLoopUnit);
   const realBefore = await fileState(realUnit);
+  const restoreEnv = patchEnv({ HOME: home, XDG_CONFIG_HOME: join(home, '.config') });
   try {
     assert.ok(underTestRunner(), 'this proof runs under the test runner, which marks its processes; the shared guard keys on that mark');
     const setup = (input: Record<string, unknown> = {}, dependencies: Parameters<typeof setupMaster>[3] = {}) =>
@@ -267,7 +267,6 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
 
     // 1. setupMaster with no supervisorHost and no option writes nothing outside the temporary root —
     //    not into the process's home either, which is redirected to a temp so a write would show.
-    process.env.HOME = home; process.env.XDG_CONFIG_HOME = join(home, '.config');
     const plain = await setup();
     assert.equal(plain.supervisor, null, 'no option, no install, and nothing reported as installed');
     assert.deepEqual(plain.attention, []);
@@ -278,8 +277,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
     assert.equal(withHost.supervisor, null);
     assert.deepEqual(idle.calls, [], 'a supervisor host without installSupervisor runs nothing');
     assert.equal(await fileState(join(home, '.config/systemd/user', loopUnit)), null);
-    process.env.HOME = previous.HOME; process.env.XDG_CONFIG_HOME = previous.XDG_CONFIG_HOME;
-    if (previous.XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME;
+    restoreEnv();
 
     // 2. An explicit install whose WorkingDirectory is under the system temporary directory is
     //    refused by name, before anything is written or enabled, and setup still completes.
@@ -421,8 +419,7 @@ test('integration:supervisor-install-explicit-only — the unit is written only 
     assert.ok(installer.indexOf('assertCoordinatorCheckout(input.root') < installer.indexOf('await readFile('), 'and the WorkingDirectory is judged before the existing unit is read');
     assert.equal((await readdir(join(home, '.config/systemd/user'))).filter(name => name.endsWith('.tmp')).length, 0, 'no temporary unit file is left behind');
   } finally {
-    process.env.HOME = previous.HOME; process.env.XDG_CONFIG_HOME = previous.XDG_CONFIG_HOME;
-    if (previous.XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME;
+    restoreEnv();
     await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true }); await rm(scratch, { recursive: true, force: true });
   }
 });

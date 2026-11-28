@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -77,8 +78,7 @@ test('unit:cli-checkout-moves-after-server-serves — a deploy pass builds and r
 
 test('unit:deploy-builds-from-its-own-worktree — a watch pass over a fixture install redeploys from the install\'s build worktree at the new commit while the watched checkout still holds the old one, then publishes the ready CLI without moving or npm-ci-ing the watched checkout', async () => {
   const fixture = await harness({ provider: 'compose', serverUrl: 'http://127.0.0.1:4310' });
-  const saved = { configHome: process.env.GRAPHYARD_CONFIG_HOME, testCli: process.env.GRAPHYARD_TEST_CLI, testLog: process.env.GRAPHYARD_TEST_REDEPLOY_LOG };
-  process.env.GRAPHYARD_CONFIG_HOME = fixture.configHome;
+  const restoreEnv = patchEnv({ GRAPHYARD_CONFIG_HOME: fixture.configHome, GRAPHYARD_TEST_CLI: process.env.GRAPHYARD_TEST_CLI, GRAPHYARD_TEST_REDEPLOY_LOG: process.env.GRAPHYARD_TEST_REDEPLOY_LOG });
   try {
     const session = await prepareInstall(fixture.root, installRequestFromArgs(['--provider', 'compose', '--repo', 'owner/project', '--apply']).request, fixture.deps, 'apply');
     await applyInstall(session, await buildPlan(session));
@@ -144,9 +144,7 @@ appendFileSync(process.env.GRAPHYARD_TEST_REDEPLOY_LOG, JSON.stringify({ args: p
       assert.equal(published.root, build + '/', 'the watched launcher loads the published source and its isolated loader');
     } finally { await close(); }
   } finally {
-    for (const [name, value] of [['GRAPHYARD_CONFIG_HOME', saved.configHome], ['GRAPHYARD_TEST_CLI', saved.testCli], ['GRAPHYARD_TEST_REDEPLOY_LOG', saved.testLog]] as const) {
-      if (value === undefined) delete process.env[name]; else process.env[name] = value;
-    }
+    restoreEnv();
     await fixture.cleanup();
   }
 });

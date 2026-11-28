@@ -1,4 +1,5 @@
 import { after, before, test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmod, writeFile } from 'node:fs/promises';
@@ -62,10 +63,9 @@ const run: ChildRun = async (command, args, options) => {
 /** A trial under its own verification slots directory, where the loop read the fixture host with 64 free cores. */
 const ownSlots = async <T>(body: () => Promise<T>): Promise<T> => {
   // GY-3755: the machine running this test may set its own slots directory, whose loop readings omit the fixture host and so give it no room.
-  const directory = await temporaryDirectory('ssh-reuse-per-host-slots'), previous = process.env.MAINWORKS_VERIFICATION_SLOTS_DIR;
+  const directory = await temporaryDirectory('ssh-reuse-per-host-slots');
   writeMachines(directory, [{ name: 'local', local: true, away: false, cores: 2, busy: 0, celsius: null }, { name: target, away: false, cores: 64, busy: 0, celsius: null }]);
-  process.env.MAINWORKS_VERIFICATION_SLOTS_DIR = directory;
-  try { return await body(); } finally { if (previous === undefined) delete process.env.MAINWORKS_VERIFICATION_SLOTS_DIR; else process.env.MAINWORKS_VERIFICATION_SLOTS_DIR = previous; }
+  return withEnv({ MAINWORKS_VERIFICATION_SLOTS_DIR: directory }, body);
 };
 
 /** One trial of 30 one-file shards; this machine reads too hot to take any while the host runs, so all 30 are placed on the host at once. */
@@ -114,16 +114,14 @@ test(`${proof} — a host that resets every connection reads away, and master st
 });
 
 test(`${proof} — the 30 shards still run on the host when the machine running the test sets a slots directory whose readings omit it`, { timeout: 600_000 }, async () => {
-  const loop = await temporaryDirectory('ssh-reuse-per-host-loop-slots'), names = ['MAINWORKS_VERIFICATION_SLOTS_DIR', 'GRAPHYARD_VERIFICATION_SLOTS_DIR'] as const;
-  const previous = names.map(name => process.env[name]);
+  const loop = await temporaryDirectory('ssh-reuse-per-host-loop-slots');
   writeMachines(loop, [{ name: 'local', local: true, away: false, cores: 2, busy: 0, celsius: null }]);
-  for (const name of names) process.env[name] = loop;
   Object.assign(counts, { opened: 0, reset: 0 }); limit = 5;
   const before = (await dockerCreates(hosts.state('compute'))).length;
-  try {
+  await withEnv({ MAINWORKS_VERIFICATION_SLOTS_DIR: loop, GRAPHYARD_VERIFICATION_SLOTS_DIR: loop }, async () => {
     const result = await trial();
     assert.equal(result.build, 'pass', result.logTail);
     assert.deepEqual({ passed: result.tests.passed, failed: result.tests.failed }, { passed: files.length, failed: [] }, result.logTail);
-  } finally { names.forEach((name, index) => { if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index]; }); }
+  });
   assert.equal((await dockerCreates(hosts.state('compute'))).length - before, files.length, 'every shard ran on the host');
 });

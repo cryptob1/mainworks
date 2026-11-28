@@ -5,6 +5,9 @@ import type { Work } from '../model.js';
 import type { Cycle } from './cycle.js';
 import { message, record } from './state.js';
 
+/** Whether the loop alerts at all: a webhook (run.alertUrl) or the factory's Slack channel (GY-4073). */
+export const alertsOn = ({ config, effects }: Pick<Cycle, 'config' | 'effects'>) => !config.forPerson && !!effects.alertWebhook && (!!config.run.alertUrl || !!effects.slackConnected?.());
+
 const short = (sha: string) => sha.slice(0, 12);
 
 /** A Slack incoming webhook takes `{"text": ...}`; any other receiver keeps the plain-text body. */
@@ -38,7 +41,7 @@ const uatFailedText = (repository: string, candidate: string, served: string | n
 export async function deliveryAlertStep(cycle: Cycle) {
   const { config, state, effects, snapshot, now } = cycle;
   const reads = effects.mergeWriter;
-  if (config.forPerson || !config.run.alertUrl || !effects.alertWebhook || !reads) return;
+  if (!alertsOn(cycle) || !effects.alertWebhook || !reads) return;
   const sent = state.deliveryAlerts;
   const send = async (text: string) => {
     try { await effects.alertWebhook!(text); }

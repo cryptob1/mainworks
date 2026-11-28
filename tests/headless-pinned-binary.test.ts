@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withEnv } from './helpers/env.js';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,9 +23,7 @@ for (const sandbox of [false, true]) test(`e2e:headless-pinned-binary — review
   }
   // Cursor's interactive alias can itself lead back to a host mise wrapper.
   await writeFile(join(shims, 'agent'), '#!/bin/sh\necho "host agent alias invoked mise shim" >&2\nexit 1\n', { mode: 0o755 });
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${shims}:/usr/bin:/bin`;
-  try {
+  await withEnv({ PATH: `${shims}:/usr/bin:/bin` }, async () => {
     for (const route of ['review'] as const) {
       for (const kind of ['cursor', 'pi']) {
         const binary = kind === 'cursor' ? 'cursor-agent' : kind;
@@ -45,8 +44,5 @@ for (const sandbox of [false, true]) test(`e2e:headless-pinned-binary — review
         assert.equal(await session.settled, binary);
       }
     }
-  } finally {
-    if (previousPath === undefined) delete process.env.PATH;
-    else process.env.PATH = previousPath;
-  }
+  });
 });
