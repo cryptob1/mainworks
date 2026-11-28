@@ -1,9 +1,10 @@
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { hostMemoryVariable } from '../master/host-memory.js';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { setting } from '../setting.js';
 
 /**
@@ -192,6 +193,15 @@ function onPath(name: string, env: NodeJS.ProcessEnv): string | null {
   return null;
 }
 
+/** The real executable a mise shim at `shim` runs for `name`, or null when `shim` is not a mise shim. */
+function miseInstall(shim: string | null, name: string, cwd: string, env: NodeJS.ProcessEnv): string | null {
+  try {
+    const mise = shim && realpathSync(shim);
+    if (!mise || basename(mise) !== 'mise') return null;
+    return execFileSync(mise, ['which', name], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }).trim() || null;
+  } catch { return null; }
+}
+
 export interface ContainedInstall { command: string; args: string[] }
 /**
  * The install `argv` (npm ci, or pnpm's frozen install) for a checkout whose lifecycle scripts must not reach this host's authority. The
@@ -236,12 +246,17 @@ export function containedInstall(cwd: string, argv: readonly string[], env: Node
   for (const cache of caches) mkdirSync(cache, { recursive: true });
   // node and npm are often installed under the home directory (nvm, mise, fnm): the folder above
   // each one's real executable holds the rest of it (node's prefix; npm's package, for npm-cli.js).
-  const tools = [options.node ?? process.execPath, onPath('node', env), onPath('npm', env)].flatMap(path => { try { return path ? [dirname(dirname(realpathSync(path)))] : []; } catch { return []; } });
-  const readable = [...tools, ...(env.PATH ?? '').split(delimiter).filter(isAbsolute), join(home, '.npmrc'), env.npm_config_userconfig]
+  // GY-4115: a mise shim cannot find its installs once the home is emptied, so it would download node;
+  // `mise which` names the real install, whose folder goes first on the sandbox's PATH.
+  const real = ['node', 'npm'].map(name => miseInstall(onPath(name, env), name, cwd, env));
+  const shimless = [...new Set(real.filter((path): path is string => !!path).map(path => dirname(path)))];
+  const tools = [options.node ?? process.execPath, ...real.map((path, index) => path ?? onPath(['node', 'npm'][index]!, env))].flatMap(path => { try { return path ? [dirname(dirname(realpathSync(path)))] : []; } catch { return []; } });
+  const readable = [...tools, ...shimless, ...(env.PATH ?? '').split(delimiter).filter(isAbsolute), join(home, '.npmrc'), env.npm_config_userconfig]
     .filter((path): path is string => !!path).map(path => resolve(path));
   const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--share-net', '--die-with-parent', '--new-session'];
   for (const path of hidden) args.push('--tmpfs', path); // parents first, or a later one would bury an earlier
   args.push('--setenv', 'TMPDIR', '/tmp');
+  if (shimless.length) args.push('--setenv', 'PATH', [...shimless, env.PATH ?? ''].join(delimiter));
   const made = new Set<string>();
   const hiddenRoot = (path: string) => hidden.filter(root => within(path, root)).sort((a, b) => b.length - a.length)[0];
   // A path put back inside an emptied folder keeps the symlinks on its way (mise's installs/node/26

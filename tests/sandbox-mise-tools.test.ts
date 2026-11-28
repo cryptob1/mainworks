@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { containedInstall, npmCiArgs, npmCiEnvironment } from '../src/cli/test-isolation.js';
 import { readOnlyMountWrapper } from '../src/master/confinement.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -46,22 +47,19 @@ test('unit:sandbox-passes-mise-data-dir — a sandbox with HOME moved gets MISE_
   assert.equal(setenv(readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, environment: { ...environment, HOME: join(operatorHome, 'none') } }), 'MISE_DATA_DIR'), undefined);
 });
 
-/** PATH with real mise when installed (host and rebuilt trial image), or a stand-in inside the session for a pre-GY-4115 trial image. */
-function pathWithMise(session: string): string {
-  const base = process.env.PATH ?? '';
-  if (spawnSync('sh', ['-c', 'command -v mise'], { env: { PATH: base } }).status === 0) return base;
-  const bin = join(session, '.mise-bin'), script = join(bin, 'mise');
-  mkdirSync(bin, { recursive: true });
-  writeFileSync(script, '#!/bin/sh\nset -eu\n[ "$1" = which ] && [ "$2" = node ] || exit 2\ndata="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"\nbin="$data/installs/node/${MISE_NODE_VERSION:?}/bin/node"\n[ -x "$bin" ] || { echo "mise ERROR node@${MISE_NODE_VERSION} not installed in $data" >&2; exit 1; }\nprintf \'%s\\n\' "$bin"\n');
-  chmodSync(script, 0o755);
-  return `${bin}:${base}`;
-}
-
-test('integration:sandbox-mise-resolves-host-tools — `mise which node` inside a sandbox with HOME at /tmp/home names the host install', async () => {
-  const { root, session, operatorHome, node } = await hostWithMise();
-  const environment = { HOME: operatorHome, XDG_DATA_HOME: undefined, MISE_DATA_DIR: undefined };
-  const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, environment });
-  const output = execFileSync(bwrap!, [...words, 'sh', '-c', 'echo "$HOME"; mise which node'], {
-    cwd: session, encoding: 'utf8', env: { PATH: pathWithMise(session), HOME: operatorHome, MISE_NO_CONFIG: '1', MISE_OFFLINE: '1', MISE_NODE_VERSION: '99.0.0' } });
-  assert.deepEqual(output.trim().split('\n'), ['/tmp/home', node]);
+test('integration:contained-install-resolves-mise-shims — npm ci under containedInstall with mise shims first on PATH runs the host node and npm, never the shim', async () => {
+  const base = await temporaryDirectory('contained-mise');
+  // A mise whose shims fail the way a real one does when HOME is emptied: no installs, so it would download.
+  const real = dirname(process.execPath), mise = join(base, 'bin', 'mise'), shims = join(base, 'shims'), project = join(base, 'project');
+  for (const directory of [dirname(mise), shims, project]) mkdirSync(directory, { recursive: true });
+  writeFileSync(mise, `#!/bin/sh\ncase "$(basename "$0")" in\n  mise) [ "$1" = which ] && printf '%s\\n' "${real}/$2" ;;\n  *) echo "mise: downloading node" >&2; exit 1 ;;\nesac\n`);
+  chmodSync(mise, 0o755);
+  for (const tool of ['node', 'npm']) symlinkSync(mise, join(shims, tool));
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'p', version: '1.0.0' }));
+  writeFileSync(join(project, 'package-lock.json'), JSON.stringify({ name: 'p', version: '1.0.0', lockfileVersion: 3, requires: true, packages: { '': { name: 'p', version: '1.0.0' } } }));
+  const env = { PATH: `${shims}:${process.env.PATH}`, HOME: join(base, 'home'), npm_config_cache: join(base, 'npm') };
+  const install = containedInstall(project, ['npm', ...npmCiArgs], env);
+  const run = spawnSync(install.command, install.args, { cwd: project, encoding: 'utf8', env: npmCiEnvironment(env) });
+  assert.equal(run.status, 0, run.stderr);
+  assert.doesNotMatch(run.stderr, /downloading/);
 });
