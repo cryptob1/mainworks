@@ -20,7 +20,7 @@ export const githubApiUrl = 'https://api.github.com';
 const minuteMs = 60_000, hourMs = 60 * minuteMs;
 const iso = (at: number) => new Date(at).toISOString();
 
-/** The calls of the last hour by source: every minute that began less than an hour ago, whole. */
+/** The calls of the last hour by source: every minute whose last second is less than an hour old, counted whole. */
 export function githubCallsInHour(calls: GithubCalls, now: number) {
   const hour = { observation: 0, releasePublish: 0, other: 0 };
   for (const minute of calls.minutes) if (minute.minute + minuteMs + hourMs > now) for (const source of githubCallSources) hour[source] += minute[source];
@@ -74,17 +74,18 @@ export function noteGithubCycle(calls: GithubCalls) { stepWaits.delete(calls); }
  * and a release publish are counted and never held.
  */
 export async function githubCall(calls: GithubCalls, source: GithubCallSource, options: { sharePercent?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): Promise<void> {
-  const now = options.now ?? Date.now, clock = now();
+  const now = options.now ?? Date.now, sharePercent = options.sharePercent, clock = now();
   if (source === 'observation') {
     const waited = stepWaits.get(calls) ?? 0;
-    const waitMs = Math.min(githubSlowWaitMs(calls, options.sharePercent, clock), Math.max(0, githubStepWaitBudgetMs - waited));
-    if (waitMs > 0) {
+    const owed = githubSlowWaitMs(calls, sharePercent, clock), waitMs = Math.min(owed, Math.max(0, githubStepWaitBudgetMs - waited));
+    if (owed === 0) calls.slowed = null;
+    else if (waitMs > 0) {
       calls.slowed = { since: calls.slowed?.since ?? iso(clock), waited: (calls.slowed?.waited ?? 0) + 1 };
       stepWaits.set(calls, waited + waitMs);
       await (options.sleep ?? delay)(waitMs);
     }
   }
-  noteGithubCall(calls, source, now(), options.sharePercent);
+  noteGithubCall(calls, source, now(), sharePercent);
 }
 
 export interface GithubRateLimit { limit: number; remaining: number; reset: string; at: string }
