@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { lstatSync, readlinkSync } from 'node:fs';
 import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ensureDeployCheckout } from '../src/cli/upgrade.js';
+import { ensureDeployCheckout } from '../src/install/cli-release.js';
 import { deployCheckoutOf } from '../src/install/loop-unit.js';
 import { deploySourceCheck } from '../src/setup-from-zero.js';
 import { defaultChildRun } from '../src/child-runner.js';

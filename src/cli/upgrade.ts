@@ -3,8 +3,8 @@
 import { heldLocksVariable, imageLock, withHostLock } from '../host-lock.js';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeBackupFile } from '../backup.js';
@@ -23,7 +23,7 @@ import { installCommand, readServeRecord, serveBaselineCheckoutPath, serveChecko
 import { defaultChildRun } from '../child-runner.js';
 import { migrateHerdr } from '../herdr-migration.js';
 import { loadMasterConfig } from '../master/config.js';
-import { cliReleasePath, activeCliRoot, prepareCliRelease, publishCliRelease, writeUserLauncher } from '../install/cli-release.js';
+import { cliReleasePath, activeCliRoot, ensureDeployCheckout, prepareCliRelease, publishCliRelease, writeUserLauncher } from '../install/cli-release.js';
 import { knownGoodState, pinKnownGood } from '../master/known-good.js';
 import { heavyJobsDirectory, joinHostHeavyBudget, liveSlots, withHeavyJob } from '../master/verification-slots.js';
 import { readReviewLedger } from '../reviewer.js';
@@ -288,37 +288,6 @@ export const deployHealth = (cliRoot: string, url: string, attempts = 36, pauseM
     catch (error) { if (attempt >= attempts) throw error; await new Promise(done => setTimeout(done, pauseMs)); }
   }
 };
-
-/**
- * The install's own deploy checkout (GY-2942, GY-3350): a standalone repository with its own object
- * store, never a worktree of another checkout, so moving or deleting the launcher's checkout (or
- * another install's) cannot break this deploy. The first run fetches the source's HEAD into a fresh
- * repository; a checkout left as a linked worktree (its .git a file) is replaced by one at the same
- * commit. origin and its URL rewrites stay the source's, so the watch fetches main as before.
- */
-export async function ensureDeployCheckout(checkout: string, source: string, run: ChildRun) {
-  const dotGit = join(checkout, '.git');
-  if (existsSync(dotGit) && statSync(dotGit).isDirectory()) return;
-  const linked = existsSync(dotGit), from = linked ? checkout : source, next = `${checkout}.clone`;
-  const git = async (...args: string[]) => String(await run('git', args, { timeoutMs: 1_800_000 })).trim();
-  // Raw, as servedRepository reads it: get-url would expand an insteadOf rewrite, which comes along as config.
-  const origin = await git('-C', from, 'config', '--get', 'remote.origin.url').catch(() => null);
-  const rewrites = (await git('-C', from, 'config', '--local', '--get-regexp', '^url\\.').catch(() => '')).split('\n').filter(Boolean);
-  await rm(next, { recursive: true, force: true });
-  await mkdir(next, { recursive: true });
-  await git('-C', next, 'init', '--quiet');
-  await git('-C', next, 'fetch', '--quiet', resolve(from), 'HEAD');
-  await git('-C', next, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
-  for (const line of rewrites) { const at = line.indexOf(' '); await git('-C', next, 'config', '--add', line.slice(0, at), line.slice(at + 1)); }
-  if (origin) await git('-C', next, 'remote', 'add', 'origin', origin);
-  if (linked) {
-    // The release pointer publishCliRelease left beside the old checkout stays with the install.
-    if (existsSync(stateDirectory(checkout))) await rename(stateDirectory(checkout), stateDirectory(next));
-    await rm(checkout, { recursive: true, force: true });
-    console.log(`Replaced the deploy checkout ${checkout}, a worktree of another checkout, with a standalone clone at ${await git('-C', next, 'rev-parse', 'HEAD')}`);
-  }
-  await rename(next, checkout);
-}
 
 /** How long an install or build step of the served application may run. */
 const serveInstallTimeoutMs = 1_800_000;
