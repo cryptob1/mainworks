@@ -1,4 +1,5 @@
 import { COMMAND_NAME, PRODUCT_NAME } from '../../src/model/product';
+import { sessionExpiredCode } from '../../src/model/refusal';
 import { useEffect, useState } from 'react';
 import type { Dashboard } from './dashboard';
 
@@ -9,23 +10,36 @@ import type { Dashboard } from './dashboard';
  */
 export const VERIFY_TIMEOUT_MS = 30_000;
 export const REJECTED_NOTICE = 'That token was not accepted';
-/** The username a password manager stores the token under; the site address already tells installations apart. */
+/** The username a password manager stores the token under until the install names itself (GY-4072: then its owner/repository, one entry per install). */
 export const LOGIN_USERNAME = 'graphyard';
+/** The tab title: the product, then the repository this install serves once it is known (GY-3306). */
+export const pageTitle = (repository: string | null) => repository ? `${PRODUCT_NAME} · ${repository}` : PRODUCT_NAME;
+/** The repository this install serves, answered without a token so the sign-in form can name it; null when unknown. */
+export const readInstall = (fetcher: typeof fetch = fetch) => fetcher('/api/sign-in').then(r => r.ok ? r.json() : null).then(body => typeof body?.repository === 'string' && body.repository ? body.repository as string : null, () => null);
 const visuallyHidden = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap', border: 0, padding: 0, margin: -1 } as const;
 /**
  * Offers the accepted token to the browser's own password store (Credential Management API, where the browser
  * has it), so it is saved as a password beside what a password-manager extension picks up from the form.
  */
-export function offerToSavePassword(token: string, scope: { PasswordCredential?: new (data: { id: string; password: string; name?: string }) => unknown; navigator?: { credentials?: { store?(credential: unknown): Promise<unknown> } } } = globalThis as never) {
+export function offerToSavePassword(token: string, install: string | null, scope: { PasswordCredential?: new (data: { id: string; password: string; name?: string }) => unknown; navigator?: { credentials?: { store?(credential: unknown): Promise<unknown> } } } = globalThis as never) {
   const Credential = scope.PasswordCredential, store = scope.navigator?.credentials?.store;
   if (!Credential || !store) return false;
-  void store.call(scope.navigator!.credentials, new Credential({ id: LOGIN_USERNAME, password: token, name: `${PRODUCT_NAME} control plane` })).catch(() => {});
+  void store.call(scope.navigator!.credentials, new Credential({ id: install || LOGIN_USERNAME, password: token, name: `${PRODUCT_NAME} control plane` })).catch(() => {});
   return true;
 }
 export const HELPER_TEXT = 'Tokens are scoped to your role and kept for this browser session.';
+/** What the owner's sign-in link page says in place of HELPER_TEXT (GY-4072). */
+export const STAYS_SIGNED_IN = 'This browser stays signed in for six months.';
+/** What the dashboard shows while it retries a read that failed for any reason but an ended session. */
+export const RECONNECTING = 'Reconnecting…';
+export const SESSION_ENDED = 'Your sign-in has ended. Open a new sign-in link.';
+/** GY-4072: whether the server, answering, said this token's session is unknown or expired: the only answer that drops a stored session. */
+export async function endedSession(response: Response) {
+  return response.status === 401 && (await response.clone().json().catch(() => null))?.code === sessionExpiredCode;
+}
 /** The one command that signs the human operator in without a token (GY-738, GY-2171). */
 const SIGN_IN_COMMAND = `${COMMAND_NAME} open`;
-/** Where a session a sign-in link opens is kept: it lasts until 90 days unused, so it outlives the browser session a typed token keeps to (GY-2171). */
+/** Where a session a sign-in link opens is kept: it lasts until 180 days unused, so it outlives the browser session a typed token keeps to (GY-2171). */
 export const HUMAN_SESSION_KEY = 'graphyard-token';
 /** The token this browser holds: a typed one for this browser session, else a sign-in link's human session. */
 export const storedToken = () => sessionStorage.getItem(HUMAN_SESSION_KEY) ?? localStorage.getItem(HUMAN_SESSION_KEY) ?? '';
@@ -50,13 +64,13 @@ const signInCode = (hash: string) => /^#sign-in=([A-Za-z0-9_-]{16,200})(?:&[a-z-
  * Redeem a sign-in link's code for a human session token. The link is single use: the server
  * forgets it on the first attempt, whatever the outcome.
  */
-async function redeemSignIn(code: string, fetcher: typeof fetch): Promise<{ kind: 'signed-in'; token: string } | { kind: 'refused' } | { kind: 'unreachable' }> {
+async function redeemSignIn(code: string, fetcher: typeof fetch): Promise<{ kind: 'signed-in'; token: string; owner: boolean } | { kind: 'refused' } | { kind: 'unreachable' }> {
   try {
     const response = await fetcher('/api/sign-in', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
     if (response.status === 401 || response.status === 400) return { kind: 'refused' };
     if (!response.ok) return { kind: 'unreachable' };
-    const { token } = await response.json() as { token?: unknown };
-    return typeof token === 'string' ? { kind: 'signed-in', token } : { kind: 'unreachable' };
+    const { token, actor } = await response.json() as { token?: unknown; actor?: { team?: unknown } };
+    return typeof token === 'string' ? { kind: 'signed-in', token, owner: !actor?.team } : { kind: 'unreachable' };
   } catch { return { kind: 'unreachable' }; }
 }
 
@@ -80,8 +94,9 @@ export interface VerifyClock { setTimeout(run: () => void, ms: number): unknown;
 
 /**
  * Reads /api/status with the token once, then runs `load` (the dashboard's first read) with the status. It
- * settles accepted with the status, rejected on 401 or 403 (or when `load` throws an error marked unauthorized),
- * and unreachable on any other failure or when the status reply has not arrived within VERIFY_TIMEOUT_MS. The
+ * settles accepted with the status, rejected when the server says the session ended (or, with no token, on 401
+ * or 403, or when `load` throws an error marked unauthorized), and unreachable on any other failure, a refusal
+ * naming the server's reason or when the status reply has not arrived within VERIFY_TIMEOUT_MS. The
  * deadline covers only reaching the server: once /api/status has answered, the server is reachable, so a slow
  * dashboard load keeps the page verifying (with its "Use another token" escape) instead of calling it unreachable.
  */
@@ -94,7 +109,8 @@ export function verifyToken(token: string, fetcher: typeof fetch, clock: VerifyC
       const response = await fetcher('/api/status', { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
       // GY-3486: with no token, a Tailscale login this install has not invited is told who to ask.
       if (response.status === 403 && !token) return { kind: 'rejected', refusal: (await response.json().catch(() => null))?.error };
-      if (response.status === 401 || response.status === 403) return { kind: 'rejected' };
+      if (await endedSession(response) || (!token && response.status === 401)) return { kind: 'rejected' };
+      if (response.status === 401 || response.status === 403) return { kind: 'unreachable', problem: (await response.json().catch(() => null))?.error ?? `it answered ${response.status}` };
       if (!response.ok) {
         // A gateway's 502 or 504 means the control plane behind it did not answer.
         const problem = (await response.json().catch(() => null))?.error ?? ([502, 504].includes(response.status) ? null : `it answered ${response.status}`);
@@ -116,13 +132,17 @@ export function verifyToken(token: string, fetcher: typeof fetch, clock: VerifyC
 export interface LoginViewProps {
   state: LoginState; error: string; draftToken: string;
   setDraftToken(value: string): void; submit(): void; retry(): void; useAnotherToken(): void;
+  /** The owner opened a sign-in link: the helper line says how long this browser stays signed in. */
+  linked?: boolean;
+  /** The install's owner/repository: the username a password manager files the token under. */
+  install?: string | null;
 }
 
 /**
  * The sign-in page itself, without state: one column, one left edge. The brand, heading, tagline, the status
  * or form, and the helper text are all children of .login, and the helper is its own paragraph after the action.
  */
-export function LoginView({ state, error, draftToken, setDraftToken, submit, retry, useAnotherToken }: LoginViewProps) {
+export function LoginView({ state, error, draftToken, setDraftToken, submit, retry, useAnotherToken, linked, install }: LoginViewProps) {
   const escape = <button type="button" className="text-button login-escape" onClick={useAnotherToken}>Use another token</button>;
   return <main className="login">
     <div className="brand"><img className="mark" src="/favicon.svg" alt="" width="32" height="32"/> {PRODUCT_NAME}</div>
@@ -132,7 +152,7 @@ export function LoginView({ state, error, draftToken, setDraftToken, submit, ret
       {error && <p role="alert" className="notice danger">{error}</p>}
       {/* A password manager saves a login as a username/password pair: the fixed, visually hidden username lets
           1Password and the browser offer to save the token and fill it next time. */}
-      <input type="text" name="username" autoComplete="username" value={LOGIN_USERNAME} readOnly tabIndex={-1} aria-hidden="true" style={visuallyHidden}/>
+      <input type="text" name="username" autoComplete="username" value={install || LOGIN_USERNAME} readOnly tabIndex={-1} aria-hidden="true" style={visuallyHidden}/>
       <label>Access token<input type="password" name="password" required autoFocus value={draftToken} onChange={e => setDraftToken(e.target.value)} autoComplete="current-password" placeholder={`Your ${PRODUCT_NAME} token`}/></label>
       <button type="submit">Open control plane ↗</button>
       <SignInCommand/>
@@ -145,14 +165,15 @@ export function LoginView({ state, error, draftToken, setDraftToken, submit, ret
       <p role="alert" className="notice danger">{state.problem ? `The control plane at ${state.host} answered with an error (${state.problem.replace(/\.$/, '')}); retry in a minute.` : `Can't reach the control plane at ${state.host}; check it is running, then retry.`}</p>
       <div className="login-actions"><button type="button" onClick={retry}>Retry</button>{escape}</div>
     </div>}
-    <p className="login-help">{HELPER_TEXT}</p>
+    <p className="login-help">{linked ? STAYS_SIGNED_IN : HELPER_TEXT}</p>
   </main>;
 }
 
 /** The token prompt, and the verifying state while the first status read is in flight. */
-export default function LoginPage({ token, error, signOut, setError, sessionEpoch, setToken, draftToken, setDraftToken, host, onVerified, signingIn, setSigningIn }: Pick<Dashboard, 'token' | 'error' | 'signOut' | 'setError' | 'sessionEpoch'> & { setToken(token: string): void; draftToken: string; setDraftToken(value: string): void; host: string; onVerified(status: unknown, signal: AbortSignal): Promise<void>; signingIn: boolean; setSigningIn(value: boolean): void }) {
+export default function LoginPage({ install, token, error, signOut, forget, setError, sessionEpoch, setToken, draftToken, setDraftToken, host, onVerified, signingIn, setSigningIn }: Pick<Dashboard, 'token' | 'error' | 'signOut' | 'setError' | 'sessionEpoch'> & { install: string | null; forget(): void; setToken(token: string): void; draftToken: string; setDraftToken(value: string): void; host: string; onVerified(status: unknown, signal: AbortSignal): Promise<void>; signingIn: boolean; setSigningIn(value: boolean): void }) {
   const [unreachable, setUnreachable] = useState<false | { problem?: string }>(false);
   const [attempt, setAttempt] = useState(0);
+  const [linked, setLinked] = useState(false);
   // A sign-in link opens here: its code is taken out of the address bar at once, redeemed, and the
   // human session token it returns is verified exactly as a typed token is.
   useEffect(() => {
@@ -162,7 +183,7 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
     const epoch = ++sessionEpoch.current;
     void redeemSignIn(code, (input, init) => fetch(input, init)).then(outcome => {
       if (epoch !== sessionEpoch.current) return;
-      if (outcome.kind === 'signed-in') { setError(''); localStorage.setItem(HUMAN_SESSION_KEY, outcome.token); setToken(outcome.token); }
+      if (outcome.kind === 'signed-in') { setError(''); setLinked(outcome.owner); localStorage.setItem(HUMAN_SESSION_KEY, outcome.token); setToken(outcome.token); }
       else setError(outcome.kind === 'refused' ? LINK_REFUSED_NOTICE : `Can't reach the control plane at ${host}`);
     });
   }, []);
@@ -180,17 +201,19 @@ export default function LoginPage({ token, error, signOut, setError, sessionEpoc
   useEffect(() => {
     if (!token && signingIn) return;
     setUnreachable(false);
-    const epoch = sessionEpoch.current; let active = true;
+    const epoch = sessionEpoch.current; let active = true, retryTimer: ReturnType<typeof setTimeout> | undefined;
     const check = verifyToken(token, (input, init) => fetch(input, init), { setTimeout: (run, ms) => setTimeout(run, ms), clearTimeout: timer => clearTimeout(timer as ReturnType<typeof setTimeout>) }, onVerified);
     void check.result.then(outcome => {
       if (!active || epoch !== sessionEpoch.current) return;
-      if (outcome.kind === 'accepted') { if (token) offerToSavePassword(token); return; }
-      if (outcome.kind === 'rejected') { if (!token) { setSigningIn(true); if (outcome.refusal) setError(outcome.refusal); return; } signOut(); setError(REJECTED_NOTICE); }
-      else setUnreachable({ problem: outcome.problem });
+      if (outcome.kind === 'accepted') { if (token) offerToSavePassword(token, install); return; }
+      if (outcome.kind === 'rejected') { if (!token) { setSigningIn(true); if (outcome.refusal) setError(outcome.refusal); return; } forget(); setError(token.startsWith('gyh_') ? SESSION_ENDED : REJECTED_NOTICE); return; }
+      setUnreachable({ problem: outcome.problem });
+      // GY-4072: a held token is kept through a refusal, an error or a restart; the read retries on its own.
+      if (token) retryTimer = setTimeout(() => setAttempt(n => n + 1), 5000);
     });
-    return () => { active = false; check.cancel(); };
+    return () => { active = false; check.cancel(); clearTimeout(retryTimer); };
   }, [token, attempt, signingIn]);
   const state: LoginState = !token && signingIn ? { kind: 'form' } : unreachable ? { kind: 'unreachable', host, problem: unreachable.problem } : { kind: 'verifying' };
   const submit = () => { const value = draftToken.trim(); if (!value) { setError('Enter an access token.'); return; } sessionEpoch.current++; setError(''); sessionStorage.setItem('graphyard-token', value); setToken(value); };
-  return <LoginView state={state} error={error} draftToken={draftToken} setDraftToken={setDraftToken} submit={submit} retry={() => setAttempt(n => n + 1)} useAnotherToken={signOut}/>;
+  return <LoginView state={state} error={error} draftToken={draftToken} setDraftToken={setDraftToken} submit={submit} retry={() => setAttempt(n => n + 1)} useAnotherToken={signOut} linked={linked} install={install}/>;
 }

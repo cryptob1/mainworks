@@ -206,7 +206,7 @@ async function recordedOperator(root: string): Promise<{ token: string; reachabl
  */
 export const loginCommand: CliCommand = {
   name: 'login',
-  help: ['  login                        Print a one-time link that signs the operator into the', '                                dashboard as a human until 90 days unused (the link is single use, 10 minutes)'],
+  help: ['  login                        Print a one-time link that signs the operator into the', '                                dashboard as a human until 180 days unused (the link is single use, 10 minutes)'],
   async run(context) {
     const link = await signInLink(context, true);
     return context.print({ signIn: link.url, principal: link.principal, expiresAt: link.expiresAt, singleUse: true });

@@ -6,9 +6,11 @@
   "target": "any",
   "required": false,
   "steps": [
+    { "kind": "command", "name": "warm builds and commits take turns with deploy exports; a second install reuses the tag (GY-4077)", "run": "node --import tsx tests/helpers/run-tests.ts tests/warm-commit-takes-image-lock.test.ts", "timeoutSeconds": 30 },
     { "kind": "command", "name": "a deploy holds its heavy-job slot across a lease-error retry, which runs without build cache (GY-4047)", "run": "node --import tsx tests/helpers/run-tests.ts tests/deploy-retry-holds-slot.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "a stand-in install move builds its trial image only when the target starts (GY-4048)", "run": "node --import tsx tests/helpers/run-tests.ts tests/install-move-host.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "install move leaves the sandbox mask file behind, refuses an unreadable file before changing anything and undoes a failed copy (GY-4043)", "run": "node --import tsx tests/helpers/run-tests.ts tests/install-move-skips-mask-and-never-strands-an-install.test.ts tests/move-keeps-loop-ledgers.test.ts", "timeoutSeconds": 120 },
+    { "kind": "command", "name": "the owner's sign-in link page says this browser stays signed in for six months (GY-4072)", "run": "node --import tsx tests/helpers/run-tests.ts tests/sign-in-link-says-six-months.test.ts", "timeoutSeconds": 60 },
     { "kind": "command", "name": "the flow numbers show each repository's onboarding time, connection to first merge (GY-4059)", "run": "node --import tsx tests/helpers/run-tests.ts tests/flow-shows-onboarding-time.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "unchanged registry observations write no receipts and real changes replay once (GY-4036)", "run": "node --import tsx tests/helpers/run-tests.ts tests/agent-registry.test.ts", "timeoutSeconds": 120 },
     { "kind": "http", "name": "the served candidate answers ready", "method": "GET", "path": "/healthz?ready&strict", "status": 200, "expect": [{ "path": "healthy", "equals": true }, { "path": "ok", "equals": true }, { "path": "readiness", "equals": true }] },
