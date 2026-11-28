@@ -50,14 +50,14 @@ test('unit:sandbox-passes-mise-data-dir — a sandbox with HOME moved gets MISE_
 test('integration:contained-install-resolves-mise-shims — npm ci under containedInstall with mise shims first on PATH runs the host node and npm, never the shim', async () => {
   const base = await temporaryDirectory('contained-mise');
   // A mise whose shims fail the way a real one does when HOME is emptied: no installs, so it would download.
-  const real = dirname(process.execPath), mise = join(base, 'bin', 'mise'), shims = join(base, 'shims'), project = join(base, 'project');
-  for (const directory of [dirname(mise), shims, project]) mkdirSync(directory, { recursive: true });
+  const real = dirname(process.execPath), mise = join(base, 'bin', 'mise'), shims = join(base, 'shims'), project = join(base, 'project'), home = join(base, 'home');
+  for (const directory of [dirname(mise), shims, project, home]) mkdirSync(directory, { recursive: true });
   writeFileSync(mise, `#!/bin/sh\ncase "$(basename "$0")" in\n  mise) [ "$1" = which ] && printf '%s\\n' "${real}/$2" ;;\n  *) echo "mise: downloading node" >&2; exit 1 ;;\nesac\n`);
   chmodSync(mise, 0o755);
   for (const tool of ['node', 'npm']) symlinkSync(mise, join(shims, tool));
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'p', version: '1.0.0' }));
   writeFileSync(join(project, 'package-lock.json'), JSON.stringify({ name: 'p', version: '1.0.0', lockfileVersion: 3, requires: true, packages: { '': { name: 'p', version: '1.0.0' } } }));
-  const env = { PATH: `${shims}:${process.env.PATH}`, HOME: join(base, 'home'), npm_config_cache: join(base, 'npm') };
+  const env = { PATH: `${shims}:${process.env.PATH}`, HOME: home, npm_config_cache: join(base, 'npm') };
   const install = containedInstall(project, ['npm', ...npmCiArgs], env);
   const run = spawnSync(install.command, install.args, { cwd: project, encoding: 'utf8', env: npmCiEnvironment(env) });
   assert.equal(run.status, 0, run.stderr);

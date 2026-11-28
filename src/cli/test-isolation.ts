@@ -234,7 +234,7 @@ export function containedInstall(cwd: string, argv: readonly string[], env: Node
   // Emptied first, then what the install needs is put back inside them; paths are only ever
   // re-exposed inside one of these, never elsewhere (the rest of the filesystem stays as it is, read-only).
   const hidden = [...new Set([home, '/tmp', uid === undefined ? null : `/run/user/${uid}`, env.XDG_RUNTIME_DIR]
-    .filter((path): path is string => !!path && isAbsolute(path)).map(path => resolve(path)))].filter(path => path === home || path === '/tmp' || directory(path))
+    .filter((path): path is string => !!path && isAbsolute(path)).map(path => resolve(path)))].filter(path => path === '/tmp' || directory(path))
     .sort((a, b) => a.length - b.length);
   const credentials = [...new Set([
     setting('CONFIG_HOME', env), env.XDG_CONFIG_HOME, join(home, '.config'), join(home, '.ssh'),
