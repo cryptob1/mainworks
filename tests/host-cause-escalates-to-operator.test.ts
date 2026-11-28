@@ -9,7 +9,7 @@ import { emptyDispatchCursor, hostCausesClearPath } from '../src/dispatch/cursor
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import type { DispatchEffects } from '../src/dispatch/effects.js';
 import { hostCauseAttention, reviewLaunchAttention } from '../src/cli/master-status.js';
-import { hostCause } from '../src/dispatch/host-cause.js';
+import { hostCause, liftHostCauses } from '../src/dispatch/host-cause.js';
 import { workFixture } from './helpers/work-fixture.js';
 import type { Work } from '../src/model.js';
 import { fleet, requested } from './helpers/review-fleet.js';
@@ -44,7 +44,7 @@ test('integration:host-cause-escalates-to-operator — three reviews failing on 
     const second = await runDispatchTick(config, cursor, effects(), later(30));
     assert.equal(attempts, 3, 'no retries while the cause stands');
     assert.deepEqual(second.waiting.filter(entry => entry.kind === 'review').map(entry => entry.work).sort(), ['GY-501', 'GY-502', 'GY-503']);
-    for (const entry of second.waiting) assert.match(entry.reason, /^next: operator — Install gy4121-reviewer-runtime on \S+ so the loop's PATH finds it; retries pause/);
+    for (const entry of second.waiting) assert.match(entry.reason, /^next: operator — Install gy4121-reviewer-runtime on \S+ on the launch PATH; retries pause/);
     assert.equal(alerts.length, 1, 'still one signal');
 
     // Master status: the cause once with its count; no per-item review line repeats it.
@@ -83,7 +83,7 @@ test('integration:host-cause-escalates-to-operator — a post-merge review refus
     assert.equal(first.refused.length, 1);
     const later = await runDispatchTick(config, cursor, effects, () => Date.now() + 30 * 60_000);
     assert.equal(attempts, 1, 'no retry while the cause stands');
-    assert.match(later.waiting.find(entry => entry.work === 'GY-9001')!.reason, /^next: operator — Install gy4121-post-merge-runtime on \S+ so the loop's PATH finds it; retries pause/);
+    assert.match(later.waiting.find(entry => entry.work === 'GY-9001')!.reason, /^next: operator — Install gy4121-post-merge-runtime on \S+ on the launch PATH; retries pause/);
   } finally { await host.cleanup(); }
 });
 
@@ -95,4 +95,37 @@ test('integration:host-cause-escalates-to-operator — permission and network ca
     const lines = hostCauseAttention({ hostCauses: { [cause.key]: { tool: null, fix: cause.fix, detail: text, at: new Date().toISOString() } }, failures: { r: { kind: 'review', work: 'GY-1', sha: 'a'.repeat(40), attempts: 1, reason: text, at: new Date().toISOString(), nextAt: new Date().toISOString(), hostCause: cause.key } } });
     assert.equal(lines[0]!.next, cause.fix, 'status says the same one line, with no false alternative');
   }
+});
+
+test('integration:host-cause-escalates-to-operator — ENOENT for a tool already on the loop PATH stays paused until cleared and auto-lift preserves attempts and backoff', async () => {
+  const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude' }, 'claude-reviewer');
+  try {
+    const config = await loadMasterConfig(host.root);
+    const items = [requested(1)];
+    let attempts = 0;
+    const effects = (): DispatchEffects => ({ ...host.effects(() => items, () => config), alert: async () => {},
+      launchReview: async () => { attempts++; throw new Error('spawn sh ENOENT'); } });
+    const cursor = emptyDispatchCursor(config), later = (minutes: number) => () => Date.now() + minutes * 60_000;
+
+    // `sh` is already on the loop's PATH (e.g. failure came from a launch environment's PATH or missing cwd).
+    const first = await runDispatchTick(config, cursor, effects(), Date.now);
+    assert.equal(first.refused.length, 1);
+    assert.equal(cursor.hostCauses['missing tool sh']?.tool, null, 'already on loop PATH, so only clear lifts it');
+    assert.match(cursor.hostCauses['missing tool sh']?.fix ?? '', /, then run mainworks master host-causes clear$/);
+
+    // Must stay paused on later ticks rather than lifting and relaunching every tick.
+    const second = await runDispatchTick(config, cursor, effects(), later(30));
+    assert.equal(attempts, 1, 'no retry on later tick when tool was already on loop PATH');
+    assert.match(second.waiting[0]!.reason, /^next: operator — /);
+
+    // When a missing-tool cause auto-lifts because the tool appears on PATH, failure attempts and backoff stay intact.
+    const at = new Date().toISOString(), nextAt = new Date(Date.now() + 60_000).toISOString();
+    cursor.hostCauses['missing tool sh'] = { tool: 'sh', fix: 'Install sh', detail: 'spawn sh ENOENT', at };
+    cursor.failures['req-auto'] = { kind: 'review', work: 'GY-999', sha: 'a'.repeat(40), attempts: 2, reason: 'spawn sh ENOENT', at, nextAt, hostCause: 'missing tool sh' };
+    liftHostCauses(cursor, null);
+    assert.equal(cursor.hostCauses['missing tool sh'], undefined, 'auto-lifted once tool is present');
+    assert.equal(cursor.failures['req-auto']?.attempts, 2, 'attempt count preserved on auto-lift');
+    assert.equal(cursor.failures['req-auto']?.nextAt, nextAt, 'backoff preserved on auto-lift');
+    assert.equal(cursor.failures['req-auto']?.hostCause, undefined, 'hostCause cleared so retry obeys backoff');
+  } finally { await host.cleanup(); }
 });

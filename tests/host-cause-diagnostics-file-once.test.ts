@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { bootstrapGate, runDiagnostics, runGate, type GatePorts } from '../src/batch-gate.js';
 import { fileFlakyCheck, fileLoopFault, gateFiledItem, type FaultItem } from '../src/daemon/control-plane.js';
 import { assertDispatchable } from '../src/master/dispatch.js';
+import { hostCauseRefusal } from '../src/model/loop-owned.js';
 import type { Work } from '../src/model.js';
 import { workFixture } from './helpers/work-fixture.js';
 
@@ -69,6 +70,9 @@ test('integration:host-cause-diagnostics-file-once — six diagnostic cases fail
   // Even if marked ready, the item must never be dispatched to a worker.
   const readyWork = asWork(filed, 'GY-173', true);
   assert.throws(() => assertDispatchable(readyWork, [readyWork], new Date(now).toISOString()), /next: operator|host fault/i);
+
+  // An ordinary item that merely quotes 'next: operator' without a host-cause fault key is not refused.
+  assert.equal(hostCauseRefusal(workFixture({ key: 'GY-174', description: 'Example:\nnext: operator — install node' } as never) as Work), null);
 });
 
 test('integration:host-cause-diagnostics-file-once — trial failures sharing one missing-tool or permission-denied host cause file once with next: operator', async () => {

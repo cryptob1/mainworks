@@ -11,7 +11,7 @@ export interface HostCause { key: string; tool: string | null; fix: string }
 export function hostCause(text: string): HostCause | null {
   const host = hostname();
   const tool = /spawn (\S+) ENOENT/.exec(text)?.[1] ?? /command not found: (\S+)/.exec(text)?.[1] ?? /([\w./-]+): command not found/.exec(text)?.[1] ?? /sh: \d+: (\S+): not found/.exec(text)?.[1];
-  if (tool) { const name = basename(tool); return { key: `missing tool ${name}`, tool, fix: `Install ${name} on ${host} so the loop's PATH finds it` }; }
+  if (tool) { const name = basename(tool); return { key: `missing tool ${name}`, tool, fix: `Install ${name} on ${host} on the launch PATH` }; }
   const denied = /(?:EACCES|EPERM)[^']*'(\/[^']+)'/.exec(text)?.[1] ?? /(\/[^\s:'"]+): Permission denied/.exec(text)?.[1];
   if (denied) return { key: `permission denied on ${denied}`, tool: null, fix: `Give the loop's user on ${host} access to ${denied}, then run mainworks master host-causes clear` };
   const network = /(?:ENOTFOUND|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN)(?:\s+getaddrinfo)?\s+(\S+)/.exec(text)?.[1]?.replace(/[,)'";.]+$/, '');
@@ -38,21 +38,31 @@ export function recordHostCause(cursor: DispatchCursor, failure: DispatchFailure
   if (!cause) return null;
   failure.hostCause = cause.key;
   if (cursor.hostCauses[cause.key]) return null;
-  cursor.hostCauses[cause.key] = { tool: cause.tool, fix: cause.fix, detail: failure.reason, at: failure.at };
+  // Only auto-lift on the loop's PATH when the tool is actually absent from it at failure time;
+  // otherwise the ENOENT came from a launch environment's PATH or missing cwd and needs clear.
+  const autoLift = cause.tool && !toolPresent(cause.tool) ? cause.tool : null;
+  const fix = cause.tool && !autoLift ? `${cause.fix}, then run mainworks master host-causes clear` : cause.fix;
+  cursor.hostCauses[cause.key] = { tool: autoLift, fix, detail: failure.reason, at: failure.at };
   // One alert per cause until the operator clears them, so a cause that lifts and returns every cycle alerts once.
   if (cursor.hostCausesAlerted.includes(cause.key)) return null;
   cursor.hostCausesAlerted = [...cursor.hostCausesAlerted, cause.key].slice(-100);
-  return `${subject.replace('%s', cause.key)}. Fix: ${cause.fix}`;
+  return `${subject.replace('%s', cause.key)}. Fix: ${fix}`;
 }
 
-/** Lifts each cause whose tool is now present or that the operator cleared after it was recorded; its refusals then retry at once. */
+/** Lifts each cause whose tool is now present or that the operator cleared after it was recorded. */
 export function liftHostCauses(cursor: DispatchCursor, clearedAt: number | null) {
   for (const [key, cause] of Object.entries(cursor.hostCauses)) {
     const cleared = clearedAt !== null && clearedAt >= Date.parse(cause.at);
     if (!cleared && !(cause.tool && toolPresent(cause.tool))) continue;
     delete cursor.hostCauses[key];
     if (cleared) cursor.hostCausesAlerted = [];
-    for (const [id, failure] of Object.entries(cursor.failures)) if (failure.hostCause === key) delete cursor.failures[id];
+    for (const [id, failure] of Object.entries(cursor.failures)) {
+      if (failure.hostCause !== key) continue;
+      // Operator clear resets failures so retries resume at once; an automatic PATH lift keeps
+      // attempts and backoff so a launch environment that still lacks the tool never loops unboundedly.
+      if (cleared) delete cursor.failures[id];
+      else delete failure.hostCause;
+    }
   }
 }
 

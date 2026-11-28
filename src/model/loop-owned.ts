@@ -49,7 +49,7 @@ export const ownerHoldRefusal = (work: Pick<Work, 'key' | 'title' | 'description
  * GY-4121: an item filed for a host cause (missing tool, permission denied, network unreachable)
  * belongs to the operator (`next: operator`), not a code worker — never release or dispatch it.
  */
-export const hostCauseRefusal = (work: Pick<Work, 'key' | 'faultKey' | 'description'>) =>
-  work.faultKey?.startsWith('host-cause:') || /^next: operator\b/im.test(work.description ?? '')
+export const hostCauseRefusal = (work: Pick<Work, 'key' | 'faultKey'>) =>
+  work.faultKey?.startsWith('host-cause:')
     ? `${work.key} is a host fault (next: operator): only the host operator can fix it; it is never released or dispatched to a worker`
     : null;
