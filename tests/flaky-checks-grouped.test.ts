@@ -12,7 +12,7 @@ import { FlowLine } from '../web/pages/work.js';
 import { adminToken, cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 
 // GY-3849: the flow numbers list the five test files that most often failed a trial or release check
-// and passed on rerun, with the latest occurrence's first failing assertion line.
+// and passed on rerun, with the latest occurrence's first failing assertion line and when it last failed (GY-4069).
 const now = Date.parse('2026-11-25T12:00:00Z');
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 let seq = 0;

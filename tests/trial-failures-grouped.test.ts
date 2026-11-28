@@ -10,7 +10,7 @@ import { FlowLine } from '../web/pages/work.js';
 import { adminToken, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 
 // GY-3867 / GY-3870: the flow numbers list the five test files that most often failed a merge trial
-// without passing on its rerun, with the latest occurrence's first failing assertion line.
+// without passing on its rerun, with the latest occurrence's first failing assertion line and when it last failed (GY-4069).
 const now = Date.parse('2026-11-25T12:00:00Z');
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 let seq = 0;
