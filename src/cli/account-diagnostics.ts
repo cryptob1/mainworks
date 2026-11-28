@@ -32,12 +32,21 @@ export async function accountCheckDiagnostics(account: FleetAccount, runtime: Fl
     // Provider options override the login and environment key. Apply config files in
     // OpenCode's load order, followed by explicit inline configuration.
     const configHome = environment.XDG_CONFIG_HOME ?? join(environment.HOME ?? homedir(), '.config');
-    const files = [join(configHome, 'opencode', 'config.json'), join(configHome, 'opencode', 'opencode.json'), join(configHome, 'opencode', 'opencode.jsonc'),
-      ...(environment.OPENCODE_CONFIG ? [environment.OPENCODE_CONFIG] : []), join(home, 'opencode.json'), join(home, 'opencode.jsonc')];
+    const configFiles = (directory: string) => ['opencode.json', 'opencode.jsonc'].map(name => join(directory, name));
+    const ancestors: string[] = [];
+    for (let directory = resolve(home); ; directory = dirname(directory)) {
+      ancestors.unshift(directory);
+      if (dirname(directory) === directory) break;
+    }
+    const files = [join(configHome, 'opencode', 'config.json'), ...configFiles(join(configHome, 'opencode')),
+      ...(environment.OPENCODE_CONFIG ? [environment.OPENCODE_CONFIG] : []),
+      ...ancestors.flatMap(configFiles), ...ancestors.flatMap(directory => configFiles(join(directory, '.opencode'))),
+      ...(environment.OPENCODE_CONFIG_DIR ? configFiles(environment.OPENCODE_CONFIG_DIR) : []),
+      'OPENCODE_CONFIG_CONTENT', ...(process.platform === 'linux' ? configFiles('/etc/opencode') : [])];
     if (!account.credential.key && value && provider) {
       try { const auth = JSON.parse(value)[provider]; value = auth?.key ?? auth?.access ?? null; } catch { value = null; }
     }
-    for (const file of [...files, 'OPENCODE_CONFIG_CONTENT']) {
+    for (const file of [...new Set(files)]) {
       let contents: string;
       try { contents = file === 'OPENCODE_CONFIG_CONTENT' ? environment.OPENCODE_CONFIG_CONTENT ?? '{}' : await readFile(file, 'utf8'); }
       catch { continue; }

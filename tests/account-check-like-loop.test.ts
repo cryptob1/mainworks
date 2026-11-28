@@ -29,7 +29,7 @@ test('integration:account-check-like-loop — global key override, shell mismatc
   Object.assign(registry.accounts[2]!.quota, { state: 'exhausted', loggedIn: true, resetsAt: reset, reason: 'provider limit', source: 'operator' });
   const writes: any[] = [];
   const api = { read: async () => registry, write: async (_path: string, data: unknown) => { writes.push(data); } };
-  await withEnv({ XDG_CONFIG_HOME: config, OPENCODE_CONFIG: undefined, OPENCODE_CONFIG_CONTENT: undefined, [hostAccountsVariable]: join(root, 'host-checks') }, async () => {
+  await withEnv({ XDG_CONFIG_HOME: config, OPENCODE_CONFIG: undefined, OPENCODE_CONFIG_DIR: undefined, OPENCODE_CONFIG_CONTENT: undefined, [hostAccountsVariable]: join(root, 'host-checks') }, async () => {
     const diagnostics: string[] = [];
     const result = String(await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { report: line => diagnostics.push(line), smoke: async () => ({ ok: true, error: null }) }));
     const output = [result, ...diagnostics].join('\n');
@@ -47,6 +47,12 @@ test('integration:account-check-like-loop — global key override, shell mismatc
     assert.ok(own.includes(ownFile));
     assert.ok(own.includes(createHash('sha256').update('account-secret').digest('hex').slice(0, 12)));
     assert.doesNotMatch(own, /overrides/);
+    await writeFile(join(config, 'opencode', 'provider.key'), 'file-secret');
+    await writeFile(globalFile, '// JSONC and relative file references use the config directory\n' + JSON.stringify({ provider: { zai: { options: { apiKey: '{file:./provider.key}' } } } }));
+    diagnostics.length = 0;
+    await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { report: line => diagnostics.push(line), smoke: async () => ({ ok: true, error: null }) });
+    assert.ok(diagnostics.some(line => line.includes(join(config, 'opencode', 'provider.key')) && line.includes(createHash('sha256').update('file-secret').digest('hex').slice(0, 12))));
+    assert.doesNotMatch(diagnostics.join('\n'), /file-secret/);
   });
   const command = commands.find(command => command.name === 'accounts');
   assert.ok(command, 'mainworks accounts is registered');
