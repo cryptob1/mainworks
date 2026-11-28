@@ -12,7 +12,7 @@ import { FlowLine } from '../web/pages/work.js';
 import { adminToken, cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 
 // GY-3849: the flow numbers list the five test files that most often failed a trial or release check
-// and passed on rerun, with the latest occurrence's first failing assertion line.
+// and passed on rerun, with the latest occurrence's first failing assertion line and when it last failed (GY-4069).
 const now = Date.parse('2026-11-25T12:00:00Z');
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 let seq = 0;
@@ -33,11 +33,11 @@ test('integration:flaky-checks-grouped — rerun-passed test files of the window
   const items = flowItems([{ id: 'a', key: 'GY-1', title: 'Change', stage: 'test', stageEnteredAt: at(100) } as any], ledger, new Map(), new Map(), now);
   const flow = flowNumbers(items, 6, now, [{ file: 'tests/f1.test.ts', at: at(10), assertion: 'release check line' }, { file: 'tests/f6.test.ts', at: at(500), assertion: 'old' }]);
   assert.deepEqual(flow.flakyChecks, [
-    { check: 'tests/f1.test.ts', count: 4, assertion: 'release check line' },
-    { check: 'tests/f4.test.ts', count: 3, assertion: 'four' },
-    { check: 'tests/f2.test.ts', count: 2, assertion: 'two again' },
-    { check: 'tests/f3.test.ts', count: 2, assertion: null },
-    { check: 'tests/f5.test.ts', count: 2, assertion: 'five' },
+    { check: 'tests/f1.test.ts', count: 4, assertion: 'release check line', lastFailedAt: at(10) },
+    { check: 'tests/f4.test.ts', count: 3, assertion: 'four', lastFailedAt: at(50) },
+    { check: 'tests/f2.test.ts', count: 2, assertion: 'two again', lastFailedAt: at(60) },
+    { check: 'tests/f3.test.ts', count: 2, assertion: null, lastFailedAt: at(60) },
+    { check: 'tests/f5.test.ts', count: 2, assertion: 'five', lastFailedAt: at(40) },
   ]);
   const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, onboarding: [], asOf: at(0), ageSeconds: 0 } }));
   assert.match(html, /data-flaky-checks[^>]*>Flaky checks: tests\/f1\.test\.ts 4 · tests\/f4\.test\.ts 3/);
@@ -90,6 +90,7 @@ test('tests/flaky.test.cjs passes unless broken', () => {
       return response.json();
     }, async () => { throw new Error('no git in the fixture'); });
     assert.ok(status.flow, `flow is shown (${status.flowError})`);
-    assert.deepEqual(status.flow['6h'].flakyChecks, [{ check: 'tests/flaky.test.cjs', count: 1, assertion: 'the marker was not written' }]);
+    assert.deepEqual(status.flow['6h'].flakyChecks.map(({ lastFailedAt, ...flaky }) => flaky), [{ check: 'tests/flaky.test.cjs', count: 1, assertion: 'the marker was not written' }]);
+    assert.ok(status.flow['6h'].flakyChecks.every(flaky => Math.abs(Date.now() - Date.parse(flaky.lastFailedAt)) < 280_000), `each names when it last failed: ${status.flow['6h'].flakyChecks.map(flaky => flaky.lastFailedAt)}`);
   } finally { await where.close(); }
 });
