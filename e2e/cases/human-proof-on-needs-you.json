@@ -77,10 +77,10 @@
     },
     {
       "kind": "browser",
-      "name": "open the Needs you group",
+      "name": "open the full Needs you page",
       "action": "click",
       "role": "button",
-      "text": "Needs you",
+      "text": "Every request and answer",
       "exact": false
     },
     {

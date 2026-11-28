@@ -22,7 +22,8 @@ import { serveGitHttp } from './helpers/git-http-remote.js';
 // answer carries GitHub's headers: a low limit, with little of it left.
 
 const TOKEN = 'github_pat_stand_in_token';
-const RESET = '2030-01-01T01:00:00.000Z';
+/** GitHub's reset an hour from now, in whole seconds as its header carries it. */
+const RESET = new Date(Math.ceil(Date.now() / 1000) * 1000 + 3_600_000).toISOString();
 
 /** The stand-in GitHub: git over smart HTTP beside its rate-limit answer. `asked` holds each rate-limit request's authorization; `refuse()` turns the answer into a 403. */
 async function standInGithub(projectRoot: string) {
