@@ -19,19 +19,28 @@ test('unit:reviews-launch-side-by-side — four heads owing a review start their
     const started: string[] = [], finished: string[] = [];
     let releaseSlow!: () => void;
     const slow = new Promise<void>(resolve => { releaseSlow = resolve; });
+    let markFirstStarted!: () => void;
+    const firstStarted = new Promise<void>(resolve => { markFirstStarted = resolve; });
+    let markThreeFinished!: () => void;
+    const threeFinished = new Promise<void>(resolve => { markThreeFinished = resolve; });
     const effects = { ...host.effects(() => items, () => config),
       launchReview: async (work: { key: string }, request: { id: string }, profile: { agentName: string }) => {
         started.push(work.key);
         // GY-501's launch takes its full bound (60 s in production); the test holds it until released.
-        if (work.key === 'GY-501') await slow;
+        if (work.key === 'GY-501') { markFirstStarted(); await slow; }
         finished.push(work.key);
+        if (finished.length === 3) markThreeFinished();
         return { agentName: sessionAgentName(profile, { id: request.id, requestId: request.id }), pane: `pane-${work.key}` };
       } } as Parameters<typeof runDispatchTick>[2];
     const tick = runDispatchTick(config, emptyDispatchCursor(config), effects, Date.now);
     try {
-      // Wait until the first launch has started and the others have had their chance (or 5 s pass).
-      for (const until = Date.now() + 5_000; Date.now() < until && finished.length < 3;) await delay(20);
-      await delay(100);
+      // Wait for pre-launch tick work (including cold Postgres init in reconcileReviews) to reach
+      // the first launch before waiting for the other three to finish alongside it.
+      await Promise.race([firstStarted, tick]);
+      const abort = new AbortController();
+      try {
+        await Promise.race([threeFinished, tick, delay(5_000, undefined, { signal: abort.signal }).catch(() => {})]);
+      } finally { abort.abort(); }
       assert.deepEqual([...started].sort(), ['GY-501', 'GY-502', 'GY-503', 'GY-504'], `all four launches start within the same tick while the first is slow (started: ${started.join(', ')})`);
       assert.deepEqual([...finished].sort(), ['GY-502', 'GY-503', 'GY-504'], 'the slow launch leaves the other three started');
     } finally { releaseSlow(); }
@@ -46,15 +55,28 @@ test('unit:reviews-launch-side-by-side — launches beyond the reviewer role\'s 
   try {
     const config = await loadMasterConfig(host.root);
     const items = [requested(1), requested(2), requested(3)];
-    let running = 0, peak = 0;
+    let running = 0, peak = 0, started = 0;
+    let releaseFirstTwo!: () => void;
+    const firstTwoGate = new Promise<void>(resolve => { releaseFirstTwo = resolve; });
+    let markTwoRunning!: () => void;
+    const twoRunning = new Promise<void>(resolve => { markTwoRunning = resolve; });
     const effects = { ...host.effects(() => items, () => config),
       launchReview: async (_work: unknown, request: { id: string }, profile: { agentName: string }) => {
+        const order = ++started;
         peak = Math.max(peak, ++running);
-        await delay(50);
+        if (running === 2) markTwoRunning();
+        if (order <= 2) await firstTwoGate;
         running--;
         return { agentName: sessionAgentName(profile, { id: request.id, requestId: request.id }), pane: null };
       } } as Parameters<typeof runDispatchTick>[2];
-    const result = await runDispatchTick(config, emptyDispatchCursor(config), effects, Date.now);
+    const tick = runDispatchTick(config, emptyDispatchCursor(config), effects, Date.now);
+    try {
+      await Promise.race([twoRunning, tick]);
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(running, 2, 'two launches hold the profile\'s slots while the third waits');
+      assert.equal(started, 2, 'the third launch does not start while both slots are occupied');
+    } finally { releaseFirstTwo(); }
+    const result = await tick;
     assert.equal(peak, 2, 'no more launches run at once than the profile\'s concurrency');
     assert.equal(result.launched.filter(entry => entry.kind === 'review').length, 3);
   } finally { await host.cleanup(); }

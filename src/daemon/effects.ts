@@ -44,7 +44,7 @@ export function refusedBodyDetail(result: unknown): string {
 export interface DaemonEffects {
   inventory?: () => Promise<SessionInventory>;
   /** The coordination read: the work snapshot, one GET. */
-  snapshot: () => Promise<{ work: Work[]; now: string }>;
+  snapshot: () => Promise<{ work: Work[]; now: string; workerVerifications?: { key: string; host: string; state: string }[] }>;
   /** Full session history, read only to recover ownership of leftover panes omitted by coordination. */
   sessionHistory?: (work: Work) => Promise<SessionHandle[]>;
   /** Herdr's agent inventory: an empty list when Herdr cannot be read. */
@@ -199,6 +199,8 @@ export interface DaemonEffects {
   notify?: (state: 'ready' | 'alive') => void | Promise<void>;
   /** POSTs one plain-text line to the operator's alert webhook (GY-3101: `run.alertUrl`, any receiver that takes a body, such as an ntfy topic). Absent, no alert is sent. */
   alertWebhook?: (text: string) => Promise<void>;
+  /** GY-4073: whether the factory's Slack app is connected, so the alerts also post to its channel without run.alertUrl. */
+  slackConnected?: () => boolean;
   /** GY-3233: files a control-plane fault to the upstream install master.json's `upstream` names. Absent, no upstream is configured. */
   fileUpstream?: (input: FaultItem, key: string) => Promise<{ key?: string } | null>;
   /** GY-3274: the master lessons and product brief recorded in `.graphyard/project-memory.json`; absent, none are adopted. */
