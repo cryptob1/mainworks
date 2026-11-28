@@ -24,17 +24,18 @@ import { serveGitHttp } from './helpers/git-http-remote.js';
 const TOKEN = 'github_pat_stand_in_token';
 const RESET = '2030-01-01T01:00:00.000Z';
 
-/** The stand-in GitHub: git over smart HTTP beside its rate-limit answer. `asked` holds each rate-limit request's authorization. */
+/** The stand-in GitHub: git over smart HTTP beside its rate-limit answer. `asked` holds each rate-limit request's authorization; `refuse()` turns the answer into a 403. */
 async function standInGithub(projectRoot: string) {
   const log: string[] = [], asked: string[] = [];
+  let status = 200;
   const server = await serveGitHttp(projectRoot, TOKEN, log, (request, response) => {
     if (!request.url!.endsWith('/rate_limit')) return false;
     asked.push(String(request.headers.authorization ?? 'none'));
-    response.writeHead(200, { 'content-type': 'application/json', 'x-ratelimit-limit': '8', 'x-ratelimit-remaining': '3', 'x-ratelimit-reset': String(Date.parse(RESET) / 1000), 'x-ratelimit-resource': 'core' })
+    response.writeHead(status, { 'content-type': 'application/json', 'x-ratelimit-limit': '8', 'x-ratelimit-remaining': '3', 'x-ratelimit-reset': String(Date.parse(RESET) / 1000), 'x-ratelimit-resource': 'core' })
       .end(JSON.stringify({ resources: { core: { limit: 8, remaining: 3 } } }));
     return true;
   });
-  return { url: server.url, asked, close: server.close };
+  return { url: server.url, asked, close: server.close, refuse: () => { status = 403; } };
 }
 
 /** A coordinator checkout whose origin reaches nothing: only the explicit token URL, or an origin a test resets, can. */
@@ -57,21 +58,22 @@ async function fixture(label: string, credential: 'token' | 'deploy key', run: R
 
 /**
  * The loop's reads, counting their GitHub calls on `state`. A slowed poll's wait is recorded in `waits`
- * in full and slept for its first 300 ms, so the slowdown is both read and felt.
+ * in full and slept for its first 300 ms, so the slowdown is both read and felt. `now` is the loop's clock.
  */
-function countedReads(f: Awaited<ReturnType<typeof fixture>>, state: DaemonState, url: string, waits: number[], run: typeof defaultChildRun = defaultChildRun,
-  environment: Record<string, string | undefined> = { PATH: process.env.PATH!, GRAPHYARD_MERGE_WRITER_GIT_URL: url }) {
-  return mergeWriterReads(f.config, f.checkout, run, { base: join(f.directory, 'managed'), record: async () => {}, environment,
+function countedReads(f: Awaited<ReturnType<typeof fixture>>, state: DaemonState, url: string, waits: number[],
+  options: { run?: typeof defaultChildRun; environment?: Record<string, string | undefined>; now?: () => number } = {}) {
+  return mergeWriterReads(f.config, f.checkout, options.run ?? defaultChildRun, { base: join(f.directory, 'managed'), record: async () => {},
+    environment: options.environment ?? { PATH: process.env.PATH!, GRAPHYARD_MERGE_WRITER_GIT_URL: url }, now: options.now,
     github: { state, sleep: async ms => { waits.push(ms); await delay(Math.min(ms, 300)); } }, githubApi: url });
 }
 
-/** One merge-writer step of a cycle with nothing on the board: the step that refreshes the limit reading. */
-const step = (state: DaemonState, reads: MergeWriterReads) => mergeWriterStep({ state, effects: { mergeWriter: reads, persist: async () => {}, rework: async () => {} }, now: Date.now,
-  snapshot: { work: [], now: new Date().toISOString() }, performed: [], log: () => {} } as unknown as Cycle);
+/** One merge-writer step of a cycle with nothing on the board, at `now`: the step that refreshes the limit reading. */
+const step = (state: DaemonState, reads: MergeWriterReads, now: () => number = Date.now) => mergeWriterStep({ state, effects: { mergeWriter: reads, persist: async () => {}, rework: async () => {} }, now,
+  snapshot: { work: [], now: new Date(now()).toISOString() }, performed: [], log: () => {} } as unknown as Cycle);
 
-/** `lead status` over the cursor `state` is persisted to. */
-const status = (f: Awaited<ReturnType<typeof fixture>>, state: DaemonState) =>
-  writeDaemonState(f.config, state).then(() => masterStatusReport(f.checkout, f.config, async () => ({ work: [], now: new Date().toISOString() }),
+/** `lead status` over the cursor `state` is persisted to, read at `now`. */
+const status = (f: Awaited<ReturnType<typeof fixture>>, state: DaemonState, now: () => number = Date.now) =>
+  writeDaemonState(f.config, state).then(() => masterStatusReport(f.checkout, f.config, async () => ({ work: [], now: new Date(now()).toISOString() }),
     (command, args, options) => command === 'git' ? defaultChildRun(command, args, options) : ''));
 
 test('integration:github-calls-counted-and-bounded — observation polling slows once the calls in the hour reach the share, and not below it', { timeout: 120_000 }, async () => {
@@ -129,12 +131,17 @@ test("integration:github-calls-counted-and-bounded — a deploy key's pushes car
   const f = await fixture('github-calls-deploy-key', 'deploy key'), state = emptyDaemonState(f.config), waits: number[] = [];
   // A repository beside the checkout, over a local path: no GitHub, no token; and no GitHub login answers on this host.
   git(f.checkout, 'remote', 'set-url', 'origin', f.origin);
-  const noLogin: typeof defaultChildRun = (command, args, options) => command === 'gh' ? Promise.reject(new Error('not logged in')) : defaultChildRun(command, args, options);
-  const local = countedReads(f, state, 'http://127.0.0.1:1/unused', waits, noLogin, { PATH: process.env.PATH! });
+  let ghAsks = 0;
+  const noLogin: typeof defaultChildRun = (command, args, options) => {
+    if (command === 'gh') { ghAsks += 1; return Promise.reject(new Error('not logged in')); }
+    return defaultChildRun(command, args, options);
+  };
+  const local = countedReads(f, state, 'http://127.0.0.1:1/unused', waits, { run: noLogin, environment: { PATH: process.env.PATH! } });
   assert.equal(await local.fetch(), f.baseTip); assert.equal(await local.fetch(), f.baseTip);
   assert.equal(await local.push(f.mergeSha, f.baseTip), 'pushed');
   await local.pushVerified!(f.mergeSha); await local.pushReleaseTag!(f.mergeSha);
-  await step(state, local);
+  await step(state, local); await step(state, local);
+  assert.equal(ghAsks, 1, 'a GitHub login that answers nothing is asked once a minute, never once a cycle');
   let shown = (await status(f, state)).github!;
   assert.deepEqual(shown.hour, { observation: 0, releasePublish: 0, other: 0, total: 0 }, 'nothing of it reached GitHub');
   assert.deepEqual([shown.rateLimit, shown.slowed, shown.detail], [null, null, null], 'a GitHub login that answers nothing reads as no reading, never as a limit');
@@ -142,7 +149,7 @@ test("integration:github-calls-counted-and-bounded — a deploy key's pushes car
   // GitHub over https: the fetch carries the host's token and counts, even when GitHub does not answer.
   git(f.checkout, 'remote', 'set-url', 'origin', 'https://github.com/owner/project.git');
   const offline: typeof defaultChildRun = (command, args, options) => args.includes('fetch') ? Promise.reject(new Error('offline: this test never reaches GitHub')) : defaultChildRun(command, args, options);
-  await assert.rejects(countedReads(f, state, 'http://127.0.0.1:1/unused', waits, offline, { PATH: process.env.PATH! }).fetch(), /offline/);
+  await assert.rejects(countedReads(f, state, 'http://127.0.0.1:1/unused', waits, { run: offline, environment: { PATH: process.env.PATH! } }).fetch(), /offline/);
   shown = (await status(f, state)).github!;
   assert.deepEqual(shown.hour, { observation: 1, releasePublish: 0, other: 0, total: 1 }, "a fetch over GitHub's https spends the token");
   assert.deepEqual(waits, []);
@@ -163,4 +170,50 @@ test('integration:github-calls-counted-and-bounded — the remaining limit is re
   assert.equal(await read(github(200, {})), null, 'headers that name no limit are no reading, never a limit of zero');
   assert.equal(await read(github(403, {})), null, 'a refusal is no reading');
   assert.equal(await read(async () => { throw new Error('offline'); }), null, 'a GitHub that does not answer is no reading');
+});
+
+test('integration:github-calls-counted-and-bounded — a minute that left the hour frees nothing, and a poll that finds the hour under the share ends the slowdown', { timeout: 60_000 }, async () => {
+  const f = await fixture('github-calls-aged-minute', 'token'), github = await standInGithub(f.directory), waits: number[] = [];
+  try {
+    const { noteGithubCall } = await import('../src/daemon/github-calls.js');
+    const start = Date.parse('2030-01-01T00:00:00Z');
+    let clock = start + 10_000;
+    const state = emptyDaemonState(f.config), reads = countedReads(f, state, github.url, waits, { now: () => clock });
+    for (let call = 0; call < 3; call++) noteGithubCall(state.github, 'observation', clock);
+    await step(state, reads, () => clock);
+    clock = start + 30 * 60_000;
+    // Four more calls in the half hour's minute: the hour holds seven, past the share of 4.
+    for (let call = 0; call < 4; call++) noteGithubCall(state.github, 'observation', clock);
+    const since = state.github.slowed!.since;
+    // The first minute left the hour half a minute ago, and no call has pruned it; the four in the half hour still fill the share.
+    clock = start + 61 * 60_000 + 30_000;
+    assert.equal(await reads.fetch(), f.baseTip);
+    assert.deepEqual(waits, [10_000], 'a minute that already left the hour frees nothing: the poll waits all the same');
+    assert.deepEqual([state.github.slowed!.since, state.github.slowed!.waited], [since, 1], 'the slowdown that stands is the same one');
+    // The half hour's minute leaves too: the hour is under the share, and nothing is left to wait for.
+    clock = start + 92 * 60_000;
+    assert.equal(await reads.fetch(), f.baseTip);
+    assert.deepEqual(waits, [10_000], 'a poll that finds the hour under the share goes through');
+    assert.equal(state.github.slowed, null, 'and the slowdown is over');
+    assert.deepEqual((await status(f, state, () => clock)).github!.slowed, null, 'status no longer says polling is slowed');
+  } finally { await github.close(); }
+});
+
+test('integration:github-calls-counted-and-bounded — a GitHub that refuses the limit is asked once a minute, never once a cycle, and the last reading stands', { timeout: 60_000 }, async () => {
+  const f = await fixture('github-calls-refused', 'token'), github = await standInGithub(f.directory), waits: number[] = [];
+  try {
+    let clock = Date.parse('2030-01-01T00:00:00Z');
+    const state = emptyDaemonState(f.config), reads = countedReads(f, state, github.url, waits, { now: () => clock });
+    await step(state, reads, () => clock);
+    github.refuse();
+    await step(state, reads, () => clock); await step(state, reads, () => clock);
+    assert.equal(github.asked.length, 1, 'within a minute of its last ask GitHub is not asked again');
+    clock += 61_000;
+    await step(state, reads, () => clock);
+    assert.equal(github.asked.length, 2, 'a minute later it is asked again');
+    await step(state, reads, () => clock); await step(state, reads, () => clock);
+    assert.equal(github.asked.length, 2, 'a refused ask is not retried every cycle');
+    const shown = (await status(f, state, () => clock)).github!;
+    assert.deepEqual([shown.rateLimit!.limit, shown.rateLimit!.remaining], [8, 3], 'the last reading stands');
+  } finally { await github.close(); }
 });
