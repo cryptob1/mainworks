@@ -24,7 +24,7 @@ async function fixture(page: Page, role = 'admin', extra: Record<string, unknown
   await page.route('**/api/**', async route => {
     if (state.offline) return route.abort();
     if (state.pause) await new Promise(r => setTimeout(r, 500));
-    if (route.request().headers().authorization !== 'Bearer browser-fixture' || state.unauthorized) return route.fulfill({ status: 401, json: { error: 'Rejected' } });
+    if (route.request().headers().authorization !== 'Bearer browser-fixture' || state.unauthorized) return route.fulfill({ status: 401, json: { error: 'Rejected', code: 'session_expired' } });
     if (route.request().method() !== 'GET') state.writes++;
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/board')) return serveBoard(page, route);
@@ -89,7 +89,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     const items = [item('GY-2', 'ready', 45), item('GY-3', 'review', 894), item('GY-4', 'review', 890), item('GY-5', 'build', 3060), item('GY-6', 'build', 3055)];
     await page.setViewportSize(viewport);
     await page.route('**/api/**', async route => {
-      if (route.request().headers().authorization !== 'Bearer browser-fixture') return route.fulfill({ status: 401, json: { error: 'Rejected' } });
+      if (route.request().headers().authorization !== 'Bearer browser-fixture') return route.fulfill({ status: 401, json: { error: 'Rejected', code: 'session_expired' } });
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'fixture', role: 'admin' }, github: true, reviewProviders: ['github'], repository: 'fixture/repository', jobs: [] } });
       if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work: items, now: new Date().toISOString() } });
@@ -126,7 +126,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
       production: { observedAt: at(1), serving: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345a6b', error: null, pending: ['GY-9'], incidents: [] } };
     await page.setViewportSize(viewport);
     await page.route('**/api/**', async route => {
-      if (route.request().headers().authorization !== 'Bearer browser-fixture') return route.fulfill({ status: 401, json: { error: 'Rejected' } });
+      if (route.request().headers().authorization !== 'Bearer browser-fixture') return route.fulfill({ status: 401, json: { error: 'Rejected', code: 'session_expired' } });
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith('/status')) return route.fulfill({ json: status });
       if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work: items, now: new Date().toISOString() } });
@@ -186,7 +186,7 @@ test('every moving row carries how long it has held its status, in red past thir
     createdAt: at(30 * 24 * 60), stageEnteredAt: at(minutesAgo) });
   const items = [item('GY-20', 'Just moved', 29), item('GY-21', 'Stopped moving', 31)];
   await page.route('**/api/**', async route => {
-    if (route.request().headers().authorization !== 'Bearer browser-fixture') return route.fulfill({ status: 401, json: { error: 'Rejected' } });
+    if (route.request().headers().authorization !== 'Bearer browser-fixture') return route.fulfill({ status: 401, json: { error: 'Rejected', code: 'session_expired' } });
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/status')) return route.fulfill({ json: { actor: { id: 'fixture', role: 'admin' }, github: true, reviewProviders: ['github'], repository: 'fixture/repository', jobs: [] } });
     if (path.endsWith('/work-snapshot')) return route.fulfill({ json: { work: items, now: new Date().toISOString() } });
@@ -264,7 +264,7 @@ test('connection loss labels stale data, recovers, and revoked sessions clear th
   await expect(connection).toHaveCount(0, settled);
   state.offline = true; await nextPoll(page);
   await expect(connection).toHaveText('Offline · retrying', settled);
-  await expect(page.getByRole('alert')).toContainText('stale');
+  await expect(page.getByRole('alert')).toHaveText('Reconnecting…');
   await expect(page.getByRole('link', { name: /Browser fixture/ })).toBeVisible();
   state.offline = false; await nextPoll(page);
   await expect(connection).toHaveCount(0, settled);
@@ -388,7 +388,7 @@ test('a delayed post-create refresh cannot restore the signed-out session or lea
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   let rejectLogin!: () => void;
   const rejected = new Promise<void>(resolve => { rejectLogin = resolve; });
-  await page.route('**/api/status', async route => { await rejected; return route.fulfill({ status: 401, json: { error: 'Rejected' } }); });
+  await page.route('**/api/status', async route => { await rejected; return route.fulfill({ status: 401, json: { error: 'Rejected', code: 'session_expired' } }); });
   await login(page, 'invalid', { dashboard: false });
   await expect(page.getByRole('status')).toContainText('Verifying');
   await expect(workHeading(page)).toHaveCount(0);

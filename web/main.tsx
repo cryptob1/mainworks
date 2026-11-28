@@ -1,4 +1,3 @@
-import { PRODUCT_NAME } from '../src/model/product';
 import { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { type Work } from '../src/model';
@@ -10,7 +9,7 @@ import { allRouteIds, oldRouteRedirects, redirects, resolveViewId, route, viewFo
 import type { WorkFilter } from './pages/work';
 import TopBar, { MainTopBar } from './components/top-bar';
 import { useFeatures } from './features';
-import LoginPage, { HUMAN_SESSION_KEY, REJECTED_NOTICE, SIGN_IN_NEEDED, storedToken, wantsSignIn } from './pages/login';
+import LoginPage, { HUMAN_SESSION_KEY, RECONNECTING, SESSION_ENDED, SIGN_IN_NEEDED, endedSession, pageTitle, readInstall, storedToken, wantsSignIn } from './pages/login';
 import WorkDetails, { useOpenedWork } from './pages/work-details';
 import CreateWork from './pages/create-work';
 import { initialView } from './pages/setup';
@@ -83,12 +82,17 @@ function App() {
         if (!response.ok && response.status !== 401) throw new Error('Unable to sign out. Please retry.');
       } catch { setError('Unable to sign out. Check your connection and retry.'); return; }
     }
-    sessionEpoch.current++; snapshotCursor.current = ''; setSigningIn(true); setBusy(false); sessionStorage.removeItem(HUMAN_SESSION_KEY); localStorage.removeItem(HUMAN_SESSION_KEY); setToken(''); setDraftToken(''); setStatus(null); setBoard(null); setWork([]); setJobs([]); setView('work'); setEditingRequirements(false); setObservedAt(Number.NaN); setSelected(null); setEvents([]); setCreating(false); setConnected(false); setLastUpdated(null); setError(''); }
+    forget();
+  }
+  /** Drop this browser's stored session and return to the sign-in page, without asking the server. */
+  function forget() {
+    sessionEpoch.current++; snapshotCursor.current = ''; setSigningIn(true); setBusy(false); sessionStorage.removeItem(HUMAN_SESSION_KEY); localStorage.removeItem(HUMAN_SESSION_KEY); setToken(''); setDraftToken(''); setStatus(null); setBoard(null); setWork([]); setJobs([]); setView('work'); setEditingRequirements(false); setObservedAt(Number.NaN); setSelected(null); setEvents([]); setCreating(false); setConnected(false); setLastUpdated(null); setError('');
+  }
   /** The sign-in page's first read: once the status reply accepts the token, the work snapshot, then the dashboard. */
   async function firstLoad(system: any, signal: AbortSignal) {
     const epoch = sessionEpoch.current, headers = { Authorization: `Bearer ${token}` }, response = await fetch('/api/work-snapshot', { headers, signal });
-    if (response.status === 401 || response.status === 403) throw Object.assign(new Error(REJECTED_NOTICE), { unauthorized: true });
-    if (!response.ok) throw new Error(`Unable to load dashboard (${response.status}).`);
+    if (await endedSession(response)) throw Object.assign(new Error(SESSION_ENDED), { unauthorized: true });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? `Unable to load dashboard (${response.status}).`);
     const items = await response.json(), served = await fetch('/api/board', { headers, signal }).then(r => r.ok ? r.json() : null, () => null); if (signal.aborted || epoch !== sessionEpoch.current) throw new Error('Superseded');
     keepSnapshot(items); keepBoard(served); setJobs(items.jobs ?? []); setObservedAt(Date.parse(items.now)); setStatus(system); setConnected(true); setLastUpdated(new Date().toLocaleTimeString()); setError('');
   }
@@ -103,16 +107,18 @@ function App() {
       try {
         const read = async (path: string) => {
           const response = await fetch(`/api/${path}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) });
-          if (response.status === 401 || response.status === 403) throw Object.assign(new Error(REJECTED_NOTICE), { unauthorized: true });
-          if (!response.ok) throw new Error(`Unable to load dashboard (${response.status}). Retrying automatically.`);
+          // GY-4072: only the server saying the session ended drops it; a refusal shows its reason, anything else reconnects.
+          if (await endedSession(response)) throw Object.assign(new Error(SESSION_ENDED), { unauthorized: true });
+          if (response.status === 403) throw Object.assign(new Error('refused'), { refusal: (await response.json().catch(() => null))?.error });
+          if (!response.ok) throw new Error(RECONNECTING);
           return response.json();
         };
         const [items, system, served] = await Promise.all([read(snapshotCursor.current ? `work-snapshot?since=${encodeURIComponent(snapshotCursor.current)}` : 'work-snapshot'), read('status'), read('board').catch(() => null)]);
         if (active && epoch === sessionEpoch.current && version === refreshVersion.current) { keepSnapshot(items); keepBoard(served); setJobs(items.jobs ?? []); setObservedAt(Date.parse(items.now)); setStatus(system); setConnected(true); setLastUpdated(new Date().toLocaleTimeString()); setError(''); }
       } catch (e: any) {
         if (!active || epoch !== sessionEpoch.current || version !== refreshVersion.current) return;
-        if (e.unauthorized) { signOut(); if (token) setError(e.message); }
-        else { setConnected(false); setError('Connection unavailable. Displayed data may be stale; retrying automatically.'); }
+        if (e.unauthorized) { forget(); setError(e.message); }
+        else { setConnected(false); setError(e.refusal ?? RECONNECTING); }
       }
     };
     // A hidden tab's timers are throttled to once a minute, so returning to the tab reads at once.
@@ -124,8 +130,11 @@ function App() {
   // reply the header's project name renders, so an operator's tabs tell installs apart. Mainworks
   // stands until that identity arrives — and returns on sign-out — so a tab is never untitled,
   // undefined, or a stale other project's name.
-  const project = typeof status?.repository === 'string' && status.repository ? status.repository : null;
-  useEffect(() => { document.title = project ? `${PRODUCT_NAME} · ${project}` : PRODUCT_NAME; }, [project]);
+  // GY-4072: before sign-in the install still names itself, so a password manager keeps one entry per install.
+  const [install, setInstall] = useState<string | null>(null);
+  useEffect(() => { void readInstall().then(setInstall); }, []);
+  const project = typeof status?.repository === 'string' && status.repository ? status.repository : install;
+  useEffect(() => { document.title = pageTitle(project); }, [project]);
   useEffect(() => { setEvents([]); setEditingRequirements(false); window.scrollTo?.(0, 0); }, [selected, token]);
   // A read answered while the same item is still open is kept even when a work poll re-ran the effect meanwhile, so a later failed read never leaves history empty.
   const selectedRef = useRef(selected); selectedRef.current = selected;
@@ -174,7 +183,7 @@ function App() {
   async function action(id: string, command: string, data: unknown = {}) { const epoch = sessionEpoch.current; setBusy(true); try { await api(`work/${id}/${command}`, data); if (epoch !== sessionEpoch.current) return; await refresh(epoch); } catch (e) { if (epoch === sessionEpoch.current) setError((e as Error).message); } finally { if (epoch === sessionEpoch.current) setBusy(false); } }
   const { features, operatorAgents, operatorAgentsError } = useFeatures(token, !!status, api, status?.actor?.role === 'admin', work.some(w => w.scenarioRequirements?.length > 0));
   const dashboard: Dashboard = { token, work, board, status, error, connected, lastUpdated, view, setView, filter, setFilter, selected, setSelected, creating, setCreating, busy, setBusy, observedAt, jobs, query, setQuery, operatorAgents, operatorAgentsError, features, events, editingRequirements, setEditingRequirements, sessionEpoch, api, refresh, action, setError, signOut };
-  if (!status) return <LoginPage signingIn={signingIn} setSigningIn={setSigningIn} token={token} error={error} signOut={signOut} setError={setError} sessionEpoch={sessionEpoch} setToken={setToken} draftToken={draftToken} setDraftToken={setDraftToken} host={location.host} onVerified={firstLoad}/>;
+  if (!status) return <LoginPage install={install} signingIn={signingIn} setSigningIn={setSigningIn} token={token} error={error} signOut={signOut} forget={forget} setError={setError} sessionEpoch={sessionEpoch} setToken={setToken} draftToken={draftToken} setDraftToken={setDraftToken} host={location.host} onVerified={firstLoad}/>;
   // One page at a time: one Mainworks top bar across every page; an open item replaces the page it was opened from, and "← Back" returns to it.
   return <div className="shell"><MainTopBar {...dashboard}/>
     <main className="main">{error && <div role="alert" className="notice danger">{error}{error === SIGN_IN_NEEDED && <> <button type="button" onClick={signOut}>Sign in</button></>}</div>}

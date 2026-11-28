@@ -1,0 +1,14 @@
+{
+  "id": "dashboard-stays-signed-in-across-restart-and-403",
+  "title": "The dashboard stays signed in across a server restart and a 403",
+  "description": "A real browser signs in with a link, the control plane restarts and one read answers 403: the dashboard shows one line, keeps its session and recovers. Only the server saying the session ended signs it out.",
+  "tags": ["dashboard", "authentication"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "Keep the browser signed in across a restart and a 403",
+    "run": "npm run test:browser -- browser-tests/dashboard-stays-signed-in-across-restart-and-403.spec.ts",
+    "timeoutSeconds": 240
+  }]
+}

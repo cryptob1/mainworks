@@ -119,6 +119,8 @@ export const healthRoutes = defineRoutes('health', [
       ...releaseInfo(), schema: schemaVersion, commit: services.build.commit, protocol: services.build.protocol });
     return answer(body);
   } },
+  // GY-4072: the sign-in form names the install it signs into, so a password manager keeps one entry per install.
+  { method: 'GET', path: '/api/sign-in', handle: async ({ services }) => ({ repository: services.repository || null }) },
   // Opening a sign-in link (GY-738) is the other route answered without a token: the link is the credential.
   {
     method: 'POST', path: '/api/sign-in',
