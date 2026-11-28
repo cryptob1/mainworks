@@ -1,7 +1,9 @@
 import { roleRuntimeRefusal, type FleetView } from '../model/registry.js';
 import { roleUnsupported } from '../model/worker-preference.js';
-import { whenText } from '../../web/agent-status.js';
+import { formatDuration } from '../model/duration.js';
 import { defineCommands } from './registry.js';
+
+const resetTime = (iso: string, now: number) => `${new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} (in ${formatDuration((Date.parse(iso) - now) / 60_000)})`;
 
 function shortReason(reason: string, name: string): string {
   if (reason.includes('is disabled')) return 'disabled; enable account';
@@ -30,7 +32,7 @@ export const accountsCommands = defineCommands([{
           ?? (configured.live >= (configured.limit ?? configured.concurrency) ? `${role} is at its session limit` : null);
       });
       const reason = account.ineligible ?? (!reasons.length ? 'No role; assign a role' : reasons.every(Boolean) ? reasons[0] : null);
-      const reset = account.resetsAt && Date.parse(account.resetsAt) > now ? whenText(account.resetsAt, now)
+      const reset = account.resetsAt && Date.parse(account.resetsAt) > now ? resetTime(account.resetsAt, now)
         : account.quota === 'exhausted' ? 'unknown' : '—';
       return [account.name, account.runtime, account.roles.map(entry => entry.role).join(', ') || '—', reason ? 'no' : 'yes', reason ? shortReason(reason, account.name) : '—', reset];
     });
