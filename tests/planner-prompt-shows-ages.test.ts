@@ -25,7 +25,7 @@ const line = (text: string, label: string) => text.split('\n').find(entry => ent
 /**
  * GY-4063 healed tests/stale.test.ts and merged an hour before `base`; its trial five hours before
  * `base` failed that file and tests/day.test.ts. GY-4100, still in test, failed tests/live.test.ts
- * 40 minutes before `base`, after that fix, and tests/day.test.ts seven hundred minutes before it.
+ * 40 minutes before `base`, after that fix, and tests/day.test.ts 700 minutes before it.
  */
 function history(base: number) {
   const at = (minutesAgo: number) => new Date(base - minutesAgo * minute).toISOString();
