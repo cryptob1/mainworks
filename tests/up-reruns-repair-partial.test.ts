@@ -23,6 +23,7 @@ async function fixture() {
   git(base, 'init', '-q', '--bare', '-b', 'main', bare);
   await mkdir(root); git(root, 'init', '-q', '-b', 'main');
   await writeFile(join(root, 'package.json'), '{"name":"project","version":"1.0.0"}\n');
+  await writeFile(join(root, 'package-lock.json'), '{"name":"project","version":"1.0.0","lockfileVersion":3,"packages":{}}\n');
   git(root, 'add', '.'); git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base');
   git(root, 'push', '-q', bare, 'main');
   // gh repo create leaves origin at https; up must move it to the SSH form.
