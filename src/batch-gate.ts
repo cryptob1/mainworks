@@ -33,6 +33,7 @@
 // names its current step; master status shows both (GY-3141).
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { trialAssertionBound } from './model/merge-ledger.js';
 import { basename, dirname, join } from 'node:path';
 import { EnvironmentFault } from './app-environments.js';
 import { formatAge } from './model/duration.js';
@@ -762,7 +763,7 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file' | 'fa
   const failed = [...new Set([...checks, ...previewCases.filter(run => run.verdict !== 'passed').map(run => `e2e:${run.case}`), ...(slowOnboarding ? [onboardingCheck] : [])])];
   // GY-3264: each failure's commit and failing step are recorded before filing, so a check filed
   // before — whose open item is reused — still has its newest detail readable in status.
-  record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, 1000) ?? null, at }]));
+  record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, trialAssertionBound) ?? null, at }]));
   if (record.notes?.length) record.notes = record.notes.filter(note => !isDiagnosticNote(note));
   for (const check of failed) {
     const detail = record.diagnosticFailures[check]!.detail, output = outputs[check]?.length ? `\n\nThe last lines of its output:\n\n\`\`\`\n${outputs[check]!.join('\n').slice(-12_000)}\n\`\`\`` : '';

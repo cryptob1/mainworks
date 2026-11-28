@@ -42,6 +42,8 @@ export type TrialFlaked = z.infer<typeof trialFlakedSchema>;
 export interface MergeLedgerFlake extends TrialFlaked { head: string; mergeSha: string }
 /** How many trial flakes an item's state keeps, newest last, across its intents. */
 export const mergeLedgerFlakeLimit = 20;
+/** GY-4089: maximum length of a stored failing test assertion message (keeps multiline Error, Locator, Expected, Received and spec line). */
+export const trialAssertionBound = 4000;
 
 /** One ledger row as the fold reads it: its kind and payload, and the item key it was written under when it was. */
 export interface MergeLedgerEvent { kind: string; payload: unknown; work?: string | null; at?: string | null; seq?: string | number | null }

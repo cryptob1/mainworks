@@ -17,6 +17,7 @@ import { underTestRunner } from '../runtime-environment.js';
 import type { HostMemoryReading } from '../master/host-memory.js';
 import { parseFailedTests } from '../model/base-failure.js';
 import { readOnlyTrialBlocker } from '../model/merge-queue.js';
+import { trialAssertionBound } from '../model/merge-ledger.js';
 import { assertIsolatableHostControlEndpoints, bwrapOnPath, credentialMaskWords, hostFilesystemWords, hostProcessLaunchTargets, processLaunchMaskWords } from '../master/confinement.js';
 import { socketConfinementWords } from '../master/socket-confinement.js';
 import { configHome } from '../install/secrets.js';
@@ -926,7 +927,7 @@ export function failureTail(outputs: readonly string[], length = tailLength): st
     const browser = playwrightFailures(output);
     if (browser.length) {
       const counts = output.split('\n').map(line => line.replace(ansiEscape, '')).findLast(line => playwrightCounts.test(line))?.trim() ?? '';
-      const entries = browser.map(failure => `${failure.file}:${failure.line} › ${failure.title}${failure.error ? `\n  ${failure.error}` : ''}`);
+      const entries = browser.map(failure => `${failure.file}:${failure.line} › ${failure.title}${failure.error ? `\n  ${failure.error.replace(/\n/g, '\n  ')}` : ''}`);
       const roomForEntries = share - command.length - cut.length - end.length - (counts ? counts.length + 1 : 0);
       const kept: string[] = [];
       let used = 0;
@@ -969,15 +970,22 @@ function playwrightFailures(log: string): PlaywrightFailure[] {
   for (let at = 0; at < lines.length; at++) {
     const heading = playwrightHeading.exec(lines[at]!);
     if (!heading) continue;
-    let error: string | null = null;
-    // The error block sits between the heading and the next heading or the counts line; its first
-    // non-empty line is the failure's own words (an Error:, a Test timeout … exceeded).
+    // The error block sits between the heading and the next heading or the counts line; keep the
+    // full multiline assertion message (Error, Locator, Expected, Received, spec line) up to the cap (GY-4089).
+    const block: string[] = [];
     for (let next = at + 1; next < lines.length; next++) {
       const line = lines[next]!;
       if (playwrightHeading.test(line) || playwrightCounts.test(line)) break;
-      if (!line.trim()) continue;
-      error = line.trim().slice(0, 300);
-      break;
+      block.push(line.trimEnd());
+    }
+    const first = block.findIndex(line => line.trim().length > 0);
+    let error: string | null = null;
+    if (first >= 0) {
+      let last = block.length - 1;
+      while (last > first && !block[last]!.trim()) last--;
+      const slice = block.slice(first, last + 1);
+      const baseIndent = Math.min(...slice.filter(line => line.trim()).map(line => line.length - line.trimStart().length));
+      error = slice.map(line => (line ? line.slice(baseIndent) : '')).join('\n').slice(0, trialAssertionBound).trimEnd();
     }
     const failure = { file: heading[1]!, line: Number(heading[2]), title: heading[3]!, error };
     if (!failures.some(seen => seen.file === failure.file && seen.line === failure.line && seen.title === failure.title)) failures.push(failure);
@@ -1026,7 +1034,7 @@ export function repositoryCheckFailure(log: string): { files: string[]; cases: s
   }
   if (firstCase === null && browser.length) {
     const first = browser[0]!;
-    firstCase = `${first.file}:${first.line} › ${first.title}${first.error ? `: ${first.error}` : ''}`.slice(0, 500);
+    firstCase = `${first.file}:${first.line} › ${first.title}${first.error ? `: ${first.error}` : ''}`.slice(0, trialAssertionBound);
   }
   // A browser failure is a time-out only when its own error block says so: an assertion whose call
   // log merely mentions a wait timeout is a failure, not load.
@@ -1035,7 +1043,7 @@ export function repositoryCheckFailure(log: string): { files: string[]; cases: s
       const at = log.indexOf(name);
       return timeoutFailure.test(at < 0 ? name : log.slice(Math.max(0, at - 80), at + 400));
     })
-    && browser.every(failure => failure.error !== null && timeoutFailure.test(failure.error));
+    && browser.every(failure => failure.error !== null && timeoutFailure.test(failure.error.split('\n')[0]!));
   return { files, cases, firstCase, timedOut };
 }
 /** The runner's per-file records (`--durations FILE`, the runner records): one JSON line per file that ran, with whether it passed. */
