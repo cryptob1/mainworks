@@ -45,10 +45,10 @@ Mainworks is the part around the agent:
 
 ## How it works
 
-1. **Goal** — you write what you want and why, in a sentence or two. A lead agent turns it into requirements that can be checked.
-2. **Build** — a coding agent writes the change and its tests in a sandbox of its own.
-3. **Review** — a different agent reads the diff and runs the proof for each requirement. It can send the work back.
-4. **Merge trial** — the change is tested on top of the latest main. If main moved underneath it, it is tested again.
+1. **Goal** — you write what you want and why. A lead agent turns it into requirements that can be checked.
+2. **Build** — a coding agent writes the change and its tests in a sandbox.
+3. **Review** — a different agent reads the diff and runs the proof for each requirement.
+4. **Merge trial** — the change is tested on top of the latest main.
 5. **Deploy** — main ships itself to your server.
 6. **Watch** — a release that fails its check is rolled back and the change reopened.
 
@@ -92,12 +92,22 @@ mainworks host add you@other-machine
 - Agents work in sandboxes and cannot push to main. Only the merge step can, and only after review and a passing trial.
 - The agent that wrote a change cannot approve it or produce its proof.
 - Your code and secrets stay on your server. The only outside parties are your Git host and the agent providers you connect.
-- Every decision is recorded: who claimed, who reviewed, what was tested, what was reverted.
+- Every decision is recorded.
+
+## Work with a factory from Slack
+
+Create a Slack app from [the manifest](integrations/slack/manifest.json) with Socket Mode on, invite it to a channel, and pipe its app and bot tokens into:
+
+\`\`\`sh
+mainworks lead slack connect CHANNEL-ID YOUR-SLACK-ID
+\`\`\`
+
+\`mainworks lead slack allow SLACK-ID\` adds people.
 
 ## Learn more
 
-- [Setup guide](docs/setup.md) — requirements, first run, troubleshooting
-- [How the parts fit together](docs/architecture.md) — for the curious: services, containers, where things run
+- [Setup guide](docs/setup.md)
+- [How the parts fit together](docs/architecture.md)
 - [Running several projects on one server](docs/shared-server.md)
 - [Contributing](AGENTS.md) · [Apache 2.0](LICENSE)
 
