@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { composeAdapter, type AdapterContext } from '../src/install/adapters.js';
 import { fakeTransport, localTransport } from '../src/install/transport.js';
 import { provisionTrialImage } from '../src/install/trial-image.js';
@@ -14,17 +14,17 @@ import { slotsDirectoryVariable } from '../src/master/verification-slots.js';
 const previous = 'a'.repeat(40), next = 'b'.repeat(40);
 const pipe = 'ERROR: failed to build: failed to solve: rpc error: code = Unknown desc = io: read/write on closed pipe';
 
-for (const [name, failures, expected, attempts] of [
+for (const target of ['trial', 'server'] as const) for (const [name, failures, expected, attempts] of [
   ['clean build', [], 'deployed', 1],
   ['one closed pipe', [pipe], 'deployed', 2],
   ['persistent closed pipe', [pipe, pipe], 'rolled-back', 2],
   ['other Docker error', ['ERROR: failed to solve: no space left on device'], 'rolled-back', 1],
-] as const) test(`e2e:compose-deploy-survives-image-export-pipe-error — ${name}`, async () => {
+] as const) test(`e2e:compose-deploy-survives-image-export-pipe-error — ${target}: ${name}`, async () => {
   const root = await temporaryDirectory('compose-export');
   let builds = 0, loads = 0, serving = previous;
   const transport = fakeTransport({ responses: [
     { match: 'mktemp', result: `${root}/image-export\n` },
-    { match: 'docker buildx build', result: () => {
+    { match: target === 'trial' ? 'docker buildx build' : 'docker build ', result: () => {
       const error = failures[builds++];
       return { code: error ? 1 : 0, stdout: '', stderr: error ?? '' };
     } },
@@ -42,7 +42,7 @@ for (const [name, failures, expected, attempts] of [
   });
   assert.equal(builds, attempts, 'at most one retry of the exact pipe error');
   assert.equal(serving, expected === 'deployed' ? next : previous);
-  assert.equal(loads, expected === 'deployed' ? 1 : 0, 'only a completed archive is loaded');
+  assert.equal(loads, target === 'server' || expected === 'deployed' ? 1 : 0, 'only a completed archive is loaded');
   const calls = transport.commands.map((_, index) => transport.line(index));
   assert.ok(calls.some(line => line.includes('--output type=docker,dest=') && !line.includes('--load')), 'export a Docker archive without a live importer pipe');
   assert.ok(calls.some(line => line.startsWith('rm -rf ') && line.includes('/image-export')), 'remove the archive after success or failure');
@@ -63,30 +63,37 @@ test('e2e:compose-deploy-survives-image-export-pipe-error — importer errors pr
   }
 });
 
-// Real exporter/importer proof. The transport only substitutes an isolated tag and skips
-// builder discovery: the trial uses its own already-provisioned builder, or Docker's default.
-test('e2e:compose-deploy-survives-image-export-pipe-error — Docker exports and loads a new revision', async () => {
-  const root = await temporaryDirectory('compose-export-docker'), real = localTransport();
-  const tag = `mainworks-export-proof:${process.pid}`, builder = `mainworks-export-proof-${process.pid}`;
-  const transport = { ...real, async exec(program: string, args: string[], options?: Parameters<typeof real.exec>[2]) {
-    if (program === 'docker' && args[0] === 'buildx') args = args.map(arg => arg === 'mainworks-trial' ? builder : arg);
-    if (program === 'docker' && args[0] === 'buildx' && args[1] === 'build') {
-      args = [...args];
-
-      args[args.indexOf('--tag') + 1] = tag;
-    }
-    return real.exec(program, args, options);
-  } };
-  try {
-    for (const revision of [previous, next]) {
-      await writeFile(join(root, 'Dockerfile'), `FROM scratch AS trial\nLABEL org.opencontainers.image.revision=${revision}\nCOPY revision /revision\n`);
-      await writeFile(join(root, 'revision'), revision);
-      await provisionTrialImage({ sourceRoot: root, transport }, null);
-      const loaded = await real.exec('docker', ['image', 'inspect', '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}', tag]);
-      assert.equal(loaded.stdout.trim(), revision, 'the new image is loaded into Docker, not left in the builder cache');
-    }
-  } finally {
-    await real.exec('docker', ['image', 'rm', tag], { allowFailure: true });
-    await real.exec('docker', ['buildx', 'rm', builder], { allowFailure: true });
+// Docker is deliberately a process stand-in: private-root trials have no host Docker
+// socket. Exercise the real command transport and archive bytes without host authority.
+test('e2e:compose-deploy-survives-image-export-pipe-error — process transport exports and loads a new revision', async () => {
+  const root = await temporaryDirectory('compose-export-process'), real = localTransport();
+  const state = join(root, 'loaded.json'), calls = join(root, 'calls.jsonl');
+  await writeFile(join(root, 'docker'), `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
+if (args[0] === 'buildx' && args[1] === 'inspect') process.exit(0);
+if (args[0] === 'buildx' && args[1] === 'build') {
+  const output = args[args.indexOf('--output') + 1];
+  if (!output.startsWith('type=docker,dest=') || args.includes('--load')) throw Error('expected separate Docker archive export');
+  fs.writeFileSync(output.slice('type=docker,dest='.length), JSON.stringify({ tag: args[args.indexOf('--tag') + 1], revision: fs.readFileSync(args.at(-1) + '/revision', 'utf8') }));
+} else if (args[0] === 'load' && args[1] === '--input') {
+  const image = JSON.parse(fs.readFileSync(args[2], 'utf8'));
+  if (image.tag !== 'mainworks-trial:local') throw Error('archive lost its tag');
+  fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(image));
+} else throw Error('unexpected Docker command: ' + args.join(' '));
+`, { mode: 0o755 });
+  const transport = { ...real, exec: (program: string, args: string[], options?: Parameters<typeof real.exec>[2]) =>
+    real.exec(program === 'docker' ? join(root, 'docker') : program, args, options) };
+  for (const revision of [previous, next]) {
+    await writeFile(join(root, 'revision'), revision);
+    await provisionTrialImage({ sourceRoot: root, transport }, null);
+    assert.equal(JSON.parse(await readFile(state, 'utf8')).revision, revision, 'load replaces the image with the new revision');
   }
+  const commands = (await readFile(calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as string[]);
+  assert.deepEqual(commands.map(args => args.slice(0, 2)), [
+    ['buildx', 'inspect'], ['buildx', 'build'], ['load', '--input'],
+    ['buildx', 'inspect'], ['buildx', 'build'], ['load', '--input'],
+  ]);
+  for (const args of commands.filter(args => args[0] === 'load')) await assert.rejects(readFile(args[2]!), { code: 'ENOENT' }, 'export archives are removed after loading');
 });
