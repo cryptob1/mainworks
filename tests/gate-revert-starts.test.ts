@@ -55,6 +55,7 @@ async function world(label: string, trial: (call: number, onStep?: (step: string
       heavyTrial(item.key, onStep, signal, () => { onStep?.('checkout'); return trial(++calls, onStep); }),
     push: async (sha: string, baseTip: string) => { git(coordinator, 'push', '-q', `--force-with-lease=main:${baseTip}`, 'origin', `${sha}:refs/heads/main`); return 'pushed' as const; },
     createWork: async (_input: unknown, key: string) => { relands.push(key); return { key: 'GY-3' }; },
+    record: async () => undefined,
   } as unknown as MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> };
   const steps: string[] = [];
   const record: GateRecord = bootstrapGate(repository, verified);
