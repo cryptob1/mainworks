@@ -164,7 +164,8 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     baseBranch: base, parallel: settings.parallel, now: options.now ?? Date.now, record: options.record, drain: () => readHeavyDrain(heavyJobsDirectory()), ...(options.hold ? { hold: options.hold } : {}), ...(options.holdOpening ? { holdOpening: options.holdOpening } : {}),
     git: (args, env) => gitAs(args, env),
     fetch: async () => {
-      await counted('observation', tokenRemote || (githubHttpsOrigin ??= git('ls-remote', '--get-url', 'origin').then(url => isGithubHttps(url.trim()), () => false)));
+      // `git remote get-url` names the URL a fetch of origin uses (its insteadOf rewrites applied) and reaches no remote.
+      await counted('observation', tokenRemote || (githubHttpsOrigin ??= git('remote', 'get-url', 'origin').then(url => isGithubHttps(url.trim()), () => false)));
       if (settings.tokenFile || settings.pushAuth) await gitAs(['fetch', '--no-tags', remote, `+refs/heads/${base}:${ref}`], pushEnvironment(settings, options.environment));
       else await git('fetch', '--no-tags', 'origin', base);
       return tip();

@@ -140,3 +140,20 @@ test("integration:github-calls-counted-and-bounded — a deploy key's pushes car
   assert.deepEqual(shown.hour, { observation: 1, releasePublish: 0, other: 0, total: 1 }, "a fetch over GitHub's https spends the token");
   assert.deepEqual(waits, []);
 });
+
+test('integration:github-calls-counted-and-bounded — the remaining limit is read from GitHub headers that name one, and a GitHub that names none is no reading', async () => {
+  const { readGithubRateLimit } = await import('../src/daemon/github-calls.js');
+  const asked: { url: string; headers: unknown }[] = [];
+  const github = (status: number, headers: Record<string, string>) => async (url: string | URL | Request, init?: RequestInit) => {
+    asked.push({ url: String(url), headers: init?.headers });
+    return new Response('{}', { status, headers });
+  };
+  const at = Date.parse('2030-01-01T00:30:00Z');
+  const read = (fetcher: typeof fetch) => readGithubRateLimit('https://api.github.com', 'github_pat_x', at, fetcher);
+  assert.deepEqual(await read(github(200, { 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': '4310', 'x-ratelimit-reset': String(Date.parse(RESET) / 1000) })),
+    { limit: 5000, remaining: 4310, reset: RESET, at: '2030-01-01T00:30:00.000Z' });
+  assert.deepEqual(asked.at(-1), { url: 'https://api.github.com/rate_limit', headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer github_pat_x' } }, 'asked with the token git sends GitHub');
+  assert.equal(await read(github(200, {})), null, 'headers that name no limit are no reading, never a limit of zero');
+  assert.equal(await read(github(403, {})), null, 'a refusal is no reading');
+  assert.equal(await read(async () => { throw new Error('offline'); }), null, 'a GitHub that does not answer is no reading');
+});

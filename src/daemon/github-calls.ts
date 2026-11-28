@@ -88,7 +88,8 @@ export interface GithubRateLimit { limit: number; remaining: number; reset: stri
 export async function readGithubRateLimit(api: string, token: string, now: number = Date.now(), fetcher: typeof fetch = fetch): Promise<GithubRateLimit | null> {
   const response = await fetcher(`${api}/rate_limit`, { headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
   if (!response?.ok) return null;
-  const limit = Number(response.headers.get('x-ratelimit-limit')), remaining = Number(response.headers.get('x-ratelimit-remaining')), reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+  const header = (name: string) => { const value = response.headers.get(name); return value === null || value.trim() === '' ? Number.NaN : Number(value); };
+  const limit = header('x-ratelimit-limit'), remaining = header('x-ratelimit-remaining'), reset = header('x-ratelimit-reset') * 1000;
   if (![limit, remaining, reset].every(value => Number.isFinite(value) && value >= 0)) return null;
   return { limit, remaining, reset: iso(reset), at: iso(now) };
 }
