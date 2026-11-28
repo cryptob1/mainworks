@@ -33,7 +33,7 @@ for (const width of [390, 1280]) {
     found.push(...judge('Setup (fresh)', await read(page), width));
     // Sign-in: no token stored and every read refused.
     await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Rejected' } }));
+    await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Rejected', code: 'session_expired' } }));
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
     await page.goto('/?sign-in');
     await expect(page.getByLabel('Access token')).toBeVisible();

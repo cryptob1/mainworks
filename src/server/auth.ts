@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { demand, operatorScopeIncludes, type Principal } from '../model.js';
+import { demand, operatorScopeIncludes, Refusal, sessionExpiredCode, type Principal } from '../model.js';
 import { laneOnlyProducer, teamRoles, type Credential, type PrincipalGrant, type TeamRole } from './principals.js';
 import { readImports } from '../validation-import.js';
 import type { Store } from '../store.js';
@@ -39,7 +39,8 @@ export async function authenticate(services: Services, authorization: string | u
   const configured = configuredCredential(services, hash);
   if (configured) await services.operatorAgents.assertConfiguredPrincipalSafe({ id: configured.actor.id, tokenHash: hash.toString('hex') }, { lease });
   const actor = configured?.actor ?? await humanSignIn(services).authenticate(token) ?? await mintedWorker(services, token, lease) ?? await mintedReporter(services, token) ?? await mintedCaretaker(services, token) ?? await services.operatorAgents.authenticate(token) ?? await launchTokenActor(services, hash.toString('hex'));
-  demand(actor, 'A valid Mainworks bearer token is required', 401);
+  // GY-4072: the server's own word that a presented token stands for nothing; only this answer makes the dashboard drop it.
+  if (!actor) throw new Refusal(token.startsWith('gyh_') ? 'This sign-in has ended. Open a new sign-in link.' : 'A valid Mainworks bearer token is required', 401, token ? { code: sessionExpiredCode } : undefined);
   if (actor.role === 'operator-agent') demand(actor.scope?.repositories.includes(repository), 'Repository is outside operator-agent scope', 403);
   return actor;
 }
@@ -218,13 +219,13 @@ export const laneProducerScope: RouteModule = { name: 'lane-producer-scope', rou
  * run with the operator's own admin credential, asks for a one-time link; opening it in a browser
  * redeems it for a short-lived session bound to that principal and declared human, so the
  * decisions only a human may make are answered in that browser with one click. A link is single
- * use and expires in minutes; the session it opens expires 90 days after its last use. Session digests, actors and expiry
+ * use and expires in minutes; the session it opens expires 180 days after its last use. Session digests, actors and expiry
  * are persisted in Postgres; pending link digests stay in memory. Both
- * tables are bounded: links evict the oldest entry, while session capacity refuses new
- * sign-ins until an existing session expires or signs out.
+ * tables are bounded: links evict the oldest entry, and a full session table makes room by
+ * ending its least recently used session.
  */
 export const signInLinkTtlMs = 10 * 60_000;
-export const signInSessionTtlMs = 90 * 86_400_000;
+export const signInSessionTtlMs = 180 * 86_400_000;
 /** GY-3514: a teammate's session ends after this long unused; every request renews it. */
 export const teammateSessionTtlMs = 30 * 60_000;
 const sessionTtl = (actor: Principal) => actor.team ? teammateSessionTtlMs : signInSessionTtlMs;
@@ -330,8 +331,9 @@ export class HumanSignIn {
       // Serialize pruning and insertion across server instances to keep the global size bound.
       await db.query('LOCK TABLE human_sign_in_sessions IN EXCLUSIVE MODE');
       await db.query('DELETE FROM human_sign_in_sessions WHERE expires_at <= $1', [new Date(now)]);
-      const { rows } = await db.query('SELECT count(*)::int AS count FROM human_sign_in_sessions');
-      demand(rows[0].count < maxSignInSessions, 'The 32-session sign-in limit is reached; sign out an existing session or wait for one to expire, then request a new sign-in link', 409);
+      // Last use is expiry less the session's lifetime; the least recently used sessions make room.
+      await db.query(`DELETE FROM human_sign_in_sessions WHERE token_hash IN (SELECT token_hash FROM human_sign_in_sessions
+        ORDER BY expires_at - CASE WHEN actor ? 'team' THEN $1::interval ELSE $2::interval END DESC OFFSET $3)`, [`${teammateSessionTtlMs} milliseconds`, `${signInSessionTtlMs} milliseconds`, maxSignInSessions - 1]);
       await db.query('INSERT INTO human_sign_in_sessions (token_hash, actor, expires_at) VALUES ($1, $2, $3)', [digest(token), actor, expiresAt]);
     }, { coordinationLock: false });
     return { token, actor, expiresAt: expiresAt.toISOString() };

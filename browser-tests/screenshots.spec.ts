@@ -135,7 +135,7 @@ for (const width of loginWidths) test(`the sign-in page is captured in every sta
   await shot('unreachable');
   // A rejected token returns to the form with the notice and the input focused.
   await page.unroute('**/api/**');
-  await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Unauthorized' } }));
+  await page.route('**/api/**', route => route.fulfill({ status: 401, json: { error: 'Unauthorized', code: 'session_expired' } }));
   await page.getByRole('button', { name: 'Retry' }).click();
   await expect(page.getByRole('alert')).toHaveText('That token was not accepted');
   await expect(page.getByLabel('Access token')).toBeFocused();
