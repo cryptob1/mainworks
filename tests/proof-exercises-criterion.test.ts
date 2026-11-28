@@ -37,7 +37,7 @@ const id = () => randomUUID();
 
 useTestStore('proof-exercises-criterion', { credentials: principals.map(p => ({ ...p, token: tokens.get(p.id)! })) }, ctx => { ({ store, engine, url } = ctx); });
 
-const create = () => engine.execute(operator, 'create', null, { type: 'chore',  title: 'Exercise fixture', criteria: [
+const create = () => engine.execute(operator, 'create', null, { type: 'chore',  title: `Exercise fixture ${id().slice(0, 8)}`, criteria: [
   { id: 'AC-1', text: 'An expired lease cannot claim', proofs: [PROOF, 'e2e:fixture'] },
   { id: 'AC-2', text: 'Something else holds', proofs: [OTHER] },
 ] }, id()) as Promise<Work>;

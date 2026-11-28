@@ -71,7 +71,7 @@ test('unit:self-filed-items-name-a-case — onboarding writes a serve declaratio
     setRepositoryPolicy({ ...defaultRepositoryPolicy, ...config });
     const request = onboardingWorkRequest(sha('d'), ['test'], 'served-head');
     assert.equal(filingRefusal(request), null);
-    await engine.execute(operator, 'create', null, request, randomUUID());
+    await engine.execute(operator, 'create', null, { ...request, title: `${request.title} (${emptyDirectory ? 'empty' : 'absent'})` }, randomUUID());
     const results = await runTrialE2eCases({ worktree: root, mergeSha: sha('d'), proofs: ['e2e:served-head'], env: { PATH: process.env.PATH! }, scratch: root, budgetMs: 30_000, holds: async path => existsSync(join(root, path)), log: () => {} });
     assert.equal(results[0]?.failed, 0, JSON.stringify(results));
     assert.equal(results[0]?.executed, 1);

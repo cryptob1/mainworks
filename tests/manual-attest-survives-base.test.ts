@@ -55,7 +55,7 @@ after(async () => { if (store) await store.close(); if (fixtureRoot) await rm(fi
 /** A submitted head the master attested on its first base, with the trial's e2e pass on that base. */
 async function attested(branch: string): Promise<Work> {
   git(checkout, 'branch', '-f', branch, head);
-  let work = await lifecycle(engine, admin, { type: 'bug', title: 'Attested by the master', criteria: [{ id: 'AC-1', text: 'The onboarding files land where the guide says', proofs: [PROOF, E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch }, submit: { head } });
+  let work = await lifecycle(engine, admin, { type: 'bug', title: `Attested by the master (${branch})`, criteria: [{ id: 'AC-1', text: 'The onboarding files land where the guide says', proofs: [PROOF, E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch }, submit: { head } });
   work = await engine.execute(master, 'evidence', work.id, { proof: PROOF, sha: head, baseSha: work.candidate!.baseSha, policyRevision: work.policyRevision, result: 'pass', executed: 1, skipped: 0, reason: 'the onboarding files match the guide', ...attestationExercise(work, PROOF) }, id());
   return withTrial(work, work.candidate!.baseSha);
 }

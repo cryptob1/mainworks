@@ -532,7 +532,7 @@ after(async () => { await close?.(); if (store) await store.close(); if (fixture
 const request = (credential: string, path: string, body?: unknown, key?: string, method = 'POST') => api(url, credential, path, { method, body, key });
 /** An item the worker claimed, registered on its branch and submitted with `complete --head`, as GY-1523 submits it. */
 async function submittedItem(n: number, proofs = ['unit:app-works', 'e2e:fixture'], workspace = n) {
-  let w = await engine.execute(admin, 'create', null, { type: 'chore',  title: `Executor fixture ${n}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs }] }, randomUUID());
+  let w = await engine.execute(admin, 'create', null, { type: 'chore',  title: `Executor fixture ${n}-${randomUUID().slice(0, 8)}`, criteria: [{ id: 'AC-1', text: 'Behaves', proofs }] }, randomUUID());
   w = await engine.execute(admin, 'ready', w.id, {}, randomUUID());
   const pulled = await engine.pullAssignment(worker, { work: w.id }, randomUUID());
   assert.equal(pulled.assigned?.id, w.id, JSON.stringify(pulled.refused)); w = pulled.assigned!;

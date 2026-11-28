@@ -23,7 +23,7 @@ useTestStore('masters-dispatch-owned-items', {}, ctx => {
   engine = new Engine(store, 120, 'owner/project'); engine.principals = [alice, bob];
 });
 const criteria = [{ id: 'AC-1', text: 'Ownership routes work', proofs: ['unit:masters-dispatch-owned-items', 'e2e:fixture'] }];
-const create = (owner?: string | null) => engine.execute(alice, 'create', null, { title: `Item ${owner ?? 'install'}`, type: 'chore', criteria, owner }, randomUUID());
+const create = (owner?: string | null) => engine.execute(alice, 'create', null, { title: `Item ${owner ?? 'install'} ${randomUUID().slice(0, 8)}`, type: 'chore', criteria, owner }, randomUUID());
 
 test('unit:masters-dispatch-owned-items two personal masters and the install share one control plane and one loop', async () => {
   const owned = await Promise.all([create('alice'), create('bob'), create()]);

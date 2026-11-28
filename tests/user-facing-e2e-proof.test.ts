@@ -27,7 +27,7 @@ const servePolicy = { ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-b
 let store: Store, engine: Engine;
 const operator: Principal = { id: 'operator', role: 'admin' };
 const id = () => randomUUID();
-const item = (overrides: Record<string, unknown> = {}) => ({ title: 'A change', criteria: [{ id: 'AC-1', text: 'The change works', proofs: ['unit:works'] }], ...overrides });
+const item = (overrides: Record<string, unknown> = {}) => ({ title: `A change ${id().slice(0, 8)}`, criteria: [{ id: 'AC-1', text: 'The change works', proofs: ['unit:works'] }], ...overrides });
 const of = (type: string, overrides: Record<string, unknown> = {}) => item({ ...overrides, type });
 const withE2e = (input: Record<string, unknown>) => ({ ...input, criteria: [{ id: 'AC-1', text: 'The change works', proofs: ['e2e:home-shows-change'] }] });
 const refusalOf = async (input: Record<string, unknown>) => {
