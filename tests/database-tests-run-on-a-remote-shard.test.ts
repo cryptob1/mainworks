@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { readFileSync, symlinkSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
@@ -62,10 +63,8 @@ test('integration:database-tests-run-on-a-remote-shard — a real withDatabase t
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
   const reading = (name: string, cores: number, busy: number): HostReading => ({ name, cores, busy, steal: 0, celsius: 60, limit: 92, away: false });
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
   const timings: string[] = [];
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const result = await runTrial({
       root: repository.root,
       base: await temporaryDirectory('db-remote-shard-base'),
@@ -83,10 +82,7 @@ test('integration:database-tests-run-on-a-remote-shard — a real withDatabase t
     assert.ok(timings.some(step => /^tests: shard \d+ on gy-compute@box$/.test(step)), `expected shard on remote host, got: ${timings.join(', ')}`);
     assert.match(result.logTail, /\[gy-compute@box\]/, result.logTail);
     assert.match(result.logTail, /replay reads the baseline/, result.logTail);
-  } finally {
-    if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE;
-    else process.env.GRAPHYARD_TRIAL_IMAGE = previous;
-  }
+  });
 
   assert.deepEqual(liveServersUnder(shardTmp), [], 'no Postgres process left behind');
   assert.deepEqual(await nonTemplatePostgresDirs(shardTmp), [], 'no Postgres data directory left behind');

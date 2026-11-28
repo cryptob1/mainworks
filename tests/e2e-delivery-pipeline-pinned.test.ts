@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -23,8 +24,7 @@ test('unit:e2e-delivery-pipeline-pinned — the delivery case\'s scratch trial p
   const trials = join(directory, 'trials');
   await mkdir(trials);
   // The e2e command is no test-runner child, so the trial runs its scan; and it has no network.
-  const saved = { context: process.env.NODE_TEST_CONTEXT, lifecycle: process.env.npm_lifecycle_event, fetch: globalThis.fetch };
-  delete process.env.NODE_TEST_CONTEXT; delete process.env.npm_lifecycle_event;
+  const restoreEnv = patchEnv({ NODE_TEST_CONTEXT: undefined, npm_lifecycle_event: undefined }), savedFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('no network in a diagnostics trial'); };
   try {
     const trial = await scratchTrial(trials)({ root, base: join(directory, 'managed'), mergeSha: git('rev-parse', 'HEAD'), baseTip, changedFiles: ['src/store/change.mjs'],
@@ -32,8 +32,7 @@ test('unit:e2e-delivery-pipeline-pinned — the delivery case\'s scratch trial p
     assert.equal(trial.build, 'pass', trial.logTail);
     assert.deepEqual(trial.proofs['unit:scratch-delivery'], { executed: 1, failed: 0 }, trial.logTail);
   } finally {
-    globalThis.fetch = saved.fetch;
-    if (saved.context !== undefined) process.env.NODE_TEST_CONTEXT = saved.context;
-    if (saved.lifecycle !== undefined) process.env.npm_lifecycle_event = saved.lifecycle;
+    globalThis.fetch = savedFetch;
+    restoreEnv();
   }
 });

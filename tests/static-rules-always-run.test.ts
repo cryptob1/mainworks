@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -129,8 +130,7 @@ console.log('1..' + n);
   };
   for (const rule of staticRuleTests) extra[rule] = '// static rule test\n';
 
-  const priorNodePath = process.env.NODE_PATH;
-  process.env.NODE_PATH = [join(repositoryRoot, 'node_modules'), priorNodePath].filter(Boolean).join(':');
+  const restoreNodePath = patchEnv({ NODE_PATH: [join(repositoryRoot, 'node_modules'), process.env.NODE_PATH].filter(Boolean).join(':') });
   const where = await pipelineWorld('static-rules-always-run', extra);
   try {
     const loop = worldLoop(where, { gate: false });
@@ -150,8 +150,7 @@ console.log('1..' + n);
       assert.ok(files.includes(rule), `recorded trial files must include ${rule}: ${JSON.stringify(files)}`);
     }
   } finally {
-    if (priorNodePath === undefined) delete process.env.NODE_PATH;
-    else process.env.NODE_PATH = priorNodePath;
+    restoreNodePath();
     await where.close();
   }
 });

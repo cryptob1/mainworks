@@ -1,4 +1,5 @@
 import { after, before, test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { createElement } from 'react';
@@ -142,14 +143,13 @@ test(`${proof} — with no host ready, or a host that drops the check, it runs o
     assert.equal(reason.check, 'db');
     assert.equal(reason.host, target);
     assert.match(reason.fallback, /^host gy-compute@box dropped a shard: .*the services did not start/s);
-    const heavy = join(hosts.root, 'heavy-jobs'), previous = process.env[slotsDirectoryVariable];
+    const heavy = join(hosts.root, 'heavy-jobs');
     writeMachines(heavy, [{ name: 'this machine', local: true, away: false, cores: 4, busy: 1, celsius: null }, { name: target, away: false, cores: 2, busy: 0, celsius: null }]);
     const master = { url: 'http://127.0.0.1:5', repository: 'owner/fixture', credentialFile: join(hosts.root, 'coordinator.token'), hostId: 'yard-box', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
-    process.env[slotsDirectoryVariable] = heavy;
-    try {
+    await withEnv({ [slotsDirectoryVariable]: heavy }, async () => {
       const status = await masterStatusReport(repository.root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '');
       assert.deepEqual(status.heavyJobs.machines, ['this machine: 1 of 4 cores busy', `box: 0 of 2 cores busy, 0 shards · last check fell back to this machine at ${reason.at}: ${reason.fallback}`]);
-    } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+    });
     const sent = loopHosts(encodeLoopHosts([{ host: target, away: false, cores: 2, celsius: null, steal: null, runs: 0, fallback: lastHostFallbacks(repository.root).get(target) }]))!;
     const page = renderToStaticMarkup(createElement(WorkersPage, { work: [], observedAt: new Date().toISOString(), setSelected: () => {}, setView: () => {}, token: 'fixture', status: { hosts: sent } } as never));
     const shown = /data-host-fallback="true">([^<]*)</.exec(page)?.[1];

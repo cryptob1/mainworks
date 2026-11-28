@@ -1,4 +1,5 @@
 import { after, before, test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -51,14 +52,11 @@ before(async () => {
 
 after(async () => { await close?.(); await store?.close(); });
 
-test('e2e:release-waits-for-the-test-queue 8 backlog items, 24 allowed workers, 3 trial slots, 3-cycle stub trial: test queue never exceeds 6 and lands-alone item releases last', async () => {
+test('e2e:release-waits-for-the-test-queue 8 backlog items, 24 allowed workers, 3 trial slots, 3-cycle stub trial: test queue never exceeds 6 and lands-alone item releases last', async t => {
   const slotsDir = await temporaryDirectory('e2e-heavy-jobs');
   await writeFile(join(slotsDir, 'limit'), '2\n'); // 2 local + 1 ready remote host = 3 trial slots
-  const previousSlots = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = slotsDir;
-
-  try {
-    await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');
+  patchEnv({ [slotsDirectoryVariable]: slotsDir }, t);
+  await store.pool.query('TRUNCATE work_items, events, receipts, jobs CASCADE');
     const items: Work[] = [];
     for (let i = 1; i <= 7; i++) items.push(await file(`Ordinary item ${i}`, { priority: 1 }));
     const landsAlone = await file('Lands alone sweep', { priority: 1 });
@@ -174,8 +172,4 @@ test('e2e:release-waits-for-the-test-queue 8 backlog items, 24 allowed workers, 
     assert.equal(releaseOrder.length, 8, `all 8 items should be released, got ${releaseOrder.length}`);
     assert.equal(releaseOrder.at(-1), landsAlone.key, `lands-alone item ${landsAlone.key} must be released last; order was ${releaseOrder.join(', ')}`);
     assert.equal(Math.max(...maxQueueSeen), 6, 'the test queue should fill up to 6 and never exceed 6');
-  } finally {
-    if (previousSlots === undefined) delete process.env[slotsDirectoryVariable];
-    else process.env[slotsDirectoryVariable] = previousSlots;
-  }
 });

@@ -1,4 +1,5 @@
 import { after, test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -48,11 +49,11 @@ async function codingAgents() {
   return root;
 }
 
-test('unit:registry-discovers-agent-environments — propose discovers every ~/.coding_agents environment (Claude, Codex, Cursor, OpenCode, Pi), proposes runtimes, accounts by reference, models and a worker/reviewer/producer mapping, --apply writes it as a registry revision, and no credential content reaches the proposal', async () => {
+test('unit:registry-discovers-agent-environments — propose discovers every ~/.coding_agents environment (Claude, Codex, Cursor, OpenCode, Pi), proposes runtimes, accounts by reference, models and a worker/reviewer/producer mapping, --apply writes it as a registry revision, and no credential content reaches the proposal', async t => {
   const directory = await codingAgents(), home = join(scratch, 'home');
   await mkdir(home, { recursive: true });
   // Only the fixture is looked at: no runtime default home, no provider, no executable on this machine.
-  const saved = process.env.XDG_DATA_HOME; delete process.env.XDG_DATA_HOME;
+  patchEnv({ XDG_DATA_HOME: undefined }, t);
   const written: { path: string; data: any }[] = [];
   let registry: AgentRegistry = emptyRegistry();
   const api = {
@@ -65,8 +66,7 @@ test('unit:registry-discovers-agent-environments — propose discovers every ~/.
     },
   };
   const options = { home, executables: () => false };
-  try {
-    const preview = await registryCommand({ hostId: HOST }, ['propose', '--directory', directory], api, options) as any;
+  const preview = await registryCommand({ hostId: HOST }, ['propose', '--directory', directory], api, options) as any;
     assert.equal(preview.applied, false, 'a proposal alone stores nothing');
     assert.equal(written.length, 0);
 
@@ -138,9 +138,6 @@ test('unit:registry-discovers-agent-environments — propose discovers every ~/.
     const again = await registryCommand({ hostId: HOST }, ['propose', '--directory', directory, '--apply'], api, options) as any;
     assert.equal(again.applied, false); assert.equal(written.length, 1);
     assert.match(again.next, /already holds every login/);
-  } finally {
-    if (saved !== undefined) process.env.XDG_DATA_HOME = saved;
-  }
 });
 
 /** A logged-in Claude environment under the agent environment directory, ready for discovery. */
@@ -169,7 +166,7 @@ test('unit:registry-propose-names-master-role — a proposal over a host with th
   for (const account of roles.master.accounts) assert.ok(environments.some(home => preview.proposal.accounts.find((entry: any) => entry.name === account).credential.home === home), `${account} is one of the discovered environments`);
 });
 
-test('unit:registry-propose-dedupes-symlinked-homes — a login home that is a symlink to another environment\'s home proposes one account for that login, named after the real directory, with no duplicate in any role', async () => {
+test('unit:registry-propose-dedupes-symlinked-homes — a login home that is a symlink to another environment\'s home proposes one account for that login, named after the real directory, with no duplicate in any role', async t => {
   const root = join(scratch, 'symlinked-homes'), directory = join(root, '.coding_agents'), home = join(root, 'home');
   const realHome = await loggedClaude(directory, 'claude-a');
   await file(join(directory, 'opencode-a', 'opencode', 'auth.json'), { anthropic: { type: 'api', key: secret('opencode-a-key') } });
@@ -178,10 +175,8 @@ test('unit:registry-propose-dedupes-symlinked-homes — a login home that is a s
   await mkdir(join(home, '.local/share'), { recursive: true });
   await symlink(realHome, join(home, '.claude'));
   await symlink(join(directory, 'opencode-a', 'opencode'), join(home, '.local/share', 'opencode'));
-  const saved = process.env.XDG_DATA_HOME;
-  process.env.XDG_DATA_HOME = join(home, '.local/share');
-  try {
-    const preview = await registryCommand({ hostId: HOST }, ['propose', '--directory', directory],
+  patchEnv({ XDG_DATA_HOME: join(home, '.local/share') }, t);
+  const preview = await registryCommand({ hostId: HOST }, ['propose', '--directory', directory],
       { read: async () => emptyRegistry(), write: async () => { throw new Error('a preview stores nothing'); } },
       { home, executables: () => false }) as any;
     const names = preview.proposal.accounts.map((account: any) => account.name);
@@ -193,7 +188,4 @@ test('unit:registry-propose-dedupes-symlinked-homes — a login home that is a s
       assert.deepEqual(role.accounts.filter((name: any) => names.includes(name)), expected, `role ${role.name} names each supported login once`);
     }
     assert.ok(!preview.discovered.some((login: any) => login.source === 'default-home'), 'a symlinked default home is not discovered as a second login');
-  } finally {
-    if (saved === undefined) delete process.env.XDG_DATA_HOME; else process.env.XDG_DATA_HOME = saved;
-  }
 });

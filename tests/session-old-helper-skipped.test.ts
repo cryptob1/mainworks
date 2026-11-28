@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv, withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -100,44 +101,40 @@ async function silentHost(code = 1) {
   return { directory, root, file, bin };
 }
 
-test(`${proof} — a session that fails before it writes anything starts the same attempt here and pauses the host for 30 minutes`, async () => {
+test(`${proof} — a session that fails before it writes anything starts the same attempt here and pauses the host for 30 minutes`, async t => {
   const { directory, root, file, bin } = await silentHost();
-  const previous = process.env.PATH, localRan = join(directory, 'local-command');
-  process.env.PATH = `${bin}:${previous}`;
+  const localRan = join(directory, 'local-command');
+  patchEnv({ PATH: `${bin}:${process.env.PATH}` }, t);
   let local = false, printed = '';
   const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
-  try {
-    const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
-      localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
-      env: {}, run: prepare, hostsFile: file, onLocal: () => { local = true; }, output: sink, errors: sink });
-    assert.equal(code, 0, `a session that wrote nothing must not end the attempt: ${printed}`);
-    assert.equal(local, true, 'the same attempt continues on this machine');
-    assert.equal(await readFile(localRan, 'utf8'), 'local', 'the fallback is the launcher-supplied local command');
-    assert.match(printed, /Sessions paused on gy-compute@silent-exit: the agent exited 1 before writing any output\. Starting this attempt on this machine\./);
-    assert.match((await sessionCooldown(silent, file))?.reason ?? '', /exited 1 before writing any output/);
-    assert.equal(await remoteSessionHost('codex', () => [], prepare, file), null, 'the next placement skips the paused host');
-  } finally { process.env.PATH = previous; }
+  const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
+    localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
+    env: {}, run: prepare, hostsFile: file, onLocal: () => { local = true; }, output: sink, errors: sink });
+  assert.equal(code, 0, `a session that wrote nothing must not end the attempt: ${printed}`);
+  assert.equal(local, true, 'the same attempt continues on this machine');
+  assert.equal(await readFile(localRan, 'utf8'), 'local', 'the fallback is the launcher-supplied local command');
+  assert.match(printed, /Sessions paused on gy-compute@silent-exit: the agent exited 1 before writing any output\. Starting this attempt on this machine\./);
+  assert.match((await sessionCooldown(silent, file))?.reason ?? '', /exited 1 before writing any output/);
+  assert.equal(await remoteSessionHost('codex', () => [], prepare, file), null, 'the next placement skips the paused host');
 });
 
 // Neither is a failed setup: a session that exits 0 finished, and a host that drops is a lost connection whose attempt ends as before
 // (tests/remote-session-login pins it). Both wrote nothing only because the incident's host answered before the agent could.
 for (const [exit, ended] of [[0, 'exits 0'], [255, 'is dropped by its host']] as const)
-  test(`${proof} — a session that ${ended} with nothing written is not a failed setup: nothing starts here and the host is not paused`, async () => {
+  test(`${proof} — a session that ${ended} with nothing written is not a failed setup: nothing starts here and the host is not paused`, async t => {
     const { directory, root, file, bin } = await silentHost(exit);
-    const previous = process.env.PATH, localRan = join(directory, 'local-command');
-    process.env.PATH = `${bin}:${previous}`;
+    const localRan = join(directory, 'local-command');
+    patchEnv({ PATH: `${bin}:${process.env.PATH}` }, t);
     let printed = '';
     const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
-    try {
-      const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
-        localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
-        env: {}, run: prepare, hostsFile: file, output: sink, errors: sink });
-      assert.equal(code, exit, printed);
-      assert.equal(existsSync(localRan), false, 'the session is not run again here');
-      assert.equal(await sessionCooldown(silent, file), null, 'nor is its host paused');
-      assert.equal(await remoteSessionHost('codex', () => [], prepare, file), silent, 'the host keeps taking sessions');
-      if (exit === 255) assert.match(printed, /The session on gy-compute@silent-exit ended: the host dropped, so the attempt ends and the item returns to the queue/);
-    } finally { process.env.PATH = previous; }
+    const code = await runRemoteSession({ target: silent, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
+      localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local'); process.exit(0)`],
+      env: {}, run: prepare, hostsFile: file, output: sink, errors: sink });
+    assert.equal(code, exit, printed);
+    assert.equal(existsSync(localRan), false, 'the session is not run again here');
+    assert.equal(await sessionCooldown(silent, file), null, 'nor is its host paused');
+    assert.equal(await remoteSessionHost('codex', () => [], prepare, file), silent, 'the host keeps taking sessions');
+    if (exit === 255) assert.match(printed, /The session on gy-compute@silent-exit ended: the host dropped, so the attempt ends and the item returns to the queue/);
   });
 
 test(`${proof} — the supervisor keeps the claimed epoch and records no failed attempt while the fallback agent runs`, { timeout: 30_000 }, async () => {
@@ -150,7 +147,7 @@ test(`${proof} — the supervisor keeps the claimed epoch and records no failed 
   let supervising: Promise<number> | undefined;
   let item;
   const surrendered: string[] = [];
-  const previous = process.env.PATH;
+  const restorePath = patchEnv({ PATH: process.env.PATH });
   try {
     item = await engine.execute(operator, 'create', null, { title: 'Silent session falls back', type: 'chore', criteria: [{ id: 'AC-1', text: 'Starts elsewhere', proofs: [proof, 'e2e:verification-uses-remote-hosts'] }] }, randomUUID());
     item = await engine.execute(operator, 'ready', item.id, {}, randomUUID());
@@ -165,7 +162,7 @@ test(`${proof} — the supervisor keeps the claimed epoch and records no failed 
 import { defaultChildRun } from ${JSON.stringify(runner)};
 process.exitCode = await runRemoteSession({ ...${JSON.stringify(input)}, run: ${silentRun} });
 `);
-    process.env.PATH = `${bin}:${previous}`;
+    process.env.PATH = `${bin}:${process.env.PATH}`;
     supervising = supervise(process.execPath, ['--import', createRequire(import.meta.url).resolve('tsx'), script], epoch,
       async () => { const renewed = await engine.execute(worker, 'heartbeat', work, { epoch }, randomUUID()); return { lease: renewed.lease, updatedAt: renewed.updatedAt }; },
       { intervalMs: 100, graceMs: 50, log: join(directory, 'run.jsonl'), session: { surrender: async cause => {
@@ -183,7 +180,7 @@ process.exitCode = await runRemoteSession({ ...${JSON.stringify(input)}, run: ${
     assert.equal(current.pipeline!.attempts.filter(attempt => attempt.endedAt).length, 0, 'no attempt failed');
     assert.deepEqual(surrendered, [], 'the silent exit did not make the supervisor release the claim');
   } finally {
-    process.env.PATH = previous;
+    restorePath();
     if (item?.lease) await engine.execute(worker, 'release', item.id, { epoch: item.lease.epoch }, randomUUID()).catch(() => {});
     await supervising;
     await store.close();
@@ -197,10 +194,8 @@ test(`${proof} — master status names, beside the host the loop read, why it ta
   const state = emptyDaemonState(master);
   state.hosts = await readHostReadings([], { file, run, local: 'here' });
   await writeDaemonState(master, state);
-  const previous = process.env.MAINWORKS_CONFIG_HOME;
-  process.env.MAINWORKS_CONFIG_HOME = config;
-  try {
+  await withEnv({ MAINWORKS_CONFIG_HOME: config }, async () => {
     const status = await masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '');
     assert.deepEqual(status.builderSessions, { coordinator: 0, hosts: [{ host: older, running: 0, room: 3, takesNone: reason }, { host: silent, running: 0, room: 3 }] });
-  } finally { if (previous === undefined) delete process.env.MAINWORKS_CONFIG_HOME; else process.env.MAINWORKS_CONFIG_HOME = previous; }
+  });
 });

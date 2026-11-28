@@ -1,4 +1,5 @@
 import { after, test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -52,16 +53,14 @@ const shellAnswers = (args: string[]): string | null => {
 
 interface FixtureInstall { name: string; root: string; url: string; command: (id: 'peer' | 'send', ...args: string[]) => Promise<any>; messages: () => Promise<{ id: number; from: string; text: string }[]> }
 
-test(`e2e:master-issues-peer-reporter — a confined Master session issues another install on its host its reporter identity; both sides peer and the peer's send reaches it`, { timeout: 600_000 }, async () => {
+test(`e2e:master-issues-peer-reporter — a confined Master session issues another install on its host its reporter identity; both sides peer and the peer's send reaches it`, { timeout: 600_000 }, async t => {
   assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this host');
   // The fixture HOME lives under this checkout, not the host's tmpdir: the confinement replaces
   // /tmp with its own scratch, which would hide every path under it the wrapper must bind.
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('peer-issue-home', join(checkout, '.graphyard'));
   const scratch = await temporaryDirectory('peer-issue-scratch', join(checkout, '.graphyard'));
-  const saved = { HOME: process.env.HOME, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME };
-  process.env.HOME = home;
-  process.env.GRAPHYARD_CONFIG_HOME = join(home, '.config', 'graphyard');
+  patchEnv({ HOME: home, GRAPHYARD_CONFIG_HOME: join(home, '.config', 'graphyard') }, t);
   const installs: Record<string, FixtureInstall> = {};
 
   const install = async (name: string): Promise<FixtureInstall> => {
@@ -136,8 +135,7 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
     return masterOutput;
   };
 
-  try {
-    const a = await install('install-a'), b = await install('install-b');
+  const a = await install('install-a'), b = await install('install-b');
     const directoryOf = async (root: string) => dirname(dirname((await loadMasterConfig(root)).credentialFile));
     const tokensOf = async (root: string, name: string) => join(peerTokenDirectory(await directoryOf(root)), `${name}.token`);
 
@@ -173,9 +171,4 @@ test(`e2e:master-issues-peer-reporter — a confined Master session issues anoth
     assert.equal(sent.sent, 'install-a');
     const received = (await a.messages()).find(message => message.from === 'install-b');
     assert.equal(received?.text, 'GY-7 here fails on your trial image; can you add Go 1.23?');
-  } finally {
-    for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) delete (process.env as Record<string, string | undefined>)[name]; else (process.env as Record<string, string | undefined>)[name] = value;
-    }
-  }
 });
