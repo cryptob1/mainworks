@@ -95,6 +95,9 @@ test('unit:tests/untrusted-checkout-once.test.ts — up stops at the harness ste
     root: checkout, emit: event => events.push(event), now: Date.now, sleep: async () => {},
     serverUrl: async () => 'http://127.0.0.1:4310', masterToken: async () => 't'.repeat(40), status: async () => green,
     publishOnboarding: async () => null,
+    // GY-4123: the earlier steps' real results answer (the plane, the repository, the operator's credential).
+    controlPlaneAnswers: async () => true, operatorToken: async () => 'a'.repeat(40),
+    gh: async () => ({ code: 0, stdout: '{}' }), git: async () => ({ code: 0, stdout: '', stderr: '' }),
     checkoutTrust: async root => checkoutTrustRefusals(root, fleet([{ name: 'master', accounts: ['claude-a', 'claude-b'], policy: { args: [] } }]), host),
     async cli(args) { calls.push(args); return { code: 0, stdout: '{}' }; },
   };

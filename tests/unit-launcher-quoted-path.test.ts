@@ -51,8 +51,11 @@ function dependencies(root: string, w: QuotedWorld): UpDependencies {
     publishOnboarding: async () => null,
     signIn: async () => `${SERVER}/#sign-in=${'d'.repeat(43)}`,
     operatorToken: async () => 'o'.repeat(40),
-    installDirectory: () => '/install/acme-shop',
-    ensureDeployKey: async () => '/install/acme-shop/deploy',
+    installDirectory: () => join(root, 'install'),
+    ensureDeployKey: async () => join(root, 'install', 'deploy'),
+    // GY-4123: the earlier steps' real results answer: the plane, the repository and its fetch.
+    controlPlaneAnswers: async () => true,
+    gh: async () => ({ code: 0, stdout: '{}' }), git: async () => ({ code: 0, stdout: '', stderr: '' }),
     cli: async (args, options = {}) => {
       w.calls.push({ args, ...(options.stdin !== undefined ? { stdin: options.stdin } : {}) });
       if (args[0] === 'master' && args[1] === 'restart') w.loopRunning = true;
@@ -67,6 +70,8 @@ const request = (): UpRequest => ({ repository: 'acme/shop', provider: 'compose'
 async function resumedRoot(label: string) {
   const root = await temporaryDirectory(label);
   await mkdir(join(root, '.graphyard'), { recursive: true });
+  // GY-4123: master init's real result, which the host-supervisor step reads.
+  await writeFile(join(root, '.graphyard', 'master.json'), JSON.stringify({ url: SERVER }));
   await writeFile(join(root, '.graphyard', 'up.json'), JSON.stringify({
     version: 1, repository: 'acme/shop', provider: 'compose', merger: 'control-plane', noHerdr: false, goal: null,
     completed: ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'merger-setting', 'master-autonomy', 'onboarding', 'accounts', 'harness'],

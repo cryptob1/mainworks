@@ -9,8 +9,8 @@ import { defaultChildRun } from './child-runner.js';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { hostname } from 'node:os';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { hostname, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { setupAddress, setupChecklist, type SetupItem, type SetupItemId } from './model/setup-checklist.js';
@@ -37,15 +37,18 @@ import { loopCodeRoot } from './daemon/checkout-state.js';
 import { recordHerdrWorkspace } from './master/config.js';
 import { chooseInstallLayout, stateDirectory } from './install/layout.js';
 import { authorEnvironment } from './check-in-author.js';
+import { containedInstall, npmCiEnvironment } from './cli/test-isolation.js';
+import { installArgv, packageManager } from './package-manager.js';
 
 /**
  * `mainworks up` (GY-1419): every machine step of a first installation, in order — preflight,
  * control plane, host supervisor and Herdr, the merge writer's deploy key, the master's agent
  * identities (GY-1479), onboarding, agent accounts, harness, master loop — and a wait on the
  * first-run checklist (src/model/setup-checklist.ts) wherever a person must act.
- * Each step is an existing idempotent command run as a child of this CLI, and each completed step
- * is recorded in .graphyard/up.json, so a rerun after any interruption skips what is done and never
- * registers an identity or variable twice. Every run sets Herdr up (GY-1511): it installs herdr
+ * Each step is an existing idempotent command run as a child of this CLI. GY-4123: a step is skipped
+ * only when its real result answers (the server and its database, the master credential, the
+ * operator-agent identity); .graphyard/up.json records what ran but never decides a skip, so a rerun
+ * after any interruption repairs what is missing and never registers an identity or variable twice. Every run sets Herdr up (GY-1511): it installs herdr
  * when missing and keeps its server running as a user unit, with one named workspace per install.
  *
  * Interactive, a human step prints the dashboard's Setup page address once and waits for the step
@@ -69,7 +72,7 @@ import { authorEnvironment } from './check-in-author.js';
 /** `up --local` installs supervised (GY-1501): no operator-agent identity; the operator answers each decision. */
 export const upSupervised = (request: Pick<UpRequest, 'provider'>) => request.provider === 'local';
 /** The one step list: the control plane is the merge writer (GY-1552), with the deploy key between host-supervisor and master-autonomy. */
-export const upSteps = ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'master-autonomy', 'onboarding', 'accounts', 'harness', 'master-loop'] as const;
+export const upSteps = ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'dependencies', 'master-autonomy', 'onboarding', 'accounts', 'harness', 'master-loop'] as const;
 export type UpStep = typeof upSteps[number];
 
 export interface UpRequest {
@@ -213,6 +216,10 @@ export interface UpDependencies {
   installDirectory?(): string;
   /** GY-1552: ensure the install's deploy key on REPOSITORY; defaults to ensureDeployKey. */
   ensureDeployKey?(installDir: string, repository: string): Promise<string>;
+  /** GY-4123: the control plane's /healthz answers ok, which probes its database too. Absent, the control-plane step always runs. */
+  controlPlaneAnswers?(): Promise<boolean>;
+  /** GY-4123: one contained npm ci (bubblewrap, as the product review confines it) in CWD, and the command it ran. Absent, the dependencies step is skipped. */
+  npmCi?(cwd: string): Promise<{ code: number; command: string; stderr?: string }>;
   /**
    * GY-3225: which registered Claude account launches in ROOT this host's checkout would be
    * refused by the folder-trust step — the checkout carries repository Claude configuration and
@@ -407,7 +414,6 @@ const childStop = (step: string, args: string[], result: { code: number; stdout:
 
 export const signInAt = (link: string, base: string) => { const at = link.indexOf('#'); return at < 0 ? link : `${base.replace(/\/+$/, '')}/${link.slice(at)}`; };
 /** The steps a reinstall onto a fresh database runs again (GY-1851): the install, master init, the agent identities, the onboarding item, the accounts and the loop. */
-const reissueSteps: readonly UpStep[] = ['control-plane', 'host-supervisor', 'master-autonomy', 'onboarding', 'accounts', 'master-loop'];
 const masterJson = (root: string) => readFile(resolve(stateDirectory(root), 'master.json'), 'utf8').then(parseJson, () => null);
 /**
  * GY-1851: GET /api/status at SERVER with each credential master.json records (the coordinator's,
@@ -638,15 +644,22 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
     if (set.code !== 0) throw new UpStop(`preflight: setting origin to ${ssh} failed: ${(set.stderr || set.stdout || 'no output').split('\n')[0].slice(0, 300)}; run git remote set-url origin ${ssh} in ${deps.root}, then rerun ${rerun()}`, upExitCodes.failed, childFirstStderr({ stderr: set.stderr || set.stdout || '' }));
     deps.emit({ kind: 'note', text: `Created private repository ${request.repository} with gh repo create (operator's gh login); origin is ${ssh} for the merge writer's deploy key.` });
   };
-  const step = async (name: UpStep, body: () => Promise<string | void>) => {
-    if (state.completed.includes(name)) { deps.emit({ kind: 'step', step: name, state: 'skipped', detail: 'done by an earlier run' }); return; }
+  /** GY-4123: INPLACE reads the step's real result; only a result that answers skips it, never the recorded step. */
+  const step = async (name: UpStep, body: () => Promise<string | void>, inPlace?: () => Promise<boolean>) => {
+    if (inPlace && await inPlace().catch(() => false)) {
+      if (!state.completed.includes(name)) { state.completed.push(name); await writeState(deps.root, state); }
+      deps.emit({ kind: 'step', step: name, state: 'skipped', detail: 'already in place' });
+      return false;
+    }
     deps.emit({ kind: 'step', step: name, state: 'start' });
+    state.completed = state.completed.filter(entry => entry !== name);
     // GY-1641: recording the step done is part of its outcome, so a failed write fails the step.
-    try { await complete(name, (await body()) || undefined); }
+    try { await complete(name, (await body()) || undefined); return true; }
     catch (error) {
       // GY-1641: a started step always ends with an outcome event: a person's wait is a step event,
       // anything else a step-failed naming the child that failed; an unexpected error fails the step (exit 1).
       const stop = error instanceof UpStop ? error : new UpStop(`${name}: ${String((error as any)?.message ?? error).split('\n')[0].slice(0, 500)}`, upExitCodes.failed);
+      await writeState(deps.root, state).catch(() => {});
       if (stop.exitCode === upExitCodes.waiting) deps.emit({ kind: 'step', step: name, state: 'waiting', detail: stop.message.split('\n')[0] });
       else deps.emit({ kind: 'step-failed', step: name, exitCode: stop.exitCode, argv: stop instanceof ChildStop ? stop.argv : null, stderr: stop.stderr, detail: stop.message.split('\n')[0] });
       throw stop;
@@ -678,6 +691,10 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
     // checked outside the resumable steps, so a herdr removed or a server stopped since is set up again.
     const herdrHost = deps.herdr ?? null;
     let herdrBinary: string | null = null;
+    /** GY-4123: the install runs again even though the control plane answers (Herdr to link, credentials to re-issue). */
+    let reinstall = false;
+    const installDir = deps.installDirectory?.() ?? installDirectory(installIdFor(request.repository));
+    const planeAnswers = async () => !!deps.controlPlaneAnswers && await deps.controlPlaneAnswers().catch(() => false);
     const leaveHerdrOut = async (error: unknown) => {
       if (!(error instanceof HerdrSetupFailure)) throw error;
       state.noHerdr = true; state.herdrFailure = error.message; await writeState(deps.root, state);
@@ -692,8 +709,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       // A run that left Herdr out (a recorded failure, or a plugin bound elsewhere before GY-1511) is
       // set up now: preflight and the install run again, and the install is idempotent.
       if (herdrBinary && state.noHerdr) {
-        state.noHerdr = false; state.herdrFailure = null;
-        state.completed = state.completed.filter(name => name !== 'preflight' && name !== 'control-plane');
+        state.noHerdr = false; state.herdrFailure = null; reinstall = true;
         await writeState(deps.root, state);
       }
     }
@@ -729,13 +745,13 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       claim = await rememberSignIn(deps.root, state, result.stdout) ?? claim;
       if (result.code !== 0) throw childStop('control-plane', installArgs('--apply'), result);
       return 'control plane installed without a GitHub App';
-    });
+    }, async () => !reinstall && !state.reissue?.length && await planeAnswers());
     // GY-1851: an install whose recorded credentials the control plane refuses (401) is a fresh
     // database behind a kept install directory: a new installation. Its credentials are re-issued
     // through the install, master init and master autonomy, and the loop starts a fresh cursor.
     // An identity the plane still lists (revoked, say) is no fresh database, and is left to master autonomy's own refusal;
     // a refused identity whose absence no listing confirmed leaves the state untouched, so a later run judges it again.
-    if (state.completed.includes('control-plane') && !state.reissue?.length && deps.credentialAnswers) {
+    if (!state.reissue?.length && deps.credentialAnswers) {
       const admin = await deps.operatorToken?.(state.operatorTokenFile ?? null).catch(() => null) ?? null;
       const answers = await deps.credentialAnswers(admin).catch((error: any) => {
         deps.emit({ kind: 'note', text: `The recorded credentials could not be checked against the control plane (${String(error?.message ?? error).split('\n')[0].slice(0, 300)}), so nothing is judged stale on this run.` });
@@ -748,15 +764,19 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       else if (unknown.length) deps.emit({ kind: 'note', text: `The control plane refused the recorded ${unknown.join(', ')} credential${unknown.length > 1 ? 's' : ''} (401), but its operator-agent listing could not be read (${admin ? 'GET /api/operator-agents failed' : "the operator's admin credential is not on this machine"}), so nothing confirms a fresh database and nothing is re-issued; rerun mainworks up once the listing answers.` });
       else if (refused.length) {
         state.reissue = refused;
-        state.completed = state.completed.filter(name => !reissueSteps.includes(name));
         // The onboarding item lived in the old database: it is filed again on the fresh one.
         state.onboardingWork = null; state.onboardingRequest = null;
         await writeState(deps.root, state);
         deps.emit({ kind: 'note', text: `The control plane refused the recorded ${refused.join(', ')} credential${refused.length > 1 ? 's' : ''} (401): it serves a fresh database, so this run re-issues the coordinator and operator-agent credentials and starts the master loop on a fresh cursor, archiving the old one beside itself.` });
       }
     }
-    const installedBefore = state.completed.includes('control-plane');
-    await controlPlane();
+    const installedNow = await controlPlane();
+    // GY-4123: deploy.env, the install's deploy variables, exists 0600 once the control plane does.
+    const deployEnv = join(installDir, 'deploy.env');
+    if (!existsSync(deployEnv)) {
+      await mkdir(installDir, { recursive: true, mode: 0o700 });
+      await writeFile(deployEnv, '# Deploy variables for this install, one NAME=value per line; only you can read this file.\n', { mode: 0o600, flag: 'wx' });
+    }
     await resolveSetupUrl();
     await reach();
     // GY-1511: the plugin the install linked is checked on every run, its binding and its enabled state
@@ -775,9 +795,9 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
         return plugin.enabled ? null : disabled;
       };
       let wrong = await unbound();
-      if (wrong && wrong !== disabled && installedBefore) {
+      if (wrong && wrong !== disabled && !installedNow) {
         deps.emit({ kind: 'note', text: `Herdr's mainworks plugin is ${wrong}, not this install's server; running the install again to link it` });
-        state.completed = state.completed.filter(name => name !== 'control-plane'); await writeState(deps.root, state);
+        reinstall = true;
         await controlPlane();
         wrong = await unbound();
       }
@@ -801,7 +821,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       // GY-1641: master init accepts the control plane on the recorded address, never its default port.
       const server = await deps.serverUrl();
       await run('host-supervisor', ['master', 'init', '--token-stdin', ...(server ? ['--url', server] : [])], { stdin: token });
-    });
+    }, async () => !state.reissue?.length && existsSync(resolve(stateDirectory(deps.root), 'master.json')) && !!await deps.status());
     // Recorded on every run (idempotent), so a resumed run that skipped master init still installs supervised.
     if (supervised && deps.supervise) {
       const { operatorLogin } = await deps.supervise();
@@ -810,7 +830,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
 
     // GY-1552: the merge writer's deploy key under the install directory. No GitHub protection is set.
     {
-      const directory = deps.installDirectory?.() ?? installDirectory(installIdFor(request.repository));
+      const directory = installDir;
       const gh: GitHubCli | null = deps.gh ? async (args, options) => {
         const result = await deps.gh!(args, options?.input);
         if (result.code !== 0 && !options?.allowFailure) throw new Error(`gh ${args.join(' ')} exited ${result.code}${result.stderr ? `: ${result.stderr.split('\n')[0].slice(0, 200)}` : ''}`);
@@ -823,10 +843,56 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
           if (!gh) throw new UpStop('deploy-key: the merge writer needs gh on this machine to register the deploy key', upExitCodes.prerequisite);
           return ensureDeployKey(installDir, repository, gh);
         });
-        await ensure(directory, request.repository);
-        return 'deploy key registered read-write for the merge writer';
+        const keyFile = await ensure(directory, request.repository);
+        // GY-4123: origin is the SSH form and git uses the deploy key for it, proven by a real fetch.
+        if (!deps.git) throw new UpStop('deploy-key: the merge writer needs git on this machine to fetch through the deploy key', upExitCodes.prerequisite);
+        const ssh = sshOrigin(request.repository);
+        const hasOrigin = (await deps.git(['remote', 'get-url', 'origin'])).code === 0;
+        const sshCommand = `ssh -i '${keyFile}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes`;
+        for (const args of [['remote', hasOrigin ? 'set-url' : 'add', 'origin', ssh], ['config', 'core.sshCommand', sshCommand], ['fetch', 'origin']]) {
+          const result = await deps.git(args);
+          if (result.code === 0) continue;
+          const raw = (result.stderr || result.stdout || '').trim();
+          const said = (raw || `exit ${result.code}`).split('\n')[0]!.slice(0, 300);
+          const fetchFix = () => {
+            if (/host key verification failed|remote host identification has changed/i.test(raw)) return `check the github.com host key in ~/.ssh/known_hosts, then rerun ${rerun()}`;
+            if (/connection refused|timed out|could not resolve|network is unreachable|no route to host|port 22|kex_exchange_identification/i.test(raw)) return `check that github.com is reachable over SSH on port 22, then rerun ${rerun()}`;
+            if (/permission denied|permission to .* denied|repository not found|deploy key/i.test(raw)) return `check that ${keyFile}.pub is registered read-write on ${request.repository} (gh repo deploy-key list -R ${request.repository}), then rerun ${rerun()}`;
+            return `check that github.com is reachable on port 22, its host key is trusted, and ${keyFile}.pub is registered on ${request.repository}, then rerun ${rerun()}`;
+          };
+          const fix = args[0] === 'fetch'
+            ? fetchFix()
+            : `run git ${args.join(' ')} in ${deps.root}, then rerun ${rerun()}`;
+          throw new ChildStop(`deploy-key: git ${args.join(' ')}${args[0] === 'fetch' ? ' through the deploy key' : ''} failed (${said}); fix: ${fix}`, upExitCodes.failed, ['git', ...args], childFirstStderr({ stderr: result.stderr || result.stdout || '' }));
+        }
+        return 'deploy key registered read-write; origin fetches through it';
       });
     }
+
+    // GY-4123: one real contained npm ci on the base branch, so a host that cannot install (mise, bubblewrap) fails here, not under the first change.
+    if (!deps.npmCi || !deps.git) deps.emit({ kind: 'step', step: 'dependencies', state: 'skipped', detail: 'no contained install runs on this host' });
+    else await step('dependencies', async () => {
+      const git = deps.git!, branch = request.baseBranch ?? 'HEAD';
+      const gitStop = (args: string[], result: { code: number; stdout: string; stderr?: string }) => new ChildStop(`dependencies: git ${args.join(' ')} failed (${(result.stderr || result.stdout || `exit ${result.code}`).trim().split('\n').pop()!.slice(0, 300)}); fix that, then rerun ${rerun()}`, upExitCodes.failed, ['git', ...args], childFirstStderr({ stderr: result.stderr ?? '' }));
+      const fetched = await git(['fetch', 'origin', branch]);
+      if (fetched.code !== 0) throw gitStop(['fetch', 'origin', branch], fetched);
+      const sha = (await git(['rev-parse', 'FETCH_HEAD'])).stdout.trim();
+      const scratch = await mkdtemp(join(tmpdir(), 'mainworks-up-install-'));
+      try {
+        const added = await git(['worktree', 'add', '--detach', scratch, sha]);
+        if (added.code !== 0) throw gitStop(['worktree', 'add', '--detach', scratch, sha], added);
+        if (!['package-lock.json', 'pnpm-lock.yaml'].some(name => existsSync(join(scratch, name)))) return `no lockfile on ${branch}; nothing to install`;
+        const installed = await deps.npmCi!(scratch);
+        if (installed.code !== 0) {
+          const said = (installed.stderr ?? '').trim().split('\n').filter(Boolean).pop()?.slice(0, 300) ?? `exit ${installed.code}`;
+          throw new ChildStop(`dependencies: the contained install on ${branch} failed (${said}); the command was: ${installed.command}`, upExitCodes.failed, installed.command.split(' '), childFirstStderr({ stderr: installed.stderr ?? '' }));
+        }
+        return `contained install passed on ${branch} at ${sha.slice(0, 12)}`;
+      } finally {
+        await git(['worktree', 'remove', '--force', scratch]);
+        await rm(scratch, { recursive: true, force: true });
+      }
+    });
 
     // GY-1479: the master's operator-agent identity (`master autonomy --apply`), provisioned
     // with the admin credential the install saved, so the new master creates, releases and unblocks work
@@ -840,7 +906,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       if (!admin) throw new UpStop(`master-autonomy: the operator's admin credential is not on this machine${state.operatorTokenFile ? ` (${state.operatorTokenFile} is unreadable)` : ''}, so the master's agent identities cannot be provisioned; pipe it to mainworks master autonomy --admin-token-stdin --apply here, then rerun ${rerun()}`, upExitCodes.prerequisite);
       await run('master-autonomy', ['master', 'autonomy', '--admin-token-stdin', '--apply', '--harness', request.master], { stdin: admin });
       return 'the master creates, releases and unblocks work with its own operator-agent identity';
-    });
+    }, async () => !state.reissue?.length && await provisioned(deps.root));
 
     await step('onboarding', async () => {
       await run('onboarding', ['init', '--scan']);
@@ -888,6 +954,10 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       if (!state.onboardingWork) throw new UpStop(`onboarding: the onboarding change was published on ${onboardingBranch} (${published.commit.slice(0, 12)}) but no operator admin credential is on this machine to file it as a work item, so the loop cannot merge it; put the credential in place and rerun ${rerun()}`, upExitCodes.failed);
       await writeState(deps.root, state);
       return `${carried} published on ${onboardingBranch} at ${published.commit.slice(0, 12)}, filed as ${state.onboardingWork} for the loop to review and merge`;
+    }, async () => {
+      // The onboarding item the plane holds, open or merged, is the step's result; a closed or missing one publishes again.
+      const work = state.onboardingWork ? findOnboardingWork(await deps.work?.().catch(() => null), state.onboardingWork) : null;
+      return !!work && !onboardingWait(work, deps.now()).closed;
     });
 
     // GY-1850: the profile write `master environments --apply` runs on this machine's configured
@@ -946,9 +1016,6 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       }
     };
     const accountIds: SetupItemId[] = ['account:worker', 'account:reviewer'];
-    // A run resuming over an earlier pass's completed accounts step still writes the profiles it may
-    // lack, and waits for them here with the same rewrite, never in a later wait that writes nothing.
-    if (state.completed.includes('accounts')) { await writeProfiles(); await awaitAccounts(); }
     await step('accounts', async () => {
       // In either mode (GY-1477), login homes and keys already on this host become the fleet; nothing is signed in here.
       await run('accounts', ['master', 'registry', 'propose', '--apply']);
@@ -970,27 +1037,15 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       return applied;
     });
 
-    // GY-1859: a recorded master-loop step says an earlier run finished setup, not that the loop
-    // still runs this CLI's code — the install this check exists for is one whose earlier run
-    // recorded the step while its loop served an earlier checkout. So the recorded step is re-opened
-    // whenever the units read as other code, and the step below runs again instead of printing the
-    // same false green. A reading that failed proves nothing either way, so it re-opens the step too,
-    // which then fails naming why rather than standing green on code it never read.
-    // A reading that was rejected, or came back empty, is a failed reading too: it judged nothing.
-    // Only a run with no reader at all keeps the step as recorded.
+    // GY-1859 / GY-4123: the master-loop step runs every time and reads what the units run; a loop on
+    // this CLI's code is left alone, one on other code is replaced, and a reading that failed, was
+    // rejected or came back empty fails the step naming why rather than standing green on code it never read.
     const readLoopCode = async () => {
       if (!deps.loopCode) return null;
       const read = await deps.loopCode().then(answer => answer ?? 'no reading came back', (error: any) => String(error?.message ?? error).split('\n')[0].slice(0, 400) || 'the reading was rejected');
       return typeof read === 'string' ? { error: read, reading: null } : { error: read.error, reading: read };
     };
     await deps.removeHeldCliPin?.();
-    if (state.completed.includes('master-loop') && deps.loopCode) {
-      const recorded = await readLoopCode();
-      if (recorded?.error || recorded?.reading?.loopStale) {
-        state.completed = state.completed.filter(name => name !== 'master-loop');
-        await writeState(deps.root, state);
-      }
-    }
 
     await step('master-loop', async () => {
       await cleanCli('master-loop');
@@ -1324,8 +1379,8 @@ export function upDependencies(root: string, cliPath: string, request: UpRequest
   // upUrlRefusal keeps --url to the server master.json records, so its credential is the one for serverUrl.
   const masterToken = async () => { const url = await serverUrl(); return url ? (await masterCredential(root, url))?.token ?? null : null; };
   // GY-1552: the children run in the checkout itself: gh (repository view/create, deploy key) and git (origin set to the SSH form, GY-2940).
-  const childIn = (command: string, args: string[], input?: string) => new Promise<{ code: number; stdout: string; stderr?: string }>(accept => {
-    const child = spawn(command, args, { cwd: root, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+  const childIn = (command: string, args: string[], input?: string, options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) => new Promise<{ code: number; stdout: string; stderr?: string }>(accept => {
+    const child = spawn(command, args, { cwd: options.cwd ?? root, ...(options.env ? { env: options.env } : {}), stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     if (input !== undefined) child.stdin!.end(input);
     let stdout = '', stderr = '';
     child.stdout!.on('data', chunk => { stdout += chunk; });
@@ -1337,6 +1392,21 @@ export function upDependencies(root: string, cliPath: string, request: UpRequest
     gh: (args: string[], input?: string) => childIn('gh', args, input),
     git: (args: string[]) => childIn('git', args),
     installDirectory: () => installDirectory(installIdFor(request.repository)),
+    // GY-4123: /healthz answers ok only when the server reaches its database.
+    controlPlaneAnswers: async () => {
+      const url = await serverUrl();
+      if (!url) return false;
+      const response = await fetch(new URL('/healthz', url), { signal: AbortSignal.timeout(15_000) }).catch(() => null);
+      return !!response?.ok && (await response.json().catch(() => null))?.ok === true;
+    },
+    // GY-4123: the product review's confined install (bubblewrap, credentials hidden), run once on the base branch.
+    npmCi: async (cwd: string) => {
+      const argv = installArgv(packageManager(cwd));
+      let install;
+      try { install = containedInstall(cwd, argv); } catch (error: any) { return { code: 1, command: argv.join(' '), stderr: String(error?.message ?? error) }; }
+      const command = [install.command, ...install.args].join(' ');
+      return { ...await childIn(install.command, install.args, undefined, { cwd, env: npmCiEnvironment() }), command };
+    },
   };
   // The loop runs from the checkout of the CLI master init recorded, which is this CLI until it has.
   const loopCheckout = async () => {
