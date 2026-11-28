@@ -18,6 +18,7 @@ import { temporaryDirectory } from './temp-dirs.js';
 import { git, gitRepo } from './git-repo.js';
 import { hostShimScript } from '../../src/host-shim.js';
 import { helperSigner } from '../../src/hosts.js';
+import { harnessModules } from '../../src/merge-writer/trial-container.js';
 
 const executable = async (path: string, text: string) => { await writeFile(path, text); await chmod(path, 0o755); };
 
@@ -164,8 +165,12 @@ elif command == 'run':
         if s['warm'].get(base) and os.path.isdir(s['warm'][base]):
             shutil.copytree(s['warm'][base], warm_dir, symlinks=True)
         os.makedirs(os.path.join(warm_dir, 'harness'), exist_ok=True)
+        # GY-4136: the tar's node_modules is this checkout's harnessModules: link it rather than unpack 150 MB that
+        # every commit, host load and cleanup then copies again.
         with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as tar:
-            tar.extractall(os.path.join(warm_dir, 'harness'))
+            tar.extractall(os.path.join(warm_dir, 'harness'), members=[m for m in tar if m.name.split('/')[0] != 'node_modules'])
+        if not os.path.lexists(os.path.join(warm_dir, 'harness', 'node_modules')):
+            os.symlink(${JSON.stringify(harnessModules)}, os.path.join(warm_dir, 'harness', 'node_modules'))
         s['containers'][name] = {'warm': warm_dir, 'deps': s['deps'].get(base) or os.environ.get('GRAPHYARD_STANDIN_NODE_MODULES')}
         save()
         sys.exit(0)

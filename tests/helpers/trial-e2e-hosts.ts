@@ -6,6 +6,7 @@ import { chmod, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../../src/child-runner.js';
+import { hostProbeScript } from '../../src/host-shim.js';
 import { readRemoteShardRuns, readShardHosts } from '../../src/merge-writer/remote-shards.js';
 import { trialHarness } from '../../src/merge-writer/trial-container.js';
 import { runTrial } from '../../src/merge-writer/trial.js';
@@ -65,9 +66,10 @@ SSH_ORIGINAL_COMMAND="$last" exec "$shim"
   /** The trial's children: its local E2E runner against this checkout's harness, as e2e-host-start-failure does; the rest as the trial runs them, through the fake hosts' ssh and Docker. */
   const run: ChildRun = async (command, args, options) => {
     if (command === 'npm') return '';
-    // This machine's own probe (sh) samples its real sensors without waiting between samples; its reading is overridden below.
-    const probe = command === 'sh' ? { GRAPHYARD_PROBE_SAMPLE_SECONDS: '0' } : {};
-    const env = { ...process.env, ...options?.env, ...probe, PATH: `${hosts.bin}:${process.env.PATH}` };
+    // GY-4136: this machine's own probe (0.7 s of Docker, systemctl and sensor reads at load) is not run: `read` below sets its reading,
+    // the same one an unanswered probe gives.
+    if (command === 'sh' && args[1] === hostProbeScript) throw new Error('this machine is not probed in the fixture');
+    const env = { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` };
     const script = args.at(-1) ?? '';
     if (command === 'node' && script.endsWith('run.mjs')) {
       await writeFile(script, (await readFile(script, 'utf8')).replaceAll(trialHarness, repository));
