@@ -533,9 +533,9 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       // — while its refusal's cause usually lives in the served control plane the loop cannot fix
       // from here. The probe is one attempt per standstill hour; the first one past the cause's
       // repair launches, and the launch that succeeds clears the record.
-      if (!retryable(request) && !launchRefusalProbeDue(cursor.failures[request.id], dispatchFailureLimit, now())) {
+      if (!retryable(request) && (heldByHost(cursor, request.id) || !launchRefusalProbeDue(cursor.failures[request.id], dispatchFailureLimit, now()))) {
         const failure = cursor.failures[request.id];
-        wait('review', item, request, `launch refused ${failure.attempts} time(s): ${failure.reason}; ${failure.attempts >= dispatchFailureLimit ? `probed again every ${postMergeRefusalProbeMs / 60_000} minutes (next at ${new Date(Date.parse(failure.at) + postMergeRefusalProbeMs).toISOString()}): the request launches once the refusal's cause is gone` : `next attempt at ${failure.nextAt}`}`);
+        wait('review', item, request, refusedWait(request, `probed again every ${postMergeRefusalProbeMs / 60_000} minutes (next at ${new Date(Date.parse(failure.at) + postMergeRefusalProbeMs).toISOString()}): the request launches once the refusal's cause is gone`));
         continue;
       }
       const { profile, reason } = reviewerProfile();

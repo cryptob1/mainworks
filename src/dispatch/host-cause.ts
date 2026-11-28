@@ -13,9 +13,9 @@ export function hostCause(text: string): HostCause | null {
   const tool = /spawn (\S+) ENOENT/.exec(text)?.[1] ?? /command not found: (\S+)/.exec(text)?.[1] ?? /([\w./-]+): command not found/.exec(text)?.[1] ?? /sh: \d+: (\S+): not found/.exec(text)?.[1];
   if (tool) { const name = basename(tool); return { key: `missing tool ${name}`, tool, fix: `Install ${name} on ${host} so the loop's PATH finds it` }; }
   const denied = /(?:EACCES|EPERM)[^']*'(\/[^']+)'/.exec(text)?.[1] ?? /(\/[^\s:'"]+): Permission denied/.exec(text)?.[1];
-  if (denied) return { key: `permission denied on ${denied}`, tool: null, fix: `Give the loop's user on ${host} access to ${denied}` };
+  if (denied) return { key: `permission denied on ${denied}`, tool: null, fix: `Give the loop's user on ${host} access to ${denied}, then run mainworks master host-causes clear` };
   const network = /(?:ENOTFOUND|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN) (\S+)/.exec(text)?.[1];
-  if (network) return { key: `network unreachable to ${network}`, tool: null, fix: `Restore ${host}'s network route to ${network}` };
+  if (network) return { key: `network unreachable to ${network}`, tool: null, fix: `Restore ${host}'s network route to ${network}, then run mainworks master host-causes clear` };
   return null;
 }
 

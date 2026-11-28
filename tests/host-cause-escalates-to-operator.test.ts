@@ -9,6 +9,9 @@ import { emptyDispatchCursor, hostCausesClearPath } from '../src/dispatch/cursor
 import { runDispatchTick } from '../src/dispatch/tick.js';
 import type { DispatchEffects } from '../src/dispatch/effects.js';
 import { hostCauseAttention, reviewLaunchAttention } from '../src/cli/master-status.js';
+import { hostCause } from '../src/dispatch/host-cause.js';
+import { workFixture } from './helpers/work-fixture.js';
+import type { Work } from '../src/model.js';
 import { fleet, requested } from './helpers/review-fleet.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 
@@ -60,4 +63,36 @@ test('integration:host-cause-escalates-to-operator — three reviews failing on 
     assert.deepEqual(third.launched.map(entry => entry.work).sort(), ['GY-501', 'GY-502', 'GY-503']);
     assert.deepEqual(hostCauseAttention(cursor), []);
   } finally { await host.cleanup(); }
+});
+
+test('integration:host-cause-escalates-to-operator — a post-merge review refused for a missing tool reads next: operator and is not retried', async () => {
+  const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude' }, 'claude-reviewer');
+  try {
+    const config = await loadMasterConfig(host.root);
+    const H = 'a'.repeat(40), B = 'b'.repeat(40), M = 'c'.repeat(40), at = new Date().toISOString();
+    const candidate = { sha: H, baseSha: B, branch: 'graphyard/gy-9001-1', author: 'implementer' };
+    const delivered = workFixture({ id: 'work-9001', key: 'GY-9001', title: 'Delivered', priority: 1, criteria: [{ id: 'AC-1', text: 'Works', proofs: ['unit:works'] }],
+      stage: 'done', revision: 9, createdAt: at, updatedAt: at, stageEnteredAt: at, epoch: 1, workspaces: [{ host: 'h', path: '/w', branch: candidate.branch, epoch: 1, owner: candidate.author }],
+      candidate, submission: { epoch: 1 }, gates: [], implementers: [candidate.author], postMergeReview: 'owed', delivery: { mergedAt: at, mergeSha: M, authorizationRevision: 8 },
+      mergeLedger: { key: 'GY-9001', state: 'reconciled', head: H, baseTip: B, mergeSha: M, risk: 'normal', intentAt: at, pushedAt: at, observedTip: M, refusal: null, events: 3 } } as never) as Work;
+    let attempts = 0;
+    const effects: DispatchEffects = { ...host.effects(() => [delivered], () => config), alert: async () => {},
+      launchPostMergeReview: async () => { attempts++; throw new Error('spawn gy4121-post-merge-runtime ENOENT'); } };
+    const cursor = emptyDispatchCursor(config);
+    const first = await runDispatchTick(config, cursor, effects, Date.now);
+    assert.equal(first.refused.length, 1);
+    const later = await runDispatchTick(config, cursor, effects, () => Date.now() + 30 * 60_000);
+    assert.equal(attempts, 1, 'no retry while the cause stands');
+    assert.match(later.waiting.find(entry => entry.work === 'GY-9001')!.reason, /^next: operator — Install gy4121-post-merge-runtime on \S+ so the loop's PATH finds it; retries pause/);
+  } finally { await host.cleanup(); }
+});
+
+test('integration:host-cause-escalates-to-operator — permission and network causes, which only the clear lifts, name the clear in their fix', () => {
+  for (const text of ["EACCES: permission denied, open '/srv/mainworks/token'", 'getaddrinfo ENOTFOUND api.github.com']) {
+    const cause = hostCause(text)!;
+    assert.equal(cause.tool, null);
+    assert.match(cause.fix, /, then run mainworks master host-causes clear$/, 'the alert carries the fix as written');
+    const lines = hostCauseAttention({ hostCauses: { [cause.key]: { tool: null, fix: cause.fix, detail: text, at: new Date().toISOString() } }, failures: { r: { kind: 'review', work: 'GY-1', sha: 'a'.repeat(40), attempts: 1, reason: text, at: new Date().toISOString(), nextAt: new Date().toISOString(), hostCause: cause.key } } });
+    assert.equal(lines[0]!.next, cause.fix, 'status says the same one line, with no false alternative');
+  }
 });

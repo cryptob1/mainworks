@@ -425,7 +425,7 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
 /** GY-4121: each host cause once, with how many items it blocks and the operator's one-line fix. */
 export const hostCauseAttention = (cursor: Pick<DispatchCursor, 'hostCauses' | 'failures'>) => standingHostCauses(cursor).map(cause => ({ subject: 'this host',
   text: `${cause.key[0]!.toUpperCase()}${cause.key.slice(1)} blocks ${cause.items.length} item${cause.items.length === 1 ? '' : 's'} (${cause.items.join(', ')}); their retries are paused`,
-  next: `${cause.fix}, or mainworks master host-causes clear once fixed` }));
+  next: cause.tool ? `${cause.fix}, or mainworks master host-causes clear once fixed` : cause.fix }));
 /** GY-3757: one line naming the slowest database query of the last 10 minutes, when the server reports one past 3 s. */
 export const slowQueryAttention = (slowest: SlowQuery | null, now: number) => slowest ? [{ subject: 'database',
   text: `The slowest database query of the last 10 minutes took ${(slowest.ms / 1000).toFixed(1)} s, ${formatAge(slowest.at, now)} ago${slowest.caller ? `, asked by ${slowest.caller}` : ''}: ${slowest.name}`,
