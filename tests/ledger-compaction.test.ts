@@ -189,7 +189,7 @@ test('unit:ledger-compaction-preserves-reconstruction — compaction removes onl
   const stageMove = before.find(row => row.work_id === open.id && row.kind === 'reconciled' && row.payload.work?.stage === 'review')!;
   assert.ok(kept.has(stageMove.seq), 'a whole routine row that moved the stage is kept');
   const legacyBase = before.find(row => row.work_id === open.id && row.kind === 'github.observed' && row.payload.work)!;
-  assert.ok(kept.has(legacyBase.seq), 'a whole routine row a surviving delta extends is kept');
+  assert.ok(!kept.has(legacyBase.seq), 'GY-4132: an expired whole routine row is removed after moving its surviving delta base forward');
   assert.ok(before.filter(row => row.work_id === open.id && row.kind === 'heartbeat' && row.payload.work).every(row => !kept.has(row.seq)), 'whole routine rows nothing extends are removed');
 
   // Every surviving row, every item's newest document, every stage timeline: identical.
@@ -274,28 +274,22 @@ test('integration:ledger-compaction-completes — on a generated ledger of hundr
     const fingerprint = async () => new Map((await scale.pool.query(`SELECT e.seq, md5((${resolvedPayloadSql('e')})::text) AS doc FROM events e WHERE e.work_id IS NOT NULL`)).rows.map(row => [String(row.seq), row.doc as string]));
     const before = await fingerprint();
 
-    // One batch per run: each finishes inside the bound and starts where the previous one saved. A pass
-    // ends past the newest old row; a whole row whose deltas went in one pass goes in the next.
-    let passes = 0, runs = 0, slowest = 0;
-    for (let removed = -1; removed; passes++) {
-      let saved = 0; removed = 0;
-      for (;;) {
-        const started = performance.now();
-        const run = await compactLedger(scale.pool, { batches: 1, pauseMs: 0 });
-        const ms = performance.now() - started;
-        slowest = Math.max(slowest, ms); runs++; removed += run.total;
-        assert.ok(ms < 5_000, `run ${runs} took ${Math.round(ms)} ms`);
-        assert.equal(Number((await scale.pool.query('SELECT seq FROM ledger_compaction_cursor')).rows[0].seq), run.cursor, 'the position is saved');
-        if (!run.cursor) break;
-        assert.ok(run.cursor > saved, `run ${runs} advanced from ${saved} to ${run.cursor}`);
-        saved = run.cursor;
-      }
-      assert.ok(passes < 4, `the ledger settles within a few passes (slowest run ${Math.round(slowest)} ms)`);
+    // One batch per run: each finishes inside the bound and deletes expired rows by kind and age
+    // until none remain.
+    let runs = 0, slowest = 0;
+    for (;;) {
+      const started = performance.now();
+      const run = await compactLedger(scale.pool, { batches: 1, pauseMs: 0 });
+      const ms = performance.now() - started;
+      slowest = Math.max(slowest, ms); runs++;
+      assert.ok(ms < 5_000, `run ${runs} took ${Math.round(ms)} ms`);
+      if (!run.cursor) break;
+      assert.ok(runs < 200, `the ledger settles within a bounded number of batches (slowest run ${Math.round(slowest)} ms)`);
     }
-    // Everything the rules allow went: each item keeps its create row, its newest whole row and its newest save.
+    // Everything the rules allow went: each item keeps its create row and its newest save (promoted whole when its old base went).
     const left = (await scale.pool.query('SELECT work_id, count(*)::int AS n FROM events WHERE work_id IS NOT NULL GROUP BY work_id')).rows;
     assert.equal(left.length, itemCount);
-    assert.ok(left.every(row => row.n === 3), `each item keeps three rows: ${JSON.stringify(left.filter(row => row.n !== 3).slice(0, 5))} passes ${passes} runs ${runs}`);
+    assert.ok(left.every(row => row.n === 2), `each item keeps two rows: ${JSON.stringify(left.filter(row => row.n !== 2).slice(0, 5))} runs ${runs}`);
     const after = await fingerprint();
     for (const [seq, doc] of after) assert.equal(doc, before.get(seq), `row ${seq} resolves as before`);
   } finally { await scale.close(); }

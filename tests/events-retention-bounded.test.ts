@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { databaseUrl } from './helpers/postgres.js';
 import { Store, save } from '../src/store.js';
-import { compactLedger, candidateSql, ledgerCompactionBatch, ledgerCompactedKind, ledgerRetentionMs } from '../src/store/compaction.js';
+import { compactLedger, batchLookupSql, ledgerCompactionBatch, ledgerCompactedKind, ledgerRetentionMs } from '../src/store/compaction.js';
 import { Engine } from '../src/engine.js';
 import { server } from '../src/server.js';
 import { storedLoopState } from '../src/server/loop-state.js';
@@ -84,9 +84,11 @@ test('e2e:events-retention-bounded — one retention pass over 200,000 events de
   console.log(`average stored row: ${JSON.stringify(sizes)}`);
   for (const { kind, bytes } of sizes) assert.ok(bytes < rowBytes[kind], `the average ${kind} row is ${bytes} bytes, over ${rowBytes[kind]}`);
 
-  // The plans a batch runs: candidate reads stay inside the seq window, and the delete goes by primary key.
-  const cutoff = new Date(Date.now() - ledgerRetentionMs), window = [['heartbeat'], cutoff, '0', String(ledgerCompactionBatch), ['heartbeat'], cutoff];
-  for (const sql of candidateSql) console.log(`candidate plan:\n${(await store.pool.query(`EXPLAIN ${sql}`, window)).rows.map(row => row['QUERY PLAN']).join('\n')}`);
+  // The plans a batch runs: candidate lookup uses events_kind_created(kind, created_at), and the delete goes by primary key.
+  const cutoff = new Date(Date.now() - ledgerRetentionMs);
+  const candidatePlan = (await store.pool.query(`EXPLAIN ${batchLookupSql}`, ['heartbeat', cutoff, ledgerCompactionBatch])).rows.map(row => row['QUERY PLAN']).join('\n');
+  console.log(`candidate plan:\n${candidatePlan}`);
+  assert.doesNotMatch(candidatePlan, /Seq Scan on events/, 'the candidate lookup never scans the ledger');
   const deletePlan = (await store.pool.query('EXPLAIN DELETE FROM events WHERE seq = ANY($1::bigint[])', [['1', '2', '3']])).rows.map(row => row['QUERY PLAN']).join('\n');
   console.log(`delete plan:\n${deletePlan}`);
   assert.doesNotMatch(deletePlan, /Seq Scan on events/, 'the delete never scans the ledger');
