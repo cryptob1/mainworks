@@ -204,9 +204,9 @@ test('unit:login-password-manager-saves-token the form is a username/password lo
   const stored: unknown[] = [];
   class FakeCredential { constructor(readonly data: { id: string; password: string; name?: string }) {} }
   const scope = { PasswordCredential: FakeCredential, navigator: { credentials: { store: async (credential: unknown) => { stored.push(credential); } } } };
-  assert.equal(offerToSavePassword('token-1', scope), true);
+  assert.equal(offerToSavePassword('token-1', null, scope), true);
   assert.deepEqual((stored[0] as FakeCredential).data, { id: LOGIN_USERNAME, password: 'token-1', name: 'Mainworks control plane' });
-  assert.equal(offerToSavePassword('token-1', {}), false, 'a browser without the Credential Management API is left to the extension');
+  assert.equal(offerToSavePassword('token-1', null, {}), false, 'a browser without the Credential Management API is left to the extension');
 });
 
 test('unit:login-secondary-escapewhile verifying, Use another token is a link-styled secondary action and no primary button shows', () => {
