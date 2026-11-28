@@ -4,12 +4,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PageHeader } from '../components/page-layout';
 import Term from '../components/term';
+import { showChecklist, MANAGER_GUIDE } from '../components/home-checklist';
 
 /** The delivery flow, one card per step (GY-3295): a short line each, read left to right and top to bottom. */
 const flow: [string, string][] = [
   ['Goal', 'You or the Lead files a work item with required criteria.'],
-  ['Build', 'A worker writes it in its own worktree, a private copy of the repository.'],
-  ['Review', 'A different agent checks it against every criterion.'],
+  ['Build', 'A worker writes it in its own worktree, a private repository copy.'],
+  ['Review', 'Another agent checks it against every criterion.'],
   ['Test merge', 'Tested on the latest main.'],
   ['Merge', 'The loop merges it to main; no pull request.'],
   ['Deploy and verify', 'Verified in batches; a failing batch reverts its culprit. Main deploys.'],
@@ -21,7 +22,7 @@ const host: [string, string, string][] = [
   ['Deploy watch', 'graphyard-deploy-OWNER-NAME.service', 'Deploys and rolls back.'],
   ['Server and dashboard', 'graphyard-OWNER-NAME-server-1', 'Docker, on 127.0.0.1:4310.'],
   ['Database', 'graphyard-OWNER-NAME-db-1', 'Postgres 17 in Docker.'],
-  ['Test merges', 'Docker containers', 'One per test merge.'],
+  ['Test merges', 'Docker containers', 'One each.'],
   ['Agent sessions', 'Workers, reviewers, the Lead', 'Confined, one worktree, fair CPU.'],
   ['Hosts', `${COMMAND_NAME} host add YOU@HOST`, 'Shards and sessions; RAM-only logins.'],
 ];
@@ -44,7 +45,7 @@ const faq: [string, string, ReactNode][] = [
   ['faq-onboarding', 'What does onboarded mean?', <>Setup shows Project onboarded when main declares the command that serves the real app and a <Term term="feature map"/>. Batch and deploy checks run against it. A missing one or a placeholder serve shows as not onboarded, and the Lead fixes it.</>],
   ['faq-filing', 'How do I file and prioritise work?', <>On Work, press <strong>New work item</strong>. A title and a sentence or two are enough; the Lead writes the acceptance criteria, and <strong>Advanced</strong> takes full detail. Set priority from P0 (first) to P3 on the item’s page; the next dispatch uses it. The Lead files work too, ranked by the product brief.</>],
   ['faq-item', 'What does an item’s page show?', <>It opens on why the item helps users, the proof it works — the trial’s screenshots of the changed page — and one plain line on what changed. Then one line says who acts next and where the item stands. The gates, every trial and each attempt’s detail stay one click down, under Technical details.</>],
-  ['faq-master', 'What does the Lead do, versus the loop?', <>The Lead is the install’s AI coordinator. It learns the product, keeps the product brief (Settings → Product), turns goals into ranked work items, answers when an item needs judgement and files fixes for recurring faults. It does not write the code; workers do. The loop is plain code, no AI: it runs every delivery step in cycles, so work keeps moving while the Lead thinks.</>],
+  ['faq-master', 'What do the Lead and loop do?', <>The Lead is the install’s AI coordinator. It learns the product, keeps the product brief (Settings → Product), turns goals into ranked work items, answers when an item needs judgement and files fixes for recurring faults. It does not write the code; workers do. The loop is plain code, no AI: it runs every delivery step in cycles, so work keeps moving while the Lead thinks.</>],
   ['faq-context', 'How do agents share context?', <>Three places. The <strong>product brief</strong> (Settings → Product) says what the product is for; the Lead keeps it and every session’s request carries it. <strong>AGENTS.md</strong> in your repository holds the project’s rules, plus a short block {PRODUCT_NAME} writes naming its guide topics. The <strong>work item</strong> holds the goal, criteria and history; when an attempt ends, the next worker continues from its committed work. The Lead also keeps short lessons every Lead session reads; one a lint rule, type or test could enforce becomes a work item, and once that item ships the lesson is removed. The header counts these as gates removed this week, beside reverts this week.</>],
   ['faq-delivery', 'How are changes tested, reviewed, merged and deployed?', <>A worker submits a commit. A different agent reviews it, and every criterion needs a passing proof from someone other than the builder. The merge writer trials the commit on the latest main, running the tests the change affects, then merges it to main itself. Merged changes are verified together as a batch; a failing batch reverts the change that broke it. Verified main deploys, and a failed health check rolls back. Work’s header line shows the pace — merges an hour over 6 hours, and the median time from review to live. See {link('docs-flow', 'How a change ships')}.</>],
   ['faq-cpu', 'Why are test merges fast?', <>They reuse installed dependencies and skip tests that passed on the same code. <code>{COMMAND_NAME} master status</code> shows CPU-seconds per merged item.</>],
@@ -71,16 +72,21 @@ const commands: [string, string][] = [
  * who has never heard of Mainworks. Who decides what, one first item from setup to result, the delivery
  * flow and where each part runs as readable panels, then a folded FAQ and reference. The reference prints
  * `mainworks guide setup` and `mainworks guide infra` themselves, loaded once the page is open, so those
- * procedures keep one source.
+ * procedures keep one source. GY-4066: its first line links the owner's public guide for new factory managers,
+ * and its one action brings back the day-one checklist and opens Home.
  */
-export default function GuidePage() {
+export default function GuidePage({ setView }: { setView(view: string): void }) {
   const [media, setMedia] = useState<{ video: string; setup: string; infra: string } | null>(null);
   useEffect(() => {
     Promise.all([import('../../docs/diagrams/how-mainworks-works.mp4?url'), import('../../src/guide')])
       .then(([video, guide]) => setMedia({ video: video.default, setup: guide.guideText('setup'), infra: guide.guideText('infra') }));
   }, []);
+  const showAgain = () => { showChecklist(); location.hash = 'home'; setView('home'); };
   return <article className="guide">
-    <PageHeader title={`How ${PRODUCT_NAME} works`} fact={`${PRODUCT_NAME} is a coding factory. You say what to build; AI agents build, check, merge and ship it, with no person in the loop.`}/>
+    <PageHeader title={`How ${PRODUCT_NAME} works`} fact={`${PRODUCT_NAME} is a coding factory. You say what to build; AI agents build, check, merge and ship it, with no person in the loop.`}
+      actions={<button type="button" onClick={showAgain}>Show the first-time checklist</button>}>
+      New to running a factory? <a href={MANAGER_GUIDE} target="_blank" rel="noopener noreferrer">Read the factory manager guide</a>
+    </PageHeader>
     <nav className="guide-contents" aria-label="On this page">
       {link('docs-overview', 'Who decides what')}{link('docs-first-item', 'Your first item')}{link('docs-flow', 'How a change ships')}{link('docs-where', 'Where things run')}{link('docs-faq', 'FAQ')}{link('docs-reference', 'Reference')}
     </nav>
@@ -88,9 +94,9 @@ export default function GuidePage() {
     <section id="docs-overview" className="panel" aria-labelledby="docs-overview-title">
       <h2 id="docs-overview-title">Who decides what</h2>
       <ul>
-        <li><strong>You, the owner</strong>: goals and priorities, money and accounts, and sign-ins for people. Tell agents your decision; reverse their answer under Needs you.</li>
+        <li><strong>You, the owner</strong>: goals and priorities, money and accounts, and sign-ins for people. Answer, or reverse an answer, under Needs you.</li>
         <li><strong>The Lead</strong>: keeps the brief, plans work and unsticks it.</li>
-        <li><strong>The loop</strong>: plain code, no AI. It hands out work, runs test merges, merges and deploys.</li>
+        <li><strong>The loop</strong>: plain code, no AI. It hands out work, tests, merges and deploys.</li>
         <li><strong>Workers and reviewers</strong>: AI coding sessions. Nobody reviews their own work.</li>
       </ul>
       <p>Your repository is the <strong>managed app</strong>. {PRODUCT_NAME} has its own server, dashboard and database.</p>
@@ -103,9 +109,9 @@ export default function GuidePage() {
         <li><strong>Connect your repository.</strong> In its checkout, run <code>npx @cryptob1/graphyard up --repo OWNER/NAME</code>. It installs everything and prints a sign-in link.</li>
         <li><strong>Open the dashboard.</strong> The link signs you in at <code>http://127.0.0.1:4310</code>, or the port <code>up</code> chose. Setup connects agent accounts.</li>
         <li><strong>State a goal.</strong> On Work, press <strong>New work item</strong> and title it. The Lead writes the criteria.</li>
-        <li><strong>Watch it move.</strong> Work lists every task under its goal, with its state, what it is doing now and how long.</li>
+        <li><strong>Watch it move.</strong> Work lists every task under its goal: its state, what it is doing and how long.</li>
         <li><strong>Find the result.</strong> Work’s <strong>Shipped today</strong> filter lists what went live.</li>
-        <li><strong>Meet a blocker.</strong> Stuck tasks are tinted and first in their group, for the Lead to clear; your decisions wait under Needs you.</li>
+        <li><strong>Meet a blocker.</strong> Stuck tasks are tinted, first in their group; the Lead clears them. Your decisions wait under Needs you.</li>
       </ol>
     </section>
 
