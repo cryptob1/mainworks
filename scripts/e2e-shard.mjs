@@ -5,10 +5,8 @@
 // GY-4002: a merge trial's shard passes `screenshots` to keep each case's last screenshot; a shard that
 // cannot make its worktree or build marks its cases host failures, so a trial runs them on the coordinator.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { volatileFilesystem } from '../src/install/worktree-root.ts';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.ts';
 import { buildArgv, packageManager } from '../src/package-manager.ts';
 
@@ -21,18 +19,9 @@ writeFileSync(written, '');
 // own checkout of the commit: its own files and index, the clone's objects and packages.
 // GY-4114: a repository borrowing the clone's objects, not a worktree: git lists the clone's worktrees while it
 // adds one, so two shards adding at once failed reading the other's half-written .git/worktrees entry.
-// GY-4105: a remote shard container mounts /tmp (and HOME=/tmp) as tmpfs while <run>/repo sits on durable disk;
-// a worktree on tmpfs fails verifyWorktreeRoot, so place the shard scratch beside the checkout on durable storage.
-const checkout = process.cwd();
-const durableScratchBase = () => {
-  const current = tmpdir();
-  if (!volatileFilesystem(current)) return current;
-  for (const candidate of [join(dirname(checkout), 'tmp'), ...(volatileFilesystem(homedir()) ? [] : [join(homedir(), '.gy', 'tmp')])]) {
-    try { mkdirSync(candidate, { recursive: true }); if (!volatileFilesystem(candidate)) return candidate; } catch { /* try next */ }
-  }
-  return current;
-};
-const scratch = mkdtempSync(join(durableScratchBase(), 'e2e-shard-')), worktree = join(scratch, 'checkout');
+// GY-4105, GY-4111: the checkout sits in the shard's run directory beside the clone on the host's disk:
+// the container's /tmp (and HOME=/tmp) is a tmpfs, where Mainworks refuses a managed worktree root (GY-88).
+const checkout = process.cwd(), scratch = mkdtempSync(join(dirname(checkout), 'e2e-shard-')), worktree = join(scratch, 'checkout');
 const git = args => execFileSync('git', args, { stdio: 'pipe' });
 /** The shard ends with its checkout, as a trial does, leaving the clone as the shim made it. */
 const finish = code => {

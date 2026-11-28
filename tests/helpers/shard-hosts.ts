@@ -2,7 +2,8 @@
 // `mainworks host prepare` installs it, in its own home; only Docker is a stand-in, keeping its images
 // and containers in a state file, logging each call, and running a container's command in its working
 // directory — under `unshare -cn` (no network, nonroot as `--user 1000:0`) when it was created with --network=none, and with a
-// read-only root (bubblewrap) on a host whose Docker state holds a `read-only-root` file. This machine
+// read-only root (bubblewrap) on a host whose Docker state holds a `read-only-root` file, and a tmpfs temporary
+// directory (under /dev/shm) on one holding a `tmpfs-tmp` file. This machine
 // has the same stand-in Docker. `ssh` here routes USER@NAME to the host named NAME (exit 255 while
 // NAME.down exists, as OpenSSH does for a host it cannot reach); `sshd` runs a real OpenSSH server.
 // GY-3645: `docker compose` reads a Compose file written as JSON: `up` starts a TCP listener on 127.0.0.1 for
@@ -226,7 +227,9 @@ elif command == 'commit':
     save()
 elif command == 'rm':
     for name in args[1:]:
-        s['containers'].pop(name, None)
+        gone = s['containers'].pop(name, None) or {}
+        if gone.get('env', {}).get('TMPDIR', '').startswith('/dev/shm/standin-tmp-'):
+            shutil.rmtree(gone['env']['TMPDIR'], ignore_errors=True)
     save()
 elif command == 'create':
     at = args.index('--entrypoint')
@@ -257,6 +260,10 @@ elif command == 'create':
         env['GRAPHYARD_WARM_DIR'] = warm_dir
         if os.path.isdir(os.path.join(warm_dir, 'compile-cache')) and 'NODE_COMPILE_CACHE' not in env:
             env['NODE_COMPILE_CACHE'] = os.path.join(warm_dir, 'compile-cache')
+    if '--tmpfs' in args and os.path.exists(os.path.join(STATE, 'tmpfs-tmp')):
+        # GY-4111: the container's /tmp is a tmpfs, as Docker's --tmpfs /tmp makes it, for a host that asks: its temporary directory is one under /dev/shm.
+        import tempfile
+        env['TMPDIR'] = tempfile.mkdtemp(prefix='standin-tmp-', dir='/dev/shm')
     if '--read-only' in args and os.path.exists(os.path.join(STATE, 'read-only-root')):
         # Docker's --read-only, for a host that asks: only the container's tmpfs and bind mounts are writable.
         isolate = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'] + (['--unshare-net'] if isolate else [])
