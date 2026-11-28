@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { FleetAccount, FleetRuntime } from '../model/registry.js';
 import { accountKeyEnvironment, registryHeadlessLaunch } from '../runner/roles.js';
 
@@ -49,9 +49,10 @@ export async function accountCheckDiagnostics(account: FleetAccount, runtime: Fl
         if (typeof key !== 'string' || !key) continue;
         const envReference = /^\{env:([^}]+)\}$/.exec(key);
         const fileReference = /^\{file:([^}]+)\}$/.exec(key);
+        const referencedFile = fileReference ? (fileReference[1]!.startsWith('~/') ? join(environment.HOME ?? homedir(), fileReference[1]!.slice(2)) : resolve(file === 'OPENCODE_CONFIG_CONTENT' ? home : dirname(file), fileReference[1]!)) : null;
         value = envReference ? environment[envReference[1]!] ?? null
-          : fileReference ? (await readFile(resolve(home, fileReference[1]!), 'utf8')).trim() : key;
-        source = fileReference ? resolve(home, fileReference[1]!) : file;
+          : referencedFile ? (await readFile(referencedFile, 'utf8')).trim() : key;
+        source = referencedFile ?? file;
         override = file;
       } catch {
         lines.push(`Credential: cannot resolve ${file}; inspect its provider key`);

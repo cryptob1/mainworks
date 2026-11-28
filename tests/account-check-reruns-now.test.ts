@@ -7,7 +7,7 @@ import { emptyRegistry, proposedRuntimes, type AgentRegistry } from '../src/mode
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 // GY-3749: after a repair, a Lead confirms it at once rather than waiting out the 30-minute cache.
-test('unit:account-check-reruns-now — account check runs the live check now, reports it to the registry and prints the result with environment and credential diagnostics', async () => {
+test('unit:account-check-reruns-now — account check runs the live check now, reports it to the registry and prints one line', async () => {
   process.env[hostAccountsVariable] = await temporaryDirectory('account-check-host');
   const home = await temporaryDirectory('account-check-home'), at = new Date().toISOString();
   const registry: AgentRegistry = applyRegistryMutation(emptyRegistry(), 'apply', {
@@ -23,13 +23,10 @@ test('unit:account-check-reruns-now — account check runs the live check now, r
   let smokes = 0;
   const passed = await registryCommand({ hostId: 'host-1' } as any, ['account', 'check', 'cursor-a'], api, { smoke: async () => { smokes++; return { ok: true, error: null, output: 'OK' }; } });
   assert.equal(smokes, 1, 'the live request ran despite the fresh cached check');
-  assert.equal(String(passed).split('\n')[0], 'cursor-a passed its live check');
-  assert.match(String(passed), /shell.*loop.*results may be false/);
-  assert.match(String(passed), /Credential:/);
+  assert.equal(passed, 'cursor-a passed its live check');
   assert.equal(observed[0].path, 'agent-registry/observe');
   assert.deepEqual([observed[0].data.host, observed[0].data.observations[0].account, observed[0].data.observations[0].quota.state], ['host-1', 'cursor-a', 'available']);
   const out = await registryCommand({ hostId: 'host-1' } as any, ['account', 'check', 'cursor-a'], api, { smoke: async () => ({ ok: false, error: "Authentication required. Please run 'agent login' first." }) });
   assert.match(String(out), /^cursor-a is not logged in: Authentication required/);
-  assert.match(String(out), /shell.*loop.*results may be false/);
-  assert.match(String(out), /Credential:/);
+  assert.doesNotMatch(String(out), /\n/, 'one line');
 });

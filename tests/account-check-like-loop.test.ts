@@ -30,7 +30,9 @@ test('integration:account-check-like-loop — global key override, shell mismatc
   const writes: any[] = [];
   const api = { read: async () => registry, write: async (_path: string, data: unknown) => { writes.push(data); } };
   await withEnv({ XDG_CONFIG_HOME: config, OPENCODE_CONFIG: undefined, OPENCODE_CONFIG_CONTENT: undefined, [hostAccountsVariable]: join(root, 'host-checks') }, async () => {
-    const output = String(await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { smoke: async () => ({ ok: true, error: null }) }));
+    const diagnostics: string[] = [];
+    const result = String(await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { report: line => diagnostics.push(line), smoke: async () => ({ ok: true, error: null }) }));
+    const output = [result, ...diagnostics].join('\n');
     assert.match(output, /shell.*loop.*results may be false/i);
     assert.ok(output.includes(globalFile) && output.includes(ownFile), 'override names both credential files');
     assert.match(output, /warning:.*overrides/i);
@@ -39,7 +41,9 @@ test('integration:account-check-like-loop — global key override, shell mismatc
     assert.doesNotMatch(output, /global-secret|account-secret/);
     assert.equal(writes.length, 1);
     await writeFile(globalFile, '{}');
-    const own = String(await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { smoke: async () => ({ ok: true, error: null }) }));
+    diagnostics.length = 0;
+    const ownResult = String(await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { report: line => diagnostics.push(line), smoke: async () => ({ ok: true, error: null }) }));
+    const own = [ownResult, ...diagnostics].join('\n');
     assert.ok(own.includes(ownFile));
     assert.ok(own.includes(createHash('sha256').update('account-secret').digest('hex').slice(0, 12)));
     assert.doesNotMatch(own, /overrides/);

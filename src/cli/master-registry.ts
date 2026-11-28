@@ -20,7 +20,7 @@ const number = (value: string | undefined, flag: string) => { if (value === unde
  * holds the coordinator credential. A `set` names the entry and only what changes; the rest of an
  * existing entry stands. Every change carries a reason and appends to the registry's history.
  */
-export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Parameters<typeof smokePiWorker>[0], args: string[], api: RegistryCommandApi, options: { directory?: string; home?: string; executables?: (name: string) => boolean; install?: (program: string) => string | null; smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult> } = {}) {
+export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Parameters<typeof smokePiWorker>[0], args: string[], api: RegistryCommandApi, options: { report?: (line: string) => void; directory?: string; home?: string; executables?: (name: string) => boolean; install?: (program: string) => string | null; smoke?: (account: FleetLaunchAccount) => Promise<SmokeResult> } = {}) {
   const [collection, action, ...rest] = args;
   if (!collection) return api.read(`agent-registry?host=${encodeURIComponent(master.hostId)}`);
   if (collection === 'history') {
@@ -71,12 +71,12 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Par
     const runtime = current.runtimes.find(entry => entry.name === account?.runtime);
     if (!account || !runtime) throw new Error(`${name} is not a registry account on ${master.hostId}; master registry lists this host's accounts`);
     const diagnostics = await accountCheckDiagnostics(account, runtime, current.models.find(model => model.name === account.model)?.id ?? null);
+    for (const line of diagnostics) (options.report ?? console.error)(line);
     const quota = await probeRegistryAccount(current, account, runtime, { smoke: options.smoke });
     await api.write('agent-registry/observe', { host: master.hostId, observations: [{ account: name, quota }] });
-    const result = quota.fault ? `${name}: ${quota.fault} (quota left ${quota.state})`
+    return quota.fault ? `${name}: ${quota.fault} (quota left ${quota.state})`
       : quota.state === 'available' ? `${name} passed its live check`
       : `${name} ${quota.loggedIn === false ? 'is not logged in' : `is ${quota.state}`}: ${quota.reason ?? 'no reason given'}`;
-    return [result, ...diagnostics].join('\n');
   }
   if (collection === 'model' && action === 'seed') {
     const { values } = parseArgs({ args: rest, options: { reason: { type: 'string' } } });
