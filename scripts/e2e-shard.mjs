@@ -5,9 +5,10 @@
 // GY-4002: a merge trial's shard passes `screenshots` to keep each case's last screenshot; a shard that
 // cannot make its worktree or build marks its cases host failures, so a trial runs them on the coordinator.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { volatileFilesystem } from '../src/install/worktree-root.ts';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.ts';
 import { buildArgv, packageManager } from '../src/package-manager.ts';
 
@@ -18,11 +19,18 @@ writeFileSync(written, '');
 // GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
 // where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in its
 // own worktree of the commit, as a trial's checkout is one: its own files and index, the clone's objects and packages.
-const checkout = process.cwd(), scratch = mkdtempSync(join(tmpdir(), 'e2e-shard-')), worktree = join(scratch, 'checkout');
+// GY-4092: in a remote shard container /tmp is a tmpfs while the run directory beside checkout is durable, so place
+// the shard's worktree there when tmpdir() is memory-backed (managed worktree roots refuse tmpfs).
+const checkout = process.cwd(), scratchBase = volatileFilesystem(tmpdir()) && !volatileFilesystem(dirname(checkout)) ? dirname(checkout) : tmpdir();
+let scratch;
+try { scratch = mkdtempSync(join(scratchBase, 'e2e-shard-')); }
+catch { scratch = mkdtempSync(join(tmpdir(), 'e2e-shard-')); }
+const worktree = join(scratch, 'checkout');
 const git = args => execFileSync('git', args, { stdio: 'pipe' });
 /** The shard ends with its worktree, as a trial does, leaving the clone as the shim made it. */
 const finish = code => {
   try { git(['-C', checkout, 'worktree', 'remove', '--force', worktree]); } catch { /* never registered, or already gone */ }
+  try { rmSync(scratch, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
   process.exit(code);
 };
 /** Every case of the shard fails with one step when its worktree or build fails, so the day's filing names why. */
