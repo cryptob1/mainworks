@@ -87,6 +87,8 @@ export interface DispatchEffects {
    * which wakes its sleep for anything new its next cycle acts on. It never fails the tick.
    */
   observeLoopSubjects?: (work: Work[], agents: RuntimeSession[] | null, clock: number) => void;
+  /** GY-4121: the operator's alert (run.alertUrl, Slack), sent once when a host cause is first recorded. */
+  alert?: (text: string) => Promise<unknown>;
   persist: (cursor: DispatchCursor) => Promise<void>;
 }
 /** Effects bound to the real coordinator process; `config` may be a live source the loop reloads. */

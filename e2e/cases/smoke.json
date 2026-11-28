@@ -6,6 +6,7 @@
   "target": "any",
   "required": false,
   "steps": [
+    { "kind": "command", "name": "a host fault reads next: operator, alerts once, pauses its retries and resumes them once cleared; diagnostic and trial host causes file once and never dispatch to a worker (GY-4121)", "run": "node --import tsx tests/helpers/run-tests.ts tests/host-cause-escalates-to-operator.test.ts tests/host-cause-diagnostics-file-once.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "account check distinguishes own-key references from overrides; health shows concise reasons and readable resets (GY-4122)", "run": "node --import tsx tests/helpers/run-tests.ts tests/account-check-like-loop.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "review and worker sandboxes with HOME moved resolve the host's mise tools read-only (GY-4115)", "run": "node --import tsx tests/helpers/run-tests.ts tests/sandbox-mise-tools.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "a rerun of up after an interrupted image step installs the control plane, fetches through the deploy key and creates deploy.env 0600 (GY-4123)", "run": "node --import tsx tests/helpers/run-tests.ts tests/up-reruns-repair-partial.test.ts", "timeoutSeconds": 120 },

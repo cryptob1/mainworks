@@ -36,6 +36,7 @@ export const masterCommands = defineCommands([
       '                                this host until lead resume (another project\'s quiet window)',
       '  lead resume                   Lift the drain: queued heavy jobs start again with all their gates',
       '  lead public-link off          Turn the install\'s public link off; only the owner turns it on',
+      '  lead host-causes clear        Lift every host cause once the host is fixed: their paused retries resume',
       '  lead update now               Take the newest verified build on the deploy watch\'s next pass,',
       '                                without waiting for a quiet moment',
       '  lead dispatch GY-N PROFILE    Invite a worker to claim ready work in a visible tab',

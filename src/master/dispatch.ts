@@ -9,7 +9,7 @@ import { type SandboxExec, environmentBlocker, WorkerSandboxError, verifyWorkerS
 import { assertNoApprovalOptOut } from '../harness.js';
 import { parkedOnHuman, humanDecisionLabel, answerCommand, dispatchHumanWait } from '../model/human-request.js';
 import { supersededByObservation } from '../model/park-withdrawal.js';
-import { loopOwnedRefusal } from '../model/loop-owned.js';
+import { hostCauseRefusal, loopOwnedRefusal } from '../model/loop-owned.js';
 import { workerPreference } from '../model-boundary/worker-preference.js';
 import { loopObservation, loopObservationProofs, observationWindowHold, servingReleaseProof, type Work } from '../model.js';
 import type { MasterConfig, WorkerProfile } from './profiles.js';
@@ -142,7 +142,7 @@ export function assertDispatchable(work: Work, allWork: Work[], observedAt: stri
   // GY-1760: an item only the master side can satisfy is never handed to a worker — not by the
   // loop's dispatch step, not by a hand launch — whoever released it, so its master-only steps
   // never reach a worker that must block on them.
-  const loopOwned = loopOwnedRefusal(work);
+  const loopOwned = loopOwnedRefusal(work) ?? hostCauseRefusal(work);
   if (loopOwned) throw new Error(loopOwned);
   const unfinished = work.dependencies.map(id => allWork.find(item => item.id === id)).filter(dependency => !dependency || dependency.stage !== 'done');
   if (unfinished.length) throw new Error(`Dispatch blocked by unfinished dependencies: ${unfinished.map(dependency => dependency?.key ?? 'unknown').join(', ')}`);

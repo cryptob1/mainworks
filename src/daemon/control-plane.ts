@@ -14,6 +14,7 @@ import { mainworksRepository } from '../scenarios.js';
 import type { MasterConfig } from '../master/profiles.js';
 import { actionLine, message, storeAction } from './state.js';
 import type { Cycle } from './cycle.js';
+import { hostCause } from '../dispatch/host-cause.js';
 
 /** How long a failed upstream filing waits before the loop asks again. */
 const upstreamRetryMs = 3_600_000;
@@ -350,9 +351,10 @@ export const gateFiledItem = (
   capabilities?: ProjectProofCapabilities,
 ) => {
   const check = input.key.slice(input.key.indexOf(':') + 1);
+  const isHostCause = input.key.startsWith('host-cause:');
   const isFlake = input.key.startsWith('flake:');
   const hasUnitRunner = capabilities ? capabilities.unitRunner : true;
-  const preMergeName = capabilities?.preMergeChecks?.find(name => check === name || check === `test:${name}`) ?? null;
+  const preMergeName = !isHostCause ? (capabilities?.preMergeChecks?.find(name => check === name || check === `test:${name}`) ?? null) : null;
   const plannedFile = !preMergeName ? /^(?:flake|known-red):test:(.+)$/.exec(input.key)?.[1] : undefined;
   const e2e = gateFiledE2e(input.key, repository, capabilities);
 
@@ -360,7 +362,11 @@ export const gateFiledItem = (
   let ac1Text: string | undefined;
   let type: 'bug' | 'chore' = 'bug';
 
-  if (preMergeName) {
+  if (isHostCause) {
+    proof = 'manual:host-cause-resolved';
+    ac1Text = 'The operator fixes the host cause named in the description and verifies or clears it';
+    type = 'chore';
+  } else if (preMergeName) {
     proof = sanitizeCheckProof(preMergeName);
     ac1Text = isFlake
       ? `The declared check ${preMergeName} is fixed at its cause, not skipped or weakened, and passes deterministically`
@@ -406,9 +412,13 @@ export const fileFlakyCheck = async (
   text: string,
 ) => {
   const capabilities = reads.git ? await readProjectCapabilities(reads.git, `refs/remotes/origin/${reads.baseBranch}`).catch(() => undefined) : undefined;
+  const cause = hostCause(text);
+  const input = cause
+    ? { key: `host-cause:${cause.key}`, title: `Host cause: ${cause.key}`, description: `next: operator — ${cause.fix}\n\nA trial failure on ${check} hit host cause (${cause.key}): ${text}` }
+    : { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: text };
   return fileLoopFault(
     { work, now: reads.now(), createWork: reads.createWork, note: reads.note },
-    gateFiledItem({ key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: text }, reads.baseBranch, repository, capabilities),
-    text,
+    gateFiledItem(input, reads.baseBranch, repository, capabilities),
+    input.description,
   );
 };

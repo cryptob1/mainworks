@@ -44,3 +44,12 @@ const ownerAnswered = (work: Pick<Work, 'humanRequest' | 'humanRequests'>) =>
 export const ownerHoldRefusal = (work: Pick<Work, 'key' | 'title' | 'description' | 'criteria' | 'humanRequest' | 'humanRequests'>, actor?: Pick<Principal, 'id' | 'role' | 'sessionKind'>) =>
   !ownerHeld(work) || ownerAnswered(work) || (actor?.role === 'admin' && actor.sessionKind === 'human') ? null
     : `${work.key} is under an owner hold: its record reserves the release to the owner, so ${actor?.id ?? 'an agent'} may not release it. It stays in the backlog until the owner releases it with their own human admin session`;
+
+/**
+ * GY-4121: an item filed for a host cause (missing tool, permission denied, network unreachable)
+ * belongs to the operator (`next: operator`), not a code worker — never release or dispatch it.
+ */
+export const hostCauseRefusal = (work: Pick<Work, 'key' | 'faultKey'>) =>
+  work.faultKey?.startsWith('host-cause:')
+    ? `${work.key} is a host fault (next: operator): only the host operator can fix it; it is never released or dispatched to a worker`
+    : null;

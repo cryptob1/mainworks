@@ -20,6 +20,8 @@ export const dispatchAttemptCeiling = 1000;
 const dispatchFailureSchema = z.object({
   kind: z.enum(['review', 'producer']), work: z.string().min(1), sha: z.string().min(1),
   attempts: z.number().int().min(1).max(dispatchAttemptCeiling), reason: z.string(), at: z.string(), nextAt: z.string(),
+  /** GY-4121: the host cause the refusal named, by its key in `hostCauses`; retries wait while it stands. */
+  hostCause: z.string().optional(),
 }).strict();
 export type DispatchFailure = z.infer<typeof dispatchFailureSchema>;
 /**
@@ -88,6 +90,10 @@ export const dispatchCursorSchema = z.object({
    * `until`, in favour of the next profile; a launch that starts clears it.
    */
   profileBackoff: z.record(z.string(), profileBackoffSchema).default({}),
+  /** GY-4121: host causes the operator must fix, by key, with the one-line fix; lifted when the tool appears or the operator clears them. */
+  hostCauses: z.record(z.string(), z.object({ tool: z.string().nullable(), fix: z.string(), detail: z.string(), at: z.string() }).strict()).default({}),
+  /** The host causes already alerted, by key: one alert per cause until the operator clears them. */
+  hostCausesAlerted: z.array(z.string()).max(100).default([]),
   /**
    * The session handles the runtime had stopped reporting when the last tick swept, each carrying
    * when it was first missed (GY-113). Absence is only evidence that a session is gone once it
@@ -135,6 +141,15 @@ export function dispatchCursorPath(config: MasterConfig) {
   const file = config.credentialFile;
   return resolve(dirname(file), `${basename(file).replace(/\.token$/, '')}.dispatch.json`);
 }
+/** The file `master host-causes clear` stamps; causes recorded before its time are lifted on the next tick. */
+export function hostCausesClearPath(config: Pick<MasterConfig, 'credentialFile'>) {
+  const file = config.credentialFile;
+  return resolve(dirname(file), `${basename(file).replace(/\.token$/, '')}.host-causes-clear`);
+}
+/** GY-4121: each standing host cause with the items it blocks, as master status names it once. */
+export const standingHostCauses = (cursor: Pick<DispatchCursor, 'hostCauses' | 'failures'>) =>
+  Object.entries(cursor.hostCauses).map(([key, cause]) => ({ key, ...cause,
+    items: [...new Set(Object.values(cursor.failures).filter(failure => failure.hostCause === key).map(failure => failure.work))] }));
 /** A schema path for a failed dispatch persistence operation. */
 const cursorPath = (path: readonly PropertyKey[]) => path.reduce<string>((text, segment) => typeof segment === 'number' ? `${text}[${segment}]` : text ? `${text}.${String(segment)}` : String(segment), '');
 export async function readDispatchCursor(root: string, config: MasterConfig): Promise<DispatchCursor> {
