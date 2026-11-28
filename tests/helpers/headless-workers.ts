@@ -73,31 +73,41 @@ export type HeadlessWorkersHandle = () => HeadlessWorkers;
  * one fixture that reads run logs may run at a time (GY-3715).
  */
 export async function headlessWorkers(label: string, leaseSeconds = 120, agentName = 'eng-a', bridge = true): Promise<HeadlessWorkers> {
-  const store: Store = await withDatabase(label); await store.init();
-  await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
-  const scratch = await temporaryDirectory(label, join(process.cwd(), '.graphyard'));
-  const root = await temporaryDirectory('coordinator', scratch);
-  const bin = await temporaryDirectory('bin', scratch);
-  const engine = new Engine(store, leaseSeconds, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
-  const { url, close } = await listen(server(engine, [coordinator, worker, reader, { id: 'fixture-admin', role: 'admin' } as Principal].map(principal => ({ ...principal, token: token(principal) }))));
-  const { git, head } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
-  git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); git('update-ref', 'refs/remotes/origin/main', head);
-  // Herdr is on PATH and records any call: a worker launch must make none. Fixtures running at once
-  // share one record, since whichever fixture's bin leads PATH answers a call.
-  const herdrCalls = sharedHerdrCalls ??= join(scratch, 'herdr-calls');
-  await writeFile(join(bin, 'herdr'), `#!/bin/sh\necho "$@" >> ${herdrCalls}\nexit 1\n`, { mode: 0o755 });
-  process.env.PATH = `${bin}:${process.env.PATH}`;
-  const credentials = await temporaryDirectory('credentials', scratch);
-  await setupMaster(root, { url, token: token(coordinator), cliPath: launcher, credentialDirectory: credentials, run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
-  const hostId = (await loadMasterConfig(root)).hostId;
-  const credentialFile = join(credentials, 'worker-a.token');
-  await writeFile(credentialFile, token(worker), { mode: 0o600 });
-  await saveWorkerProfile(root, { name: 'launch', principal: worker.id, agentName, mode: 'launch', kind: 'claude', credentialFile }, async () => ({ actor: worker }));
+  const store: Store = await withDatabase(label);
+  let close: (() => Promise<void>) | undefined;
+  const bridged = new AbortController();
+  let root!: string, bin!: string, scratch!: string, url!: string, herdrCalls!: string, hostId!: string;
+  try {
+    await store.init();
+    await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
+    scratch = await temporaryDirectory(label, join(process.cwd(), '.graphyard'));
+    root = await temporaryDirectory('coordinator', scratch);
+    bin = await temporaryDirectory('bin', scratch);
+    const engine = new Engine(store, leaseSeconds, 'owner/project'); engine.gitRunner = gitRunnerFor(root);
+    ({ url, close } = await listen(server(engine, [coordinator, worker, reader, { id: 'fixture-admin', role: 'admin' } as Principal].map(principal => ({ ...principal, token: token(principal) })))));
+    const { git, head } = await gitRepo({ root, files: { 'README.md': 'Fixture.\n' } });
+    git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); git('update-ref', 'refs/remotes/origin/main', head);
+    // Herdr is on PATH and records any call: a worker launch must make none. Fixtures running at once
+    // share one record, since whichever fixture's bin leads PATH answers a call.
+    herdrCalls = sharedHerdrCalls ??= join(scratch, 'herdr-calls');
+    await writeFile(join(bin, 'herdr'), `#!/bin/sh\necho "$@" >> ${herdrCalls}\nexit 1\n`, { mode: 0o755 });
+    process.env.PATH = `${bin}:${process.env.PATH}`;
+    const credentials = await temporaryDirectory('credentials', scratch);
+    await setupMaster(root, { url, token: token(coordinator), cliPath: launcher, credentialDirectory: credentials, run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
+    hostId = (await loadMasterConfig(root)).hostId;
+    const credentialFile = join(credentials, 'worker-a.token');
+    await writeFile(credentialFile, token(worker), { mode: 0o600 });
+    await saveWorkerProfile(root, { name: 'launch', principal: worker.id, agentName, mode: 'launch', kind: 'claude', credentialFile }, async () => ({ actor: worker }));
+    // The loop's host bridge, which serves run logs to the item page.
+    if (bridge) await new Promise<void>(resolve => bridgeTerminals(url, token(coordinator), bridged.signal, resolve, undefined, root));
+  } catch (error) {
+    bridged.abort();
+    await close?.();
+    await store.close();
+    throw error;
+  }
   const registry = new AgentRegistry(store);
   const homes = new Map<string, string>();
-  // The loop's host bridge, which serves run logs to the item page.
-  const bridged = new AbortController();
-  if (bridge) await new Promise<void>(resolve => bridgeTerminals(url, token(coordinator), bridged.signal, resolve, undefined, root));
 
   const api = async (principal: Principal | null, method: 'GET' | 'POST', path: string, body?: unknown) => {
     const response = await fetch(`${url}/api/${path}`, { method, headers: { ...(principal ? { Authorization: `Bearer ${token(principal)}` } : {}), 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -181,7 +191,7 @@ if (${JSON.stringify(entry.failure ?? '')}) { console.error(${JSON.stringify(ent
   const started = async (name: string) => JSON.parse(await readFile(join(homes.get(name)!, 'started.json'), 'utf8'));
   const runLog = async (work: Work, run: string) => api(reader, 'GET', `work/${work.key}/runs/${run}/log`);
   return { root, agentName, url, hostId, herdrCalls, homes, registry, api, stored, readyItem, configure, dispatch, submitted, started, runLog,
-    stop: async () => { bridged.abort(); await close(); await store.close(); } };
+    stop: async () => { bridged.abort(); await close?.(); await store.close(); } };
 }
 
 /** The kinds with a built-in startup contract (tests/headless-workers.test.ts); `devin` is the first registry-contract kind. */
