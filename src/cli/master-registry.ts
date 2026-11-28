@@ -113,8 +113,27 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Par
   if (collection === 'account') {
     const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { reason: { type: 'string' }, runtime: { type: 'string' }, model: { type: 'string' }, plan: { type: 'string' }, 'monthly-fee': { type: 'string' }, home: { type: 'string' }, host: { type: 'string' }, 'max-sessions': { type: 'string' }, disable: { type: 'boolean' }, enable: { type: 'boolean' }, note: { type: 'string' },
       'key-file': { type: 'string' }, 'key-variable': { type: 'string' }, 'no-key': { type: 'boolean' } } });
-    if (!positionals[0] || !values.reason) throw new Error('Use master registry account set NAME|@FILE --runtime R --model M [--home PATH] [--host HOST] --reason REASON');
-    if (positionals[0].startsWith('@')) return api.write('agent-registry/accounts', { account: await fromFile(positionals[0]), reason: values.reason });
+    const usage = 'Use master registry account set NAME|@FILE --runtime R --model M [--home PATH] [--host HOST] --reason REASON';
+    if (!positionals[0]) throw new Error(usage);
+    if (positionals[0].startsWith('@')) {
+      const parsed = await fromFile(positionals[0]);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${positionals[0]} must be a JSON object. ${usage}`);
+      const raw = parsed as Record<string, unknown>;
+      const reason = values.reason ?? (typeof raw.reason === 'string' && raw.reason.trim() ? raw.reason.trim() : undefined);
+      if (!reason) throw new Error(usage);
+      const source = (raw.account && typeof raw.account === 'object' && !Array.isArray(raw.account) ? raw.account : raw) as Record<string, unknown>;
+      const existing = typeof source.name === 'string' ? current.accounts.find(account => account.name === source.name) : undefined;
+      const { quota: _observed, smoke: _smoke, unjudged: _held, quotaDecision: _decided, ...kept } = existing ?? { quota: null };
+      const readOnly = new Set(['quota', 'smoke', 'unjudged', 'quotaDecision', 'modelId', 'cost', 'capability', 'roles', 'liveSessions', 'evidence', 'loggedIn', 'usage', 'resetsAt', 'observedAt', 'checkedLive', 'reason', 'fault', 'quotaSource', 'resetUnknown', 'allowance', 'usageNote', 'spend', 'eligible', 'ineligible', 'held', 'host', 'home', 'key', 'credential']);
+      const fields = Object.fromEntries(Object.entries(source).filter(([k, v]) => !readOnly.has(k) && !(v === null && (k === 'note' || k === 'plan' || k === 'monthlyFee'))));
+      const rawCred = (source.credential && typeof source.credential === 'object' && !Array.isArray(source.credential) ? source.credential : {}) as Record<string, unknown>;
+      const key = rawCred.key ?? source.key ?? existing?.credential.key;
+      const account = { ...kept, ...fields,
+        credential: { host: rawCred.host ?? source.host ?? existing?.credential.host ?? master.hostId, home: rawCred.home !== undefined ? rawCred.home : source.home !== undefined ? source.home : existing?.credential.home ?? null, ...(key ? { key } : {}) } };
+      try { return await api.write('agent-registry/accounts', { account, reason }); }
+      catch (error) { throw new Error(`${error instanceof Error ? error.message : String(error)} (${usage})`); }
+    }
+    if (!values.reason) throw new Error(usage);
     const existing = current.accounts.find(account => account.name === positionals[0]);
     if (!existing && (!values.runtime || !values.model)) throw new Error(`${positionals[0]} is a new account; name its --runtime and --model (mainworks master registry lists both)`);
     // `quotaDecision` is the registry's own record of an operator's quota mark (GY-3117), not a

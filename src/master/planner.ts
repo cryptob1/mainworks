@@ -115,7 +115,7 @@ export async function runPlanner(
             ...(draft.goal ? { goal: draft.goal } : {}),
             type: draft.type ?? 'feature',
             priority: draft.priority ?? 2,
-            criteria: [],
+            criteria: [{ id: 'AC-1', text: `${draft.title}: ${draft.simplest}`.slice(0, 2000), proofs: [] }],
             origin: 'planner',
             reason: 'Empty-board planner draft after 30 minutes without ready work.',
           },

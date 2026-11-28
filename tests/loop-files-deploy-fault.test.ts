@@ -73,7 +73,7 @@ test('e2e:loop-files-deploy-fault — a deploy failing at restart is filed once 
 });
 
 test('e2e:loop-files-deploy-fault — every fault kind the loop files is built by faultItem and accepted by the served API', async () => {
-  const record = { commit: b, verified: c, failedStep: 'restart', failedReason: 'restart failed' };
+  const record = { commit: b, verified: c, failedStep: 'health', failedReason: 'health check failed' };
   const kinds = {
     'control-plane-upgrade': controlPlaneUpgradeItem(record as Parameters<typeof controlPlaneUpgradeItem>[0]),
     'loop-step-stall': stepStallItem('dispatch', 'owner/game'),

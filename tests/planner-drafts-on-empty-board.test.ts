@@ -260,7 +260,8 @@ test(`${proof} — empty board with free builder slots launches one planner sess
   for (const draft of drafts) {
     assert.ok(draft.why && draft.why.length > 0, `${draft.key} has why`);
     assert.ok(draft.simplest && draft.simplest.length > 0, `${draft.key} has simplest`);
-    assert.deepEqual(draft.criteria, [], `${draft.key} has no criteria`);
+    assert.equal(draft.criteria.length, 1, `${draft.key} has one initial criterion`);
+    assert.deepEqual(draft.criteria[0]!.proofs, [], `${draft.key} awaits Lead proofs`);
     assert.equal(draft.ready, false, `${draft.key} is left unreleased`);
     assert.equal(draft.stage, 'backlog', `${draft.key} stays in backlog`);
   }

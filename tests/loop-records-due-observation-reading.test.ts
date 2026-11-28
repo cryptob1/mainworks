@@ -43,7 +43,7 @@ useTestStore('loop-records-due-observation-reading', { leaseSeconds: 300, reposi
 const reload = async (id: string) => (await store.list()).find(item => item.id === id)!;
 /** An item created through the engine, then written as the control plane would have left it: the fixture for what the reading binds to. */
 async function plant(shape: Work): Promise<Work> {
-  const created = await engine.execute(operator, 'create', null, { type: 'chore',  title: shape.title, criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:readings', 'e2e:fixture'] }] }, randomUUID()) as Work;
+  const created = await engine.execute(operator, 'create', null, { type: 'chore',  title: `${shape.title} (${randomUUID().slice(0, 8)})`, criteria: [{ id: 'AC-1', text: 'Proven', proofs: ['unit:readings', 'e2e:fixture'] }] }, randomUUID()) as Work;
   const { id, key, ...rest } = shape;
   await store.pool.query('UPDATE work_items SET document=$2 WHERE id=$1', [created.id, JSON.stringify({ ...created, ...rest, id: created.id, key: created.key })]);
   return reload(created.id);

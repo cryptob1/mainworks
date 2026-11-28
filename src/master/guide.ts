@@ -64,7 +64,7 @@ Items default to \`systemDriven: true\`: \`lead run\` dispatches and launches re
 
 ### File every item with an e2e: proof
 
-Every item needs an \`e2e:NAME\` criterion bound to a new or existing \`e2e/cases/NAME.json\`; there is no chore exemption or opt-out. A feature's or bug's proofs must include one that fails on the base tip, or the merge trial refuses it because the proof already passes before the change; chores are exempt. Loop repairs name \`e2e:create-work-item\`. A feature's head must add or change one of its bound cases: the merge trial refuses it otherwise, and reusing a delivered case unchanged is only for bugs, chores and loop repairs.
+Every item needs an \`e2e:NAME\` criterion bound to a new or existing \`e2e/cases/NAME.json\`; there is no chore exemption or opt-out. Product review is not waived for a static page. A deploy item's criteria prove the served SHA from the project's health or version route, not a merged config. A feature's or bug's proofs must include one that fails on the base tip, or the merge trial refuses it because the proof already passes before the change; chores are exempt. Loop repairs name \`e2e:create-work-item\`. A feature's head must add or change one of its bound cases: the merge trial refuses it otherwise, and reusing a delivered case unchanged is only for bugs, chores and loop repairs.
 
 ### Session liveness is reconciled, not trusted
 

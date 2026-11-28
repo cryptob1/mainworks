@@ -61,7 +61,7 @@ async function branch(name: string, guide: string) {
 }
 /** An item submitted on HEAD with both proofs attested by the master on it. */
 async function submitted(name: string, head: string, attest: string[]): Promise<Work> {
-  let work = await lifecycle(engine, admin, { type: 'bug', title: 'Docs signed off', criteria: [{ id: 'AC-1', text: 'The guide says what changed', proofs: [DOCS, OTHER] }, { id: 'AC-2', text: 'The fixture case passes', proofs: [E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch: name }, submit: { head } });
+  let work = await lifecycle(engine, admin, { type: 'bug', title: `Docs signed off (${name})`, criteria: [{ id: 'AC-1', text: 'The guide says what changed', proofs: [DOCS, OTHER] }, { id: 'AC-2', text: 'The fixture case passes', proofs: [E2E] }] }, { claim: worker, pull: true, workspace: { host: 'test', branch: name }, submit: { head } });
   for (const proof of attest) work = await engine.execute(master, 'evidence', work.id, { proof, sha: head, baseSha: work.candidate!.baseSha, policyRevision: work.policyRevision, result: 'pass', executed: 1, skipped: 0, reason: 'the guide matches the change', ...attestationExercise(work, proof) }, id());
   return work;
 }

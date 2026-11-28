@@ -13,11 +13,19 @@ export async function open(c: Omit<Ctx, 'work'> & { work?: Work }): Promise<Work
     authorizeOperatorCommand(actor, command, data, undefined, engine.repository);
   // GY-3215: an invited maintainer files work as themselves; a viewer does not. GY-3344: so does a reporter.
   } else if (actor.team !== 'maintainer' && actor.role !== 'reporter' && actor.role !== 'caretaker') admin(actor);
+  const titleKey = data.title.trim().toLowerCase();
+  const duplicate = all.find(w => w.stage !== 'done' && w.title.trim().toLowerCase() === titleKey);
+  demand(!duplicate, `An open item already has this title: ${duplicate?.key}`, 409);
   demand(data.dependencies.every((dep: string) => all.some(w => w.id === dep)), 'Unknown dependency');
-  demand(new Set(data.criteria.map((ac: { id: string }) => ac.id)).size === data.criteria.length, 'Criterion IDs must be unique');
-  const criteria = data.criteria.length ? declareBootstrap(engine, actor, data, [], 1, now) : [];
+  const rawCriteria = data.criteria.length
+    ? data.criteria
+    : data.origin !== undefined || data.faultKey !== undefined
+      ? [{ id: 'AC-1', text: `${data.title}: ${data.simplest ?? data.why ?? 'completed and verified'}`.slice(0, 2000), proofs: [] }]
+      : [];
+  demand(new Set(rawCriteria.map((ac: { id: string }) => ac.id)).size === rawCriteria.length, 'Criterion IDs must be unique');
+  const criteria = rawCriteria.length ? declareBootstrap(engine, actor, { ...data, criteria: rawCriteria }, [], 1, now) : [];
   const scenarioRequirements: Work['scenarioRequirements'] = [];
-  const proofNames: string[] = [...new Set<string>(data.criteria.flatMap((ac: { proofs: string[] }) => ac.proofs))];
+  const proofNames: string[] = [...new Set<string>(rawCriteria.flatMap((ac: { proofs: string[] }) => ac.proofs))];
   for (const proof of proofNames.filter(p => p.startsWith('e2e:'))) {
     // GY-1708: resolveScenario persists a shipped revision (capacity-limit-redispatch) so create
     // pins a shipped scenario without a separate e2e sync. Only Mainworks's own repository install

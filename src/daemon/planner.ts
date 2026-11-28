@@ -53,7 +53,7 @@ const isReadyOrReleasedUnclaimed = (item: Work, now: number) =>
 /** GY-3835: open unreleased planner drafts awaiting criteria from the Lead. */
 export function plannerDraftAttention(open: readonly Work[]) {
   return open
-    .filter(item => item.stage !== 'done' && isPlannerDraft(item) && !item.ready && !item.criteria.length)
+    .filter(item => item.stage !== 'done' && isPlannerDraft(item) && !item.ready && item.criteria.every(criterion => !criterion.proofs.length))
     .map(item => ({
       subject: item.key,
       text: `Planner draft awaiting Lead review (${item.key}): ${item.title}`,
@@ -178,6 +178,7 @@ export function plannerPrompt(context: {
     '- "simplest": one sentence on why it is the simplest thing that works (max 300 chars)',
     '- optional "goal" (short string), "type" ("feature" | "bug" | "chore"), "priority" (0-4)',
     'Do NOT include criteria or release instructions; the Lead writes criteria and releases.',
+    'For any deploy item, its criteria must prove the served SHA from the project\'s health or version route, not a merged config.',
     '',
     'Product brief:',
     context.brief?.trim() || '(no product brief recorded)',

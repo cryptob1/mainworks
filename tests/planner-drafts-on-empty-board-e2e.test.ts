@@ -141,7 +141,8 @@ test('e2e:planner-drafts-on-empty-board — running test install with an empty b
     assert.equal(snapshot.work.length, 3, 'at most three unreleased draft items were created');
     for (const item of snapshot.work) {
       assert.equal(item.ready, false, `${item.key} is unreleased`);
-      assert.deepEqual(item.criteria, [], `${item.key} has no criteria`);
+      assert.equal(item.criteria.length, 1, `${item.key} has one initial criterion`);
+      assert.deepEqual(item.criteria[0]!.proofs, [], `${item.key} awaits Lead proofs`);
       assert.ok(item.why && item.simplest, `${item.key} has why and simplest`);
     }
 

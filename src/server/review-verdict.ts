@@ -301,7 +301,7 @@ export async function recordReviewVerdict(services: Services, actor: Principal, 
  * standing one.
  */
 export async function recordProductReviewByHand(services: Services, actor: Principal, id: string, body: unknown, key: string) {
-  demand(actor.role === 'admin' || actor.role === 'coordinator', 'Only an admin or the loop\'s coordinator records a product review by hand', 403);
+  demand(actor.role === 'admin' || actor.role === 'coordinator', 'Only an admin or the loop\'s coordinator records a product review by hand; product review is not waived for a static page', 403);
   const data = productReviewBodySchema.parse(body);
   demand(key && key.length <= 200, 'An Idempotency-Key is required', 400);
   const receiptInput = { id, data };
