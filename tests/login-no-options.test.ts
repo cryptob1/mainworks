@@ -70,20 +70,20 @@ for (const [layout, configHomeOf] of [['GRAPHYARD_CONFIG_HOME at <install>', (ho
   });
 }
 
-test('unit:signin-session-renews-on-use — a session used within 90 days stays valid, and one left unused for 90 days is refused', async () => {
+test('unit:signin-session-renews-on-use — a session used within 180 days stays valid, and one left unused for 180 days is refused', async () => {
   let now = Date.parse('2026-10-19T00:00:00Z');
   const database = await signInDatabase();
   try {
     const table = new HumanSignIn(database.store, () => now);
     const { code } = table.issue({ id: 'operator', role: 'admin', sessionKind: 'human' }, true);
     const session = await table.redeem(code);
-    assert.equal(signInSessionTtlMs, 90 * 86_400_000);
-    assert.equal(session.expiresAt, '2027-01-17T00:00:00.000Z');
+    assert.equal(signInSessionTtlMs, 180 * 86_400_000);
+    assert.equal(session.expiresAt, '2027-04-17T00:00:00.000Z');
     const expiry = async () => (await database.store.pool.query('SELECT expires_at FROM human_sign_in_sessions')).rows[0].expires_at.toISOString();
-    // Used every 80 days, the session outlives its first 90.
-    for (let use = 0; use < 3; use++) { now += 80 * 86_400_000; assert.equal((await table.authenticate(session.token))?.id, 'operator'); }
+    // Used every 80 days, the session outlives its first 180.
+    for (let use = 0; use < 5; use++) { now += 80 * 86_400_000; assert.equal((await table.authenticate(session.token))?.id, 'operator'); }
     assert.equal(await expiry(), new Date(now + signInSessionTtlMs).toISOString());
-    // Even a use within the hour preserves a full 90-day inactivity window.
+    // Even a use within the hour preserves a full 180-day inactivity window.
     now += 30 * 60_000;
     assert.equal((await table.authenticate(session.token))?.id, 'operator');
     assert.equal(await expiry(), new Date(now + signInSessionTtlMs).toISOString());

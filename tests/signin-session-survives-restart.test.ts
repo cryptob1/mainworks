@@ -50,21 +50,17 @@ test('integration:signin-session-survives-restart — persisted digests authenti
     const first = await table.redeem(table.issue(issuer, true).code);
     assert.equal(Date.parse(first.expiresAt), now + signInSessionTtlMs);
     now++;
-    // Concurrent redeemers share the database cap, even from separate server instances.
+    // Concurrent redeemers share the database cap, even from separate server instances: a full table
+    // replaces its least recently used session (first) instead of refusing a sign-in (GY-4072).
     const other = new HumanSignIn(database.store, () => now);
-    const attempts = await Promise.allSettled(Array.from({ length: maxSignInSessions }, (_, i) => {
+    const attempts = await Promise.all(Array.from({ length: maxSignInSessions }, (_, i) => {
       const owner = i % 2 ? table : other;
       return owner.redeem(owner.issue(issuer, true).code);
     }));
-    assert.equal(attempts.filter(result => result.status === 'fulfilled').length, maxSignInSessions - 1);
-    const refused = attempts.filter(result => result.status === 'rejected');
-    assert.equal(refused.length, 1);
-    assert.match(refused[0].reason.message, /session sign-in limit/);
     assert.equal((await database.store.pool.query('SELECT * FROM human_sign_in_sessions')).rowCount, maxSignInSessions);
-    assert.deepEqual(await other.authenticate(first.token), first.actor);
-    for (const result of attempts) if (result.status === 'fulfilled')
-      assert.deepEqual(await other.authenticate(result.value.token), result.value.actor);
-    await other.signOut(first.token);
+    assert.equal(await other.authenticate(first.token), null);
+    for (const result of attempts) assert.deepEqual(await other.authenticate(result.token), result.actor);
+    await other.signOut(attempts[0].token);
     const replacement = await table.redeem(table.issue(issuer, true).code);
     assert.deepEqual(await other.authenticate(replacement.token), replacement.actor);
     now += signInSessionTtlMs;

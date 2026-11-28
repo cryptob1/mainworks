@@ -12,7 +12,7 @@ import { HELPER_TEXT, LOGIN_USERNAME, LoginView, REJECTED_NOTICE, VERIFY_TIMEOUT
 const root = new URL('..', import.meta.url);
 const noop = () => {};
 const HOST = 'graphyard.example:4319';
-const props = (state: LoginState, error = ''): LoginViewProps => ({ state, error, draftToken: '', setDraftToken: noop, submit: noop, retry: noop, useAnotherToken: noop });
+const props = (state: LoginState, error = '', linked = false): LoginViewProps => ({ state, error, draftToken: '', setDraftToken: noop, submit: noop, retry: noop, useAnotherToken: noop, linked });
 const markup = (state: LoginState, error = '') => renderToStaticMarkup(createElement(LoginView, props(state, error)));
 
 interface Host { type: string; props: Record<string, any>; parent: Host | null; children: Host[] }
@@ -127,12 +127,19 @@ test('unit:login-verify-states verifying shows progress and resolves as pending,
     network.reply(new Response('bad gateway', { status: 502 })); await settle();
     assert.deepEqual(seen(), { kind: 'unreachable' }); assert.equal(clock.pending(), 0, 'the timeout is cleared');
   }
-  // Rejected (401 and 403): back to the token form with the notice and the input focused.
+  // GY-4072: a 403, or a 401 without the ended-session code, keeps the token and names the refusal.
   for (const code of [401, 403]) {
     const clock = fakeClock(), network = fakeFetch();
+    const seen = await outcomeOf(verifyToken('held-token', network.fetcher, clock).result);
+    network.reply(new Response(JSON.stringify({ error: 'no' }), { status: code })); await settle(); await settle();
+    assert.deepEqual(seen(), { kind: 'unreachable', problem: 'no' }, `${code} keeps the token`); assert.equal(clock.pending(), 0);
+  }
+  // Rejected (the server says the session ended): back to the token form with the notice and the input focused.
+  {
+    const clock = fakeClock(), network = fakeFetch();
     const seen = await outcomeOf(verifyToken('bad-token', network.fetcher, clock).result);
-    network.reply(new Response(JSON.stringify({ error: 'no' }), { status: code })); await settle();
-    assert.deepEqual(seen(), { kind: 'rejected' }, `${code} rejects the token`); assert.equal(clock.pending(), 0);
+    network.reply(new Response(JSON.stringify({ error: 'no', code: 'session_expired' }), { status: 401 })); await settle(); await settle();
+    assert.deepEqual(seen(), { kind: 'rejected' }, 'an ended session rejects the token'); assert.equal(clock.pending(), 0);
     const page = tree({ kind: 'form' }, REJECTED_NOTICE);
     const alert = all(page).find(host => host.props.role === 'alert')!;
     assert.equal(text(alert), 'That token was not accepted');
