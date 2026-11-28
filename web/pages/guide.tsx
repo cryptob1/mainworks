@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PageHeader } from '../components/page-layout';
 import Term from '../components/term';
+import { showChecklist } from '../components/home-checklist';
 
 /** The delivery flow, one card per step (GY-3295): a short line each, read left to right and top to bottom. */
 const flow: [string, string][] = [
@@ -71,16 +72,18 @@ const commands: [string, string][] = [
  * who has never heard of Mainworks. Who decides what, one first item from setup to result, the delivery
  * flow and where each part runs as readable panels, then a folded FAQ and reference. The reference prints
  * `mainworks guide setup` and `mainworks guide infra` themselves, loaded once the page is open, so those
- * procedures keep one source.
+ * procedures keep one source. GY-4066: the owner's one action brings back the day-one checklist and opens Home.
  */
-export default function GuidePage() {
+export default function GuidePage({ setView, owner }: { setView(view: string): void; owner: boolean }) {
   const [media, setMedia] = useState<{ video: string; setup: string; infra: string } | null>(null);
   useEffect(() => {
     Promise.all([import('../../docs/diagrams/how-mainworks-works.mp4?url'), import('../../src/guide')])
       .then(([video, guide]) => setMedia({ video: video.default, setup: guide.guideText('setup'), infra: guide.guideText('infra') }));
   }, []);
+  const showAgain = () => { showChecklist(); location.hash = 'home'; setView('home'); };
   return <article className="guide">
-    <PageHeader title={`How ${PRODUCT_NAME} works`} fact={`${PRODUCT_NAME} is a coding factory. You say what to build; AI agents build, check, merge and ship it, with no person in the loop.`}/>
+    <PageHeader title={`How ${PRODUCT_NAME} works`} fact={`${PRODUCT_NAME} is a coding factory. You say what to build; AI agents build, check, merge and ship it, with no person in the loop.`}
+      actions={owner && <button type="button" onClick={showAgain}>Show the first-time checklist</button>}/>
     <nav className="guide-contents" aria-label="On this page">
       {link('docs-overview', 'Who decides what')}{link('docs-first-item', 'Your first item')}{link('docs-flow', 'How a change ships')}{link('docs-where', 'Where things run')}{link('docs-faq', 'FAQ')}{link('docs-reference', 'Reference')}
     </nav>
@@ -90,7 +93,7 @@ export default function GuidePage() {
       <ul>
         <li><strong>You, the owner</strong>: goals and priorities, money and accounts, and sign-ins for people. Tell agents your decision; reverse their answer under Needs you.</li>
         <li><strong>The Lead</strong>: keeps the brief, plans work and unsticks it.</li>
-        <li><strong>The loop</strong>: plain code, no AI. It hands out work, runs test merges, merges and deploys.</li>
+        <li><strong>The loop</strong>: plain code, no AI. It hands out work, tests, merges and deploys.</li>
         <li><strong>Workers and reviewers</strong>: AI coding sessions. Nobody reviews their own work.</li>
       </ul>
       <p>Your repository is the <strong>managed app</strong>. {PRODUCT_NAME} has its own server, dashboard and database.</p>
@@ -103,9 +106,9 @@ export default function GuidePage() {
         <li><strong>Connect your repository.</strong> In its checkout, run <code>npx @cryptob1/graphyard up --repo OWNER/NAME</code>. It installs everything and prints a sign-in link.</li>
         <li><strong>Open the dashboard.</strong> The link signs you in at <code>http://127.0.0.1:4310</code>, or the port <code>up</code> chose. Setup connects agent accounts.</li>
         <li><strong>State a goal.</strong> On Work, press <strong>New work item</strong> and title it. The Lead writes the criteria.</li>
-        <li><strong>Watch it move.</strong> Work lists every task under its goal, with its state, what it is doing now and how long.</li>
+        <li><strong>Watch it move.</strong> Work lists every task under its goal, with its state, what it is doing and how long.</li>
         <li><strong>Find the result.</strong> Work’s <strong>Shipped today</strong> filter lists what went live.</li>
-        <li><strong>Meet a blocker.</strong> Stuck tasks are tinted and first in their group, for the Lead to clear; your decisions wait under Needs you.</li>
+        <li><strong>Meet a blocker.</strong> Stuck tasks are tinted and first in their group; the Lead clears them. Your decisions wait under Needs you.</li>
       </ol>
     </section>
 

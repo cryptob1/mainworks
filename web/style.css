@@ -634,6 +634,9 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 /* GY-3671: Home's since you last looked, active goals and the box to the Lead. */
 .since-looked ul{margin:var(--space-2) 0 0;padding-left:18px}.since-looked li{overflow-wrap:anywhere}.goals ul{margin:0;padding-left:20px}.goals li{overflow-wrap:anywhere}
 .tell-lead label{display:block;font-weight:600;margin-bottom:6px}.tell-lead-row{display:flex;gap:var(--space-2);align-items:flex-end}.tell-lead textarea{flex:1;min-width:0}
+/* GY-4066: Home's day-one checklist. One column at every width; its lines wrap, never widening the page. */
+.first-time ol{margin:0;padding-left:22px;display:grid;gap:var(--space-2);font-size:var(--type-body);line-height:1.65;color:var(--text-2)}
+.first-time li,.first-time p{overflow-wrap:anywhere}.first-time p{margin:0}.first-time>button{align-self:flex-start}
 /* GY-3601: Home's status line and incident cards. */
 .home-status-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:18px 0 0;font-size:30px;font-weight:600;letter-spacing:-.6px;line-height:1.2;overflow-wrap:anywhere}
 .home-status-line span{font-weight:450;color:var(--text-2)}
