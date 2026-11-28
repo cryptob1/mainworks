@@ -26,6 +26,7 @@ import { statusRoutes } from './routes/status.js';
 import { actionRoutes } from './routes/actions.js';
 import { workRoutes } from './routes/work.js';
 import { masterMessageRoutes, reporterScope } from './routes/reporter.js';
+import { slackRoutes } from './routes/slack.js';
 import { caretakerRoutes, caretakerScope } from './routes/caretaker.js';
 import { staticRoutes } from './static.js';
 import { terminalUpgrade } from './terminal.js';
@@ -42,7 +43,7 @@ const publicRoutes: readonly RouteModule[] = [healthRoutes, signinRoutes, infraA
 export const apiRoutes: readonly RouteModule[] = [
   operatorAgentRoutes, teamAccessRoutes, ownerRoutes, infraRoutes,
   { name: 'operator-agent-scope', routes: [operatorAgentRouteGuard] },
-  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, caretakerRoutes, firstRunRoutes,
+  loopStateRoutes, agentRegistryRoutes, delegationRoutes, validationRoutes, deliveryRoutes, emblemRoutes, usageRoutes, scenarioRoutes, actionRoutes, statusRoutes, workRoutes, productBriefRoutes, homeVisitRoutes, masterMessageRoutes, slackRoutes, caretakerRoutes, firstRunRoutes,
 ];
 
 async function body(req: IncomingMessage, limit = 1_000_000) {

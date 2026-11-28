@@ -28,7 +28,7 @@ import { alertMinutesOf } from '../../daemon/yard-alerts.js';
 import { heavyJobBudget, heavyJobsDirectory, hostsWithSlots, joinHostHeavyBudget } from '../../master/verification-slots.js';
 import { lastHostFallbacks } from '../../merge-writer/trial-run.js';
 import { recordLoopOwner } from '../../check-in-author.js';
-import { runSlackBridge } from '../../master/slack.js';
+import { runSlackBridge, syncSlackSetup } from '../../master/slack.js';
 
 /** The Herdr server the loop names on each read (GY-1511): the instance its herdr calls target, its host, whether it last answered, and the master's pane (GY-3211). */
 const loopHerdrReport = (host: string | null, master: string | null = null) => encodeLoopPanes({ configHome: herdrTarget()?.configHome ?? null, session: herdrTarget()?.session ?? null, host, running: herdrServerSeen(), master });
@@ -104,6 +104,8 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
       processConnectAccounts(current(), { checkouts: [root] }).catch(error => console.error(`[mainworks-master] connect-account worker: ${error instanceof Error ? error.message : String(error)}`))
         // GY-3294: and carries Setup's team access to this machine's shared record and back (a server without the routes answers 404).
         .then(() => syncTeamAccess(current())).catch(error => { if (error?.status !== 404) console.error(`[mainworks-master] team access: ${error instanceof Error ? error.message : String(error)}`); })
+        // GY-4073: and collects a Slack setup finished in Settings › Slack, reporting the connection back.
+        .then(() => syncSlackSetup(installDirectory(installIdFor(master.repository)), (path, body) => masterMutation(path, body))).catch(error => console.error(`[mainworks-master] slack setup: ${error instanceof Error ? error.message : String(error)}`))
         .finally(() => { connecting = false; });
     }, 15_000);
     connects?.unref?.();

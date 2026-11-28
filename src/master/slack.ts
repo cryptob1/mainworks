@@ -3,7 +3,7 @@
 // A message in the bound channel from an allowed person becomes a Lead message exactly as 'Tell the
 // Lead' sends one; the Lead's reply posts back in that thread; Needs you and the alerts post there too.
 import { existsSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
@@ -17,8 +17,18 @@ const slackSettingsSchema = z.object({
   owner: z.string().regex(/^[A-Z0-9]+$/),
   /** The other people the owner allows, by Slack user id. */
   people: z.array(z.string().regex(/^[A-Z0-9]+$/)).default([]),
+  /** The channel's name, when Settings › Slack bound it, for the status line. */
+  channelName: z.string().optional(),
 }).strict();
 export type SlackSettings = z.infer<typeof slackSettingsSchema>;
+
+/** The app's manifest (integrations/slack/manifest.json for a factory named Mainworks): Socket Mode on, the scopes this app needs. */
+export const slackManifest = (name: string) => ({
+  display_information: { name, description: 'Talk to your Mainworks factory: messages reach the Lead, which answers in thread.' },
+  features: { bot_user: { display_name: name, always_online: true } },
+  oauth_config: { scopes: { bot: ['app_mentions:read', 'channels:history', 'channels:read', 'groups:history', 'groups:read', 'chat:write', 'users:read'] } },
+  settings: { event_subscriptions: { bot_events: ['app_mention', 'message.channels', 'message.groups'] }, interactivity: { is_enabled: true }, socket_mode_enabled: true, org_deploy_enabled: false, token_rotation_enabled: false },
+});
 
 /** Where the tokens live: the install directory, never Git. */
 export const slackSettingsFile = (directory: string) => join(directory, 'slack.json');
@@ -37,7 +47,7 @@ export async function saveSlackSettings(directory: string, settings: SlackSettin
 }
 
 /** One Slack Web API call, form-encoded as every method accepts; a refusal throws with Slack's error. */
-async function slackCall(api: string, method: string, token: string, params: Record<string, unknown> = {}) {
+export async function slackCall(api: string, method: string, token: string, params: Record<string, unknown> = {}) {
   const body = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]));
   const response = await fetch(`${api}/${method}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body, signal: AbortSignal.timeout(10_000) });
   const result = await response.json() as any;
@@ -57,6 +67,20 @@ const slackThread = (thread: string) => { const match = /^slack-([A-Z0-9]+)-(\d+
 /** The decisions that stay with the owner however the Lead is asked. */
 const reservedKinds = new Set(['money-or-accounts', 'credentials-for-people']);
 
+/** What each running bridge last saw, by install directory: the loop reports it to Settings › Slack. */
+const bridgeStatus = new Map<string, { connected: boolean; lastMessageAt: string | null }>();
+
+/**
+ * The loop's pass for Settings › Slack: report the connection and last message, then keep a setup the
+ * owner finished there in the install directory (mode 0600), or remove the tokens on Disconnect.
+ */
+export async function syncSlackSetup(directory: string, post: (path: string, body: unknown) => Promise<any>) {
+  const settings = await readSlackSettings(directory).catch(() => null), status = bridgeStatus.get(directory);
+  const answer = await post('slack/loop', { connected: !!settings && !!status?.connected, channel: settings?.channel ?? null, channelName: settings?.channelName ?? null, lastMessageAt: status?.lastMessageAt ?? null });
+  if (answer?.settings) await saveSlackSettings(directory, answer.settings);
+  else if (answer?.disconnect) await rm(slackSettingsFile(directory), { force: true });
+}
+
 export interface SlackBridgeOptions {
   directory: string;
   /** The control plane, as the loop's coordinator identity. */
@@ -73,6 +97,9 @@ export interface SlackBridgeOptions {
 export async function runSlackBridge(options: SlackBridgeOptions) {
   const { directory, mainworks, signal } = options, api = options.api ?? 'https://slack.com/api', pollMs = options.pollMs ?? 5_000;
   const log = options.log ?? ((line: string) => console.error(`[mainworks-slack] ${line}`));
+  const status = { connected: false, lastMessageAt: null as string | null };
+  bridgeStatus.set(directory, status);
+  let open: { socket: WebSocket; appToken: string } | null = null;
   const posted = new Set<string>(JSON.parse(await readFile(slackPostedFile(directory), 'utf8').catch(() => '[]')));
   const markPosted = async (key: string) => { posted.add(key); await atomicPrivateWrite(slackPostedFile(directory), [...posted].slice(-1000)); };
   const names = new Map<string, string>();
@@ -99,7 +126,9 @@ export async function runSlackBridge(options: SlackBridgeOptions) {
       if (!counted || event.bot_id || event.subtype || !event.user || typeof event.text !== 'string') return;
       if (!allowed(settings, event.user)) return log(`Ignored a Slack message from ${event.user}: not an allowed person (lead slack allow adds people)`);
       const text = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
-      if (text) await tell(settings, event.user, text, event.channel, event.thread_ts ?? event.ts, `slack-${event.channel}-${event.ts}`);
+      if (!text) return;
+      await tell(settings, event.user, text, event.channel, event.thread_ts ?? event.ts, `slack-${event.channel}-${event.ts}`);
+      status.lastMessageAt = new Date().toISOString();
     } else if (envelope.type === 'interactive' && payload.type === 'block_actions') {
       const user = payload.user?.id, channel = payload.channel?.id ?? settings.channel, ts = payload.message?.ts;
       const choice = JSON.parse(payload.actions?.[0]?.value ?? '{}') as { w: string; r: string; k: string; l: string };
@@ -111,6 +140,8 @@ export async function runSlackBridge(options: SlackBridgeOptions) {
 
   const poll = async () => {
     const settings = await readSlackSettings(directory);
+    // A new setup or a disconnect from Settings › Slack drops the old connection.
+    if (open && open.appToken !== settings?.appToken) open.socket.close();
     if (!settings) return;
     for (const message of (await mainworks.get('master/messages')).messages ?? []) {
       const where = slackThread(message.thread ?? '');
@@ -137,10 +168,12 @@ export async function runSlackBridge(options: SlackBridgeOptions) {
 
   while (!signal.aborted) {
     const settings = await readSlackSettings(directory).catch(() => null);
-    if (!settings) { await sleep(30_000, undefined, { signal }).catch(() => {}); continue; }
+    if (!settings) { await sleep(Math.min(pollMs, 15_000), undefined, { signal }).catch(() => {}); continue; }
     try {
       const { url } = await slackCall(api, 'apps.connections.open', settings.appToken);
       const socket = new WebSocket(url);
+      open = { socket, appToken: settings.appToken };
+      socket.addEventListener('open', () => { status.connected = true; });
       await new Promise<void>(resolve => {
         const stop = () => socket.close();
         signal.addEventListener('abort', stop, { once: true });
@@ -150,11 +183,12 @@ export async function runSlackBridge(options: SlackBridgeOptions) {
           if (envelope.type === 'disconnect') socket.close();
           else handle(envelope).catch(error => log(`Slack event failed: ${error instanceof Error ? error.message : String(error)}`));
         });
-        socket.addEventListener('close', () => { signal.removeEventListener('abort', stop); resolve(); });
+        socket.addEventListener('close', () => { status.connected = false; open = null; signal.removeEventListener('abort', stop); resolve(); });
         socket.addEventListener('error', () => socket.close());
       });
     } catch (error) { log(`Slack connection failed: ${error instanceof Error ? error.message : String(error)}`); }
-    await sleep(signal.aborted ? 0 : 5_000, undefined, { signal }).catch(() => {});
+    await sleep(signal.aborted ? 0 : Math.min(pollMs, 5_000), undefined, { signal }).catch(() => {});
   }
   await polling;
+  bridgeStatus.delete(directory);
 }

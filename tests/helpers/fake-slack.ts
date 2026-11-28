@@ -33,7 +33,7 @@ function readFrames(buffer: Buffer): { texts: string[]; rest: Buffer; closed: bo
   return { texts, rest: buffer, closed };
 }
 
-export async function fakeSlack(options: { appToken: string; botToken: string; names: Record<string, string> }) {
+export async function fakeSlack(options: { appToken: string; botToken: string; names: Record<string, string>; channels?: { id: string; name: string; is_member: boolean }[] }) {
   const posts: SlackPost[] = [], acks: string[] = [], opened: string[] = [];
   let socket: Duplex | null = null;
   let connected: () => void = () => {};
@@ -50,6 +50,9 @@ export async function fakeSlack(options: { appToken: string; botToken: string; n
       return answer({ ok: true, url: `ws://127.0.0.1:${(server.address() as any).port}/socket` });
     }
     if (bearer !== options.botToken) return answer({ ok: false, error: 'invalid_auth' });
+    if (method === 'auth.test') return answer({ ok: true, team: 'Factory Team', user: 'mainworks', user_id: 'UAPP' });
+    if (method === 'conversations.list') return answer({ ok: true, channels: options.channels ?? [] });
+    if (method === 'users.list') return answer({ ok: true, members: Object.entries(options.names).map(([id, name]) => ({ id, name: name.toLowerCase(), profile: { display_name: name } })) });
     if (method === 'users.info') return answer({ ok: true, user: { id: params.user, name: params.user.toLowerCase(), profile: { display_name: options.names[params.user] ?? '', real_name: params.user } } });
     if (method === 'chat.postMessage') {
       posts.push({ channel: params.channel, text: params.text, ...(params.thread_ts ? { thread_ts: params.thread_ts } : {}), ...(params.blocks ? { blocks: JSON.parse(params.blocks) } : {}) });
