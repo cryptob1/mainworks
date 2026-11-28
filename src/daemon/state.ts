@@ -197,9 +197,11 @@ const githubCallMinuteSchema = z.object({ minute: z.number().int(), observation:
 const githubCallsSchema = z.object({
   minutes: z.array(githubCallMinuteSchema).max(120).default([]),
   rateLimit: z.object({ limit: z.number(), remaining: z.number(), reset: z.string(), at: z.string() }).strict().nullable().default(null),
+  /** When GitHub was last asked for its limit, answered or not: it is asked at most once a minute. */
+  limitAskedAt: z.string().nullable().default(null),
   /** Set while the hour's calls are at the share: since when, and how many observation polls have waited. */
   slowed: z.object({ since: z.string(), waited: z.number().int().min(0) }).strict().nullable().default(null),
-}).strict().default({ minutes: [], rateLimit: null, slowed: null });
+}).strict().default({ minutes: [], rateLimit: null, limitAskedAt: null, slowed: null });
 
 export const daemonStateSchema = z.object({
   version: z.literal(1), url: z.string(), repository: z.string(),

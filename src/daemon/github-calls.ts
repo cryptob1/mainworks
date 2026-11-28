@@ -56,8 +56,10 @@ function githubSlowWaitMs(calls: GithubCalls, sharePercent = defaultGithubCallSh
   if (over < 0) return 0;
   for (const minute of [...calls.minutes].sort((a, b) => a.minute - b.minute)) {
     const until = minute.minute + minuteMs + hourMs - now;
+    // A minute that already left the hour is in no count, so it frees nothing; the next call prunes it.
+    if (until <= 0) continue;
     over -= githubCallSources.reduce((sum, source) => sum + minute[source], 0);
-    if (over < 0) return Math.min(Math.max(0, until), maxWaitMs);
+    if (over < 0) return Math.min(until, maxWaitMs);
   }
   return maxWaitMs;
 }

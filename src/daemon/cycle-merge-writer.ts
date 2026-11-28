@@ -927,11 +927,14 @@ async function adoptRestartedTrials(cycle: Pick<Cycle, 'state' | 'effects' | 'no
 
 /**
  * GY-4070: once a minute, the remaining limit is read again from GitHub's response headers, so status
- * shows what the token still allows whoever shares it. A GitHub that does not answer keeps the last reading.
+ * shows what the token still allows whoever shares it. GitHub is asked at most once a minute whether
+ * or not it answers, so a missing login or an outage costs one attempt a minute, never one a cycle; a
+ * GitHub that does not answer keeps the last reading.
  */
 async function refreshGithubRateLimit(cycle: Pick<Cycle, 'state' | 'now'>, reads: Pick<MergeWriterReads, 'githubRateLimit'>) {
   const calls = cycle.state.github, now = cycle.now();
-  if (!reads.githubRateLimit || (calls.rateLimit && Date.parse(calls.rateLimit.at) + 60_000 > now)) return;
+  if (!reads.githubRateLimit || (calls.limitAskedAt && Date.parse(calls.limitAskedAt) + 60_000 > now)) return;
+  calls.limitAskedAt = new Date(now).toISOString();
   const reading = await reads.githubRateLimit().catch(() => null);
   if (reading) calls.rateLimit = reading;
 }
