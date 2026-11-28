@@ -1,15 +1,19 @@
 // Concern: a git remote served over token-authenticated smart HTTP on loopback (git http-backend
 // behind a Basic-auth server), the fixture for the merge writer's https credentials (GY-3220, GY-3269).
 import { spawn } from 'node:child_process';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { listen } from './http-server.js';
 
 /**
  * Serves PROJECT_ROOT over git smart HTTP on loopback, answering 401 unless the Basic password is
- * TOKEN. LOG collects each request line, so a test can prove no line holds the token.
+ * TOKEN. LOG collects each request line, so a test can prove no line holds the token. RESPOND, when
+ * it answers a request itself (true), runs before the password check and git (GY-4070: the same
+ * server stands in for GitHub's API beside its git transport).
  */
-export async function serveGitHttp(projectRoot: string, token: string, log: string[]) {
+export async function serveGitHttp(projectRoot: string, token: string, log: string[], respond?: (request: IncomingMessage, response: ServerResponse) => boolean) {
   const { url, close } = await listen((request, response) => {
     log.push(`${request.method} ${request.url}`);
+    if (respond?.(request, response)) return;
     const password = Buffer.from((request.headers.authorization ?? '').replace(/^Basic /, ''), 'base64').toString().split(':')[1];
     if (password !== token) { response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git"' }).end(); return; }
     const [path, query = ''] = request.url!.split('?');
