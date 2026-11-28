@@ -111,12 +111,14 @@ test('integration:onboarding-small-fixes — account set @FILE, unique open back
     type: 'chore',
     priority: 2,
     criteria: [],
-    origin: 'planner',
-    reason: 'Empty-board planner draft.',
+    faultKey: 'loop-step-stall:deploy',
+    reason: 'Loop-filed fault.',
   });
   assert.ok(Array.isArray(systemFiled.criteria) && systemFiled.criteria.length >= 1, 'system-filed item gets at least one criterion');
   assert.equal(systemFiled.criteria[0].id, 'AC-1');
   assert.ok(systemFiled.criteria[0].text.length > 0, 'criterion has text');
+  const draft = await ok('work', admin, { title: 'Planner draft', why: 'Idea.', simplest: 'Small.', type: 'feature', priority: 2, criteria: [], origin: 'planner', reason: 'Empty-board planner draft.' });
+  assert.deepEqual(draft.criteria, [], 'a planner draft stays without criteria until the Lead writes them');
 
   // 4. Product-review refusal for a static page says in one line that product review is not waived.
   const productRefusal = await call(`work/${reopened.key}/product-review`, worker, {

@@ -19,7 +19,7 @@ export async function open(c: Omit<Ctx, 'work'> & { work?: Work }): Promise<Work
   demand(data.dependencies.every((dep: string) => all.some(w => w.id === dep)), 'Unknown dependency');
   const rawCriteria = data.criteria.length
     ? data.criteria
-    : data.origin !== undefined || data.faultKey !== undefined
+    : (data.origin !== undefined && data.origin !== 'planner') || data.faultKey !== undefined
       ? [{ id: 'AC-1', text: `${data.title}: ${data.simplest ?? data.why ?? 'completed and verified'}`.slice(0, 2000), proofs: [] }]
       : [];
   demand(new Set(rawCriteria.map((ac: { id: string }) => ac.id)).size === rawCriteria.length, 'Criterion IDs must be unique');

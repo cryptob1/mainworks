@@ -53,7 +53,7 @@ const isReadyOrReleasedUnclaimed = (item: Work, now: number) =>
 /** GY-3835: open unreleased planner drafts awaiting criteria from the Lead. */
 export function plannerDraftAttention(open: readonly Work[]) {
   return open
-    .filter(item => item.stage !== 'done' && isPlannerDraft(item) && !item.ready && item.criteria.every(criterion => !criterion.proofs.length))
+    .filter(item => item.stage !== 'done' && isPlannerDraft(item) && !item.ready && !item.criteria.length)
     .map(item => ({
       subject: item.key,
       text: `Planner draft awaiting Lead review (${item.key}): ${item.title}`,
