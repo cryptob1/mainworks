@@ -84,6 +84,20 @@ export const localOnlyTestPattern = /docker|bwrap|unshare|landlock|hard-math|del
 export const hostSafeMarker = '// mainworks: runs on a test machine; its local-only words are text, not use.';
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words, or carries hostSafeMarker. */
 export const remoteableTestFile = (text: string) => text.includes(hostSafeMarker) || !localOnlyTestPattern.test(text);
+/**
+ * GY-4099: whether the test files a case names may run on a test machine, each read with the
+ * tests/helpers modules it imports: a helper may need what only this machine has (headless-workers
+ * calls setupMaster through tests/helpers/headless-workers.ts).
+ */
+export async function caseTestsRemoteable(files: readonly string[], read: (file: string) => Promise<string>): Promise<boolean> {
+  for (const file of files) {
+    const text = await read(file).catch(() => '');
+    const helpers = [...text.matchAll(/from '\.\/(helpers\/[\w.-]+)\.js'/g)].map(match => `tests/${match[1]}.ts`);
+    for (const source of [text, ...await Promise.all(helpers.map(helper => read(helper).catch(() => '')))])
+      if (!remoteableTestFile(source)) return false;
+  }
+  return true;
+}
 
 /** GY-3612, GY-3656: a test file that drives a browser — a Playwright spec under browser-tests/, or a file naming playwright, chromium or projectCaseSuite. */
 const browserTestPattern = /playwright|chromium|projectCaseSuite/i;
@@ -901,8 +915,7 @@ export async function hostableTrialCase(worktree: string, name: string): Promise
   // What the case runs decides, not its prose: a step's name or the description may say Docker.
   const runs = definition.steps.flatMap(step => step.kind === 'command' ? [step.run] : []).join('\n');
   const named = [...new Set(runs.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
-  const tests = await Promise.all(named.map(file => readFile(join(worktree, file), 'utf8').catch(() => '')));
-  return !localOnlyTestPattern.test(runs) && tests.every(remoteableTestFile);
+  return !localOnlyTestPattern.test(runs) && caseTestsRemoteable(named, file => readFile(join(worktree, file), 'utf8'));
 }
 
 /**
