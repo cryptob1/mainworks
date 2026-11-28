@@ -1,0 +1,14 @@
+{
+  "id": "first-time-panel-shows-for-new-manager",
+  "title": "A new manager sees the day-one checklist on Home with its exact copy, and never on the first-run page",
+  "description": "A real browser on the built dashboard, signed in as the owner with merged work and nothing dismissed in this browser. At 1280 and 390 px Home shows, under the status line and the incident cards, one panel with the heading, the seven steps and the guide line exactly as GY-4066 wrote them, one Got it button, and each named page a link that opens that page; the guide line links to the owner's public guide and opens it in a new tab. The steps stack in one column, the panel is no wider than the Home content and the page never scrolls sideways. An install with no merged work opens on the first-run page, which shows no checklist; a signed-in teammate, who has dismissed nothing, sees the same checklist.",
+  "tags": ["dashboard"],
+  "target": "any",
+  "required": false,
+  "steps": [{
+    "kind": "command",
+    "name": "the day-one checklist on Home at 1280 and 390 px",
+    "run": "npm run test:browser -- browser-tests/first-time-panel-shows-for-new-manager.spec.ts",
+    "timeoutSeconds": 420
+  }]
+}
