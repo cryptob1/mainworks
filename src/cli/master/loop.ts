@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { liveMasterConfig } from '../../master/config.js';
 import { daemonEffects, retriedSnapshot } from '../../daemon/effects.js';
 import { readDaemonState } from '../../daemon/state.js';
+import { noteGithubCall } from '../../daemon/github-calls.js';
 import { runDaemon } from '../../daemon/run.js';
 import { coordinationViewHeader } from '../../server/work-view.js';
 import { encodeLoopCheckoutTrust, encodeLoopCpu, encodeLoopHosts, loopHostsHeader, encodeLoopSessions, loopSessionsHeader, encodeLoopPanes, loopAlertsHeader, loopCheckoutTrustHeader, loopCpuHeader, loopFetchRefusalHeader, loopStallAlarmHeader, loopStepFailureHeader, loopSupervisionHeader, loopWorkerGrowthHeader, loopPanesHeader, loopPresenceHeader } from '../../model/loop-presence.js';
@@ -86,7 +87,9 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     };
     const effects = daemonEffects(root, current, { snapshot: retriedSnapshot(ownedSnapshot), sessionHistory: async work => (await masterApi(`work/${work.id}`, masterToken)).sessions ?? [], mutate: masterMutation,
       messages: async () => (await masterApi('master/messages', masterToken)).messages ?? [],
-      flow: async () => masterApi('not-moving', masterToken).catch(() => null) });
+      flow: async () => masterApi('not-moving', masterToken).catch(() => null),
+      // GY-4070: the merge writer's GitHub API calls are counted on this loop's cursor.
+      github: { state } });
     // GY-1603: a stopped loop's process exits within its unit's stop bound, whatever handle is left open.
     const exit = exitWhenStopped();
     const held = state.lock && state.lock.pid !== process.pid ? state.lock : null;
@@ -112,6 +115,7 @@ export async function loopCommand(session: MasterSession): Promise<unknown> {
     stopping.signal.addEventListener('abort', () => clearInterval(connects));
     // GY-3709: until something merges, the loop reports the repository's open issues for the first-run page's step 3.
     const issues = values.once ? undefined : setInterval(function report() {
+      noteGithubCall(state.github, 'other', Date.now(), current().run.githubCallSharePercent);
       reportOpenIssues(master.repository, body => masterMutation('first-run/issues', body))
         .then(wanted => { if (!wanted) clearInterval(issues); })
         .catch(error => console.error(`[mainworks-master] first-run issues: ${error instanceof Error ? error.message : String(error)}`));

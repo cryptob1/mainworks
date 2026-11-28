@@ -187,6 +187,22 @@ export type DiskKind = z.infer<typeof diskKindSchema>;
 export type DiskSample = z.infer<typeof diskSampleSchema>;
 export type DiskUse = z.infer<typeof diskUseSchema>;
 
+/** GY-4070: one UTC minute's GitHub API calls by source; the minute leaves the hour an hour after it began. */
+const githubCallMinuteSchema = z.object({ minute: z.number().int(), observation: z.number().int().min(0), releasePublish: z.number().int().min(0), other: z.number().int().min(0) }).strict();
+/**
+ * GY-4070: the GitHub API calls the loop made in the last hour (daemon/github-calls.ts) — per minute
+ * by source, the limit remaining as GitHub's response headers last reported it, and the slowdown of
+ * observation polling while the hour holds its share.
+ */
+const githubCallsSchema = z.object({
+  minutes: z.array(githubCallMinuteSchema).max(120).default([]),
+  rateLimit: z.object({ limit: z.number(), remaining: z.number(), reset: z.string(), at: z.string() }).strict().nullable().default(null),
+  /** When GitHub was last asked for its limit, answered or not: it is asked at most once a minute. */
+  limitAskedAt: z.string().nullable().default(null),
+  /** Set while the hour's calls are at the share: since when, and how many observation polls have waited. */
+  slowed: z.object({ since: z.string(), waited: z.number().int().min(0) }).strict().nullable().default(null),
+}).strict().default({ minutes: [], rateLimit: null, limitAskedAt: null, slowed: null });
+
 export const daemonStateSchema = z.object({
   version: z.literal(1), url: z.string(), repository: z.string(),
   /** `pidNamespace` (GY-1370): the PID namespace the pid was taken in, absent on a lock written before it was recorded. */
@@ -277,6 +293,8 @@ export const daemonStateSchema = z.object({
   deliveryAlerts: z.object({ served: z.string().max(64).nullable().default(null), uatFailed: z.string().max(64).nullable().default(null) }).strict().default({ served: null, uatFailed: null }),
   /** Shared project memory (GY-1125): recent decisions and merges. */
   projectMemory: projectMemorySchema.default(() => emptyProjectMemory(new Date().toISOString())),
+  /** GY-4070: the GitHub API calls the loop made in the last hour, by source, and the share its observation polling stays under. */
+  github: githubCallsSchema,
 }).strip();
 export type DaemonState = z.infer<typeof daemonStateSchema>;
 

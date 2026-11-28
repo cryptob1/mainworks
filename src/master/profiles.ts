@@ -298,6 +298,10 @@ export const masterRunSchema = z.object({
   // ignored once `until` passes.
   trialCap: temporaryLimit(z.number().int().min(1).max(maxMergeWriterParallel)).optional(),
   launchHotCelsius: temporaryLimit(z.number().int().min(40).max(trialHotCelsius)).optional(),
+  // GY-4070: the percent of the hourly GitHub API limit the loop may spend in an hour; at it, its
+  // observation polling of GitHub slows until the hour drains, so the rest stays for whatever else
+  // shares the token. Unset: 50.
+  githubCallSharePercent: z.number().int().min(1).max(100).optional(),
   // GY-3890: on by default (absent); `master config planner=off` turns the planner off with the operator-agent identity, and `planner=on` (or `planner=`) clears it.
   planner: z.object({ enabled: z.literal(false), by: z.string().trim().min(1).max(200), at: z.string().datetime() }).strict().optional(),
   runtimes: narrowRoleRuntimeSchema.optional(),

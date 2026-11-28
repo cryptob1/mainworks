@@ -33,7 +33,7 @@ import { recordObservedExhaustion } from '../master/environments.js';
 import { type DaemonState, writeDaemonState } from './state.js';
 import { writeProjectMemory, recordedMasterMemory } from '../project-memory.js';
 import { mergeCandidateHold, mergeOpeningHold, openFlakyItem } from '../merge-writer/executor.js';
-import { mergeRecordKey, mergeWriterReads } from './cycle-merge-writer.js';
+import { mergeRecordKey, mergeWriterReads, type GithubCallsOptions } from './cycle-merge-writer.js';
 import { runServedPreviewCases } from '../merge-writer/served-previews.js';
 import { runOnboardingTime } from '../onboarding-time.js';
 import { postAlert } from './delivery-alerts.js';
@@ -81,6 +81,8 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
   messages?: DaemonEffects['masterMessages'];
   /** GY-4000: the control plane's flow read carrying not-moving open items. */
   flow?: DaemonEffects['flow'];
+  /** GY-4070: the loop's cursor, on which the merge writer's reads count the GitHub API calls they make. */
+  github?: GithubCallsOptions;
 }): DaemonEffects {
   const current = typeof source === 'function' ? source : () => source;
   const slackDirectory = () => installDirectory(installIdFor(current().repository));
@@ -316,7 +318,7 @@ export function daemonEffects(root: string, source: MasterConfig | (() => Master
     // files a reverted item's re-land as the master's operator-agent identity — only while the
     // live configuration names that identity, like the rework beside it.
     get mergeWriter() { const config = current();
-      const reads = mergeWriterReads(config, root, run, { base: worktreeRoot(root, config), hold: async work => { const snapshot = await deps.snapshot(); return mergeCandidateHold(snapshot.work.find(item => item.id === work.id), work, snapshot.work); }, holdOpening: async work => mergeOpeningHold((await deps.snapshot()).work.find(item => item.id === work.id), work), record: (work, event) => mutate(`work/${work.id}/merge-record`, event, mergeRecordKey(work, event)) });
+      const reads = mergeWriterReads(config, root, run, { base: worktreeRoot(root, config), hold: async work => { const snapshot = await deps.snapshot(); return mergeCandidateHold(snapshot.work.find(item => item.id === work.id), work, snapshot.work); }, holdOpening: async work => mergeOpeningHold((await deps.snapshot()).work.find(item => item.id === work.id), work), record: (work, event) => mutate(`work/${work.id}/merge-record`, event, mergeRecordKey(work, event)), github: deps.github });
       const createWork = current().operatorAgent ? (input: RelandInput, idempotencyKey: string) => asOperatorAgent('work', input, idempotencyKey) : undefined;
       const note = (item: Pick<Work, 'id' | 'key'>, text: string, key: string) => mutate(`work/${item.id}/request`, { type: 'note', reason: text }, key);
       return { ...reads,
