@@ -535,6 +535,62 @@ export async function validateSiblingCommandSweep(
   return null;
 }
 
+const trialAbsentBinaryCall = /\blocalTransport\s*\(|\b(?:spawn|spawnSync|execFile|execFileSync|exec|execSync)\s*\(\s*['"`](?:docker|mise)\b|['"`]mise['"`]\s*,\s*\[/;
+
+/**
+ * GY-4119: flawed or trial-incompatible proof / regression tests were the largest review rework
+ * cause in the 6 h after GY-4054 went live (6 of 13 review reworks). Extends step 2's bound-proof
+ * check with two fast git-only checks on bound proof files:
+ * 1. Added/modified bound proofs must not invoke host-only binaries absent from the private
+ *    merge-trial container (`docker` via `localTransport()`, `docker`/`mise` via child_process)
+ *    unless ruled `PATH — trial-safe: WHY`.
+ * 2. A head that only modifies existing bound proof file(s) in place cannot fail on the base tip
+ *    because the trial overlays those files onto base; move flake pins to a new `*-pinned.test.ts`.
+ */
+export async function validateBoundProofFiles(
+  git: (args: string[]) => Promise<string>,
+  head: string,
+  baseFrom: string,
+  boundFiles: readonly string[],
+  commitMessages: string,
+): Promise<string | null> {
+  if (!boundFiles.length) return null;
+  const boundSet = new Set(boundFiles);
+  const diffOut = await git(['diff', '--name-status', '--no-renames', baseFrom, head]);
+  const changed = diffOut.split('\n').filter(line => line.trim())
+    .map(line => line.trim().split('\t') as [string, string])
+    .filter(([, path]) => Boolean(path));
+  if (!changed.length) return null;
+
+  const modifiedExistingBound = changed.filter(([status, path]) => status === 'M' && boundSet.has(path)).map(([, path]) => path);
+  if (modifiedExistingBound.length && changed.every(([, path]) => boundSet.has(path))) {
+    return `complete refused: this head only edits existing bound proof file(s) in place (${modifiedExistingBound.join(', ')}), so the merge trial's base-tip check overlays the fix onto base and the proof will pass before the change.\n`
+      + 'Move the regression pin into a new <name>-pinned.test.ts file separate from the fixed test so it fails on the base tip, then complete again.';
+  }
+
+  const hostOnlyCalls: string[] = [];
+  for (const [status, path] of changed) {
+    if ((status !== 'A' && status !== 'M') || !boundSet.has(path)) continue;
+    if (new RegExp(`(?:^|[^\\w./-])${escapeRegex(path)}\\s*(?:[-–—:]\\s*)?trial-safe\\b`, 'i').test(commitMessages)) continue;
+    const content = await git(['show', `${head}:${path}`]).catch(() => '');
+    const lines = content.split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      const trimmed = lines[index]!.trim();
+      if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+      if (trialAbsentBinaryCall.test(trimmed)) {
+        hostOnlyCalls.push(`${path}:${index + 1}: ${trimmed}`);
+        break;
+      }
+    }
+  }
+  if (hostOnlyCalls.length) {
+    return 'complete refused: bound proof invokes a host-only binary (`docker` or `mise`) that is absent from the private merge-trial container:\n'
+      + hostOnlyCalls.join('\n')
+      + '\nStub or inject the transport/binary so the proof runs in the trial container, or add a line "PATH — trial-safe: WHY" to a commit message if it is stubbed/gated, then complete again.';
+  }
+  return null;
+}
+
 /**
  * GY-4038: unmet acceptance criteria was code review's largest rework cause after GY-3939.
  * Requires a commit-message ruling "AC-N — met: HOW" for each non-bootstrap criterion, and refuses
@@ -650,11 +706,18 @@ export async function completePreflight(
       }
       const unitProofs = criterionProofs({ criteria: criteria.filter(entry => !entry.bootstrap) as any });
       const found = await Promise.all(unitProofs.map(async proof => [proof, await proofTestFiles(run, root, head, [proof])] as const));
+      const boundProofFiles = new Set<string>();
       for (const [proof, files] of found) {
         if (files.length) counts[proof] = { executed: 1, failed: 0, skipped: 0 };
+        for (const file of files) boundProofFiles.add(file);
       }
       const proofFailure = requiredProofFailure({ criteria: criteria as any }, { proofs: counts });
       if (proofFailure) throw new Error(proofFailure);
+      if (baseTip && baseFrom && boundProofFiles.size) {
+        const commitMessages = await git(['log', '--reverse', '--format=%B', `${baseFrom}..${head}`]);
+        const boundProofFailure = await validateBoundProofFiles(git, head, baseFrom, [...boundProofFiles], commitMessages);
+        if (boundProofFailure) throw new Error(boundProofFailure);
+      }
     }
 
     // 3. Feature E2E case check via featureCaseFailure.

@@ -73,6 +73,7 @@ function reviewReason(reason: string): string {
   if (/weaken|assertion|\bcheck\b.*\b(?:deleted|removed|dropped)\b/i.test(finding)) return 'weakened assertion';
   if (/regress|no longer|used to/i.test(finding)) return 'regression';
   if (/allows only [`'"]?master|instead of [`'"]?mainworks lead|still says? [`'"]?(?:coordinator|master)|now-hidden command|appears twice|shown twice|backwards compatibility with .* callers|sibling/i.test(finding)) return 'missed sibling';
+  if (/private(?:-root)?(?: merge-)?trial container|not installed in the private trial|passes on the base tip|move the pin to a new .*pinned\.test\.ts|outside each install's temporary directory/i.test(finding)) return 'flawed proof test';
   if (/criteri|\bAC-\d|not met|unmet|requirement/i.test(finding)) return 'criterion unmet';
   if (/\b(tests?|proofs?)\b/i.test(finding)) return 'missing test';
   if (/\bUI\b|page|screen|layout|overflow|button|scroll|\d+ ?px|render|display|click/i.test(finding)) return 'UI defect';
