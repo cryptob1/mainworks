@@ -409,11 +409,15 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       const pushed = await trialAndPushRevert({ trial, push: reads.push }, { revertSha: current, files, baseTip: tip, culpritKey: landing.item.key, mergeSha: landing.sha, onStep, startMs: reads.revertStartMs });
       if ('held' in pushed) return { held: pushed.held };
       if ('retry' in pushed) return { retry: pushed.retry, ...(pushed.retry === baseStillFails ? { revertSha: current } : {}) };
-      const failingCase = check.startsWith('e2e:') ? check.slice(4) : null;
+      const failingCase = check.startsWith('e2e:') ? check.slice(4) : null, failingReason = `the batch gate's check ${check} failed`;
       for (const entry of all) {
-        const reland = relandItemFor(entry.item, { serve: gated, failingCase: failingCase ?? check, failingStep: null, failingReason: `the batch gate's check ${check} failed`, mergeSha: entry.sha, baseBranch: reads.baseBranch });
+        const reland = relandItemFor(entry.item, { serve: gated, failingCase: failingCase ?? check, failingStep: null, failingReason, mergeSha: entry.sha, baseBranch: reads.baseBranch });
         // A build or test failure names no case: the re-land carries the original criteria alone.
-        await reads.createWork?.(failingCase ? reland : { ...reland, criteria: entry.item.criteria.map(({ id, text, proofs }) => ({ id, text, proofs: [...proofs] })) }, `gate-reland:${entry.sha}`).catch(() => null);
+        const filed = (await reads.createWork?.(failingCase ? reland : { ...reland, criteria: entry.item.criteria.map(({ id, text, proofs }) => ({ id, text, proofs: [...proofs] })) }, `gate-reland:${entry.sha}`).catch(() => null))?.key ?? null;
+        // GY-4068: the revert goes on the reverted item's ledger as a loop serve revert's does (settleServeRevertFlight), so the flow numbers count it.
+        // The push already stands, so a record the control plane refuses ends the run no more than a refused filing does.
+        await reads.record(entry.item, { kind: 'serve-revert', serve: gated, mergeSha: entry.sha, outcome: 'reverted', revertSha: current, reason: null, reland: filed,
+          failingCase: failingCase ?? check, failingStep: null, failingReason, at: new Date(reads.now()).toISOString() }).catch(() => null);
       }
       return { revertSha: current };
     }),

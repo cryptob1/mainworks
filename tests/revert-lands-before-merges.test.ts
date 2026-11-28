@@ -74,6 +74,7 @@ test('integration:revert-lands-before-merges — merges that would push while th
       return passing;
     },
     createWork: async () => ({ key: 'GY-3' }),
+    record: async () => undefined,
   } as unknown as writer.MergeWriterReads & { git: NonNullable<writer.MergeWriterReads['git']> };
   const record: GateRecord = bootstrapGate(repository, verified);
   const ports = { ...batchGatePorts(reads, [culprit], () => null, state), checkpoint: async () => {},
