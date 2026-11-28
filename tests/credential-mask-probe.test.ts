@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -39,10 +40,9 @@ const probeReading = (leaked: string[], asked: string[][] = []): MaskProbe & { a
 
 test('unit:tests/credential-mask-probe.test.ts — a sandbox that can still read a masked path that exists refuses the launch naming it; one that reads none launches', async () => {
   const base = await temporaryDirectory('credential mask probe');
-  const savedHome = process.env.HOME;
+  const f = await fixture(base);
+  const restoreHome = patchEnv({ HOME: f.home });
   try {
-    const f = await fixture(base);
-    process.env.HOME = f.home;
     f.secret(join(f.home, '.ssh', 'id_ed25519'));
     const netrc = f.secret(join(f.home, '.netrc'));
     const own = f.secret(join(f.home, '.config', 'graphyard', 'install', 'workers', 'own.token'));
@@ -81,20 +81,19 @@ test('unit:tests/credential-mask-probe.test.ts — a sandbox that can still read
     assert.ok(!master.hostPaths!.includes(dirname(dirname(masterToken))) && !master.hostPaths!.includes(ownAccount), 'its own install directory and account are kept');
     assert.deepEqual(master.cli, [join(otherInstall, 'deploy', 'build')], 'a CLI run from another install keeps only its checkout');
   } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+    restoreHome();
     rmSync(base, { recursive: true, force: true });
   }
 });
 
 test('unit:tests/credential-mask-probe.test.ts — a worker dispatch whose sandbox still reads a masked path records one blocker naming the path and marks no account failed', async () => {
   const base = await temporaryDirectory('credential mask dispatch');
-  const savedPath = process.env.PATH;
+  const restorePath = patchEnv({ PATH: `${join(base, 'bin')}:${process.env.PATH}` });
   try {
     const f = await fixture(base);
     // The sandbox is the injected probe's: a stand-in bubblewrap answers the launch's namespace check on any host.
     mkdirSync(join(base, 'bin'));
     writeFileSync(join(base, 'bin', 'bwrap'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-    process.env.PATH = `${join(base, 'bin')}:${savedPath}`;
     const leaked = f.secret(join(base, 'collector', 'collector.env'));
     const credentials = join(base, 'credentials');
     mkdirSync(credentials);
@@ -122,7 +121,7 @@ test('unit:tests/credential-mask-probe.test.ts — a worker dispatch whose sandb
     assert.ok(released[0]?.includes(leaked) && released[0].startsWith('Host, not the item:'), `one blocker names the path: ${released[0]}`);
     assert.deepEqual(await readAccountStartFailures(config), {}, 'no account is marked failed');
   } finally {
-    process.env.PATH = savedPath;
+    restorePath();
     rmSync(base, { recursive: true, force: true });
   }
 });

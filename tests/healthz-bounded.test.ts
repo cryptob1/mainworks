@@ -1,4 +1,5 @@
 import { describe, test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -99,11 +100,10 @@ test('unit:healthz-select-bounded — while a probe is still queued behind the s
   assert.equal(connects, 1, 'one acquisition waits in the pool queue, however many requests asked');
 });
 
-test('unit:healthz-unreadable-repository-root — a GRAPHYARD_REPOSITORY_ROOT that is missing or not a readable Git work tree is a /healthz cause naming the path and the plane is not healthy; a readable one adds none (GY-2054)', async () => {
+test('unit:healthz-unreadable-repository-root — a GRAPHYARD_REPOSITORY_ROOT that is missing or not a readable Git work tree is a /healthz cause naming the path and the plane is not healthy; a readable one adds none (GY-2054)', async t => {
   const scratch = await temporaryDirectory('healthz-repository-root');
-  const saved = process.env.GRAPHYARD_REPOSITORY_ROOT;
-  try {
-    const missing = join(scratch, 'reclaimed-worktree'), plain = join(scratch, 'plain'), checkout = join(scratch, 'checkout');
+  patchEnv({ GRAPHYARD_REPOSITORY_ROOT: process.env.GRAPHYARD_REPOSITORY_ROOT }, t);
+  const missing = join(scratch, 'reclaimed-worktree'), plain = join(scratch, 'plain'), checkout = join(scratch, 'checkout');
     execFileSync('mkdir', [plain]);
     execFileSync('git', ['init', '-q', checkout]);
     assert.equal(await repositoryRootCause(missing), `repository root ${missing} (GRAPHYARD_REPOSITORY_ROOT) is missing; submitted heads cannot be observed`);
@@ -165,9 +165,6 @@ test('unit:healthz-unreadable-repository-root — a GRAPHYARD_REPOSITORY_ROOT th
       assert.equal(answered.status, 200, 'a healthy busy-pool answer stays 200 under ?strict');
       assert.equal(answered.body.healthy, true);
     }
-  } finally {
-    if (saved === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = saved;
-  }
 });
 
 });

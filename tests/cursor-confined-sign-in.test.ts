@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -125,11 +126,9 @@ test('e2e:cursor-confined-sign-in — a confined cursor worker authenticates on 
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('cursor-confined-sign-in', join(checkout, '.graphyard'));
-  const savedHome = process.env.HOME, savedPath = process.env.PATH;
   const bin = await temporaryDirectory('cursor-agent-bin', home);
   const stub = stubCursorAgent(bin);
-  process.env.HOME = home;
-  process.env.PATH = `${bin}:${savedPath ?? ''}`;
+  const restoreEnv = patchEnv({ HOME: home, PATH: `${bin}:${process.env.PATH ?? ''}` });
   const runsConfinement = await sessionMountNamespaceWorks();
   try {
     const f = await fixture(home);
@@ -215,8 +214,7 @@ test('e2e:cursor-confined-sign-in — a confined cursor worker authenticates on 
     assert.ok(existsSync(join(f.cursorC, 'cursor', 'auth.json')), 'the login wrote the sign-in under the account home');
     assert.equal((await checkAgentEnvironment({ name: 'cursor-c', kind: 'cursor', home: f.cursorC }, { quota: false, cacheMs: 0 })).loggedIn, true, 'the account reads logged in once its sign-in exists');
   } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
-    if (savedPath === undefined) delete process.env.PATH; else process.env.PATH = savedPath;
+    restoreEnv();
     rmSync(home, { recursive: true, force: true });
   }
 });

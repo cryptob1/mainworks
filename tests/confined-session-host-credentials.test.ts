@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -72,8 +73,7 @@ test('e2e:confined-session-host-credentials — under real bwrap a worker and a 
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('confined-session-home', join(checkout, '.graphyard'));
-  const savedHome = process.env.HOME;
-  process.env.HOME = home;
+  const restoreHome = patchEnv({ HOME: home });
   try {
     const f = await fixture(home);
     assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this host');
@@ -139,7 +139,7 @@ test('e2e:confined-session-host-credentials — under real bwrap a worker and a 
     for (const path of masterDenied) assert.ok(masterReads.includes(`DENIED ${path}\n`), `the master cannot read ${path}: ${masterReads}`);
     for (const path of [f.install, f.masterToken]) assert.ok(masterReads.includes(`READABLE ${path}\n`), `the master keeps its own ${path}`);
   } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+    restoreHome();
     rmSync(home, { recursive: true, force: true });
   }
 });

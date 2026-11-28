@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -31,13 +32,9 @@ test('e2e:status-master-screen-after-migration — status reads the live main-He
   assert.equal(config.herdrWorkspace, 'wMain');
   assert.deepEqual(config.herdrInstance, instance);
   const previousTarget = herdrTarget();
-  const variables = ['HERDR_SOCKET_PATH', 'GRAPHYARD_HERDR_CONFIG_HOME', 'GRAPHYARD_HERDR_SESSION', 'XDG_CONFIG_HOME'] as const;
-  const previous = Object.fromEntries(variables.map(key => [key, process.env[key]]));
+  const restoreEnv = patchEnv({ HERDR_SOCKET_PATH: join(instance.configHome, 'old.sock'), GRAPHYARD_HERDR_CONFIG_HOME: undefined, GRAPHYARD_HERDR_SESSION: undefined, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME });
   try {
     applyHerdrConfig(config);
-    process.env.HERDR_SOCKET_PATH = join(instance.configHome, 'old.sock');
-    delete process.env.GRAPHYARD_HERDR_CONFIG_HOME;
-    delete process.env.GRAPHYARD_HERDR_SESSION;
     const state = emptyDaemonState(config);
     state.master = { ...state.master, agentName: 'master', pane: 'wOld:p2', runtime: 'claude' };
     await writeFile(daemonStatePath(config), JSON.stringify(state));
@@ -80,7 +77,7 @@ test('e2e:status-master-screen-after-migration — status reads the live main-He
     }
     assert.equal(reads.length, 8);
   } finally {
-    for (const key of variables) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+    restoreEnv();
     targetHerdr(previousTarget); scopeHerdr(null);
   }
 });

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv, withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -26,11 +27,7 @@ const reserved = `0-${Math.max(0, Math.min(3, cpus(online()).length - 3))}`;
 const others = () => cpus(online()).filter(cpu => !cpus(reserved).includes(cpu));
 const allowedByKernel = (status: string | undefined) => status?.split('\t')[1]?.trim() ?? '';
 
-async function withReserved<T>(value: string | undefined, body: () => Promise<T>): Promise<T> {
-  const before = process.env.MAINWORKS_RESERVED_CPUS;
-  if (value === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = value;
-  try { return await body(); } finally { if (before === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = before; }
-}
+const withReserved = <T>(value: string | undefined, body: () => Promise<T>) => withEnv({ MAINWORKS_RESERVED_CPUS: value }, body);
 
 /** Stand-in claude: exits 1 with Claude's own message if its --settings file is unreadable; prints its settings marker and Cpus_allowed_list. */
 const standInClaude = `#!/bin/sh
@@ -122,16 +119,14 @@ exec ${JSON.stringify(realSsh)} "$@"
   const harnessDir = join(await temporaryDirectory('gy4034-harness'), '.graphyard', 'harness');
   await mkdir(harnessDir, { recursive: true });
 
-  const previous = {
-    PATH: process.env.PATH,
-    GRAPHYARD_TRIAL_IMAGE: process.env.GRAPHYARD_TRIAL_IMAGE,
+  const restoreEnv = patchEnv({
+    PATH: `${shimBin}:${hosts.bin}:${worktree}/bin:${dirname(process.execPath)}:${process.env.PATH}`,
+    GRAPHYARD_TRIAL_IMAGE: image,
     GY4034_HIDE_SETTINGS: process.env.GY4034_HIDE_SETTINGS,
-  };
+  });
   const previousCwd = process.cwd();
   try {
     process.chdir(worktree);
-    process.env.PATH = `${shimBin}:${hosts.bin}:${worktree}/bin:${dirname(process.execPath)}:${previous.PATH}`;
-    process.env.GRAPHYARD_TRIAL_IMAGE = image;
 
     for (const setting of [reserved, undefined] as const) {
       await withReserved(setting, async () => {
@@ -172,8 +167,6 @@ exec ${JSON.stringify(realSsh)} "$@"
     }
   } finally {
     process.chdir(previousCwd);
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
+    restoreEnv();
   }
 });

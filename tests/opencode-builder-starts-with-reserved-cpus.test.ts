@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv, withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -28,11 +29,7 @@ const reserved = `0-${Math.max(0, Math.min(3, cpus(online()).length - 3))}`;
 const others = () => cpus(online()).filter(cpu => !cpus(reserved).includes(cpu));
 const allowedByKernel = (status: string | undefined) => status?.split('\t')[1]?.trim() ?? '';
 
-async function withReserved<T>(value: string | undefined, body: () => Promise<T>): Promise<T> {
-  const before = process.env.MAINWORKS_RESERVED_CPUS;
-  if (value === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = value;
-  try { return await body(); } finally { if (before === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = before; }
-}
+const withReserved = <T>(value: string | undefined, body: () => Promise<T>) => withEnv({ MAINWORKS_RESERVED_CPUS: value }, body);
 
 /** Coordinator opencode (2.x): advertises and accepts --standalone. */
 const localOpencode = `#!/bin/sh
@@ -121,14 +118,13 @@ exec ${JSON.stringify(realSsh)} "$@"
 `, { mode: 0o755 });
   await chmod(join(shimBin, 'ssh'), 0o755);
 
-  const previous = { PATH: process.env.PATH, GRAPHYARD_TRIAL_IMAGE: process.env.GRAPHYARD_TRIAL_IMAGE };
+  // Coordinator PATH sees localOpencode (2.x with --standalone); remote container PATH sees worktree/bin/opencode (1.19.6 without --standalone).
+  const coordinatorPath = `${shimBin}:${hosts.bin}:${localBin}:${dirname(process.execPath)}:${process.env.PATH}`;
+  const remotePath = `${worktree}/bin:${dirname(process.execPath)}:${process.env.PATH}`;
+  const restoreEnv = patchEnv({ PATH: coordinatorPath, GRAPHYARD_TRIAL_IMAGE: image });
   const previousCwd = process.cwd();
   try {
     process.chdir(worktree);
-    // Coordinator PATH sees localOpencode (2.x with --standalone); remote container PATH sees worktree/bin/opencode (1.19.6 without --standalone).
-    const coordinatorPath = `${shimBin}:${hosts.bin}:${localBin}:${dirname(process.execPath)}:${previous.PATH}`;
-    const remotePath = `${worktree}/bin:${dirname(process.execPath)}:${previous.PATH}`;
-    process.env.PATH = coordinatorPath;
     process.env.GRAPHYARD_TRIAL_IMAGE = image;
 
     const remoteWords = [process.execPath, '--import', tsx, join(repo, 'src', 'cli.ts'), 'host', 'session', target,
@@ -147,20 +143,10 @@ exec ${JSON.stringify(realSsh)} "$@"
             root: loopRoot, timeoutMs: 60_000, startupMs: 60_000, remote: { host: target, words: remoteWords },
             exec: async (command, args, options) => {
               // Inside the remote container, PATH resolves worktree/bin/opencode (1.19.6 without --standalone).
-              const savedPath = process.env.PATH;
               const log = join(options.run, 'log.jsonl');
-              // Forward remotePath into the child env for `--env PATH`, while keeping coordinatorPath on process.env for ssh/hosts.bin.
-              const prevEnvPath = process.env.PATH;
-              const code = await (async () => {
-                // host session reads process.env[name] for each --env NAME; set PATH so shimBin/hosts.bin win for ssh AND worktree/bin wins for opencode inside the container.
-                process.env.PATH = `${shimBin}:${hosts.bin}:${remotePath}`;
-                try {
-                  return await supervise(command, args, 1, async () => renewal(), { intervalMs: 200, graceMs: 75, log, worktree });
-                } finally {
-                  process.env.PATH = prevEnvPath;
-                }
-              })();
-              process.env.PATH = savedPath;
+              // host session reads process.env[name] for each --env NAME; set PATH so shimBin/hosts.bin win for ssh AND worktree/bin wins for opencode inside the container.
+              const code = await withEnv({ PATH: `${shimBin}:${hosts.bin}:${remotePath}` }, () =>
+                supervise(command, args, 1, async () => renewal(), { intervalMs: 200, graceMs: 75, log, worktree }));
               const lines = (await readFile(log, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { stream: string; text: string });
               stdout = lines.filter(line => line.stream === 'stdout').map(line => line.text).join('\n');
               stderr = lines.filter(line => line.stream === 'stderr').map(line => line.text).join('\n');
@@ -183,8 +169,6 @@ exec ${JSON.stringify(realSsh)} "$@"
   } finally {
     clearRuns();
     process.chdir(previousCwd);
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
+    restoreEnv();
   }
 });

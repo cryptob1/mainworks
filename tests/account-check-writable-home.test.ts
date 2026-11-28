@@ -23,6 +23,7 @@ import { masterCredentialMask, sessionMountNamespaceWorks } from '../src/master/
 import { masterSessionConfinement } from '../src/master/launch.js';
 import { listen } from './helpers/http-server.js';
 import { apiOk } from './helpers/api.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3806: live checks of agy and Pi accounts get a writable account home and a scratch home they
 // can create, returning a login verdict (available, exhausted or not logged in) instead of a check
@@ -157,9 +158,7 @@ test('integration:account-check-writable-home — agy and Pi live checks get a w
   chmodSync(piHome, 0o500);
   chmodSync(roXdg, 0o500);
 
-  const savedTmp = process.env.TMPDIR, savedXdg = process.env.XDG_CONFIG_HOME;
-  process.env.TMPDIR = tmp;
-  process.env.XDG_CONFIG_HOME = roXdg;
+  const restoreEnv = patchEnv({ TMPDIR: tmp, XDG_CONFIG_HOME: roXdg });
   const now = Date.parse('2026-11-24T22:42:00Z');
   try {
     const agyOk = writeStubAgy(bin, 'ok'), agyExhausted = writeStubAgy(bin, 'exhausted'), agyLoggedOut = writeStubAgy(bin, 'logged-out');
@@ -196,8 +195,7 @@ test('integration:account-check-writable-home — agy and Pi live checks get a w
     assert.equal(piOut.loggedIn, false, `pi-a should be not logged in, got ${JSON.stringify(piOut)}`);
     assert.equal(piOut.fault ?? null, null, 'pi-a logged-out has no check environment fault');
   } finally {
-    if (savedTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = savedTmp;
-    if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = savedXdg;
+    restoreEnv();
     try { chmodSync(fixedAgyPath, 0o700); } catch { /* may have been cleaned up */ }
     try { chmodSync(agyHome, 0o700); } catch { /* ignore */ }
     try { chmodSync(piHome, 0o700); } catch { /* ignore */ }
@@ -342,8 +340,7 @@ test('e2e:account-check-writable-home — on a running test install an agy accou
     workers: [],
   });
 
-  const savedTmp = process.env.TMPDIR;
-  process.env.TMPDIR = tmp;
+  const restoreEnv = patchEnv({ TMPDIR: tmp });
   try {
     const checkApi = {
       read: (path: string) => apiCall(token(coordinator), path),
@@ -365,7 +362,7 @@ test('e2e:account-check-writable-home — on a running test install an agy accou
     assert.ok(status.accounts.some(entry => entry.startsWith('agy:')), `master status lists agy: ${JSON.stringify(status.accounts)}`);
     assert.ok(!status.attention.some(item => item.subject === 'account agy' && /check environment fault/i.test(item.text)), 'no check environment fault attention for agy');
   } finally {
-    if (savedTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = savedTmp;
+    restoreEnv();
     try { chmodSync(fixedAgyPath, 0o700); } catch { /* may have been cleaned up */ }
     try { chmodSync(agyHome, 0o700); } catch { /* ignore */ }
   }

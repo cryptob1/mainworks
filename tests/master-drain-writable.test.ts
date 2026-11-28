@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -60,17 +61,14 @@ test('unit:master-drain-writable-pinned — a confined master session resolves t
   assert.ok(grant > covering, `the session is granted ${base} after the scratch that would otherwise hide ${script}`);
 });
 
-test('integration:master-drain-writable — a confined master session runs master drain and master resume against the host-wide heavy-jobs folder, and a worker session still cannot write the drain record', { timeout: 120_000 }, async () => {
+test('integration:master-drain-writable — a confined master session runs master drain and master resume against the host-wide heavy-jobs folder, and a worker session still cannot write the drain record', { timeout: 120_000 }, async t => {
   assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this host');
   const base = await temporaryDirectory('master-drain');
   const root = await coordinator(base);
-  const saved = { data: process.env.GRAPHYARD_DATA_HOME, slots: process.env[slotsDirectoryVariable] };
-  process.env.GRAPHYARD_DATA_HOME = join(base, 'data');
-  delete process.env[slotsDirectoryVariable];
-  try {
-    const heavyJobs = hostHeavyJobsDirectory(), record = heavyDrainFile(heavyJobs), script = masterCommandScript(base);
-    const master = await masterSession(root, base);
-    const inMaster = (...args: string[]) => spawnSync(master.wrapper[0], [...master.wrapper.slice(1), process.execPath, '--import', 'tsx', script, ...args], { cwd: checkout, encoding: 'utf8' });
+  patchEnv({ GRAPHYARD_DATA_HOME: join(base, 'data'), [slotsDirectoryVariable]: undefined }, t);
+  const heavyJobs = hostHeavyJobsDirectory(), record = heavyDrainFile(heavyJobs), script = masterCommandScript(base);
+  const master = await masterSession(root, base);
+  const inMaster = (...args: string[]) => spawnSync(master.wrapper[0], [...master.wrapper.slice(1), process.execPath, '--import', 'tsx', script, ...args], { cwd: checkout, encoding: 'utf8' });
 
     const drained = inMaster('drain', 'huck verification window, 30 minutes');
     assert.equal(drained.status, 0, drained.stderr);
@@ -91,20 +89,13 @@ test('integration:master-drain-writable — a confined master session runs maste
     assert.equal(resumed.status, 0, resumed.stderr);
     assert.equal(JSON.parse(resumed.stdout).resumed, true);
     assert.ok(!existsSync(record), 'master resume removes the drain record');
-  } finally {
-    if (saved.data === undefined) delete process.env.GRAPHYARD_DATA_HOME; else process.env.GRAPHYARD_DATA_HOME = saved.data;
-    if (saved.slots === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = saved.slots;
-  }
 });
 
-test('e2e:master-drain-from-session — master drain from one install\'s confined master session is recorded host-wide, another install\'s session sees it, and master resume lifts it', { timeout: 120_000 }, async () => {
+test('e2e:master-drain-from-session — master drain from one install\'s confined master session is recorded host-wide, another install\'s session sees it, and master resume lifts it', { timeout: 120_000 }, async t => {
   assert.ok(await sessionMountNamespaceWorks(), 'mount namespaces work on this host');
   const base = await temporaryDirectory('master-drain-host');
-  const saved = { data: process.env.GRAPHYARD_DATA_HOME, slots: process.env[slotsDirectoryVariable] };
-  process.env.GRAPHYARD_DATA_HOME = join(base, 'data');
-  delete process.env[slotsDirectoryVariable];
-  try {
-    const record = heavyDrainFile(hostHeavyJobsDirectory()), script = masterCommandScript(base);
+  patchEnv({ GRAPHYARD_DATA_HOME: join(base, 'data'), [slotsDirectoryVariable]: undefined }, t);
+  const record = heavyDrainFile(hostHeavyJobsDirectory()), script = masterCommandScript(base);
     // Two installs on one host: each its own checkout and confined master session, one data home.
     const [core, huck] = await Promise.all(['core', 'huck'].map(async name => masterSession(await coordinator(join(base, name)), base)));
     const inside = (session: typeof core, ...args: string[]) => spawnSync(session.wrapper[0], [...session.wrapper.slice(1), ...args], { cwd: checkout, encoding: 'utf8' });
@@ -117,8 +108,4 @@ test('e2e:master-drain-from-session — master drain from one install\'s confine
     assert.equal(resumed.status, 0, resumed.stderr);
     assert.equal(JSON.parse(resumed.stdout).resumed, true);
     assert.notEqual(inside(huck!, 'test', '-e', record).status, 0, 'the drain is lifted for every install');
-  } finally {
-    if (saved.data === undefined) delete process.env.GRAPHYARD_DATA_HOME; else process.env.GRAPHYARD_DATA_HOME = saved.data;
-    if (saved.slots === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = saved.slots;
-  }
 });
