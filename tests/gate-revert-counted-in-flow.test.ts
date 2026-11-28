@@ -81,7 +81,7 @@ test('integration:gate-revert-counted-in-flow — a batch gate revert writes the
   const reads = {
     baseBranch: 'main', now: Date.now, record,
     fetch: async () => { git(coordinator, 'fetch', '-q', 'origin', 'main'); return git(coordinator, 'rev-parse', 'origin/main'); },
-    git: async (args: string[], extra?: Record<string, string>) => execFileSync('git', ['-C', coordinator, ...args], { encoding: 'utf8', env: { ...env, ...extra } }),
+    git: async (args: string[], extra?: Record<string, string>) => execFileSync('git', ['-C', coordinator, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, ...extra } }),
     trial: async (_sha: string, _files: readonly string[], _item: unknown, _base?: string, onStep?: (step: string) => void) => { onStep?.('install'); return passing; },
     push: async (sha: string, baseTip: string) => { git(coordinator, 'push', '-q', `--force-with-lease=main:${baseTip}`, 'origin', `${sha}:refs/heads/main`); return 'pushed' as const; },
     createWork: async (_input: unknown, key: string) => { filed.push(key); return { key: 'GY-2' }; },
@@ -102,13 +102,13 @@ test('integration:gate-revert-counted-in-flow — a batch gate revert writes the
 
   // The revert is one merge.serve-revert row on the reverted item, so the flow counts it once.
   assert.deepEqual(refused, [], 'the control plane accepted the record');
+  assert.equal(await flow(), 1, 'the flow revert count rises by one');
   const rows = (await store.pool.query("SELECT payload FROM events WHERE work_id=$1 AND kind='merge.serve-revert'", [work.id])).rows;
   assert.equal(rows.length, 1, 'one revert is one row');
   const { at, ...recorded } = rows[0].payload;
   assert.deepEqual(recorded, { serve: tip, mergeSha, outcome: 'reverted', revertSha, reason: null, reland: 'GY-2', failingCase: check, failingStep: null, failingReason: `the batch gate's check ${check} failed` });
   assert.ok(Number.isFinite(Date.parse(at)), `the row carries its instant: ${at}`);
   assert.deepEqual((await store.workItem(work.id))!.mergeLedger?.serveReverts, [rows[0].payload], "the item's ledger holds the revert as a loop serve revert's");
-  assert.equal(await flow(), 1, 'the flow revert count rises by one');
   // The re-land is filed as before.
   assert.deepEqual(filed, [`gate-reland:${mergeSha}`], 'the re-land is filed once, under its key');
 });
