@@ -44,7 +44,7 @@ export function refusedBodyDetail(result: unknown): string {
 export interface DaemonEffects {
   inventory?: () => Promise<SessionInventory>;
   /** The coordination read: the work snapshot, one GET. */
-  snapshot: () => Promise<{ work: Work[]; now: string }>;
+  snapshot: () => Promise<{ work: Work[]; now: string; workerVerifications?: { key: string; host: string; state: string }[] }>;
   /** Full session history, read only to recover ownership of leftover panes omitted by coordination. */
   sessionHistory?: (work: Work) => Promise<SessionHandle[]>;
   /** Herdr's agent inventory: an empty list when Herdr cannot be read. */

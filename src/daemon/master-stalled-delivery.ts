@@ -79,11 +79,19 @@ const subject = (kind: string, id: string) => `${kind}:${createHash('sha1').upda
  * item in a run of repeated equal failures (GY-3104) wakes the master by its run's one cause; its
  * per-failure causes are kept quiet.
  */
-export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}, now = Date.now(), notMoving: readonly NotMovingItem[] = []): MasterCause[] {
+export function masterCauses(work: readonly Work[], actions: DaemonState['actions'] = {}, runs: DaemonState['failureRuns'] = {}, now = Date.now(), notMoving: readonly NotMovingItem[] = [], paused: { heavy?: boolean; builders?: boolean; checks?: readonly string[] } = {}): MasterCause[] {
   const open = work.filter(item => item.stage !== 'done');
   const causes: MasterCause[] = stalledDelivery(open);
   const heldKeys = new Set(open.filter(isHeldWithReason).map(item => item.key));
-  const activeNotMoving = notMoving.filter(item => !heldKeys.has(item.key));
+  const activeNotMoving = notMoving.filter(item => {
+    if (heldKeys.has(item.key)) return false;
+    if (paused.heavy && (item.owner === 'the merge step' || paused.checks?.includes(item.key))) return false;
+    const workItem = open.find(work => work.key === item.key);
+    const waitingForBuilder = workItem && !workItem.blocker && !workItem.hold && !workItem.finishedBlockerHead
+      && ['ready', 'build'].includes(workItem.stage) && !workItem.sessions?.some(session => session.state === 'running')
+      && !(workItem.lease && Date.parse(workItem.lease.expiresAt) > now);
+    return !(paused.builders && waitingForBuilder);
+  });
   for (const item of activeNotMoving.slice(0, 5)) {
     causes.push({ key: `not-moving:${item.key}`, detail: formatNotMovingLine(item), digest: cause(`not-moving:${item.key}`, `${item.key}:${item.stage}:${item.owner}`).digest, repeatMs: notMovingWakeRepeatMs });
   }
