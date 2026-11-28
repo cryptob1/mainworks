@@ -5,6 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { commands } from '../src/cli/index.js';
+import { createContext } from '../src/cli/context.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { emptyRegistry, proposedRuntimes } from '../src/model/registry.js';
 import { hostAccountsVariable } from '../src/host-accounts.js';
@@ -56,8 +57,13 @@ test('integration:account-check-like-loop — global key override, shell mismatc
   });
   const command = commands.find(command => command.name === 'accounts');
   assert.ok(command, 'mainworks accounts is registered');
-  let table = '';
-  await command.run({ id: 'health', args: [], api: api.read, print: (value: unknown) => { table = String(value); } } as any, undefined);
+  const context = await createContext('accounts', 'health', [], false);
+  context.api = api.read;
+  const printed: string[] = [], log = console.log;
+  console.log = (...values: unknown[]) => { printed.push(values.join(' ')); };
+  try { await command.run(context, undefined); } finally { console.log = log; }
+  const table = printed.join('\n');
+  assert.doesNotMatch(table, /\\[tn]/, 'stdout contains real tabs and newlines, not JSON escapes');
   const rows = table.split('\n');
   assert.equal(rows.length, 4, table);
   assert.match(rows[0]!, /Account.*Runtime.*Role.*Launch.*Reason.*Reset/);

@@ -5,7 +5,7 @@ import { defineCommands } from './registry.js';
 export const accountsCommands = defineCommands([{
   name: 'accounts',
   help: ['  accounts health              Each account’s runtime, role, launch readiness and quota reset'],
-  run: async ({ id, api, print }) => {
+  run: async ({ id, api }) => {
     if (id !== 'health') throw new Error('Use mainworks accounts health');
     const registry: AgentRegistry = await api('agent-registry/document');
     const view = fleetView(registry, Date.now());
@@ -21,6 +21,6 @@ export const accountsCommands = defineCommands([{
       const reason = account.ineligible ?? (!reasons.length ? 'No role assigned' : reasons.every(Boolean) ? reasons[0] : null);
       return [account.name, account.runtime, account.roles.map(entry => entry.role).join(', ') || '—', reason ? 'no' : 'yes', reason ?? '—', account.resetsAt ?? 'unknown'];
     });
-    print([['Account', 'Runtime', 'Role', 'Launch', 'Reason', 'Reset'], ...rows].map(row => row.map(cell => String(cell).replace(/\s+/g, ' ')).join('\t')).join('\n'));
+    console.log([['Account', 'Runtime', 'Role', 'Launch', 'Reason', 'Reset'], ...rows].map(row => row.map(cell => String(cell).replace(/\s+/g, ' ')).join('\t')).join('\n'));
   },
 }]);
