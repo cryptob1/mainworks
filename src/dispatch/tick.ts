@@ -15,7 +15,7 @@ import { answeredByPendingReview, LauncherUnavailableError, UnknownReviewerProfi
 import { launchRefusalProbeDue, owedPostMergeReviews, postMergeRefusalProbeMs } from '../model/post-merge-review.js';
 import { answeredByPendingSession, independentProducerProfiles, sessionRetry } from '../producer.js';
 import { unexercisedFindings } from '../model/mechanical-proofs.js';
-import { hostCause, hostCausesClearedAt, onPath } from './host-cause.js';
+import { hostCause, hostCausesClearedAt, toolPresent } from './host-cause.js';
 import { hostCausesClearPath, cursorTextLimit, bounded, closeFailureReasons, type DispatchLaunch, type DispatchWait, dispatchAttemptCeiling, type DispatchFailure, type DispatchCursor, dispatchRetryMinMs, dispatchRetryMaxMs, capacityRecheckMs, dispatchReadTimeoutMs, attributePersistFailure, tickWaits, capacityReasonLimit, dispatchFailureReasonLimit, closureFailureReasonLimit, dispatchFailureLimit, verdictIngestGraceMs, backedOffProfiles, probeBackoffFailures, probeBackoffMs } from './cursor.js';
 import { describeAttempts, unactedProducerSession, requestSpentAt, preferFreshProfiles, requestSessions, limitNoticeExit, type DispatchedSession } from './attempts.js';
 import { selectReviewerProfile, launchWithFailover, type InstantExit } from './launch-failover.js';
@@ -83,8 +83,10 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
   // GY-4121: a host cause lifts once its tool is on PATH or the operator cleared it after it was recorded; its refusals then retry at once.
   const clearedAt = hostCausesClearedAt(hostCausesClearPath(config)), hostSignals: string[] = [];
   for (const [key, cause] of Object.entries(cursor.hostCauses)) {
-    if (!(cause.tool && onPath(cause.tool)) && !(clearedAt !== null && clearedAt >= Date.parse(cause.at))) continue;
+    const cleared = clearedAt !== null && clearedAt >= Date.parse(cause.at);
+    if (!cleared && !(cause.tool && toolPresent(cause.tool))) continue;
     delete cursor.hostCauses[key];
+    if (cleared) cursor.hostCausesAlerted = [];
     for (const [id, failure] of Object.entries(cursor.failures)) if (failure.hostCause === key) delete cursor.failures[id];
   }
   const inventoryRead = await effects.inventory?.();
@@ -197,7 +199,10 @@ async function dispatchTick(config: MasterConfig, cursor: DispatchCursor, effect
       failure.hostCause = cause.key;
       if (!cursor.hostCauses[cause.key]) {
         cursor.hostCauses[cause.key] = { tool: cause.tool, fix: cause.fix, detail: failure.reason, at: failure.at };
-        hostSignals.push(`Mainworks ${config.repository}: ${cause.key} on this host stops ${kind === 'review' ? 'reviews' : 'proofs'} (${item.key}). Fix: ${cause.fix}`);
+        if (!cursor.hostCausesAlerted.includes(cause.key)) {
+          cursor.hostCausesAlerted = [...cursor.hostCausesAlerted, cause.key].slice(-100);
+          hostSignals.push(`Mainworks ${config.repository}: ${cause.key} on this host stops ${kind === 'review' ? 'reviews' : 'proofs'} (${item.key}). Fix: ${cause.fix}`);
+        }
       }
     }
     cursor.failures[request.id] = failure;

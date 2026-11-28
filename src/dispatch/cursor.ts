@@ -92,6 +92,8 @@ export const dispatchCursorSchema = z.object({
   profileBackoff: z.record(z.string(), profileBackoffSchema).default({}),
   /** GY-4121: host causes the operator must fix, by key, with the one-line fix; lifted when the tool appears or the operator clears them. */
   hostCauses: z.record(z.string(), z.object({ tool: z.string().nullable(), fix: z.string(), detail: z.string(), at: z.string() }).strict()).default({}),
+  /** The host causes already alerted, by key: one alert per cause until the operator clears them. */
+  hostCausesAlerted: z.array(z.string()).max(100).default([]),
   /**
    * The session handles the runtime had stopped reporting when the last tick swept, each carrying
    * when it was first missed (GY-113). Absence is only evidence that a session is gone once it
