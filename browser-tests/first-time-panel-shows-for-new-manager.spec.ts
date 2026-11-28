@@ -114,6 +114,12 @@ test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exac
 
   // It shows to whoever has not dismissed it on this browser: a teammate sees the same checklist.
   state.actor = teammate; state.work = [merged];
+  await page.reload();
+  await homeShown(page);
+  await expect(panel(page).getByRole('listitem')).toHaveText(copy.steps);
+
+  // The owner's Home, with the Tell the Lead box step 6 names, is the page this case leaves open.
+  state.actor = owner;
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.reload();
   await homeShown(page);
