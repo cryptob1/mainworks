@@ -12,7 +12,7 @@ import { deployUnitOf, installUnitsPath, proposedInstallUnits, readInstallUnits,
 import { knownGoodCli, knownGoodState } from '../master/known-good.js';
 import { installDirectory } from './secrets.js';
 import { installIdFor } from './types.js';
-import { installLauncherPath, unitLauncherFault, writeInstallLauncher } from './cli-release.js';
+import { ensureInstallLauncher, installLauncherPath, unitLauncherFault, writeInstallLauncher } from './cli-release.js';
 import { canonical, temporaryDirectories, underTestRunner } from '../runtime-environment.js';
 import { stateDirectory } from './layout.js';
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, 200);
@@ -388,12 +388,7 @@ export async function installLoopSupervisor(input: LoopUnitInput, host: LoopSupe
   if (!support.supported) return { supported: false, unit: loopUnit, unitPath: null, installed: false, enabled: null, active: null, linger: null,
     wrote: 'none', refused: null, performed: [], reason: support.reason, instruction: unsupervisedInstruction(input) };
   const run = supervisorRun(host);
-  // GY-3337: the install writes the one stable launcher its unit names, whenever this install
-  // serves a published release; a write that fails falls back to the pin or configured CLI below,
-  // never fails the setup.
   const installDir = inputInstallDir(input);
-  if (installDir) await writeInstallLauncher(installDir).catch(() => {});
-  const text = loopUnitText(input);
   const performed: string[] = [];
   let existing: string | null = null;
   const refused = (refusal: LoopSupervisorRefusal): LoopSupervisorInstallation => {
@@ -408,6 +403,11 @@ export async function installLoopSupervisor(input: LoopUnitInput, host: LoopSupe
     testSuiteHomeGuard(unitDirectory);
     assertCoordinatorCheckout(input.root, host);
   } catch (error) { if (error instanceof LoopSupervisorRefusal) return refused(error); throw error; }
+  // GY-3337, GY-4124: ensure this install owns its stable launcher (copying another install's
+  // CLI release into this install's own store when none is published yet); a write that fails
+  // falls back to the pin or configured CLI below, never fails the setup.
+  if (installDir) await ensureInstallLauncher(installDir, input.cliPath).catch(() => {});
+  const text = loopUnitText(input);
   // The install's own name, decided once and recorded beside its configuration (GY-1441): a second
   // install on this host writes its own unit and never this one's.
   if (!input.unit) { loopUnit = (await resolveInstallUnits(input.root, input.repository, unitDirectory, home)).master; unitPath = join(unitDirectory, loopUnit); }
@@ -418,12 +418,14 @@ export async function installLoopSupervisor(input: LoopUnitInput, host: LoopSupe
   if (existing !== null && !options.replace) {
     // A move between the checkout and the known-good pin (GY-1529) is this module's own doing, not another loop's.
     const pinMove = [existing, text].some(unit => unitSetting(unit, 'ExecStart', home)?.includes('/coordinator/current/dist/cli.js'));
-    // So is a move onto the install's one stable launcher (GY-3337) from one of this module's own
-    // older spellings — the pin, or the configured CLI this same setup recorded: the unit's
-    // WorkingDirectory already names this checkout, and the launcher it adopts is this install's own.
+    // So is a move onto the install's one stable launcher (GY-3337, GY-4124) from one of this module's own
+    // older spellings — the pin, the configured CLI, or another install's / stale release launcher:
+    // the unit's WorkingDirectory already names this checkout, and the launcher it adopts is this install's own.
     const wordsOf = (unit: string) => systemdCommandLineWords(unitSetting(unit, 'ExecStart', home) ?? '');
+    const existingWords = wordsOf(existing!);
     const older = [input.cliPath, installDir && knownGoodState(installDir) ? knownGoodCli(installDir) : null];
-    const launcherMove = !!installDir && wordsOf(text).includes(installLauncherPath(installDir)) && older.some(spelling => !!spelling && wordsOf(existing!).includes(spelling));
+    const foreignExisting = !!installDir && !!unitLauncherFault({ unit: loopUnit, launcher: existingWords[1] ?? null, installDir });
+    const launcherMove = !!installDir && wordsOf(text).includes(installLauncherPath(installDir)) && (older.some(spelling => !!spelling && existingWords.includes(spelling)) || foreignExisting);
     const differs = (['WorkingDirectory', 'ExecStart'] as const).filter(key => !(key === 'ExecStart' && (pinMove || launcherMove)) && unitSetting(existing!, key, home) !== unitSetting(text, key, home));
     if (differs.length) return refused(new LoopSupervisorRefusal(
       `${unitPath} already runs a different loop (${differs.map(key => `${key}=${unitSetting(existing!, key, home) ?? '(missing)'}`).join(', ')}), not this checkout's (${differs.map(key => `${key}=${unitSetting(text, key, home)}`).join(', ')})`,
@@ -488,6 +490,10 @@ export async function alignLoopUnit(input: LoopUnitInput, host: LoopSupervisorHo
   let existing: string | null = null;
   try { existing = await readFile(unitPath, 'utf8'); } catch { existing = null; }
   if (existing === null) return { wrote: 'none', reason: `${unitPath} is not installed; mainworks master init installs it`, unitPath };
+  const installDir = inputInstallDir(input);
+  if (installDir && (!underTestRunner() || within(canonical(loopUnitDirectory(host)), canonical(tmpdir())))) {
+    await ensureInstallLauncher(installDir, input.cliPath).catch(() => {});
+  }
   const wanted = loopUnitText(input);
   // An install upgraded past GY-2877 has a matching loop unit and no deploy unit, or (GY-2942) one
   // that deploys from a shared checkout: install or rewrite it too.

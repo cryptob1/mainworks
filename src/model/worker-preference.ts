@@ -31,7 +31,7 @@ export function planSpreadOrder(registry: AgentRegistry, order: readonly string[
  * Why a role cannot run on an account's runtime, or null (GY-3092): a role that limits its sessions
  * to a tool allowlist needs a runtime that names a tools flag, or the session would run every tool.
  */
-export function roleUnsupported(registry: AgentRegistry, role: Pick<FleetRole, 'name' | 'policy'>, name: string): string | null {
+export function roleUnsupported(registry: { accounts: { name: string; runtime: string }[]; runtimes: AgentRegistry['runtimes'] }, role: Pick<FleetRole, 'name' | 'policy'>, name: string): string | null {
   const account = registry.accounts.find(entry => entry.name === name), runtime = registry.runtimes.find(entry => entry.name === account?.runtime);
   if (!runtime || !role.policy?.tools?.length || runtime.launch.toolsFlag) return null;
   return `${name} runs ${runtime.name}, which names no tools flag for role ${role.name}'s tool allowlist`;
