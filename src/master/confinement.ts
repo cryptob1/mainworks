@@ -151,6 +151,8 @@ export interface CredentialMask {
   own: readonly string[];
   /** The checkout the install's own CLI launcher runs from, when the launcher sits under the config home (a self-deployed install, GY-2995): re-exposed read-only after the masks, so a confined session can execute the CLI its prompt names and post its verdict. */
   cli: readonly string[];
+  /** GY-4126: paths under the config home re-exposed read-only after the masks (such as the install inbox for the caretaker). */
+  readonly?: readonly string[];
   /** GY-3228: locations masked exactly where they exist — a directory by an empty unreadable one, a file by an unreadable empty file: the host user's personal credentials, other agent accounts' homes, other installs' directories, declared extras. */
   hostPaths?: readonly string[];
 }
@@ -176,7 +178,7 @@ const hostPathsFor = (config: MaskConfig, runtimeHomes: readonly string[] = []) 
  */
 export function credentialMaskFor(
   config: MaskConfig,
-  own: { credentialFile?: string | null; runtimeHomes?: readonly string[] },
+  own: { credentialFile?: string | null; runtimeHomes?: readonly string[]; readonly?: readonly string[] },
   home?: string,
 ): CredentialMask {
   const recorded = (path: string | undefined) => !!path && isAbsolute(path) ? [path] : [];
@@ -186,6 +188,7 @@ export function credentialMaskFor(
     extraPaths: [...recorded(config.credentialFile), ...recorded(config.run?.mergeWriter?.deployKeyFile), ...recorded(config.run?.mergeWriter?.tokenFile), ...recorded(config.upstream?.credentialFile), ...(config.confinement?.maskPaths ?? []).flatMap(path => recorded(path))],
     own: [own.credentialFile ?? null, ...(own.runtimeHomes ?? [])].filter((path): path is string => !!path && isAbsolute(path)),
     cli: keptCli(config, operatorHome),
+    ...(own.readonly?.length ? { readonly: own.readonly.filter((path): path is string => !!path && isAbsolute(path)) } : {}),
     hostPaths: hostPathsFor(config, own.runtimeHomes),
   };
 }
@@ -294,7 +297,7 @@ export async function assertCredentialsMasked(wrapper: readonly string[], input:
   const root = canonicalPath(resolve(input.coordinatorRoot)), mask = sessionMask(root, input.credentialMask);
   if (!mask || !run) return;
   const { directories, files, unreadable } = credentialMasks(mask, [root, canonicalPath(resolve(input.sessionDirectory))]);
-  const kept = [...keptCredentialPaths(mask), ...mask.cli];
+  const kept = [...keptCredentialPaths(mask), ...mask.cli, ...(mask.readonly ?? []).filter(path => isAbsolute(path) && existsSync(path)).map(canonicalPath)];
   // A directory masked only as the holder of recorded credentials stays a readable, empty one: what it held is what is probed.
   const masked = (path: string) => [...directories, ...files].some(target => path === target || withinCheckout(path, target)) && !kept.some(own => path === own || withinCheckout(path, own))
     && !(directories.includes(path) && !unreadable.includes(path));
@@ -411,10 +414,14 @@ export function hostFilesystemWords(scratch: string, environment: NodeJS.Process
   // `$HOME/.gemini/antigravity-cli`, so the account's login home is bound there.
   const home = variable('HOME', '/tmp/home'), agy = variable('AGY_CONFIG_DIR', '')[2];
   const agyHome = agy && join(home[2], '.gemini', 'antigravity-cli') !== agy ? ['--bind', agy, join(home[2], '.gemini', 'antigravity-cli')] : [];
+  // GY-4115: mise finds installed tools under HOME by default, so a moved HOME keeps the host's mise data, read-only.
+  const operatorHome = environment.HOME;
+  const mise = environment.MISE_DATA_DIR || (operatorHome || environment.XDG_DATA_HOME ? resolve(environment.XDG_DATA_HOME || join(operatorHome!, '.local', 'share'), 'mise') : null);
+  const miseData = home[2] !== operatorHome && mise && isAbsolute(mise) && existsSync(mise) ? ['--ro-bind', mise, mise, '--setenv', 'MISE_DATA_DIR', mise] : [];
   return ['--unshare-pid', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', ...sshConfig,
     '--tmpfs', '/run', ...(resolver?.startsWith('/run/') ? ['--ro-bind', resolver, resolver] : []), '--bind', scratch, '/tmp', '--bind', scratch, '/var/tmp',
     ...variable('TMPDIR', '/tmp'), ...variable('TMP', '/tmp'), ...variable('TEMP', '/tmp'),
-    '--dir', '/tmp/home', ...home, ...agyHome,
+    '--dir', '/tmp/home', ...home, ...agyHome, ...miseData,
     '--dir', '/tmp/runtime', ...variable('XDG_RUNTIME_DIR', '/tmp/runtime'),
     ...variable('XDG_CACHE_HOME', '/tmp/cache'), ...variable('npm_config_cache', '/tmp/npm-cache')];
 }
@@ -466,6 +473,8 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   // GY-2995: the install's own CLI checkout is re-exposed read-only after the masks, so a
   // confined session runs the launcher its prompt names but can change none of its code.
   const cli = (input.credentialMask?.cli ?? []).filter(path => isAbsolute(path) && existsSync(path)).map(canonicalPath);
+  // GY-4126: read-only paths under the config home (such as the install inbox for the caretaker).
+  const readonly = (input.credentialMask?.readonly ?? []).filter(path => isAbsolute(path) && existsSync(path)).map(canonicalPath);
   // GY-3237: the Herdr socket and config the master session reaches, granted read-only: bound
   // after every mask so the later bind shadows the process-launch mask over the same tree, kept
   // from that mask's own words (a pane-inherited HERDR_SOCKET_PATH is otherwise replaced by the
@@ -511,7 +520,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
   // the credential mask, before every re-exposure, so the checkout, its Git directories, the
   // session's own directories and every writable grant stay as reachable as before. An entry the
   // wrapper itself mounts under is never masked: a masked entry carries no mount point of its own.
-  const mounted = [...writable, ...commonGitDir, ...sharedDirectories, ...own, ...shared, ...kept, ...cli, ...herdr, ...busSockets].filter(path => isAbsolute(path));
+  const mounted = [...writable, ...commonGitDir, ...sharedDirectories, ...own, ...shared, ...kept, ...cli, ...readonly, ...herdr, ...busSockets].filter(path => isAbsolute(path));
   const declared = repositoryReadonlyPaths(root);
   const siblings = declared.length ? siblingMaskEntries(root, declared, mounted) : [];
   if (siblings.length && !existsSync(blank)) writeFileSync(blank, '', { mode: 0 });
@@ -527,6 +536,7 @@ export function readOnlyMountWrapper(input: { coordinatorRoot: string; sessionDi
     ...shared.filter(path => !sharedDirectories.includes(path)).flatMap(path => ['--bind', path, path]),
     ...kept.flatMap(path => isDirectoryPath(path) ? ['--bind', path, path] : ['--ro-bind', path, path]),
     ...cli.flatMap(path => ['--ro-bind', path, path]),
+    ...readonly.flatMap(path => ['--ro-bind', path, path]),
     ...herdr.flatMap(path => ['--ro-bind', path, path]), ...channels, '--',
     ...socketConfinementWords([...own, ...writableDirectories, ...herdr, ...kept.filter(isDirectoryPath), ...commonGitDir, ...sharedDirectories],
       channels.flatMap((word, index) => word === '--ro-bind' && channels[index + 1] !== '/dev/null' ? [channels[index + 2]] : []))];
