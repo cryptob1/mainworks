@@ -58,6 +58,8 @@ const fullSuitePaths = [
 // Documentation no test executes: prose a change cannot break, whether or not a test names its path.
 const isDocumentation = file => file.startsWith('docs/') || file.endsWith('.md');
 // Fast static rule checks always run in item trials and the release check, whatever the change selects (GY-3826).
+// The schema generation guard is one (GY-4067): it reaches the SQL a table's projection embeds only through other
+// modules, which an item trial's one-hop selection skips, and it is the check a DDL change must meet before it lands.
 const staticRuleTests = [
   'tests/architecture.test.ts',
   'tests/architecture-pinned.test.ts',
@@ -65,6 +67,7 @@ const staticRuleTests = [
   'tests/import-cycles.test.ts',
   'tests/no-old-name.test.ts',
   'tests/knip-clean.test.ts',
+  'tests/schema-generation-guard.test.ts',
 ];
 const staticRuleSet = new Set(staticRuleTests);
 
