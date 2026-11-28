@@ -9,7 +9,7 @@ import { emptyDaemonState } from '../src/daemon/state.js';
 import { runCycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
-import { requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable } from '../src/master/verification-slots.js';
+import { requestHeavyDrain, resumeHeavyDrain, slotsDirectoryVariable, waitStep } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { isHerdrCommand } from '../src/master/herdr.js';
 
@@ -28,6 +28,13 @@ test('integration:not-moving-quiet-while-drained', async t => {
     workFixture({ key: 'GY-2', stage: 'build', stageEnteredAt: stale }),
     workFixture({ key: 'GY-3', stage: 'build', stageEnteredAt: stale, lease: { owner: 'builder', epoch: 1, expiresAt: new Date(clock + 120 * min).toISOString() } }),
   ];
+  // An intent is recorded before heavyTrial can take its slot. Neither the
+  // initial intent nor its subsequent slot-wait step means the trial is running.
+  for (const key of ['GY-8', 'GY-9']) work.push(workFixture({ key, stage: 'test', stageEnteredAt: stale, mergeLedger: {
+    key, state: 'intent', head: null, baseTip: null, mergeSha: null, risk: null,
+    intentAt: stale, pushedAt: null, observedTip: null, refusal: null, events: 1,
+    ...(key === 'GY-9' ? { trialStep: { step: waitStep(slots), at: stale } } : {}),
+  } }));
   let cap = 0;
   const config = masterConfigSchema.parse({ version: 1, url: 'https://example.test', repository: 'owner/project', credentialFile: join(root, 'token'), cliPath: '/bin/mainworks', hostId: 'host', baseBranch: 'main', masterAgentName: 'master', workers: [], run: { masterHeartbeatMinutes: 240 } });
   const state = emptyDaemonState(config);
@@ -50,6 +57,8 @@ test('integration:not-moving-quiet-while-drained', async t => {
   await runCycle(config, state, effects, () => clock);
   assert.equal(wakes.length, 1);
   assert.match(wakes[0]!, /GY-1/);
+  assert.match(wakes[0]!, /GY-8/, 'an intent without a started trial alarms after resume');
+  assert.match(wakes[0]!, /GY-9/, 'an intent waiting for a heavy slot alarms after resume');
   assert.match(wakes[0]!, /GY-3/, 'queued checks alarm again after resume');
   assert.doesNotMatch(wakes[0]!, /GY-2/);
   cap = 1;
@@ -68,7 +77,7 @@ test('integration:not-moving-quiet-while-drained', async t => {
     workFixture({ key: 'GY-5', stage: 'build', stageEnteredAt: stale, lease: { owner: 'builder', epoch: 1, expiresAt: new Date(clock + 120 * min).toISOString() } }),
     workFixture({ key: 'GY-6', stage: 'ready', stageEnteredAt: stale }),
     workFixture({ key: 'GY-7', stage: 'test', stageEnteredAt: stale, mergeLedger: {
-      key: 'GY-7', state: 'intent', head: null, baseTip: null, mergeSha: null, risk: null,
+      key: 'GY-7', trialStep: { step: 'build', at: stale }, state: 'intent', head: null, baseTip: null, mergeSha: null, risk: null,
       intentAt: stale, pushedAt: null, observedTip: null, refusal: null, events: 1,
     } }),
   );
@@ -77,5 +86,5 @@ test('integration:not-moving-quiet-while-drained', async t => {
   assert.match(wakes[3]!, /GY-4/, 'a drain does not hide a stalled review');
   assert.match(wakes[3]!, /GY-5/, 'a zero launch cap does not hide an existing builder');
   assert.match(wakes[3]!, /GY-7/, 'a drain does not hide an already running trial');
-  assert.doesNotMatch(wakes[3]!, /GY-[1236] /, 'only intentionally paused work stays quiet');
+  assert.doesNotMatch(wakes[3]!, /GY-[123689] /, 'only intentionally paused work stays quiet');
 });

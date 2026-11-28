@@ -86,8 +86,13 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
   const activeNotMoving = notMoving.filter(item => {
     if (heldKeys.has(item.key)) return false;
     const workItem = open.find(work => work.key === item.key);
+    // The intent precedes slot acquisition; only a step past the slot wait
+    // establishes that the trial started and should still alarm during a drain.
+    const trialStep = workItem?.mergeLedger?.trialStep?.step;
+    const runningTrial = workItem?.mergeLedger?.state === 'intent' && trialStep
+      && !trialStep.startsWith('waiting for a host heavy-job slot');
     const waitingForTrial = (item.stage === 'test' || item.owner === 'the merge step')
-      && !workItem?.blocker && !workItem?.reworkRequested && workItem?.mergeLedger?.state !== 'intent';
+      && !workItem?.blocker && !workItem?.reworkRequested && !runningTrial;
     if (paused.heavy && (waitingForTrial || paused.checks?.includes(item.key))) return false;
     const waitingForBuilder = workItem && !workItem.blocker && !workItem.hold && !workItem.finishedBlockerHead
       && ['ready', 'build'].includes(workItem.stage) && !workItem.sessions?.some(session => session.state === 'running')
