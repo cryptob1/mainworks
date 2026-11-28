@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { changedDeclarations, dependencyMap, listTestFiles, repositoryRoot, selectAffected } from '../scripts/ci-tests.mjs';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3541: a change adding one test file and one e2e case selected every test that lists tests/ or
 // e2e/cases/ — about 57 meta tests — in each item's trial. A listing reads the directory, not each
@@ -77,11 +78,9 @@ test('unit:selection-skips-meta-readers-pinned — the copy of the checkout read
   const { root: source } = await gitRepo({ label: 'selection-meta-owner', files: { 'a.txt': 'a\n' } }), root = await temporaryDirectory('selection-meta-owner-copy');
   // The compute machine: another user owns the checkout, only work trees are trusted, and the transport refuses the source.
   const machine = { GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: source, GIT_CONFIG_KEY_1: 'safe.directory', GIT_CONFIG_VALUE_1: root, GIT_ALLOW_PROTOCOL: 'https' };
-  const before = { ...process.env };
-  Object.assign(process.env, machine);
-  try {
+  await withEnv(machine, async () => {
     assert.throws(() => git(source, 'clone', '-q', '--shared', '--no-checkout', source, join(root, 'clone')), /dubious ownership|not allowed/, 'a clone is refused there');
     sharedCheckout(source, root);
     assert.equal(await readFile(join(root, 'a.txt'), 'utf8'), 'a\n');
-  } finally { for (const name of Object.keys(machine)) { if (before[name] === undefined) delete process.env[name]; else process.env[name] = before[name]; } }
+  });
 });

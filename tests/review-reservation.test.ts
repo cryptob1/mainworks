@@ -16,6 +16,7 @@ import { clearRuns } from '../src/runner/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3990: a review is reserved by one conditional insert on the control plane (the head-and-kind
 // slot row), not a host lock file whose stale-break let a second launcher take a held reservation.
@@ -107,10 +108,9 @@ test('integration:one-reviewer-reservation-per-head-and-kind — ten launchers r
   } finally { await cleanup(); }
 });
 
-test('unit:ledger-rows-from-the-old-lock-still-settle — rows the lock-era code wrote, duplicates included, settle with the new code; its leftover lock file is ignored and removed', async () => {
+test('unit:ledger-rows-from-the-old-lock-still-settle — rows the lock-era code wrote, duplicates included, settle with the new code; its leftover lock file is ignored and removed', async t => {
   const { root, cleanup } = await boundMaster();
-  const dataHome = await temporaryDirectory('reservation-data'), was = process.env.GRAPHYARD_DATA_HOME;
-  process.env.GRAPHYARD_DATA_HOME = dataHome;
+  const dataHome = await temporaryDirectory('reservation-data'); patchEnv({ GRAPHYARD_DATA_HOME: dataHome }, t);
   try {
     const lock = resolve(dataHome, 'review-ledger', `${createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12)}.lock`);
     await mkdir(join(dataHome, 'review-ledger'), { recursive: true });
@@ -135,7 +135,6 @@ test('unit:ledger-rows-from-the-old-lock-still-settle — rows the lock-era code
     await launchReview(root, work('GY-64', H), 'claude-reviewer', [], new Date().toISOString(), { headless: fresh.headless, registerLaunch, probe: registryFixture(hostname(), ['claude'], ['reviewer']).probe });
     assert.equal(fresh.started.length, 1);
   } finally {
-    if (was === undefined) delete process.env.GRAPHYARD_DATA_HOME; else process.env.GRAPHYARD_DATA_HOME = was;
     await cleanup(); await rm(dataHome, { recursive: true, force: true });
   }
 });

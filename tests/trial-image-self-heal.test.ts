@@ -17,6 +17,7 @@ import type { DaemonState } from '../src/daemon/state.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3328: after a host move the trial image mainworks-trial:local did not exist, and every trial
 // failed in its container. Now a host missing the image provisions it before a trial launches —
@@ -96,11 +97,8 @@ test('e2e:trial-image-self-heal — with the trial image absent, two trials star
   const stub = await dockerStub(), root = await temporaryDirectory('trial-image-root');
   execFileSync('git', ['init', '-q', '-b', 'main', root]);
   const revision = sha('release');
-  const saved = { PATH: process.env.PATH, GRAPHYARD_TRIAL_IMAGE: process.env.GRAPHYARD_TRIAL_IMAGE, GRAPHYARD_VERSION: process.env.GRAPHYARD_VERSION, GRAPHYARD_BUILD_REVISION: process.env.GRAPHYARD_BUILD_REVISION };
   // This release names a published trial image, which the stub's registry denies: the provision pulls, then builds.
-  Object.assign(process.env, { PATH: `${stub.directory}:${process.env.PATH}`, GRAPHYARD_VERSION: `unreleased ${revision.slice(0, 12)}`, GRAPHYARD_BUILD_REVISION: revision });
-  delete process.env.GRAPHYARD_TRIAL_IMAGE;
-  try {
+  await withEnv({ PATH: `${stub.directory}:${process.env.PATH}`, GRAPHYARD_VERSION: `unreleased ${revision.slice(0, 12)}`, GRAPHYARD_BUILD_REVISION: revision, GRAPHYARD_TRIAL_IMAGE: undefined }, async () => {
     // The image is absent: both heads' trials wait on one provision, then both run.
     const world = new World(), state = emptyDaemonState(config(root));
     await cycle(world, state, root);
@@ -133,7 +131,5 @@ test('e2e:trial-image-self-heal — with the trial image absent, two trials star
     const lines = report.attention.filter(line => /mainworks-trial:local/.test(line.text));
     assert.equal(lines.length, 1, `one attention line: ${JSON.stringify(report.attention)}`);
     assert.match(lines[0]!.text, /failed to solve: no space left on device/, 'it names the docker error');
-  } finally {
-    for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
-  }
+  });
 });

@@ -14,6 +14,7 @@ import { keyringEndpointWarning, type KeyringEndpointVerdict, secretsBusEndpoint
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-888: every session the launcher starts — worker, reviewer, producer and approver, in a Herdr
 // pane or headless — is launched so that the coordinator checkout is unwritable at the OS level,
@@ -264,10 +265,9 @@ test('unit:sandbox-keyring-proxy — the session bus is replaced by the keyring-
   }
 });
 
-test('unit:own-credential-no-keyring — a session that carries its own GitHub credential never gets the keyring-only proxy, even when it is live (GY-1039)', async () => {
+test('unit:own-credential-no-keyring — a session that carries its own GitHub credential never gets the keyring-only proxy, even when it is live (GY-1039)', async t => {
   const base = await temporaryDirectory('confinement-own-credential');
   const server = createServer();
-  const saved = { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, GRAPHYARD_SECRETS_BUS: process.env.GRAPHYARD_SECRETS_BUS };
   try {
     // A worker pushes with the credential minted for its attempt (GY-999) and a reviewer posts with
     // its own; the keyring behind the proxy holds the operator's login, which neither may read.
@@ -276,14 +276,13 @@ test('unit:own-credential-no-keyring — a session that carries its own GitHub c
     const bus = join(runtime, 'bus'), proxy = join(runtime, 'graphyard-secrets-bus');
     writeFileSync(bus, '');
     await new Promise<void>(done => server.listen(proxy, done));
-    process.env.XDG_RUNTIME_DIR = runtime; delete process.env.GRAPHYARD_SECRETS_BUS;
+    patchEnv({ XDG_RUNTIME_DIR: runtime, GRAPHYARD_SECRETS_BUS: undefined }, t);
     const replacement = (wrapper: readonly string[]) => wrapper[wrapper.indexOf(realpathSync(bus)) - 1];
     assert.equal(replacement(readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session })), realpathSync(proxy), 'a session without a credential of its own reaches the keyring through the proxy');
     assert.equal(replacement(readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, ownGitHubCredential: true })), '/dev/null', 'a session with its own credential keeps the bus unconnectable');
     const confinement = await coordinatorConfinement({ kind: 'claude', args: [], coordinatorRoot: root, sessionDirectory: session, bwrap: '/usr/bin/bwrap', platform: 'linux', mountNamespaceWorks: true, ownGitHubCredential: true });
     assert.equal(replacement(confinement!.wrapper), '/dev/null', 'the launch confinement passes the flag through');
   } finally {
-    for (const [name, value] of Object.entries(saved)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
     await new Promise<void>(done => server.close(() => done()));
     rmSync(base, { recursive: true, force: true });
   }

@@ -7,6 +7,7 @@ import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runRemoteSession } from '../src/remote-session.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3790: tests/remote-session-login.test.ts flaked in GY-3785's merge trial because
 // runRemoteSession's mirror() ran `git read-tree -u --reset <work>` followed by `git reset -q`.
@@ -90,11 +91,9 @@ exit 0
     return result;
   };
 
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${bin}:${previousPath}`;
   const output: string[] = [];
   const sink = { write: (text: string) => { output.push(String(text)); return true; } } as unknown as NodeJS.WritableStream;
-  try {
+  await withEnv({ PATH: `${bin}:${process.env.PATH}` }, async () => {
     const code = await runRemoteSession({
       target: 'gy-compute@pinnedhost',
       worktree,
@@ -108,9 +107,7 @@ exit 0
       errors: sink,
     });
     assert.equal(code, 0, output.join(''));
-  } finally {
-    process.env.PATH = previousPath;
-  }
+  });
 
   assert.deepEqual(
     observedDuringMirror,

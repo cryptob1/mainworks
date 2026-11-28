@@ -12,10 +12,11 @@ import { signInDatabase } from './helpers/sign-in-database.js';
 import { localRequest } from './helpers/local-request.js';
 import { listen } from './helpers/http-server.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3215: the operator invites teammates as their own human principals. A viewer reads; a maintainer
 // also files work under their own name; neither answers a human-only decision; revoking ends a session at once.
-test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as themselves with roles, and revoking ends the session', async () => {
+test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as themselves with roles, and revoking ends the session', async t => {
   const database = await signInDatabase();
   const operator: Principal = { id: 'operator', role: 'admin', sessionKind: 'human' };
   const worker: Principal = { id: 'worker', role: 'worker', sessionKind: 'ai' };
@@ -26,8 +27,7 @@ test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as the
   const { url, close } = await listen(server(engine, [operator, worker, coordinator].map(actor => ({ ...actor, token: token(actor) }))));
   const call = (method: string, path: string, bearer: string, body?: unknown) => localRequest(url, `/api/${path}`, { method, body, headers: { 'Idempotency-Key': randomUUID(), Authorization: `Bearer ${bearer}` } });
   // The CLI as the operator runs it, against this server with the operator's own credential.
-  const saved = { url: process.env.GRAPHYARD_URL, token: process.env.GRAPHYARD_TOKEN, file: process.env.GRAPHYARD_TOKEN_FILE };
-  Object.assign(process.env, { GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(operator) }); delete process.env.GRAPHYARD_TOKEN_FILE;
+  patchEnv({ GRAPHYARD_URL: url, GRAPHYARD_TOKEN: token(operator), GRAPHYARD_TOKEN_FILE: undefined }, t);
   const cli = async (id: string, ...args: string[]) => {
     const printed: any[] = [];
     const context = await createContext('invite', id, args, false);
@@ -88,7 +88,6 @@ test('e2e:teammate-invite-roles — invited viewer and maintainer sign in as the
       assert.notEqual((await call('POST', 'invites', bearer, { name: 'eve', role: 'maintainer' })).status, 200);
     assert.equal((await call('POST', 'invites', token(operator), { name: 'operator', role: 'maintainer' })).status, 409);
   } finally {
-    for (const [name, value] of [['GRAPHYARD_URL', saved.url], ['GRAPHYARD_TOKEN', saved.token], ['GRAPHYARD_TOKEN_FILE', saved.file]] as const) if (value === undefined) delete process.env[name]; else process.env[name] = value;
     await close();
     await database.close();
   }

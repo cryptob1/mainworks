@@ -11,6 +11,7 @@ import { heldSlots, heldVariable, hostHeavyJobsDirectory, projectVariable, slots
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { until } from './helpers/until.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3447: since GY-3290 a worker's own `npm run build` and selected tests waited for one of the
 // host's two heavy-job slots while a batch gate and a merge trial held both for 45+ minutes. Only
@@ -111,14 +112,12 @@ test('e2e:worker-verify-not-queued — while trials fill the host budget a worke
     version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository: 'acme/app', baseBranch: 'main', githubAppId: 1234, hostId: 'loop-host', masterAgentName: 'graphyard-master-slots', workers: [],
   }) as MasterConfig;
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = host.directory;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: host.directory }, async () => {
     const report = await masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => { throw new Error('no git in the fixture'); });
     assert.equal(report.heavyJobs.limit, 2);
     assert.deepEqual(report.heavyJobs.holders.map(holder => `${holder.label} (${holder.project})`).sort(), ['test merge GY-1 (acme/app)', 'test merge GY-2 (acme/app)', 'test merge batch-gate (acme/site)']);
     for (const holder of report.heavyJobs.holders) { assert.ok(holder.pid! > 0); assert.ok(holder.since); }
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  });
   host.go();
   for (const job of host.holders) assert.equal(await job.closed, 0, job.stderr());
 });

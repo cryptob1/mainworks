@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { piRunner } from '../src/runner/pi.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { patchEnv } from './helpers/env.js';
 
 // A tool and payload of the test's own: the runner validates whatever schema its caller hands it.
 const testTool = 'graphyard_decompose';
@@ -75,10 +76,10 @@ test('unit:pi-payload-validation-detail — a registry runner\'s environment key
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('unit:pi-payload-validation-detail — an inherited credential the run can read never appears in its failure, started or adopted', async () => {
+test('unit:pi-payload-validation-detail — an inherited credential the run can read never appears in its failure, started or adopted', async t => {
   const directory = await temporaryDirectory('pi-payload-inherited');
-  const name = 'GY1661_CI_ACCESS', value = `opaque${'q'.repeat(12)}`, previous = process.env[name];
-  process.env[name] = value;
+  const name = 'GY1661_CI_ACCESS', value = `opaque${'q'.repeat(12)}`;
+  patchEnv({ [name]: value }, t);
   try {
     const script = join(directory, 'fake-pi.mjs'), scenario = join(directory, 'scenario.json'), runs = join(directory, 'runs');
     await writeFile(script, fakePi);
@@ -96,7 +97,6 @@ test('unit:pi-payload-validation-detail — an inherited credential the run can 
     assert.equal(!adopted.ok && adopted.failure.reason, 'invalid-payload');
     assert.ok(!again.includes(value) && again.includes('the env holds [redacted]'), again);
   } finally {
-    if (previous === undefined) delete process.env[name]; else process.env[name] = previous;
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 import { runMergeTrial } from '../src/merge-writer/executor.js';
 import type { HostReading } from '../src/merge-writer/remote-shards.js';
+import { withEnv } from './helpers/env.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository, type ShardHostsFixture } from './helpers/shard-hosts.js';
 
@@ -46,13 +47,11 @@ process.exit(failed ? 1 : 0);
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
   const reading = (name: string, cores: number): HostReading => ({ name, cores, busy: 0, steal: 0, celsius: 60, limit: 92, away: false });
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const result = await runMergeTrial({ root: repository.root, base: await temporaryDirectory('proof-counts-base'), mergeSha: repository.sha, changedFiles: [file], timeoutMs: 200_000, cores: 2, run, retries: 0,
       proofs: [proof], proofFiles: [file], attribute: false, remote: { hosts: ['gy-compute@box'], read: async () => [reading('this-machine', 2), reading('gy-compute@box', 8)] } });
     const lines = (await readFile(answers, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { file: string; remote: boolean });
     assert.deepEqual(lines, [{ file, remote: true }], result.logTail);
     assert.deepEqual(result.proofs[proof], { executed: 1, failed: 0 }, result.logTail);
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE; else process.env.GRAPHYARD_TRIAL_IMAGE = previous; }
+  });
 });

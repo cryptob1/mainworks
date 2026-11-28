@@ -7,6 +7,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { slotsDirectoryVariable, writeMachines, type Machine } from '../src/master/verification-slots.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3722: the shard-placement alert said this machine was overloaded beside an idle host but not
 // what ran here, and the confined master cannot list processes. The loop now names the five local
@@ -27,14 +28,10 @@ async function statusFixture(name: string) {
   const master = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', cliPath: process.execPath, repository: 'acme/app', baseBranch: 'main', hostId: 'loop-host',
     masterAgentName: 'graphyard-master-app', workers: [], credentialFile, run: {} }) as never;
   writeFileSync(join(root, '.graphyard/master.json'), JSON.stringify(master), { mode: 0o600 });
-  const alert = async (now: Date) => {
-    const previous = process.env[slotsDirectoryVariable];
-    process.env[slotsDirectoryVariable] = directory;
-    try {
+  const alert = (now: Date) => withEnv({ [slotsDirectoryVariable]: directory }, async () => {
       const report = await masterStatusReport(root, master, async () => ({ work: [], now: now.toISOString() }), async () => { throw new Error('no git in the fixture'); });
       return report.attention.filter(line => line.subject === 'shard placement').map(line => line.text);
-    } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
-  };
+  });
   return { root, directory, alert };
 }
 

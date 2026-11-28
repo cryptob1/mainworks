@@ -18,6 +18,7 @@ import { lifecycle } from './helpers/work-lifecycle.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { itemObservation } from './helpers/observation-fixture.js';
 import { api } from './helpers/api.js';
+import { withEnv } from './helpers/env.js';
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
 /**
@@ -48,10 +49,7 @@ before(async () => {
   // Deployment identities (builder, observers, promoter) hold producer credentials
   // and count toward the shared review/proof agent limit the server enforces at
   // boot; this roster needs five, so raise the configurable limit for this file.
-  const configuredReviewers = process.env.GRAPHYARD_MAX_REVIEWERS; process.env.GRAPHYARD_MAX_REVIEWERS = '5';
-  let http: ReturnType<typeof server>;
-  try { http = server(engine, principals.map(p => ({ ...p, token: `${p.id}-token-${'x'.repeat(32)}` }))); }
-  finally { if (configuredReviewers === undefined) delete process.env.GRAPHYARD_MAX_REVIEWERS; else process.env.GRAPHYARD_MAX_REVIEWERS = configuredReviewers; }
+  const http = withEnv({ GRAPHYARD_MAX_REVIEWERS: '5' }, () => server(engine, principals.map(p => ({ ...p, token: `${p.id}-token-${'x'.repeat(32)}` }))));
   ({ url, close } = await listen(http));
 });
 after(async () => { await close?.(); if (store) await store.close(); });

@@ -14,6 +14,7 @@ import { launchMasterSession } from '../src/master/master-session.js';
 import { masterConfinementVariable } from '../src/master/confinement.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3521: every master starts from one mission paragraph, the same for every project and runtime,
 // prepended once to the master prompt; the rest of the prompt is unchanged.
@@ -47,7 +48,7 @@ test('integration:master-mission-line — the rest of the master prompt is uncha
   }
 });
 
-test('e2e:master-mission-line — a started master session\'s first message contains the mission paragraph', { timeout: 180_000 }, async () => {
+test('e2e:master-mission-line — a started master session\'s first message contains the mission paragraph', { timeout: 180_000 }, async t => {
   const scratch = await temporaryDirectory('master-mission-line');
   const root = await realpath(await temporaryDirectory('checkout', scratch)), homes = await temporaryDirectory('accounts', scratch);
   const credentials = await temporaryDirectory('coordinator', scratch);
@@ -98,8 +99,7 @@ test('e2e:master-mission-line — a started master session\'s first message cont
     throw new Error(`Unexpected fixture Herdr command ${args.join(' ')}`);
   };
   // The fixture process already stands inside its own boundary, as a real master session does.
-  const hadConfinement = process.env[masterConfinementVariable];
-  process.env[masterConfinementVariable] = 'master';
+  patchEnv({ [masterConfinementVariable]: 'master' }, t);
   try {
     const launched = await launchMasterSession(root, config, { agents: [], available: true }, 'Handover: continue from master status.', run,
       { registry: client, quota: false, smoke: async () => ({ ok: true, error: null }) });
@@ -107,7 +107,6 @@ test('e2e:master-mission-line — a started master session\'s first message cont
     assert.equal(result.id, launched.continuity!.current.nativeId, 'the launch really ran the fixture runtime');
     assert.ok((result.request as string).includes(masterMission), 'the session\'s first message contains the mission paragraph');
   } finally {
-    if (hadConfinement === undefined) delete process.env[masterConfinementVariable]; else process.env[masterConfinementVariable] = hadConfinement;
     for (const pane of panes.values()) if (pane.child && pane.child.exitCode === null) { pane.child.stdin?.end(); await once(pane.child, 'exit').catch(() => {}); }
   }
 });

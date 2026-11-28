@@ -7,6 +7,7 @@ import { remoteableTestFile, type HostReading } from '../src/merge-writer/remote
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3536: tests that import the sandboxed benchmarks stay on this machine. GY-3549: a compute host's
 // shard may start nested sandboxes, so tests importing the trial runner may run there.
@@ -53,9 +54,7 @@ process.exit(failed ? 1 : 0);
     if (command === 'node' && args[0] === 'scripts/tests.mjs') return defaultChildRun(command, args, { ...options, wrapper: undefined });
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const result = await runTrial({ root, base: await temporaryDirectory('sandbox-local-base'), mergeSha: sha, changedFiles: files, timeoutMs: 90_000, cores: 2, run, retries: 0,
       remote: { hosts: ['gy-compute@box'], read: async () => [reading('vishrog', 2), reading('gy-compute@box', 8)] } });
     assert.equal(result.build, 'pass', result.logTail);
@@ -63,5 +62,5 @@ process.exit(failed ? 1 : 0);
     const lines = (await readFile(answers, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { file: string; remote: boolean; passed: boolean });
     for (const file of sandboxed) assert.deepEqual(lines.filter(line => line.file === file).map(line => [line.remote, line.passed]), [[false, true]], `${file} ran here and passed`);
     assert.ok(lines.some(line => line.remote), 'other files still went to the host');
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE; else process.env.GRAPHYARD_TRIAL_IMAGE = previous; }
+  });
 });

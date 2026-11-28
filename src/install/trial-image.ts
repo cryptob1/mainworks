@@ -6,17 +6,18 @@ import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
 import { setting } from '../setting.js';
 import { timedPull } from './image-pulls.js';
+import { retryImagePipe } from './image-build.js';
 
 /** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'mainworks-trial';
 const trialBuilderCreateArgs = ['buildx', 'create', '--name', trialBuilder, '--driver', 'docker-container'];
-export const trialImageBuildArgs = (root: string) => ['buildx', 'build', ...(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : []), '--builder', trialBuilder, '--load', '--target', 'trial', '--tag', trialContainerImage, root];
+export const trialImageBuildArgs = (root: string, archive: string) => ['buildx', 'build', ...(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : []), '--builder', trialBuilder, '--output', `type=docker,dest=${archive}`, '--target', 'trial', '--tag', trialContainerImage, root];
 /** `published` (GY-3214) is the trial image Mainworks published for the source checkout's commit, null for a tree no published image holds. */
 export const trialImagePlan = (ctx: Pick<AdapterContext, 'sourceRoot'>, published: string | null): PlanAction => ({
   id: 'provider.trial-image', target: 'provider', state: 'update',
   title: published ? `Pull the private-root merge-trial image ${published}, or build it here when it is not published (Docker is required for trials)` : 'Build the private-root merge-trial image (Docker is required for trials)',
   command: (build => published ? `docker image pull ${published} || { ${build}; }` : build)(
-    [`docker buildx inspect ${trialBuilder} >/dev/null 2>&1 || docker ${trialBuilderCreateArgs.join(' ')}`, ['docker', ...trialImageBuildArgs(ctx.sourceRoot)].map(shellQuote).join(' ')].join('; ')),
+    [`docker buildx inspect ${trialBuilder} >/dev/null 2>&1 || docker ${trialBuilderCreateArgs.join(' ')}`, `(archive=$(mktemp -d /tmp/mainworks-image-XXXXXX) && trap 'rm -rf "$archive"' EXIT && ${['docker', ...trialImageBuildArgs(ctx.sourceRoot, 'ARCHIVE/image.tar')].map(shellQuote).join(' ').replace("'type=docker,dest=ARCHIVE/image.tar'", '"type=docker,dest=$archive/image.tar"')} && docker load --input "$archive/image.tar")`].join('; ')),
 });
 /** A stand-in move leaves image creation to the target's first start. Use the local image and
  * clear any copied published-image marker so subsequent trials use the image this command builds. */
@@ -28,7 +29,19 @@ export const provisionTrialImage = async (ctx: Pick<AdapterContext, 'transport' 
   if (published && await timedPull(ctx.transport, published)) return ctx.transport.putFile(marker, `${published}\n`, 0o644);
   await ctx.transport.exec('rm', ['-f', marker], { allowFailure: true });
   if ((await ctx.transport.exec('docker', ['buildx', 'inspect', trialBuilder], { allowFailure: true })).code !== 0) await ctx.transport.exec('docker', trialBuilderCreateArgs);
-  await ctx.transport.exec('docker', trialImageBuildArgs(ctx.sourceRoot), { timeout: 1_800_000 });
+  // GY-4117: --load streams an OCI export straight into Docker's containerd importer.
+  // An importer/ingest failure closes that pipe and hides its diagnostic behind BuildKit's
+  // 'io: read/write on closed pipe'. Finish a Docker-format archive first, then load it.
+  const directory = (await ctx.transport.exec('mktemp', ['-d', '/tmp/mainworks-image-XXXXXX'])).stdout.trim();
+  try {
+    const buildAndLoad = async () => {
+      await ctx.transport.exec('docker', trialImageBuildArgs(ctx.sourceRoot, `${directory}/image.tar`), { timeout: 1_800_000 });
+      await ctx.transport.exec('docker', ['load', '--input', `${directory}/image.tar`], { timeout: 1_800_000 });
+    };
+    await retryImagePipe(buildAndLoad);
+  } finally {
+    await ctx.transport.exec('rm', ['-rf', directory], { allowFailure: true });
+  }
 };
 /** GY-3339: on an AppArmor host, the profile trial containers run under (merge-writer/trial-apparmor.ts); none elsewhere. */
 export const trialAppArmorPlan = (enabled = appArmorEnabled()): PlanAction[] => enabled ? [{

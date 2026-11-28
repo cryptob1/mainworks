@@ -11,6 +11,7 @@ import { runtimeLoginHomes } from '../src/master/profiles.js';
 import { proposedRuntimes, emptyRegistry, type AgentRegistry } from '../src/model/registry.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import type { FleetLaunchAccount } from '../src/fleet.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3721: a Pi account in the worker role builds on its own Z.AI login. The worker's launch sets
 // PI_CODING_AGENT_DIR to the account's registry home, keeps that home readable inside the worker
@@ -70,13 +71,11 @@ case " $* " in *" --provider zai --model glm-5.3 "*) ;; *) echo "unknown model" 
 echo '{"type":"message_end","message":{"role":"assistant","content":"OK","model":"glm-5.3"}}'
 `);
   await chmod(join(bin, 'pi'), 0o755);
-  const path = process.env.PATH;
-  process.env.PATH = `${bin}:${path}`;
-  try {
+  await withEnv({ PATH: `${bin}:${process.env.PATH}` }, async () => {
     await registryCommand({ hostId: 'host-1' }, ['role', 'set', 'worker', 'pi-a', '--reason', 'build'], api);
     assert.equal(writes.length, 2, 'the real smoke authenticates with the home\'s login');
     registry.accounts[0]!.credential.home = join(holder, 'empty');
     await mkdir(join(holder, 'empty'));
     await assert.rejects(registryCommand({ hostId: 'host-1' }, ['role', 'set', 'worker', 'pi-a', '--reason', 'build'], api), /pi-a .*No API key found for zai/);
-  } finally { process.env.PATH = path; }
+  });
 });

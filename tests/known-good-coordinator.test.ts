@@ -13,6 +13,7 @@ import type { MasterSession } from '../src/cli/master/session.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { api } from './helpers/api.js';
+import { withEnv } from './helpers/env.js';
 
 /** GY-1529: the known-good coordinator — a pinned checkout at the last promoted SHA runs the loop; recover repins it. */
 /** A real repository with three commits; npm is a recorded stub, git is real. */
@@ -88,9 +89,7 @@ useTestStore('known-good-coordinator', { credentials: [admin, { id: 'graphyard-m
 test('integration:master-recover-repins-and-records — master recover repins the previous SHA (or --to), rewrites the unit onto the pin, restarts it and records policy.coordinator.recovered {from, to, reason}', async () => {
   const w = await world();
   const home = await temporaryDirectory('known-good-home');
-  const previousConfig = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = join(home, 'config');
-  try {
+  await withEnv({ GRAPHYARD_CONFIG_HOME: join(home, 'config') }, async () => {
     const { installDirectory } = await import('../src/install/secrets.js');
     const { installIdFor } = await import('../src/install/types.js');
     const installDir = installDirectory(installIdFor('owner/project'));
@@ -133,7 +132,7 @@ test('integration:master-recover-repins-and-records — master recover repins th
     // Only an admin credential records it.
     const refused = await api(url, 'graphyard-master-token-' + 'y'.repeat(32), 'coordinator/recovered', { body: { from: null, to: w.shas[0], reason: 'no' } });
     assert.equal(refused.status, 403);
-  } finally { if (previousConfig === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previousConfig; }
+  });
 });
 
 /** Runs `body` with `secret` on a stdin the command's reader consumes. */

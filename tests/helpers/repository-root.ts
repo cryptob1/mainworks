@@ -1,5 +1,6 @@
 import { setRepositoryPolicy } from '../../src/model-boundary/repository-policy';
 import { setProjectDelivery } from '../../src/model-boundary/project-applications';
+import { patchEnv } from './env.js';
 
 /**
  * Points this process at another checkout's graphyard.json and returns the restore. The policy and
@@ -8,11 +9,7 @@ import { setProjectDelivery } from '../../src/model-boundary/project-application
  * policy (GY-3989: a later create was refused "has no way to serve a head").
  */
 export function pointRepositoryRoot(root: string): () => void {
-  const previous = process.env.GRAPHYARD_REPOSITORY_ROOT;
-  process.env.GRAPHYARD_REPOSITORY_ROOT = root;
+  const restore = patchEnv({ GRAPHYARD_REPOSITORY_ROOT: root });
   setRepositoryPolicy(null); setProjectDelivery(null);
-  return () => {
-    if (previous === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = previous;
-    setRepositoryPolicy(null); setProjectDelivery(null);
-  };
+  return () => { restore(); setRepositoryPolicy(null); setProjectDelivery(null); };
 }

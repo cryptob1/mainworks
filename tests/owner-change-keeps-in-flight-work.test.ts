@@ -19,6 +19,7 @@ import { recordedRuns } from './helpers/headless-runs.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3912: changing the owner while an attempt is in flight never strands its work. complete accepts
 // commits authored with the current owner, the owner recorded on the attempt at its claim, or the
@@ -91,9 +92,8 @@ test('integration:owner-change-keeps-in-flight-work-completable — the claim re
   } finally { recordLoopOwner(null); await store.close(); }
 });
 
-test('integration:running-session-picks-up-the-new-owner — a session launched before the owner changed authors its next commit with the new owner, without a restart', async () => {
-  const saved = { ...process.env };
-  for (const name of Object.keys(process.env)) if (/^GIT_/.test(name)) delete process.env[name];
+test('integration:running-session-picks-up-the-new-owner — a session launched before the owner changed authors its next commit with the new owner, without a restart', async t => {
+  patchEnv(Object.fromEntries(Object.keys(process.env).filter(name => /^GIT_/.test(name)).map(name => [name, undefined])), t);
   try {
     const { root, git } = await repository('running-session-owner');
     recordLoopOwner(ada, root);
@@ -119,6 +119,5 @@ test('integration:running-session-picks-up-the-new-owner — a session launched 
     assert.equal(await commit('after.txt'), 'Grace Hopper (Mainworks) <grace@example.com>|mainworks-worker-a', 'the running session authors with the new owner');
   } finally {
     recordLoopOwner(null);
-    for (const [name, value] of Object.entries(saved)) if (/^GIT_/.test(name)) process.env[name] = value;
   }
 });

@@ -2,7 +2,7 @@
   "id": "headless-pinned-binary",
   "title": "Headless sessions execute the pinned runtime binary",
   "description": "Reviews run pinned Cursor and Pi stub binaries inside the real sandbox even when the host PATH selects failing mise shims; Cursor's interactive agent alias must not bypass its cursor-agent pin.",
-  "tags": ["review"],
+  "tags": ["review", "sandbox"],
   "target": "any",
   "required": true,
   "steps": [

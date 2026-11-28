@@ -10,6 +10,7 @@ import { hostShimDigest, hostShimScript } from '../src/host-shim.js';
 import { probeHost, shareHost } from '../src/hosts.js';
 import { outdatedShimAttention } from '../src/merge-writer/remote-shards.js';
 import infra from '../src/guide/infra.js';
+import { patchEnv, withEnv } from './helpers/env.js';
 
 // GY-3834 AC-1: `host add OWNER@HOST` in a terminal prepares the machine over its own SSH session
 // (sudo there, prompts reaching the owner's terminal), records gy-compute@HOST and prints one line with
@@ -18,8 +19,8 @@ import infra from '../src/guide/infra.js';
 // name the one command and never a script to copy.
 
 const proof = 'integration:host-add-prepares-and-registers-in-one-command';
-let hosts: Awaited<ReturnType<typeof fakeHosts>>, config: string;
-const saved = { PATH: process.env.PATH, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME, HOME: process.env.HOME };
+let hosts: Awaited<ReturnType<typeof fakeHosts>>, config: string, restoreEnv: () => void;
+const basePath = process.env.PATH;
 const tty = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
 
 before(async () => {
@@ -28,10 +29,10 @@ before(async () => {
   const home = join(hosts.root, 'operator');
   await mkdir(join(home, '.ssh'), { recursive: true });
   await writeFile(join(home, '.ssh', 'id_ed25519.pub'), `${hosts.publicKey}\n`);
-  Object.assign(process.env, { PATH: `${hosts.bin}:${saved.PATH}`, GRAPHYARD_CONFIG_HOME: config, HOME: home });
+  restoreEnv = patchEnv({ PATH: `${hosts.bin}:${basePath}`, GRAPHYARD_CONFIG_HOME: config, HOME: home });
 });
 after(() => {
-  for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
+  restoreEnv();
   Object.assign(process.stdin, { isTTY: tty.stdin }); Object.assign(process.stdout, { isTTY: tty.stdout });
 });
 
@@ -97,10 +98,8 @@ test(`${proof} — AC-4: prepare keeps another install's helper; host add update
   const digestOther = 'a'.repeat(64);
   const digestOld = 'b'.repeat(64);
   const pair = await fakeHosts('host-add-ac4', [{ name: 'shared' }, { name: 'outdated', owner: true }]);
-  const oldPath = process.env.PATH, oldConfig = process.env.GRAPHYARD_CONFIG_HOME;
   const ac4Config = join(pair.root, 'config');
-  Object.assign(process.env, { PATH: `${pair.bin}:${saved.PATH}`, GRAPHYARD_CONFIG_HOME: ac4Config });
-  try {
+  await withEnv({ PATH: `${pair.bin}:${basePath}`, GRAPHYARD_CONFIG_HOME: ac4Config }, async () => {
     await pair.prepare('shared', { publicKey: keyOther, shim: { script: hostShimScript.replace(hostShimDigest, digestOther), digest: digestOther } });
     await shareHost('gy-compute@shared', keyShared);
     // This install re-prepares at another digest: both other-install's direct helper and the helper named by shared-install's --home line stay.
@@ -143,7 +142,5 @@ test(`${proof} — AC-4: prepare keeps another install's helper; host add update
     assert.deepEqual(reupdated.lines, ["Updated gy-compute@outdated's helper to this release."]);
     const finalProbe = await probeHost('gy-compute@outdated');
     assert.equal(finalProbe.ok && finalProbe.shim, hostShimDigest);
-  } finally {
-    Object.assign(process.env, { PATH: oldPath, GRAPHYARD_CONFIG_HOME: oldConfig });
-  }
+  });
 });

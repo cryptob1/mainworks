@@ -10,6 +10,7 @@ import { prepareSessionHarness } from '../src/master/harness.js';
 import { startAgentSession } from '../src/master/launch.js';
 import { expandTypedCommand, startedAtOnce } from './helpers/launch-shell.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 test('integration:isolated-trial-runtime-config — nested durable scratch excludes unrelated ancestor settings with an isolated HOME, while project settings remain guarded', async () => {
   const operator = await temporaryDirectory('operator-home');
@@ -27,9 +28,7 @@ test('integration:isolated-trial-runtime-config — nested durable scratch exclu
   const credentials = await temporaryDirectory('credentials', trial);
   execFileSync('git', ['init', '-q', root]);
   execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
-  const previous = process.env.HOME;
-  process.env.HOME = home;
-  try {
+  await withEnv({ HOME: home }, async () => {
     await setupMaster(root, { url: 'https://graphyard.example', token: 'fixture-token-'.padEnd(40, 'x'), cliPath: fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url)), credentialDirectory: credentials, herdrWorkspace: 'fixture' },
       (async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 }))) as typeof fetch);
     const environment = { HOME: home, CLAUDE_CONFIG_DIR: runtimeHome };
@@ -60,7 +59,5 @@ test('integration:isolated-trial-runtime-config — nested durable scratch exclu
     const projectHarness = await prepareSessionHarness(project, config, { role: 'reviewer', kind: 'claude', profile: 'project' });
     assert.equal(projectHarness.args[1], 'user');
     await trustClaudeFolder(project, environment, projectHarness.args);
-  } finally {
-    if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;
-  }
+  });
 });
