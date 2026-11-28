@@ -3,6 +3,7 @@
 import { accessSync, constants, readFileSync } from 'node:fs';
 import { basename, delimiter, join } from 'node:path';
 import { hostname } from 'node:os';
+import type { DispatchCursor, DispatchFailure } from './cursor.js';
 
 export interface HostCause { key: string; tool: string | null; fix: string }
 
@@ -26,4 +27,36 @@ export const toolPresent = (tool: string, path = process.env.PATH ?? '') =>
 /** When the operator last cleared every standing host cause (`master host-causes clear`), or null. */
 export function hostCausesClearedAt(file: string): number | null {
   try { const at = Date.parse(readFileSync(file, 'utf8').trim()); return Number.isFinite(at) ? at : null; } catch { return null; }
+}
+
+/** The standing host cause a request's refusal named; while it stands the request is not retried. */
+export const heldByHost = (cursor: DispatchCursor, requestId: string) => { const key = cursor.failures[requestId]?.hostCause; return key ? cursor.hostCauses[key] : undefined; };
+
+/** Records the host cause a refusal names on it and the cursor; returns the alert text when the cause is new and not yet alerted. */
+export function recordHostCause(cursor: DispatchCursor, failure: DispatchFailure, subject: string): string | null {
+  const cause = hostCause(failure.reason);
+  if (!cause) return null;
+  failure.hostCause = cause.key;
+  if (cursor.hostCauses[cause.key]) return null;
+  cursor.hostCauses[cause.key] = { tool: cause.tool, fix: cause.fix, detail: failure.reason, at: failure.at };
+  // One alert per cause until the operator clears them, so a cause that lifts and returns every cycle alerts once.
+  if (cursor.hostCausesAlerted.includes(cause.key)) return null;
+  cursor.hostCausesAlerted = [...cursor.hostCausesAlerted, cause.key].slice(-100);
+  return `${subject.replace('%s', cause.key)}. Fix: ${cause.fix}`;
+}
+
+/** Lifts each cause whose tool is now present or that the operator cleared after it was recorded; its refusals then retry at once. */
+export function liftHostCauses(cursor: DispatchCursor, clearedAt: number | null) {
+  for (const [key, cause] of Object.entries(cursor.hostCauses)) {
+    const cleared = clearedAt !== null && clearedAt >= Date.parse(cause.at);
+    if (!cleared && !(cause.tool && toolPresent(cause.tool))) continue;
+    delete cursor.hostCauses[key];
+    if (cleared) cursor.hostCausesAlerted = [];
+    for (const [id, failure] of Object.entries(cursor.failures)) if (failure.hostCause === key) delete cursor.failures[id];
+  }
+}
+
+/** Drops causes no remaining refusal names: every item they blocked has moved on. */
+export function pruneHostCauses(cursor: DispatchCursor) {
+  for (const key of Object.keys(cursor.hostCauses)) if (!Object.values(cursor.failures).some(failure => failure.hostCause === key)) delete cursor.hostCauses[key];
 }
