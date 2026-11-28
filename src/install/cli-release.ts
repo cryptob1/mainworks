@@ -1,11 +1,11 @@
 // Deployment artifacts stay at their original paths for processes that already loaded them.
 // Only current moves; neither the source tree nor node_modules of a published CLI is rebuilt.
 import { randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { chmod, copyFile, cp, mkdir, readFile, readdir, readlink, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import type { ChildRun } from '../child-runner.js';
+import { defaultChildRun, type ChildRun } from '../child-runner.js';
 import { directoryBytes } from '../daemon/leftovers.js';
 import { livePaths } from '../session-processes.js';
 import { cliCommit } from '../protocol-version.js';
@@ -88,8 +88,13 @@ export async function ensureInstallLauncher(installDir: string, fallbackCliPath?
     await mkdir(dirname(target), { recursive: true });
     const staging = `${target}.${randomUUID()}.tmp`;
     try {
+      // The copy is a standalone repository (its own objects, the source's origin), so the deploy
+      // unit can clone its checkout from it; the overlay brings the built files along.
+      if (existsSync(join(sourceRoot, '.git'))) await ensureDeployCheckout(staging, sourceRoot, defaultChildRun);
       await cp(sourceRoot, staging, {
         recursive: true,
+        force: true,
+        preserveTimestamps: true,
         verbatimSymlinks: true,
         filter: src => basename(src) !== '.git',
       });
@@ -101,6 +106,7 @@ export async function ensureInstallLauncher(installDir: string, fallbackCliPath?
       });
     } catch (error) {
       await rm(staging, { recursive: true, force: true }).catch(() => {});
+      await rm(`${staging}.clone`, { recursive: true, force: true }).catch(() => {});
       throw error;
     }
   }
@@ -114,6 +120,37 @@ export async function ensureInstallLauncher(installDir: string, fallbackCliPath?
   await unlink(pointer).catch(() => {});
   await symlink(current, pointer);
   return writeInstallLauncher(ownDir);
+}
+
+/**
+ * The install's own deploy checkout (GY-2942, GY-3350): a standalone repository with its own object
+ * store, never a worktree of another checkout, so moving or deleting the launcher's checkout (or
+ * another install's) cannot break this deploy. The first run fetches the source's HEAD into a fresh
+ * repository; a checkout left as a linked worktree (its .git a file) is replaced by one at the same
+ * commit. origin and its URL rewrites stay the source's, so the watch fetches main as before.
+ */
+export async function ensureDeployCheckout(checkout: string, source: string, run: ChildRun) {
+  const dotGit = join(checkout, '.git');
+  if (existsSync(dotGit) && statSync(dotGit).isDirectory()) return;
+  const linked = existsSync(dotGit), from = linked ? checkout : source, next = `${checkout}.clone`;
+  const git = async (...args: string[]) => String(await run('git', args, { timeoutMs: 1_800_000 })).trim();
+  // Raw, as servedRepository reads it: get-url would expand an insteadOf rewrite, which comes along as config.
+  const origin = await git('-C', from, 'config', '--get', 'remote.origin.url').catch(() => null);
+  const rewrites = (await git('-C', from, 'config', '--local', '--get-regexp', '^url\\.').catch(() => '')).split('\n').filter(Boolean);
+  await rm(next, { recursive: true, force: true });
+  await mkdir(next, { recursive: true });
+  await git('-C', next, 'init', '--quiet');
+  await git('-C', next, 'fetch', '--quiet', resolve(from), 'HEAD');
+  await git('-C', next, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
+  for (const line of rewrites) { const at = line.indexOf(' '); await git('-C', next, 'config', '--add', line.slice(0, at), line.slice(at + 1)); }
+  if (origin) await git('-C', next, 'remote', 'add', 'origin', origin);
+  if (linked) {
+    // The release pointer publishCliRelease left beside the old checkout stays with the install.
+    if (existsSync(stateDirectory(checkout))) await rename(stateDirectory(checkout), stateDirectory(next));
+    await rm(checkout, { recursive: true, force: true });
+    console.log(`Replaced the deploy checkout ${checkout}, a worktree of another checkout, with a standalone clone at ${await git('-C', next, 'rev-parse', 'HEAD')}`);
+  }
+  await rename(next, checkout);
 }
 
 /** Publish after health. The legacy build path remains loadable, including on the first handover. */

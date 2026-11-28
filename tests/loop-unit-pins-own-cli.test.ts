@@ -4,11 +4,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, realpathSync, utimesSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { publishCliRelease, resolvedLauncher, sweepCliReleases, unitLauncherFault } from '../src/install/cli-release.js';
+import { ensureDeployCheckout, publishCliRelease, resolvedLauncher, sweepCliReleases, unitLauncherFault } from '../src/install/cli-release.js';
 import { alignLoopUnit, installLoopSupervisor, loopUnitText } from '../src/install/loop-unit.js';
 import { deployUnitOf, perInstallUnits, systemdCommandLineWords } from '../src/install/units.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { defaultChildRun } from '../src/child-runner.js';
 import { patchEnv } from './helpers/env.js';
 
 // GY-4124: Each install's loop runs its own pinned CLI release, never another install's.
@@ -50,6 +51,7 @@ test('integration:loop-unit-pins-own-cli — writing or refreshing a second inst
 
     // 1. Build a real git repo with 4 releases and publish them in install A.
     await gitRepo({ root: source });
+    git(source, 'remote', 'add', 'origin', 'https://example.invalid/mainworks.git');
     const commits: string[] = [];
     for (let index = 1; index <= 4; index += 1) {
       mkdirSync(join(source, 'bin'), { recursive: true });
@@ -97,6 +99,15 @@ test('integration:loop-unit-pins-own-cli — writing or refreshing a second inst
     const deployBText = await readFile(join(unitDirectory, deployUnitOf({ master: created.unit })), 'utf8');
     const deployLauncherB = execStartLauncher(deployBText);
     assert.ok(within(deployLauncherB, installB), `deploy unit ExecStart must be under install B (${installB}), got ${deployLauncherB}`);
+    // The deploy unit's command first clones install B's deploy checkout from the release it runs,
+    // so that release must be a Git repository at the copied commit with the source's origin.
+    const releaseB = resolve(resolvedB, '..', '..');
+    assert.equal(git(releaseB, 'rev-parse', 'HEAD'), commits[3]);
+    assert.equal(git(releaseB, 'status', '--porcelain', '--untracked-files=no'), '');
+    const deploySourceB = join(installB, 'deploy', 'src');
+    await ensureDeployCheckout(deploySourceB, releaseB, defaultChildRun);
+    assert.equal(git(deploySourceB, 'rev-parse', 'HEAD'), commits[3]);
+    assert.equal(git(deploySourceB, 'config', '--get', 'remote.origin.url'), 'https://example.invalid/mainworks.git');
 
     // 3. Refreshing a second install whose unit was originally created pointing at install A's CLI
     //    rewrites ExecStart onto a CLI release under its own config directory.
