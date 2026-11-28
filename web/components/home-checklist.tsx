@@ -6,7 +6,7 @@ import { useState } from 'react';
  * to whoever opens Home while this browser has not dismissed it, remembered the way web/theme.ts keeps the
  * theme: a window with no storage (private mode) just shows it again. Help links to the same guide at its top.
  * GY-4071: the key says mainworks. A new name a person could read says Mainworks (GY-3872); the older
- * graphyard.* keys stay only because open sessions already hold them.
+ * browser keys keep the old name only because open sessions already hold them.
  */
 const KEY = 'mainworks.first-time-checklist';
 /** The owner's public guide for new factory managers. */
