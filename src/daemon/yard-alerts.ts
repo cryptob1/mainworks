@@ -5,6 +5,7 @@ import { parkedOnHuman } from '../model/human-request.js';
 import { plainStage, waitingReason } from '../model/plain-stage.js';
 import { resumeExitWindowMs } from '../master/session-resume.js';
 import type { Cycle } from './cycle.js';
+import { alertsOn } from './delivery-alerts.js';
 import { record } from './effects.js';
 import { message, type DaemonState } from './state.js';
 
@@ -115,7 +116,7 @@ const yardAllClearText = (repository: string, since: string, now: number) =>
  */
 export async function yardAlertStep(cycle: Cycle) {
   const { config, state, effects, snapshot, clock, now } = cycle;
-  if (config.forPerson || !config.run.alertUrl || !effects.alertWebhook) return;
+  if (!alertsOn(cycle) || !effects.alertWebhook) return;
   const alertMs = alertMinutesOf(config.run) * 60_000, iso = (at: number) => new Date(at).toISOString();
   const stop = yardStop(state, snapshot.work, clock, alertMs);
   if (!stop) {

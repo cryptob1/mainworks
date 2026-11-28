@@ -18,6 +18,7 @@ import { DeliveryDefaults } from '../components/delivery-slices';
 import { WhereItRuns } from '../components/where-it-runs';
 import { PublicLink } from '../components/public-link';
 import { CheckInOwner } from '../components/check-in-owner';
+import { SlackPage } from './slack';
 import { requestedView } from '../../src/model/setup-checklist';
 
 /**
@@ -73,6 +74,8 @@ export const views: readonly View[] = [
   { id: 'agents', icon: '⛭', label: 'Agents', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <FleetPage api={dashboard.api} status={dashboard.status} observedAt={dashboard.observedAt}/> },
   { id: 'workers', icon: '⚙', label: 'Workers', section: 'settings', render: dashboard => <WorkersPage {...dashboard}/> },
   { id: 'costs', icon: '$', label: 'Costs', section: 'settings', render: dashboard => <CostsPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
+  // GY-4073: connect the factory's Slack app, step by step.
+  { id: 'slack', icon: '#', label: 'Slack', section: 'settings', adminOnly: true, render: dashboard => <SlackPage api={dashboard.api} observedAt={dashboard.observedAt}/> },
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
   // The project's effective delivery defaults and declared applications (GY-1901), with where the app runs (GY-3434).
   { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><CheckInOwner api={dashboard.api} status={dashboard.status}/><PublicLink api={dashboard.api} status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },

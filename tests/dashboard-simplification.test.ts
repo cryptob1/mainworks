@@ -152,14 +152,14 @@ test('integration:dashboard-navigation — one top bar (Home, Work, Lead, Settin
   const sectionOf = Object.fromEntries(views.map(view => [view.label, view.section]));
   for (const page of ['Work', 'Needs you', 'Releases', 'Tests', 'Test cases']) assert.equal(sectionOf[page], 'work', page);
   for (const page of ['Lead', 'Product']) assert.equal(sectionOf[page], 'lead', page);
-  for (const page of ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help', 'Operator automation']) assert.equal(sectionOf[page], 'settings', page);
+  for (const page of ['Agents', 'Workers', 'Costs', 'Slack', 'Setup', 'Delivery', 'Help', 'Operator automation']) assert.equal(sectionOf[page], 'settings', page);
 
   // The top bar renders exactly the four places; the pages of a place are sub-page links above the content.
   const topNav = markup(createElement(MainTopBar, dashboard()));
   assert.equal(topNav.match(/class="nav-link( active)?"/g)?.length, 4);
   const tabs = (d: Dashboard, view: string) => [...markup(createElement(TopBar, { ...d, view })).matchAll(/class="tab(?: active)?"[^>]*>(?:<abbr[^>]*>)?([^<]+)</g)].map(match => match[1]);
   assert.deepEqual(tabs(dashboard(), 'work'), ['Work', 'Tests', 'Advanced', 'Releases', 'Test cases']);
-  assert.deepEqual(tabs(dashboard(), 'agents'), ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help', 'Advanced', 'Operator automation'], 'Operator automation sits inside the Advanced fold');
+  assert.deepEqual(tabs(dashboard(), 'agents'), ['Agents', 'Workers', 'Costs', 'Slack', 'Setup', 'Delivery', 'Help', 'Advanced', 'Operator automation'], 'Operator automation sits inside the Advanced fold');
   assert.match(markup(createElement(TopBar, { ...dashboard(), view: 'agents' })), /<details class="tabs-advanced"><summary class="tab">Advanced<\/summary><button[^>]*>(<abbr[^>]*>)?Operator automation/);
   assert.deepEqual(tabs(dashboard(), 'lead'), ['Lead', 'Product']);
   assert.deepEqual(tabs(dashboard(), 'home'), [], 'Home alone draws no tab row');
@@ -175,7 +175,7 @@ test('integration:dashboard-navigation — one top bar (Home, Work, Lead, Settin
   assert.ok(tabs(dashboard({}, 'admin', probed.features), 'work').includes('Test cases'), 'the admin who fills it keeps the tab');
   const none = dashboard({}, 'admin', probed.features);
   assert.ok(!tabs(none, 'work').includes('Releases'), 'Releases hidden when unconfigured');
-  assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help'], 'no Advanced fold while automation is unconfigured');
+  assert.deepEqual(tabs(none, 'agents'), ['Agents', 'Workers', 'Costs', 'Slack', 'Setup', 'Delivery', 'Help'], 'no Advanced fold while automation is unconfigured');
   const failing = await probeFeatures(async () => { throw new Error('unavailable'); }, true, false);
   assert.deepEqual(failing.features, { releases: null, validation: false, automation: null, scenarios: null }, 'an outage never hides a page');
   // An outage and an empty registry mean opposite things, so the page never reports one as the other.

@@ -32,7 +32,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     // Settings holds Agents, Workers, Costs, Setup, Delivery, Help, and Operator automation behind Advanced.
     await entry(page, 'Settings');
     await heading(page, 'Agents');
-    await expect(tabs(page).getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Setup', 'Delivery', 'Help']);
+    await expect(tabs(page).getByRole('button')).toHaveText(['Agents', 'Workers', 'Costs', 'Slack', 'Setup', 'Delivery', 'Help']);
     await expect(tabs(page).getByText('Advanced', { exact: true })).toBeVisible();
     await expect(tabs(page).getByRole('button', { name: 'Operator automation', includeHidden: true })).toBeHidden();
     await tabs(page).getByRole('button', { name: 'Setup', exact: true }).click();
@@ -58,6 +58,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await page.keyboard.press('Enter');
     await heading(page, 'Agents');
     await tabs(page).getByRole('button', { name: 'Agents', exact: true }).focus();
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
