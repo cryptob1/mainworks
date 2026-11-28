@@ -311,8 +311,8 @@ export async function saveProducerProfile(root: string, profileInput: unknown, v
  * identity paths, the environment inventory — is onboarding's or the operator's: no CLI path
  * writes it, and the master's harness grants no direct edit of master.json, so re-pointing a credential can never be a routine master action.
  */
-export const masterOwnedRunFields = ['intervalSeconds', 'proofWorkflow', 'smokeWorkflow', 'productionEnvironment', 'reviewerProfile', 'producerTimeoutMinutes', 'acknowledgementSeconds', 'inactivityMinutes', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
-const masterClearableRunFields = ['proofWorkflow', 'smokeWorkflow', 'productionEnvironment', 'reviewerProfile', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'trialCap', 'launchHotCelsius', 'planner'] as const;
+export const masterOwnedRunFields = ['intervalSeconds', 'proofWorkflow', 'smokeWorkflow', 'productionEnvironment', 'reviewerProfile', 'producerTimeoutMinutes', 'acknowledgementSeconds', 'inactivityMinutes', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'trialCap', 'launchHotCelsius', 'planner', 'githubCallSharePercent'] as const;
+const masterClearableRunFields = ['proofWorkflow', 'smokeWorkflow', 'productionEnvironment', 'reviewerProfile', 'quotaCeilingPercent', 'masterSessionMinutes', 'masterHeartbeatMinutes', 'trialCap', 'launchHotCelsius', 'planner', 'githubCallSharePercent'] as const;
 /** GY-3446: the temporary limits, each set with `until=TIME`; `hostHeavyJobs` is the host-wide strict cap every install here shares. */
 const temporaryFields = ['trialCap', 'launchHotCelsius', 'hostHeavyJobs'] as const;
 type TemporaryLimit = { value: number; until: string } | null;
@@ -323,6 +323,7 @@ export interface MasterOwnedSettings {
   masterSessionMinutes?: number | null; masterHeartbeatMinutes?: number | null;
   trialCap?: TemporaryLimit; launchHotCelsius?: TemporaryLimit; hostHeavyJobs?: TemporaryLimit | 'auto';
   planner?: PlannerSetting;
+  githubCallSharePercent?: number | null;
   accounts?: { profile: string; accounts: string[] }[];
 }
 
