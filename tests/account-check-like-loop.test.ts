@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { accountCheckDiagnostics } from '../src/cli/account-diagnostics.js';
 import { registryCommand } from '../src/cli/master-registry.js';
 import { commands } from '../src/cli/index.js';
 import { createContext } from '../src/cli/context.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
-import { emptyRegistry, proposedRuntimes } from '../src/model/registry.js';
+import { emptyRegistry, proposedRuntimes, fleetView } from '../src/model/registry.js';
 import { hostAccountsVariable } from '../src/host-accounts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { withEnv } from './helpers/env.js';
@@ -16,6 +17,7 @@ test('integration:account-check-like-loop — global key override, shell mismatc
   const root = await temporaryDirectory('account-check-like-loop');
   const home = join(root, 'account'), config = join(root, 'config');
   await mkdir(home);
+  await mkdir(join(root, '.git'));
   await mkdir(join(config, 'opencode'), { recursive: true });
   const ownFile = join(home, 'key'), globalFile = join(config, 'opencode', 'opencode.json');
   await writeFile(ownFile, 'account-secret', { mode: 0o600 });
@@ -48,6 +50,13 @@ test('integration:account-check-like-loop — global key override, shell mismatc
     assert.ok(own.includes(ownFile));
     assert.ok(own.includes(createHash('sha256').update('account-secret').digest('hex').slice(0, 12)));
     assert.doesNotMatch(own, /overrides/);
+    for (const key of ['{env:ZAI_API_KEY}', `{file:${ownFile}}`, 'account-secret']) {
+      await writeFile(globalFile, JSON.stringify({ provider: { zai: { options: { apiKey: key } } } }));
+      diagnostics.length = 0;
+      await registryCommand({ hostId: 'host' }, ['account', 'check', 'ready'], api, { report: line => diagnostics.push(line), smoke: async () => ({ ok: true, error: null }) });
+      assert.doesNotMatch(diagnostics.join('\n'), /overrides/, key);
+      assert.ok(diagnostics.includes(`Credential: ${ownFile} (sha256:${createHash('sha256').update('account-secret').digest('hex').slice(0, 12)})`));
+    }
     await writeFile(join(config, 'opencode', 'provider.key'), 'file-secret');
     await writeFile(globalFile, '// JSONC and relative file references use the config directory\n' + JSON.stringify({ provider: { zai: { options: { apiKey: '{file:./provider.key}' } } } }));
     diagnostics.length = 0;
@@ -58,7 +67,7 @@ test('integration:account-check-like-loop — global key override, shell mismatc
   const command = commands.find(command => command.name === 'accounts');
   assert.ok(command, 'mainworks accounts is registered');
   const context = await createContext('accounts', 'health', [], false);
-  context.api = api.read;
+  context.api = async (path: string) => { assert.equal(path, 'agent-registry'); return fleetView(registry, Date.now()); };
   const printed: string[] = [], log = console.log;
   console.log = (...values: unknown[]) => { printed.push(values.join(' ')); };
   try { await command.run(context, undefined); } finally { console.log = log; }
@@ -70,5 +79,31 @@ test('integration:account-check-like-loop — global key override, shell mismatc
   assert.match(rows[1]!, /ready.*opencode.*worker.*yes/);
   assert.match(rows[2]!, /disabled.*opencode.*worker.*no.*disabled/);
   assert.match(rows[3]!, /spent.*opencode.*worker.*no.*exhausted/);
-  assert.ok(rows[3]!.includes(reset));
+  assert.doesNotMatch(table, /is disabled|spent quota|master registry|\d{4}-\d\d-\d\dT/);
+  assert.equal(rows[1]!.trim().split(/\s{2,}/).at(-1), '—');
+  assert.ok(rows[3]!.includes(new Date(reset).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })));
+  assert.match(rows[3]!, /\(in 59m\)|\(in 1h\)/);
+});
+
+
+test('account login fingerprint covers the effective token, not refreshed login metadata', async () => {
+  const home = await temporaryDirectory('account-login-fingerprint');
+  for (const kind of ['claude', 'codex'] as const) {
+    const runtime = structuredClone(proposedRuntimes.find(runtime => runtime.name === kind)!);
+    const registry = applyRegistryMutation(emptyRegistry(), 'apply', {
+      runtimes: [runtime], models: [{ name: 'model', id: 'fixture/model' }],
+      accounts: [{ name: 'login', runtime: kind, model: 'model', credential: { host: 'host', home } }], reason: 'fixture',
+    }, { actor: 'operator', at: new Date().toISOString() }).registry;
+    const file = join(home, runtime.launch.loginFile!);
+    const outputs: string[][] = [];
+    for (const refresh of ['before', 'after']) {
+      const login = kind === 'claude' ? { claudeAiOauth: { accessToken: 'fixture-token', refreshToken: refresh } }
+        : { tokens: { access_token: 'fixture-token', refresh_token: refresh }, last_refresh: refresh };
+      await writeFile(file, JSON.stringify(login));
+      outputs.push(await accountCheckDiagnostics(registry.accounts[0]!, runtime, 'fixture/model'));
+    }
+    assert.deepEqual(outputs[0], outputs[1]);
+    assert.ok(outputs[0]!.includes(`Credential: ${file} (sha256:${createHash('sha256').update('fixture-token').digest('hex').slice(0, 12)})`));
+    assert.doesNotMatch(outputs.flat().join('\n'), /fixture-token|before|after/);
+  }
 });

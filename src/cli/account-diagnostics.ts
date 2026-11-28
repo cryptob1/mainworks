@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { FleetAccount, FleetRuntime } from '../model/registry.js';
@@ -26,6 +26,18 @@ export async function accountCheckDiagnostics(account: FleetAccount, runtime: Fl
     value = account.credential.key ? Object.values(keyEnvironment)[0] ?? null
       : ownFile ? await readFile(ownFile, 'utf8') : null;
   } catch { /* The live check reports unreadable credentials. */ }
+  if (!account.credential.key && value) {
+    try {
+      const login = JSON.parse(value);
+      const provider = modelId?.split('/')[0];
+      value = runtime.launch.kind === 'opencode' ? login[provider ?? '']?.key ?? login[provider ?? '']?.access
+        : runtime.launch.kind === 'claude' ? login.claudeAiOauth?.accessToken
+        : runtime.launch.kind === 'codex' ? login.OPENAI_API_KEY ?? login.tokens?.access_token
+        : login.apiKey ?? login.accessToken ?? login.access_token ?? null;
+      if (typeof value !== 'string') value = null;
+    } catch { value = null; }
+  }
+  const ownValue = value;
   if (runtime.launch.kind === 'opencode') {
     const environment = { ...process.env, ...registryHeadlessLaunch(launchAccount).environment, ...keyEnvironment };
     const provider = modelId?.split('/')[0];
@@ -37,15 +49,13 @@ export async function accountCheckDiagnostics(account: FleetAccount, runtime: Fl
     for (let directory = resolve(home); ; directory = dirname(directory)) {
       ancestors.unshift(directory);
       if (dirname(directory) === directory) break;
+      try { await access(join(directory, '.git')); break; } catch { /* Keep looking for the project root. */ }
     }
     const files = [join(configHome, 'opencode', 'config.json'), ...configFiles(join(configHome, 'opencode')),
       ...(environment.OPENCODE_CONFIG ? [environment.OPENCODE_CONFIG] : []),
       ...ancestors.flatMap(configFiles), ...ancestors.flatMap(directory => configFiles(join(directory, '.opencode'))),
       ...(environment.OPENCODE_CONFIG_DIR ? configFiles(environment.OPENCODE_CONFIG_DIR) : []),
       'OPENCODE_CONFIG_CONTENT', ...(process.platform === 'linux' ? configFiles('/etc/opencode') : [])];
-    if (!account.credential.key && value && provider) {
-      try { const auth = JSON.parse(value)[provider]; value = auth?.key ?? auth?.access ?? null; } catch { value = null; }
-    }
     for (const file of [...new Set(files)]) {
       let contents: string;
       try { contents = file === 'OPENCODE_CONFIG_CONTENT' ? environment.OPENCODE_CONFIG_CONTENT ?? '{}' : await readFile(file, 'utf8'); }
@@ -61,11 +71,12 @@ export async function accountCheckDiagnostics(account: FleetAccount, runtime: Fl
         const referencedFile = fileReference ? (fileReference[1]!.startsWith('~/') ? join(environment.HOME ?? homedir(), fileReference[1]!.slice(2)) : resolve(file === 'OPENCODE_CONFIG_CONTENT' ? home : dirname(file), fileReference[1]!)) : null;
         value = envReference ? environment[envReference[1]!] ?? null
           : referencedFile ? (await readFile(referencedFile, 'utf8')).trim() : key;
-        source = referencedFile ?? file;
-        override = file;
+        const same = value !== null && ownValue !== null && fingerprint(value) === fingerprint(ownValue);
+        source = same ? ownFile : referencedFile ?? (envReference ? `environment ${envReference[1]} (referenced by ${file})` : file);
+        override = same ? null : file;
       } catch {
         lines.push(`Credential: cannot resolve ${file}; inspect its provider key`);
-        source = null; value = null;
+        source = null; value = null; override = null;
       }
     }
   }

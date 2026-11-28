@@ -45,7 +45,7 @@ const runtimeList = (list: readonly string[]) => list.length < 2 ? (list[0] ?? '
  * and the ones the role supports, so the refusal says exactly what to change. An account naming
  * an unregistered runtime is refused by the registry's own reference checks, not here.
  */
-export function roleRuntimeRefusal(registry: Pick<AgentRegistry, 'runtimes'>, account: FleetAccount, role: FleetRoleName): string | null {
+export function roleRuntimeRefusal(registry: Pick<AgentRegistry, 'runtimes'>, account: Pick<FleetAccount, 'name' | 'runtime'>, role: FleetRoleName): string | null {
   const supported = roleRuntimeKinds[role];
   if (!supported) return null;
   const runtime = registry.runtimes.find(entry => entry.name === account.runtime);
