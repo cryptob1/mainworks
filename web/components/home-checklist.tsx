@@ -2,10 +2,13 @@ import { useState } from 'react';
 
 /**
  * GY-4066: the day-one checklist on Home for a new manager. One static panel with the copy below, each page
- * it names a link to that page. It shows while this browser has not dismissed it, remembered the way
- * web/theme.ts keeps the theme: a window with no storage (private mode) just shows it again.
+ * it names a link to that page and its guide line a link to the owner's public guide, in a new tab. It shows
+ * while this browser has not dismissed it, remembered the way web/theme.ts keeps the theme: a window with no
+ * storage (private mode) just shows it again. Help links to the same guide at its top.
  */
 const KEY = 'graphyard.first-time-checklist';
+/** The owner's public guide for new factory managers. */
+export const MANAGER_GUIDE = 'https://claude.ai/artifact/WdyKuULnFYMx8qF5eTmFbg';
 
 /** Whether this browser dismissed the checklist. */
 export function checklistDismissed(): boolean {
@@ -35,7 +38,7 @@ export default function FirstTimeChecklist() {
       <li>Type one goal with a number into Tell the Lead below, then press Send.</li>
       <li>Use your app for ten minutes and tell the Lead what felt wrong.</li>
     </ol>
-    <p>The full guide is in Settings → <a href="#guide">Help</a>.</p>
+    <p>The full guide for new factory managers: <a href={MANAGER_GUIDE} target="_blank" rel="noopener noreferrer">{MANAGER_GUIDE}</a></p>
     <button type="button" onClick={() => { dismissChecklist(); setHidden(true); }}>Got it</button>
   </section>;
 }
