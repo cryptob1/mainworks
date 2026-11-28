@@ -6,6 +6,7 @@ import { humanSignIn } from '../auth.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { setting } from '../../setting.js';
+import { lastCompaction } from '../../store/compaction.js';
 
 /**
  * The plane's own health; no token required. Health names the release, schema generation and
@@ -115,7 +116,7 @@ export const healthRoutes = defineRoutes('health', [
       ...releaseInfo(), schema: schemaVersion, commit: services.build.commit, protocol: services.build.protocol }));
     const [writeError, database] = settled;
     const verdict = planeVerdict(writeError, { database });
-    const body = observable({ ok: verdict.healthy, healthy: verdict.healthy, readiness, writable: verdict.writable, causes: verdict.causes, warning: databaseBoundWarning(database), resources: { database },
+    const body = observable({ ok: verdict.healthy, healthy: verdict.healthy, readiness, writable: verdict.writable, causes: verdict.causes, warning: databaseBoundWarning(database), resources: { database }, compaction: lastCompaction(),
       ...releaseInfo(), schema: schemaVersion, commit: services.build.commit, protocol: services.build.protocol });
     return answer(body);
   } },

@@ -302,7 +302,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   const slowRead: { slowest?: SlowQuery | null; lockHold?: LockHold | null } = unreachable ? {} : await Promise.resolve().then(() => masterApi('slowest-query')).then(body => body ?? {}, () => ({}));
   const slowest = slowRead.slowest ?? null;
   // GY-4005: one line once the database passes 80% of its bound.
-  const databaseBound: string | null = unreachable ? null : await Promise.resolve().then(() => masterApi('database-bound')).then(body => body?.warning ?? null, () => null);
+  const databaseRead: { warning?: string | null; compaction?: string } | null = unreachable ? null : await Promise.resolve().then(() => masterApi('database-bound')).then(body => body ?? null, () => null);
+  const databaseBound = databaseRead?.warning ?? null;
   const databaseAttention = databaseBound ? [{ subject: 'database', text: databaseBound, next: 'Do what the line names; it clears once the database is under 80% of its bound' }] : [];
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
@@ -317,6 +318,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     // GY-4046: items deliberately held by the Lead with a reason, shown separately from notMoving.
     ...(held.length ? { held } : {}),
     // GY-3593: when the caretaker last ran, and its result line.
+    // GY-4080: the last compaction run, with the rows and bytes it removed by kind.
+    ...(databaseRead?.compaction ? { compaction: databaseRead.compaction } : {}),
     caretaker: state?.caretaker ? `Last ran ${formatAge(Date.parse(state.caretaker.at), now)} ago: ${state.caretaker.result}` : 'Not run yet',
     // GY-3890: whether the empty-board/low-water planner is on, or off with who turned it off.
     planner: master.run.planner?.enabled === false
