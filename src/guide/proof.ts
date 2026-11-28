@@ -3,4 +3,6 @@ export default `Run the project's tests through its own runners — \`node $MAIN
 For each proof write a JSON file of the form {"proof":"unit:x","sha":"<the exact head>","baseSha":"<the base>","policyRevision":1,"result":"pass"|"fail","executed":N,"skipped":0,"environment":"<runtime and how it was produced>","scopeFiles":["<paths the proof depends on>"],"exercise":{"criterion":"<the criterion id, such as AC-1>","behaviour":"<the behaviour you removed, in words a worker can find in the diff>","result":"pass"|"fail","executed":N}} — executed as the number of cases actually run, a failing or incomplete run submitted as result fail rather than omitted, and exercise as the stripped run's true outcome: a proof that still passes there is recorded as not exercising its criterion rather than as passing, which is the finding, not something to hide — and submit it with \`node $MAINWORKS_CLI evidence GY-N FILE\`.
 
 When an item's summary claims a speed-up, run \`mainworks bench trial --compare REF\` against main and quote the per-step comparison in the submission.
-Do not claim a speed improvement without that before-and-after benchmark output.`;
+Do not claim a speed improvement without that before-and-after benchmark output.
+
+Keep bound proofs runnable in the private merge-trial container: stub or inject host-only binaries (\`docker\`, \`mise\`), keep temporary state inside \`temporaryDirectory\`, and place a test-flake regression pin in a new \`<name>-pinned.test.ts\` file separate from the fixed test so it fails on the base tip.`;
