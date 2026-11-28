@@ -7,7 +7,7 @@ import type { ChildRun } from '../src/child-runner.js';
 import { ensureWarmImage } from '../src/merge-writer/remote-shards.js';
 import { composeAdapter, type AdapterContext } from '../src/install/adapters.js';
 import type { Transport } from '../src/install/transport.js';
-import { deployOnce, readDeployRecord } from '../src/deploy-watch.js';
+import { controlPlaneRecordPath, deployOnce, readControlPlaneRecord, readDeployRecord } from '../src/deploy-watch.js';
 import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -59,7 +59,7 @@ test('integration:warm-commit-takes-image-lock — warm build and commit exclude
     async putFile() {},
   };
   const install = async (name: string) => {
-    const root = await temporaryDirectory(`warm-commit-${name}`), file = join(root, 'deploy.json');
+    const root = await temporaryDirectory(`warm-commit-${name}`), file = join(root, '.graphyard', 'deploy.json');
     const actions: string[] = [];
     let serving = from;
     const ports = deployPorts(commit, from, {
@@ -71,7 +71,7 @@ test('integration:warm-commit-takes-image-lock — warm build and commit exclude
       pin: async () => { actions.push(`${name}:pin`); },
       health: async head => { assert.equal(serving, head); },
     });
-    return { file, ports, actions, serving: () => serving };
+    return { file, controlFile: controlPlaneRecordPath(root), ports, actions, serving: () => serving };
   };
   try {
     const core = await install('core'), huck = await install('huck');
@@ -89,6 +89,7 @@ test('integration:warm-commit-takes-image-lock — warm build and commit exclude
     for (const [name, one] of [['core', core], ['huck', huck]] as const) {
       assert.equal(one.serving(), commit);
       assert.equal(readDeployRecord(one.file)?.tip, commit);
+      assert.equal(readControlPlaneRecord(one.controlFile)?.commit, commit, 'each install keeps its control-plane record inside its own root');
       assert.deepEqual(one.actions, [`${name}:restart`, `${name}:pin`], 'each install changes only its own service and release');
     }
   } finally {
