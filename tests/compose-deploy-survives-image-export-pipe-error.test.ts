@@ -33,7 +33,7 @@ for (const [name, failures, expected, attempts] of [
   await withEnv({ MAINWORKS_LOCK_ROOT: root, [slotsDirectoryVariable]: join(root, 'slots') }, async () => {
     const ports = deployPorts(next, previous, {
       restart: async commit => {
-        if (commit === next) await composeAdapter.provision({ sourceRoot: root, transport, image: 'mainworks-local:proof' } as AdapterContext, {} as never);
+        if (commit === next) await composeAdapter.provision({ sourceRoot: root, transport, image: 'mainworks-local:proof' } as unknown as AdapterContext, {} as never);
         serving = commit;
       },
       health: async commit => { assert.equal(serving, commit); },
@@ -49,16 +49,30 @@ for (const [name, failures, expected, attempts] of [
   if (expected === 'rolled-back') assert.ok(readDeployRecord(deployRecordPath(root))?.reason?.includes(failures[0]!), 'keep Docker’s own error sentence');
 });
 
+test('e2e:compose-deploy-survives-image-export-pipe-error — importer errors preserve Docker diagnostics and retry only the closed pipe', async () => {
+  const root = await temporaryDirectory('compose-import');
+  for (const diagnostic of [pipe, 'Error response from daemon: failed to ingest layer: no space left on device']) {
+    let loads = 0;
+    const transport = fakeTransport({ responses: [
+      { match: 'mktemp', result: `${root}/image-export\n` },
+      { match: 'docker load', result: () => ({ stdout: '', stderr: loads++ === 0 ? diagnostic : '', code: loads === 1 ? 1 : 0 }) },
+    ] });
+    const provision = provisionTrialImage({ sourceRoot: root, transport }, null);
+    if (diagnostic === pipe) { await provision; assert.equal(loads, 2); }
+    else { await assert.rejects(provision, error => error instanceof Error && error.message.includes(diagnostic)); assert.equal(loads, 1); }
+  }
+});
+
 // Real exporter/importer proof. The transport only substitutes an isolated tag and skips
 // builder discovery: the trial uses its own already-provisioned builder, or Docker's default.
 test('e2e:compose-deploy-survives-image-export-pipe-error — Docker exports and loads a new revision', async () => {
   const root = await temporaryDirectory('compose-export-docker'), real = localTransport();
-  const tag = `mainworks-export-proof:${process.pid}`;
+  const tag = `mainworks-export-proof:${process.pid}`, builder = `mainworks-export-proof-${process.pid}`;
   const transport = { ...real, async exec(program: string, args: string[], options?: Parameters<typeof real.exec>[2]) {
-    if (program === 'docker' && args[0] === 'buildx' && args[1] === 'inspect') return { code: 0, stdout: '', stderr: '' };
+    if (program === 'docker' && args[0] === 'buildx') args = args.map(arg => arg === 'mainworks-trial' ? builder : arg);
     if (program === 'docker' && args[0] === 'buildx' && args[1] === 'build') {
       args = [...args];
-      args.splice(args.indexOf('--builder'), 2);
+
       args[args.indexOf('--tag') + 1] = tag;
     }
     return real.exec(program, args, options);
@@ -71,5 +85,8 @@ test('e2e:compose-deploy-survives-image-export-pipe-error — Docker exports and
       const loaded = await real.exec('docker', ['image', 'inspect', '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}', tag]);
       assert.equal(loaded.stdout.trim(), revision, 'the new image is loaded into Docker, not left in the builder cache');
     }
-  } finally { await real.exec('docker', ['image', 'rm', tag], { allowFailure: true }); }
+  } finally {
+    await real.exec('docker', ['image', 'rm', tag], { allowFailure: true });
+    await real.exec('docker', ['buildx', 'rm', builder], { allowFailure: true });
+  }
 });
