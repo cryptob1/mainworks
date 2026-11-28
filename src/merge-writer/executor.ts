@@ -4,7 +4,7 @@ import type { Work } from '../model.js';
 import { batchLimit } from '../master/merge-writer-settings.js';
 import { evaluate } from '../model-boundary/gates.js';
 import { riskOf } from '../model-boundary/risk-class.js';
-import { mergeLedgerKinds, type MergeLedgerState } from '../model/merge-ledger.js';
+import { mergeLedgerKinds, trialAssertionBound, type MergeLedgerState } from '../model/merge-ledger.js';
 import { proofPassesOnBasePrefix, trialFailurePrefix } from '../model/rework-ground.js';
 import { parseFailedTests } from '../model/base-failure.js';
 import { maskSecrets } from '../redaction.js';
@@ -115,12 +115,12 @@ export function mergeTrialShots(into: readonly TrialCaseShot[], from: readonly T
 /** GY-1834: the flake a trial record carries, bounded as the record's schema bounds it: every name `parseFailedTests` keeps (≤ 500 characters) fits. */
 const trialFlaked = ({ flaked, assertions = {} }: Pick<MergeTrialRun, 'assertions'> & { flaked: NonNullable<MergeTrialRun['flaked']> }, at: string): TrialFlaked => {
   const files = flaked.files.slice(0, 100), named = files.filter(file => assertions[file]);
-  return { files, tests: flaked.tests.slice(0, 100), ...(named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!])) } : {}), at };
+  return { files, tests: flaked.tests.slice(0, 100), ...(named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!.slice(0, trialAssertionBound)])) } : {}), at };
 };
-/** GY-3867: the first failing assertion line of each file the trial's verdict still fails, for the flow's failing checks. */
+/** GY-3867, GY-4089: the failing assertion message (with newlines) of each file the trial's verdict still fails, for the flow's failing checks. */
 const failedAssertions = ({ tests, assertions = {} }: Pick<MergeTrialRun, 'tests' | 'assertions'>) => {
   const named = recordedTests(tests).failed.filter(file => assertions[file]);
-  return named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!.slice(0, 500)])) } : {};
+  return named.length ? { assertions: Object.fromEntries(named.map(file => [file, assertions[file]!.slice(0, trialAssertionBound)])) } : {};
 };
 /** What `POST /api/work/:id/merge-record` takes: one of the five steps, with its ledger payload. */
 export type MergeRecordEvent =
@@ -318,13 +318,49 @@ export function firstFailingAssertion(tap: string): string | null {
   }
   return null;
 }
-/** GY-3849: the first failing assertion line of each of `files` a run's TAP names, by file: each failing entry's file is its `location`. */
+/**
+ * GY-4089: the first failing case's full assertion message in TAP — preserving newlines from YAML
+ * block scalars (`error: |-` / `|`) up to `bound` so Playwright's locator, Expected, Received and
+ * spec line survive into trial records, flaky-check items and master status.
+ */
+function failingAssertionMessage(tap: string, bound = trialAssertionBound): string | null {
+  const lines = tap.split('\n');
+  for (let index = 0; index < lines.length; index++) {
+    const entry = /^not ok \d+ - (.+?)(?:\s+#\s+(?:TODO|SKIP)\b.*)?$/i.exec(lines[index]!.replace(ansiEscape, '').trim());
+    if (!entry || /^tests\/[\w./-]+\.test\.ts$/.test(entry[1]!)) continue;
+    for (let next = index + 1; next < lines.length && lines[next]!.trim() !== '...'; next++) {
+      const raw = lines[next]!.replace(ansiEscape, '');
+      const field = /^\s*(?:error|message): (.*?)\s*$/.exec(raw);
+      if (!field) continue;
+      const inline = field[1]!.replace(/^'(.*)'$/, '$1');
+      if (inline && !/^[|>][-+]?$/.test(inline)) return inline.replace(/\\'/g, "'").slice(0, bound);
+      const indent = raw.length - raw.trimStart().length;
+      const collected: string[] = [];
+      for (let block = next + 1; block < lines.length; block++) {
+        const line = lines[block]!.replace(ansiEscape, '');
+        if (!line.trim()) { collected.push(''); continue; }
+        if (line.length - line.trimStart().length <= indent) break;
+        collected.push(line.trimEnd());
+      }
+      const first = collected.findIndex(line => line.trim().length > 0);
+      if (first < 0) continue;
+      let last = collected.length - 1;
+      while (last > first && !collected[last]!.trim()) last--;
+      const slice = collected.slice(first, last + 1);
+      const baseIndent = Math.min(...slice.filter(line => line.trim()).map(line => line.length - line.trimStart().length));
+      const text = slice.map(line => (line ? line.slice(baseIndent) : '')).join('\n');
+      return text.slice(0, bound).trimEnd();
+    }
+  }
+  return null;
+}
+/** GY-3849, GY-4089: the failing assertion message (with newlines) of each of `files` a run's TAP names, by file: each failing entry's file is its `location`. */
 export function assertionsByFile(tap: string, files: readonly string[]): Record<string, string> {
   const found: Record<string, string> = {};
   for (const [entry] of tap.matchAll(/^[ \t]*not ok \d+ - [^\n]*\n[ \t]*---\n[\s\S]*?^[ \t]*\.\.\.$/gm)) {
     const location = /^\s*location: ["']?(.+?):\d+:\d+["']?\s*$/m.exec(entry)?.[1];
     const file = location && files.find(path => location === path || location.endsWith(`/${path}`));
-    const text = file && firstFailingAssertion(entry);
+    const text = file && failingAssertionMessage(entry);
     if (text) found[file] ??= text;
   }
   return found;
