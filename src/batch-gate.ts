@@ -43,6 +43,7 @@ import type { ReleaseSweep } from './merge-writer/test-selection.js';
 import type { PreviewCaseRun } from './merge-writer/served-previews.js';
 import { onboardingFailure, type OnboardingRun } from './onboarding-time.js';
 import { TrialHeatError, trialFileTimeoutMs } from './merge-writer/trial-load.js';
+import { hostCause, type HostCause } from './dispatch/host-cause.js';
 import { TrialTimeoutError } from './merge-writer/trial.js';
 import { stateDirectory } from './install/layout.js';
 
@@ -332,6 +333,26 @@ async function fileFailure(ports: Pick<GatePorts, 'file' | 'faultDedup' | 'open'
   }
 }
 
+/** GY-4121: partitions failing checks into host-cause groups (filed once per cause with `next: operator`) and ordinary failures. */
+function partitionHostCauses(checks: readonly string[], textFor: (check: string) => string) {
+  const groups = new Map<string, { cause: HostCause; checks: string[] }>(), rest: string[] = [];
+  for (const check of checks) {
+    const cause = hostCause(textFor(check));
+    if (!cause) { rest.push(check); continue; }
+    const group = groups.get(cause.key);
+    if (group) group.checks.push(check);
+    else groups.set(cause.key, { cause, checks: [check] });
+  }
+  return { groups: [...groups.values()], rest };
+}
+
+/** GY-4121: one filing for a host cause shared by one or more diagnostic or trial checks, routed to the operator. */
+const hostCauseFiling = (cause: HostCause, checks: readonly string[], context: string, tail = '') => ({
+  key: `host-cause:${cause.key}`,
+  title: `Host cause: ${cause.key}`,
+  description: `next: operator — ${cause.fix}\n\n${context} hit one host cause (${cause.key}) across ${checks.length} case${checks.length === 1 ? '' : 's'}: ${checks.join(', ')}. This is a host fault, not a code bug; do not dispatch to a worker.${tail}`,
+});
+
 /** The filings of two concurrent writers — the gate beside the diagnostics — merged: the newest binding per case wins, and each writer keeps its own notes so a cleared note is never resurrected by the other. */
 export function mergeFilings(latest: Pick<GateRecord, 'filed' | 'notes'> | null, mine: Pick<GateRecord, 'filed' | 'notes'>, writer: 'gate' | 'diagnostics' = 'gate'): Pick<GateRecord, 'filed' | 'notes'> {
   const own = (note: string) => (writer === 'diagnostics') === isDiagnosticNote(note);
@@ -557,9 +578,12 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
       // GY-3620: test files rerun in a step of their own, so a hanging one never takes other checks' results with it.
       const testChecks = rerun.filter(check => check.startsWith('test:')), others = rerun.filter(check => !check.startsWith('test:'));
       const again = [...others.length ? await run(tip, others, files) : [], ...testChecks.length ? await run(tip, testChecks, files, true) : []];
+      const seenAssertion = (check: string) => ports.seen?.assertions[check] ?? (check.startsWith('test:') ? ports.seen?.assertions[check.slice(5)] : undefined) ?? '';
       flakes = rerun.filter(check => !again.includes(check));
       for (const check of flakes) if (check.startsWith('test:')) noteFlake(check.slice(5));
-      for (const check of flakes) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
+      const flakeSplit = partitionHostCauses(flakes, seenAssertion);
+      for (const check of flakeSplit.rest) await fileFailure(ports, record, at(), { key: `flake:${check}`, title: `Flaky check on main: ${check}`, description: `The batch gate's check ${check} failed on ${tip.slice(0, 12)} and passed on its re-run. Make it deterministic.` });
+      for (const { cause, checks: hit } of flakeSplit.groups) await fileFailure(ports, record, at(), hostCauseFiling(cause, hit, `The batch gate on ${tip.slice(0, 12)}`));
       // The e2e cases that must pass outright (GY-3147): smoke, whatever gate.core names, and every
       // case a batch item binds. A whole-catalog case outside them was red before the batch whenever
       // it is red on the verified commit too, so it is a filed known red, never a revert.
@@ -577,12 +601,14 @@ async function gateFlight(ports: GatePorts, record: GateRecord, keepInFlight: ()
           if (record.results[verified]![check]) {
             if (featureMap) return hold(`Master fault: ${record.repository}'s real application feature check already fails on the verified commit; repair its serve and feature map before verifying this batch.`);
             knownRed.push(check);
-            await fileFailure(ports, record, at(), { key: `known-red:${check}`, title: `Known red on main: ${check}`, description: `${check.startsWith('test:') ? `The test ${check.slice(5)}` : `The E2E case ${check.slice(4)}`} fails on the verified commit ${verified.slice(0, 12)} and on ${tip.slice(0, 12)}. The batch gate exempts it until it is fixed.` });
             continue;
           }
         }
         confirmed.push(check);
       }
+      const knownRedSplit = partitionHostCauses(knownRed, seenAssertion);
+      for (const check of knownRedSplit.rest) await fileFailure(ports, record, at(), { key: `known-red:${check}`, title: `Known red on main: ${check}`, description: `${check.startsWith('test:') ? `The test ${check.slice(5)}` : `The E2E case ${check.slice(4)}`} fails on the verified commit ${verified.slice(0, 12)} and on ${tip.slice(0, 12)}. The batch gate exempts it until it is fixed.` });
+      for (const { cause, checks: hit } of knownRedSplit.groups) await fileFailure(ports, record, at(), hostCauseFiling(cause, hit, `The batch gate on ${tip.slice(0, 12)} and verified commit ${verified.slice(0, 12)}`));
     }
     // The run settles verified when every check that was not exempted passed: the merges are
     // judged, the tip is recorded verified and published where every install's deploy watch reads it.
@@ -765,10 +791,16 @@ export async function runDiagnostics(ports: Pick<GatePorts, 'now' | 'file' | 'fa
   // before — whose open item is reused — still has its newest detail readable in status.
   record.diagnosticFailures = Object.fromEntries(failed.map(check => [check, { commit: verified, detail: details[check]?.slice(0, trialAssertionBound) ?? null, at }]));
   if (record.notes?.length) record.notes = record.notes.filter(note => !isDiagnosticNote(note));
-  for (const check of failed) {
+  const { groups, rest } = partitionHostCauses(failed, check => [record.diagnosticFailures![check]!.detail ?? '', ...(outputs[check] ?? [])].join('\n'));
+  for (const check of rest) {
     const detail = record.diagnosticFailures[check]!.detail, output = outputs[check]?.length ? `\n\nThe last lines of its output:\n\n\`\`\`\n${outputs[check]!.join('\n').slice(-12_000)}\n\`\`\`` : '';
     await fileFailure(ports, record, at, { key: `diagnostic:${check}`, title: `Diagnostic failure on main: ${check}`,
       description: `The scheduled full run against the verified commit ${verified} failed ${check}${detail ? `: ${detail}` : ''}. It never blocks a gate or a merge; fix it at its cause.${output}` });
+  }
+  for (const { cause, checks: hit } of groups) {
+    const first = hit[0]!, detail = record.diagnosticFailures[first]!.detail;
+    const output = outputs[first]?.length ? `\n\nThe last lines of its output:\n\n\`\`\`\n${outputs[first]!.join('\n').slice(-12_000)}\n\`\`\`` : '';
+    await fileFailure(ports, record, at, hostCauseFiling(cause, hit, `The scheduled full run against the verified commit ${verified}`, `${detail ? ` First failure: ${detail}.` : ''}${output}`));
   }
   // A failed run may report only a partial catalog time. Count its full elapsed time instead.
   record.catalogMs = checks.length ? Math.max(catalogMs, elapsed) : catalogMs;
@@ -803,7 +835,10 @@ export function gateSummary(record: GateRecord | null) {
     // GY-3747: the last daily onboarding run: minutes from connect to first merge, its result and date.
     onboarding: record.onboarding ? { minutes: record.onboarding.minutes, result: record.onboarding.result, at: record.onboarding.at, commit: record.onboarding.commit.slice(0, 12), handFixes: record.onboarding.handFixes } : null,
     // GY-3264: the latest diagnostic failures with the exact commit, failing step and the item that owns each.
-    diagnosticFailures: Object.entries(record.diagnosticFailures ?? {}).map(([check, failure]) => ({ check, ...failure, item: record.filed?.[`diagnostic:${check}`]?.item ?? null })),
+    diagnosticFailures: Object.entries(record.diagnosticFailures ?? {}).map(([check, failure]) => {
+      const cause = failure.detail ? hostCause(failure.detail) : null;
+      return { check, ...failure, item: record.filed?.[`diagnostic:${check}`]?.item ?? (cause ? record.filed?.[`host-cause:${cause.key}`]?.item ?? null : null) };
+    }),
     // GY-3147: the filing failures that never aborted a run, newest last.
     notes: record.notes ?? [],
     // GY-3431: the failures the gate recorded on open flaky-check items instead of reverting.

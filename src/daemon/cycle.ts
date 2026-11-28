@@ -33,7 +33,7 @@ import { neededRework, reworkKey } from './rework.js';
 import { dueHumanProofs } from '../model/human-proof.js';
 import { hotspots } from './hotspots.js';
 import { settledPurpose } from '../model/session-state.js';
-import { loopOwnedRefusal, ownerHoldRefusal } from '../model/loop-owned.js';
+import { hostCauseRefusal, loopOwnedRefusal, ownerHoldRefusal } from '../model/loop-owned.js';
 import { attemptClaimedAt, attemptProgressFresh, attemptProgressWindowMs } from '../model/attempt-bound.js';
 import { attemptBoundMs, attemptCeilingMs, boundMinutes } from '../master/attempt-bound.js';
 import { backedOffAccounts, canaryOffer, canaryVerdict, profileHealth, recordLaunchFailure } from './sessions.js';
@@ -910,7 +910,7 @@ function anythingInTestOrMerge(work: readonly Work[], mergeWriter: Pick<MergeWri
  */
 function releasableBacklog(work: readonly Work[], identity?: { id: string; role: 'operator-agent' }): Work[] {
   return work
-    .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity)
+    .filter(item => item.criteria.length > 0 && item.stage !== 'done' && !item.ready && !item.hold && !item.blocker && !loopOwnedRefusal(item) && !ownerHoldRefusal(item, identity) && !hostCauseRefusal(item)
       && item.dependencies.every(dep => work.find(entry => entry.id === dep)?.stage === 'done'))
     .sort((a, b) => Number(!!b.yardRepair) - Number(!!a.yardRepair) || a.priority - b.priority || Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
