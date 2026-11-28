@@ -1,10 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
 import { boardFromStatus } from '../src/model/board';
 import { serveXterm } from './xterm';
 
 // e2e:first-time-panel-shows-for-new-manager — GY-4066: a manager whose browser has not dismissed the day-one
 // checklist sees it on Home, under the status line and the incident cards, with its exact copy; each page it
-// names is a link that opens that page. It never shows on the first-run page, nor to a teammate.
+// names is a link that opens that page. It never shows on the first-run page, nor to a teammate. A full-page
+// screenshot per width is kept for the product reviewer's look.
 
 const hour = 3_600_000;
 const at = (ago: number) => new Date(Date.now() - ago).toISOString();
@@ -16,6 +18,7 @@ const teammate = { id: 'teammate', role: 'reader', team: 'maintainer', sessionKi
 const state: { work: unknown[]; actor: unknown } = { work: [merged], actor: owner };
 // The release check wedged 28 hours is one incident card, so the checklist is read under a card.
 const status = { actor: owner, repository: 'fixture/repository', jobs: [], releaseCheck: { since: at(28 * hour) } };
+const shots = 'test-results/screenshots/first-time-panel';
 
 /** The checklist's copy, exactly as GY-4066 wrote it. */
 const copy = {
@@ -57,7 +60,7 @@ const laidOut = (page: Page) => page.evaluate(() => {
   };
 });
 
-test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exact copy and working links at 1280 and 390 px; none on the first-run page or for a teammate', async ({ page }) => {
+test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exact copy and working links at 1280 and 390 px; none on the first-run page or for a teammate', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
   await page.routeWebSocket(/\/api\/terminal/, () => {});
@@ -74,6 +77,7 @@ test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exac
   await page.getByRole('button', { name: 'Open control plane' }).click();
   await homeShown(page);
 
+  mkdirSync(shots, { recursive: true });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const checklist = panel(page);
@@ -85,6 +89,9 @@ test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exac
     expect(await checklist.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual(pages.map(([, href]) => href));
     await expect(checklist.getByRole('button')).toHaveText(['Got it']);
     expect(await laidOut(page), `the checklist at ${width} px`).toEqual({ underStatus: true, underIncidents: true, asWideAsHome: true, oneColumn: true, sideways: 0 });
+    const path = `${shots}/first-time-${width}.png`;
+    await page.screenshot({ path, fullPage: true });
+    await testInfo.attach(`first-time-${width}`, { path, contentType: 'image/png' });
   }
 
   // Each named page is a link that opens that page.
@@ -102,8 +109,15 @@ test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exac
   await expect(panel(page)).toHaveCount(0);
 
   // A teammate has no Tell the Lead box on Home, so the owner's checklist is not shown to them.
-  state.work = [merged]; state.actor = teammate;
+  state.actor = teammate; state.work = [merged];
   await page.reload();
   await homeShown(page);
   await expect(panel(page)).toHaveCount(0);
+
+  // The owner's Home with the checklist is the page this case leaves open.
+  state.actor = owner;
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.reload();
+  await homeShown(page);
+  await expect(panel(page).getByRole('listitem')).toHaveText(copy.steps);
 });
