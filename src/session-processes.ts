@@ -25,6 +25,8 @@ function parseStat(pid: number, stat: string): Omit<HostProcess, 'paths'> | null
  * mentioned inside a longer argument does not count: a live session's prompt names worktrees.
  */
 function hostProcesses(procRoot: string): HostProcess[] {
+  // GY-4118: processes in one mount namespace share one mountinfo; a sandbox's is hundreds of lines, read once per namespace.
+  const mounts = new Map<string, string[]>();
   return attempt(() => readdirSync(procRoot)).flatMap(name => {
     if (!/^\d+$/.test(name)) return [];
     const base = join(procRoot, name);
@@ -33,7 +35,14 @@ function hostProcesses(procRoot: string): HostProcess[] {
     return [{ ...found, paths: [
       ...attempt(() => [readlinkSync(join(base, 'cwd')).replace(/ \(deleted\)$/, '')]),
       ...attempt(() => readFileSync(join(base, 'cmdline'), 'utf8').split('\0').flatMap(argument => argumentPath(argument) ?? [])),
-      ...attempt(() => readFileSync(join(base, 'mountinfo'), 'utf8').split('\n').flatMap(line => line.split(' ')[4] ?? [])),
+      ...attempt(() => {
+        const [namespace] = attempt(() => [readlinkSync(join(base, 'ns', 'mnt'))]);
+        const known = namespace === undefined ? undefined : mounts.get(namespace);
+        if (known) return known;
+        const read = readFileSync(join(base, 'mountinfo'), 'utf8').split('\n').flatMap(line => line.split(' ')[4] ?? []);
+        if (namespace !== undefined) mounts.set(namespace, read);
+        return read;
+      }),
     ] }];
   });
 }

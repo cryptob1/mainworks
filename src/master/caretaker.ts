@@ -1,10 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { CaretakerOutcome } from '../daemon/caretaker.js';
 import { fleetRequest, probeRegistryAccount, type FleetLaunchAccount } from '../fleet.js';
 import { defaultHeadlessExec, headlessRunMs, startHeadlessWorker, type HeadlessExec } from '../headless-session.js';
+import { installInboxDirectory } from '../install/secrets.js';
 import { loopRestartRequestPath } from '../daemon/state.js';
 import type { AgentRegistry } from '../model/registry.js';
 import { atomicPrivateWrite } from '../private-file.js';
@@ -72,6 +73,12 @@ async function startCaretakerProbeServer(
   return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>(resolve => { srv.closeAllConnections?.(); srv.close(() => resolve()); }) };
 }
 
+/** GY-4126: the install's inbox directory beside its masters/tokens directory, kept readable inside a caretaker run. */
+export function caretakerInboxDirectory(config: Pick<MasterConfig, 'credentialFile'>) {
+  const parent = dirname(resolve(config.credentialFile));
+  return installInboxDirectory(basename(parent) === 'masters' || basename(parent) === 'tokens' ? dirname(parent) : parent);
+}
+
 /**
  * GY-3593: one caretaker pass, on the master's launch path with its own role and identity: the
  * caretaker role's first available account, the install's caretaker principal (minted for the run,
@@ -90,14 +97,17 @@ export async function runCaretaker(
   const directory = join(dirname(config.credentialFile), 'caretaker'), tokenFile = join(directory, 'caretaker.token'), requestsFile = caretakerRequestsFile(tokenFile);
   const ended = await onSelectedSession(selected, 'caretaker launch failed', async () => {
     const { token } = await fleetRequest(config, 'caretaker-identity', { body: {} });
+    const inbox = caretakerInboxDirectory(config);
     await mkdir(directory, { recursive: true, mode: 0o700 });
+    await mkdir(inbox, { recursive: true, mode: 0o700 });
     await writeFile(tokenFile, `${token}\n`, { mode: 0o600 });
     await rm(requestsFile, { force: true });
     const probeServer = await startCaretakerProbeServer(config, token, { smoke: deps.smoke });
     try {
       const launch = accountLaunch({ kind: selected.account?.kind, approvals: 'auto', agentArgs: [], environment: {} }, selected.account, { headless: true, repositoryRoot: root });
       // Its directory is the one path it may write: its token, and the requests the loop serves after it.
-      const credentialMask = credentialMaskFor(config, { credentialFile: directory, runtimeHomes: runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind) });
+      // GY-4126: the install inbox stays readable inside the caretaker's sandbox.
+      const credentialMask = credentialMaskFor(config, { credentialFile: directory, runtimeHomes: runtimeLoginHomes(launch.environment, launch.contract?.homeVariable, launch.kind), readonly: [inbox] });
       let settle!: (ended: { output: string; ok: boolean }) => void;
       const done = new Promise<{ output: string; ok: boolean }>(resolve => { settle = resolve; });
       const started = await startHeadlessWorker({ name: 'caretaker', work: 'caretaker', subject: 'Caretaker checklist', epoch: 1, principal: 'caretaker', account: launch.account,
