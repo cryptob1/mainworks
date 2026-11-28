@@ -414,10 +414,14 @@ export function hostFilesystemWords(scratch: string, environment: NodeJS.Process
   // `$HOME/.gemini/antigravity-cli`, so the account's login home is bound there.
   const home = variable('HOME', '/tmp/home'), agy = variable('AGY_CONFIG_DIR', '')[2];
   const agyHome = agy && join(home[2], '.gemini', 'antigravity-cli') !== agy ? ['--bind', agy, join(home[2], '.gemini', 'antigravity-cli')] : [];
+  // GY-4115: mise finds installed tools under HOME by default, so a moved HOME keeps the host's mise data, read-only.
+  const operatorHome = environment.HOME;
+  const mise = environment.MISE_DATA_DIR || (operatorHome || environment.XDG_DATA_HOME ? resolve(environment.XDG_DATA_HOME || join(operatorHome!, '.local', 'share'), 'mise') : null);
+  const miseData = home[2] !== operatorHome && mise && isAbsolute(mise) && existsSync(mise) ? ['--ro-bind', mise, mise, '--setenv', 'MISE_DATA_DIR', mise] : [];
   return ['--unshare-pid', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', ...sshConfig,
     '--tmpfs', '/run', ...(resolver?.startsWith('/run/') ? ['--ro-bind', resolver, resolver] : []), '--bind', scratch, '/tmp', '--bind', scratch, '/var/tmp',
     ...variable('TMPDIR', '/tmp'), ...variable('TMP', '/tmp'), ...variable('TEMP', '/tmp'),
-    '--dir', '/tmp/home', ...home, ...agyHome,
+    '--dir', '/tmp/home', ...home, ...agyHome, ...miseData,
     '--dir', '/tmp/runtime', ...variable('XDG_RUNTIME_DIR', '/tmp/runtime'),
     ...variable('XDG_CACHE_HOME', '/tmp/cache'), ...variable('npm_config_cache', '/tmp/npm-cache')];
 }
