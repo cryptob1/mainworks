@@ -103,10 +103,14 @@ async function atomicPrivate(file: string, content: string) {
   await chmod(file, 0o600);
 }
 
+export const installInboxDirectory = (directory: string) => resolve(directory, 'inbox');
+
 export async function prepareInstallDirectory(directory: string, repositoryRoot: string | null) {
   assertOutsideRepository(directory, repositoryRoot);
+  const inbox = installInboxDirectory(directory);
   await mkdir(resolve(directory, 'tokens'), { recursive: true, mode: 0o700 });
-  await chmod(directory, 0o700); await chmod(resolve(directory, 'tokens'), 0o700);
+  await mkdir(inbox, { recursive: true, mode: 0o700 });
+  await chmod(directory, 0o700); await chmod(resolve(directory, 'tokens'), 0o700); await chmod(inbox, 0o700);
   return directory;
 }
 

@@ -16,6 +16,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { processPidNamespace, processStartTicks, tempOwnerMarker, writeTempOwner } from '../src/tmp-reclaim.js';
 import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { evaluate } from '../src/model-boundary/gates.js';
+import { livePaths } from '../src/session-processes.js';
 import { actionAccount } from '../src/model-boundary/next-action.js';
 import { trialFailedGround, trialFailurePrefix } from '../src/model/rework-ground.js';
 import { trialFailureRework } from '../src/daemon/cycle-merge-writer.js';
@@ -226,23 +227,32 @@ test('integration:trial-run-build-and-tests — a trial checkout that cannot be 
 });
 
 /** This repository's own trial: HEAD's tree with tests/ reduced to two fast, Postgres-free files, committed in a shared scratch clone that borrows this checkout's install. */
-async function ownRepositoryTrial(keep: readonly string[], build?: string) {
+// GY-4118: its git work is asynchronous, as the cases run at once in one process and a synchronous clone stalls every other case's trial.
+async function ownRepositoryTrial(keep: readonly string[], build?: string, files: Record<string, string> = {}) {
   const own = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const scratch = await temporaryDirectory('trial-merge-own', tmpdir());
   const root = join(scratch, 'repo');
-  execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', own, root], { stdio: 'ignore' });
-  const head = gitIn(root, 'rev-parse', 'HEAD');
-  const indexed = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: { ...process.env, ...identity, GIT_INDEX_FILE: join(scratch, 'index') } }).trim();
-  indexed('read-tree', head);
-  const dropped = gitIn(root, 'ls-tree', '--name-only', head, 'tests/').split('\n').filter(path => path.endsWith('.test.ts') && !keep.includes(path));
-  execFileSync('git', ['-C', root, 'update-index', '--force-remove', '--stdin'], { input: `${dropped.join('\n')}\n`, env: { ...process.env, ...identity, GIT_INDEX_FILE: join(scratch, 'index') } });
-  // With `build`, the scratch tree's package.json builds with that script instead of the repository's own.
+  const git = async (args: string[], input?: string, cwd = root) => {
+    const child = spawn('git', ['-C', cwd, ...args], { env: { ...process.env, ...identity, GIT_INDEX_FILE: join(scratch, 'index') } });
+    child.stdin.end(input ?? '');
+    let out = '', err = '';
+    child.stdout.on('data', chunk => { out += chunk; }); child.stderr.on('data', chunk => { err += chunk; });
+    const code = await new Promise(done => child.on('close', done));
+    assert.equal(code, 0, `git ${args.join(' ')}: ${err}`);
+    return out.trim();
+  };
+  await git(['clone', '-q', '--shared', '--no-checkout', own, root], undefined, scratch);
+  const head = await git(['rev-parse', 'HEAD']);
+  await git(['read-tree', head]);
+  const dropped = (await git(['ls-tree', '--name-only', head, 'tests/'])).split('\n').filter(path => path.endsWith('.test.ts') && !keep.includes(path));
+  await git(['update-index', '--force-remove', '--stdin'], `${dropped.join('\n')}\n`);
+  // With `build`, the scratch tree's package.json builds with that script instead of the repository's own; `files` are added as written.
   if (build) {
-    const manifest = JSON.parse(gitIn(root, 'show', `${head}:package.json`));
-    const blob = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { input: JSON.stringify({ ...manifest, scripts: { ...manifest.scripts, build } }), encoding: 'utf8' }).trim();
-    indexed('update-index', '--cacheinfo', `100644,${blob},package.json`);
+    const manifest = JSON.parse(await git(['show', `${head}:package.json`]));
+    files = { ...files, 'package.json': JSON.stringify({ ...manifest, scripts: { ...manifest.scripts, build } }) };
   }
-  const mergeSha = gitIn(root, 'commit-tree', indexed('write-tree'), '-p', head, '-m', `Trial of ${keep.join(' and ')}`);
+  for (const [path, content] of Object.entries(files)) await git(['update-index', '--add', '--cacheinfo', `100644,${await git(['hash-object', '-w', '--stdin'], content)},${path}`]);
+  const mergeSha = await git(['commit-tree', await git(['write-tree']), '-p', head, '-m', `Trial of ${keep.join(' and ')}`]);
   // The scratch root is the coordinator checkout: its lockfile is the merge's, so the trial borrows its install.
   copyFileSync(join(own, 'package-lock.json'), join(root, 'package-lock.json'));
   symlinkSync(installedModules, join(root, 'node_modules'));
@@ -250,27 +260,25 @@ async function ownRepositoryTrial(keep: readonly string[], build?: string) {
 }
 
 test('integration:trial-hung-test-fails-fast — a hung file fails by name while a slow finishing file passes', async () => {
-  const trial = await ownRepositoryTrial([]);
-  gitIn(trial.root, 'checkout', '-q', '-f', '--detach', trial.mergeSha);
-  for (const name of ['run-tests.ts', 'bounded-tests.mjs']) copyFileSync(fileURLToPath(new URL(`./helpers/${name}`, import.meta.url)), join(trial.root, 'tests/helpers', name));
   const hung = 'tests/hung.test.ts', slow = 'tests/slow.test.ts';
-  writeFileSync(join(trial.root, hung), "import { test } from 'node:test'; test('hung', async () => { await new Promise(() => { setInterval(() => {}, 1000); }); });\n");
-  writeFileSync(join(trial.root, slow), "import { test } from 'node:test'; test('slow', async () => { await new Promise(resolve => setTimeout(resolve, 50)); });\n");
   // The subject is the bound and its verdict, not this repository's own build: a trial host loaded
   // enough to run six trials spent most of this trial's deadline building the scratch tree, leaving
   // the runner this regression exercises too little of it (GY-3366's trial), so the scratch builds nothing.
-  const manifest = JSON.parse(readFileSync(join(trial.root, 'package.json'), 'utf8'));
-  writeFileSync(join(trial.root, 'package.json'), JSON.stringify({ ...manifest, scripts: { ...manifest.scripts, build: 'node -e 0' } }));
-  gitIn(trial.root, 'add', hung, slow, 'tests/helpers', 'package.json');
-  gitIn(trial.root, 'commit', '-q', '-m', 'hung and slow fixtures');
+  const trial = await ownRepositoryTrial([], 'node -e 0', {
+    ...Object.fromEntries(['run-tests.ts', 'bounded-tests.mjs'].map(name => [`tests/helpers/${name}`, readFileSync(new URL(`./helpers/${name}`, import.meta.url), 'utf8')])),
+    [hung]: "import { test } from 'node:test'; test('hung', async () => { await new Promise(() => { setInterval(() => {}, 1000); }); });\n",
+    [slow]: "import { test } from 'node:test'; test('slow', async () => { await new Promise(resolve => setTimeout(resolve, 50)); });\n",
+  });
   let testRuns = 0;
   const result = await runTrial({
-    ...trial, mergeSha: gitIn(trial.root, 'rev-parse', 'HEAD'), changedFiles: [hung, slow],
+    ...trial, changedFiles: [hung, slow],
     timeoutMs: 600_000, retries: 0, groupSize: 2, cores: 2,
     // This timeout is deliberate, even under real CPU load: keep its named verdict
     // instead of classifying it as host overload. CPU attribution has its own tests.
     cpu: () => null,
     run: async (command, args, options) => {
+      // The selection is not this regression's subject: the two fixtures are the selection, without this repository's import graph (GY-4118).
+      if (args.some(arg => arg.endsWith('scripts/ci-tests.mjs'))) return `affected: selected\n${hung}\n${slow}\n`;
       if (args.includes('tests/helpers/run-tests.ts')) {
         testRuns++;
         assert.ok(args.includes('--file-timeout=300000'), 'production bounds each file at five minutes');
@@ -911,6 +919,19 @@ test('unit:trial-declared-policy-refusal — a head whose graphyard.json is malf
   // The refusal is a failing verdict naming the policy, so the merge writer sends the head back instead of re-trialling it.
   const reason = 'graphyard.json is not valid JSON: x';
   assert.equal(trialFailureReason({ run: { build: 'pass', tests: { passed: 0, failed: ['graphyard.json'], files: 0 }, failingCase: reason } }), `${trialFailurePrefix}: tests graphyard.json: ${reason}`);
+});
+
+test('unit:trial-merge-proc-scan-shared-mounts — every trial checkout removal scans /proc for processes naming it; processes in one mount namespace share one mountinfo, read once per scan (GY-4118)', async () => {
+  const procRoot = await temporaryDirectory('trial-merge-proc', tmpdir()), mounted = join(procRoot, 'mounted');
+  for (const pid of ['101', '102']) {
+    mkdirSync(join(procRoot, pid, 'ns'), { recursive: true });
+    writeFileSync(join(procRoot, pid, 'stat'), `${pid} (node) S 1 ${pid} ${pid} 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 500 0 0`);
+    symlinkSync('mnt:[4026531841]', join(procRoot, pid, 'ns', 'mnt'));
+  }
+  writeFileSync(join(procRoot, '101', 'mountinfo'), `99 36 8:2 /x ${mounted} rw - ext4 /dev/root rw\n`);
+  // The second process's own mountinfo is never read: it would fail, and the namespace's answer stands for it.
+  mkdirSync(join(procRoot, '102', 'mountinfo'));
+  assert.deepEqual(livePaths(procRoot).filter(path => path === mounted).length, 2);
 });
 
 describe('trial-merge', { concurrency: true }, () => { for (const [name, options, run] of cases) nodeTest(name, options, run); });
