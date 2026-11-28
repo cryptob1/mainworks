@@ -134,6 +134,7 @@ export async function main(options: MainOptions = {}) {
 
   const close = async () => {
     closing = true;
+    ready = false;
     services.readiness = false;
     reconciliation.stop(); stopPlaneBeat(); watching?.stop(); watching = null; await observing?.stop(); observing = null;
     process.off('SIGTERM', shutdown); process.off('SIGINT', shutdown);

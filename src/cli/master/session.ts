@@ -46,7 +46,11 @@ export async function openMasterSession(context: CliContext, root: string) {
   // cycles failing and retrying while the GY-2966 recovery brings the stack back — instead of
   // exiting on 'fetch failed' for the supervisor to restart every few seconds. The plane itself
   // enforces the credential on every call the loop then makes.
-  const coordinator = await masterApi('status', masterToken, 30_000, { [executorHostHeader]: master.hostId }).catch(error => { if ((id === 'status' || id === 'run') && typeof error?.status !== 'number') return null; throw error; });
+  const coordinator = await masterApi('status', masterToken, 30_000, { [executorHostHeader]: master.hostId }).catch(error => {
+    if ((id === 'status' || id === 'run') && typeof error?.status !== 'number') return null;
+    if (id === 'status' && (error?.status === 502 || error?.status === 503 || error?.status === 504)) return null;
+    throw error;
+  });
   if (coordinator) assertMasterBinding(master, coordinator);
   // The CLI's own commit, for the version-skew guard.
   const cli = { commit: cliCommit(fileURLToPath(new URL('../../..', import.meta.url))) };
