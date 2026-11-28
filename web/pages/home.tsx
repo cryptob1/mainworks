@@ -10,14 +10,12 @@ import { hasMergedWork } from '../../src/model/first-run';
 import FirstRunPage from './first-run';
 import { hostsNeedingUpdate, hostUpdateCommand } from '../components/top-bar';
 import { machineName } from '../../src/model/machine-load';
-import FirstTimeChecklist from '../components/home-checklist';
 
 /**
  * The Home place (GY-3598) answers "is it OK" (GY-3601): the status line and
  * incident cards first, then what needs you, what changed since this person last
  * looked, and active goals and a box to the Lead (GY-3671); the top bar is the way to Work, Lead and Settings.
  * An install with no merged work opens on the four-step first-run page instead (GY-3603).
- * Whoever has not dismissed it on this browser finds the day-one checklist under the heading (GY-4066).
  */
 export default function HomePage(dashboard: Dashboard) {
   if (!hasMergedWork(dashboard.work)) return <FirstRunPage {...dashboard}/>;
@@ -53,7 +51,6 @@ export default function HomePage(dashboard: Dashboard) {
   return <>
     <HomeStatus work={work} status={status} now={now} setView={setView} setSelected={setSelected}/>
     <PageHeader title="Home" fact={fact} actions={admin && <button type="button" onClick={() => setCreating(true)}>New task</button>}/>
-    <FirstTimeChecklist/>
     {needs > 0 && <PageSection title="Needs you" count={needs} className="work-group group-needs-you" actions={<button type="button" className="text-button" onClick={() => setView('needs-you')}>Open all requests →</button>}>
       <ul className="shipped-list">{outdated.map(host => <li key={host} data-host-action={host}>
         <strong>{machineName(host)}</strong>
