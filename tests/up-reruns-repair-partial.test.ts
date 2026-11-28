@@ -32,7 +32,7 @@ async function fixture() {
   // Serves the bare repository only when git passes `-i` with the deploy key up created.
   await writeFile(join(bin, 'ssh'), `#!/bin/sh
 key=""; while [ $# -gt 1 ]; do case "$1" in -i) key="$2"; shift 2;; -o|-p) shift 2;; *) host="$1"; shift;; esac; done
-[ -n "$REFUSE" ] && { echo "ERROR: Permission to owner/project denied to deploy key" >&2; exit 128; }
+if [ -n "$SSH_FAIL" ]; then echo "$SSH_FAIL" >&2; exit 255; fi
 [ "$key" = "$EXPECTED_KEY" ] && [ -f "$key" ] || { echo "Permission denied (publickey)." >&2; exit 255; }
 case "$1" in git-upload-pack*) exec git-upload-pack "$BARE";; esac
 exit 1
@@ -43,9 +43,9 @@ exit 1
 
 /** A host whose install --apply builds the image, then starts the server container; the first one is interrupted after the image. */
 function host(fx: Awaited<ReturnType<typeof fixture>>) {
-  const state = { image: false, container: 'none' as 'none' | 'stopped' | 'running', applies: 0, interrupt: true, masterInit: false, refuse: false, npmCi: [] as string[], npmCiCode: 0 };
+  const state = { image: false, container: 'none' as 'none' | 'stopped' | 'running', applies: 0, interrupt: true, masterInit: false, sshFail: '' as string, npmCi: [] as string[], npmCiCode: 0 };
   const events: UpEvent[] = [];
-  const env = () => ({ ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, EXPECTED_KEY: fx.key, BARE: fx.bare, ...(state.refuse ? { REFUSE: '1' } : {}) });
+  const env = () => ({ ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, EXPECTED_KEY: fx.key, BARE: fx.bare, ...(state.sshFail ? { SSH_FAIL: state.sshFail } : {}) });
   const deps: UpDependencies = {
     root: fx.root, pollMs: 1, emit: event => { events.push(event); }, now: () => 0, sleep: async () => {},
     serverUrl: async () => SERVER, masterToken: async () => 'm'.repeat(40), operatorToken: async () => 'a'.repeat(40),
@@ -103,10 +103,10 @@ test('integration:up-reruns-repair-partial — a rerun after an interrupted imag
   assert.equal(state.container, 'running', 'the control plane is installed and answers');
   assert.equal(state.applies, 2);
 
-  // The remote fetches through the deploy key up created.
+  // The remote fetches through the deploy key up created, accepting a new GitHub host key non-interactively.
   assert.equal(git(fx.root, 'remote', 'get-url', 'origin'), 'git@github.com:owner/project.git');
   const sshCommand = git(fx.root, 'config', 'core.sshCommand');
-  assert.ok(sshCommand.includes(fx.key) && /IdentitiesOnly=yes/.test(sshCommand), sshCommand);
+  assert.ok(sshCommand.includes(fx.key) && /IdentitiesOnly=yes/.test(sshCommand) && /StrictHostKeyChecking=accept-new/.test(sshCommand) && /BatchMode=yes/.test(sshCommand), sshCommand);
   assert.equal(git(fx.root, 'rev-parse', 'refs/remotes/origin/main'), git(fx.bare, 'rev-parse', 'main'), 'a real git fetch ran through the key');
 
   // deploy.env, created absent, 0600.
@@ -135,15 +135,30 @@ test('integration:up-reruns-repair-partial — a fetch the deploy key cannot mak
   const { state, events, deps } = host(fx);
   state.interrupt = false;
 
-  state.refuse = true;
+  state.sshFail = 'ERROR: Permission to owner/project denied to deploy key';
   const refused = await runUp(request(), deps);
   assert.equal(refused.ok, false);
   assert.equal(refused.next.split('\n').length, 1, refused.next);
   assert.match(refused.next, /git fetch/);
   assert.match(refused.next, /deploy key/);
-  assert.ok(refused.next.includes(`${fx.key}.pub`), `the fix names the public key to register: ${refused.next}`);
+  assert.ok(refused.next.includes(`${fx.key}.pub`), `the fix names the public key to check: ${refused.next}`);
+  assert.doesNotMatch(refused.next, /deploy-key add/, 'does not tell the owner to re-add an already registered key');
 
-  state.refuse = false; state.npmCiCode = 1;
+  state.sshFail = 'ssh: connect to host github.com port 22: Connection refused';
+  const portBlocked = await runUp(request(), deps);
+  assert.equal(portBlocked.ok, false);
+  assert.equal(portBlocked.next.split('\n').length, 1, portBlocked.next);
+  assert.match(portBlocked.next, /port 22/i);
+  assert.doesNotMatch(portBlocked.next, /deploy-key add/);
+
+  state.sshFail = 'Host key verification failed.';
+  const hostKey = await runUp(request(), deps);
+  assert.equal(hostKey.ok, false);
+  assert.equal(hostKey.next.split('\n').length, 1, hostKey.next);
+  assert.match(hostKey.next, /known_hosts/);
+  assert.doesNotMatch(hostKey.next, /deploy-key add/);
+
+  state.sshFail = ''; state.npmCiCode = 1;
   const failed = await runUp(request(), deps);
   assert.equal(failed.ok, false);
   assert.match(failed.next, /bwrap --ro-bind \/ \/ -- npm ci/, 'the recorded command is named');

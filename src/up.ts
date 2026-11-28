@@ -848,12 +848,20 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
         if (!deps.git) throw new UpStop('deploy-key: the merge writer needs git on this machine to fetch through the deploy key', upExitCodes.prerequisite);
         const ssh = sshOrigin(request.repository);
         const hasOrigin = (await deps.git(['remote', 'get-url', 'origin'])).code === 0;
-        for (const args of [['remote', hasOrigin ? 'set-url' : 'add', 'origin', ssh], ['config', 'core.sshCommand', `ssh -i '${keyFile}' -o IdentitiesOnly=yes`], ['fetch', 'origin']]) {
+        const sshCommand = `ssh -i '${keyFile}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes`;
+        for (const args of [['remote', hasOrigin ? 'set-url' : 'add', 'origin', ssh], ['config', 'core.sshCommand', sshCommand], ['fetch', 'origin']]) {
           const result = await deps.git(args);
           if (result.code === 0) continue;
-          const said = (result.stderr || result.stdout || `exit ${result.code}`).trim().split('\n')[0]!.slice(0, 300);
+          const raw = (result.stderr || result.stdout || '').trim();
+          const said = (raw || `exit ${result.code}`).split('\n')[0]!.slice(0, 300);
+          const fetchFix = () => {
+            if (/host key verification failed|remote host identification has changed/i.test(raw)) return `check the github.com host key in ~/.ssh/known_hosts, then rerun ${rerun()}`;
+            if (/connection refused|timed out|could not resolve|network is unreachable|no route to host|port 22|kex_exchange_identification/i.test(raw)) return `check that github.com is reachable over SSH on port 22, then rerun ${rerun()}`;
+            if (/permission denied|permission to .* denied|repository not found|deploy key/i.test(raw)) return `check that ${keyFile}.pub is registered read-write on ${request.repository} (gh repo deploy-key list -R ${request.repository}), then rerun ${rerun()}`;
+            return `check that github.com is reachable on port 22, its host key is trusted, and ${keyFile}.pub is registered on ${request.repository}, then rerun ${rerun()}`;
+          };
           const fix = args[0] === 'fetch'
-            ? `register ${keyFile}.pub read-write on ${request.repository} (gh repo deploy-key add ${keyFile}.pub -R ${request.repository} --allow-write), then rerun ${rerun()}`
+            ? fetchFix()
             : `run git ${args.join(' ')} in ${deps.root}, then rerun ${rerun()}`;
           throw new ChildStop(`deploy-key: git ${args.join(' ')}${args[0] === 'fetch' ? ' through the deploy key' : ''} failed (${said}); fix: ${fix}`, upExitCodes.failed, ['git', ...args], childFirstStderr({ stderr: result.stderr || result.stdout || '' }));
         }
