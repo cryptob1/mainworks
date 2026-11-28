@@ -145,7 +145,8 @@ test('e2e:planner-low-water — running test install with two ready items and fr
     assert.equal(drafts.length, 2, 'planner filed its unreleased drafts on the running test install');
     for (const draft of drafts) {
       assert.equal(draft.ready, false, `${draft.key} is unreleased`);
-      assert.deepEqual(draft.criteria, [], `${draft.key} has no criteria`);
+      assert.equal(draft.criteria.length, 1, `${draft.key} has one initial criterion`);
+      assert.deepEqual(draft.criteria[0]!.proofs, [], `${draft.key} awaits Lead proofs`);
     }
   } finally {
     await world.close();
