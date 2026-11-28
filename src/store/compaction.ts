@@ -62,6 +62,15 @@ const ledgerCompactionPauseMs = 100;
  */
 export const expiringKinds = ['agent-registry.observed', 'agent-registry.session-ended', 'agent-registry.sessions-settled'] as const;
 export const expiringRetentionMs = 7 * 24 * 60 * 60 * 1000;
+/**
+ * GY-4080: the item kinds written most, compacted after `expiringRetentionMs` instead of the ledger window,
+ * under every rule above (never a base, an item's newest save, a stage change or a delivery). Their readers:
+ * github.observed and heartbeat are read only through the item's resolved document (its newest save) and
+ * the delivery predicate (`DELIVERY_EVENT_PREDICATE`, kept); the stall alarm (daemon/stall-alarm.ts) reads
+ * only recent rows. github.queue has no writer or reader left in src. merge-writer.trial-step is read by no
+ * src query; the trial's step itself is `merge.trial-step`, which the merge ledger folds, and is kept.
+ */
+export const boundedKinds = ['github.observed', 'github.queue', 'heartbeat', 'merge-writer.trial-step'] as const;
 /** Rows one retention batch deletes at most; each batch is its own short transaction. */
 const expiringBatch = 1_000;
 /**
@@ -72,7 +81,7 @@ const expiringBatch = 1_000;
 const rewriteAfterBytes = 1e9;
 
 const literal = (list: readonly string[]) => `ARRAY[${list.map(kind => `'${kind}'`).join(',')}]::text[]`;
-const kinds = literal([...routineSaveKinds, ...bookkeepingKinds, ...expiringKinds]);
+const kinds = literal([...new Set([...routineSaveKinds, ...bookkeepingKinds, ...expiringKinds, ...boundedKinds])]);
 
 /**
  * The events table's own immutability trigger: every UPDATE is refused, and every DELETE unless it
@@ -87,7 +96,7 @@ END $$;
 DROP TRIGGER IF EXISTS immutable_events ON events;
 CREATE TRIGGER immutable_events BEFORE UPDATE OR DELETE ON events FOR EACH ROW EXECUTE FUNCTION graphyard_events_immutable();`;
 
-// $1 routine kinds, $2 cutoff, $3 window start (exclusive), $4 window end (inclusive): a batch reads only
+// $1 routine kinds, $2 cutoff, $3 window start (exclusive), $4 window end (inclusive), $5 bounded kinds, $6 their cutoff: a batch reads only
 // the rows of its own seq window. The items in the window are taken once, with the revision each one's
 // delivery cites (its first delivery event, through events_work_delivery; a delivery is never
 // rewritten); an item observed merged but not yet done is left out whole.
@@ -96,7 +105,8 @@ const items = `WITH items AS MATERIALIZED (SELECT w.work_id, (SELECT x.payload->
     FROM (SELECT DISTINCT work_id FROM events WHERE seq > $3 AND seq <= $4 AND work_id IS NOT NULL) w JOIN work_index i ON i.id = w.work_id
     WHERE NOT COALESCE(i.pr_state = 'merged' AND i.stage IS DISTINCT FROM 'done', false))`;
 // `revision` is the revision the candidate row stands for.
-const scope = (revision: string) => `e.seq > $3 AND e.seq <= $4 AND e.kind = ANY($1::text[]) AND e.created_at < $2 AND c.cited IS DISTINCT FROM ${revision}`;
+const scope = (revision: string) => `e.seq > $3 AND e.seq <= $4 AND ((e.kind = ANY($1::text[]) AND e.created_at < $2) OR (e.kind = ANY($5::text[]) AND e.created_at < $6))
+  AND c.cited IS DISTINCT FROM ${revision}`;
 /** Delta and document-less routine rows: never a base. The item's newest save, its current document, stays. */
 const loose = `SELECT e.seq FROM events e JOIN items c ON c.work_id = e.work_id
   WHERE ${scope("e.payload->'delta'->>'revision'")} AND NOT (e.payload ? 'work')
@@ -120,6 +130,18 @@ const bookkeeping = `SELECT seq FROM events WHERE seq > $3 AND seq <= $4 AND wor
 export const candidateSql = [`${items} ${loose} UNION ALL ${bookkeeping}`, `${items} ${whole}`];
 
 export interface LedgerCompaction { removed: Record<string, number>; total: number; batches: number; cutoff: string; cursor: number; skipped?: 'busy' }
+/** GY-4080: what one compaction run removed, rows and stored payload bytes per kind, for /healthz and master status. */
+export interface CompactionRun { at: string; rows: number; bytes: number; removed: Record<string, { rows: number; bytes: number }> }
+let lastRun: CompactionRun | null = null;
+/** The last compaction run this process finished, or null before its first. */
+export const lastCompaction = () => lastRun;
+const size = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${(bytes / 1e3).toFixed(1)} KB`;
+/** One line for master status: when the last run was and what it removed, largest kinds first. */
+export function compactionLine(run: CompactionRun | null, now = Date.now()) {
+  if (!run) return 'Compaction has not run since the server started';
+  const kinds = Object.entries(run.removed).sort((a, b) => b[1].bytes - a[1].bytes).slice(0, 4).map(([kind, k]) => `${kind} ${k.rows} rows ${size(k.bytes)}`);
+  return `Compaction ran ${Math.floor((now - Date.parse(run.at)) / 60_000)} min ago: removed ${run.rows} rows, ${size(run.bytes)}${kinds.length ? ` (${kinds.join(', ')})` : ''}`;
+}
 
 /**
  * Compact routine rows older than `retentionMs`: at most `batches` batches, each reading the next
@@ -132,9 +154,11 @@ export interface LedgerCompaction { removed: Record<string, number>; total: numb
  */
 export async function compactLedger(pool: pg.Pool, options: { retentionMs?: number; batch?: number; batches?: number; actor?: string; pauseMs?: number } = {}): Promise<LedgerCompaction> {
   const retentionMs = Math.max(0, Math.floor(options.retentionMs ?? ledgerRetentionMs));
+  const boundedMs = Math.min(retentionMs, expiringRetentionMs);
+  const bytes: Record<string, number> = {};
   const batch = Math.max(1, Math.floor(options.batch ?? ledgerCompactionBatch)), batches = Math.max(1, Math.floor(options.batches ?? ledgerCompactionBatches));
   const removed: Record<string, number> = {};
-  let total = 0, ran = 0, cutoff = new Date(Date.now() - retentionMs), upper: string | null = null, cursor = '0', measured = false;
+  let total = 0, ran = 0, cutoff = new Date(Date.now() - retentionMs), boundedCutoff = cutoff, upper: string | null = null, cursor = '0', measured = false;
   for (; ran < batches; ran++) {
     const db = await pool.connect();
     let end: string | null = null, byKind: Record<string, number> = {};
@@ -142,33 +166,36 @@ export async function compactLedger(pool: pg.Pool, options: { retentionMs?: numb
       await db.query('BEGIN');
       if (!(await db.query('SELECT pg_try_advisory_xact_lock($1) AS ok', [advisoryLocks.ledgerCompaction])).rows[0].ok) {
         await db.query('ROLLBACK');
-        return { removed, total, batches: ran, cutoff: cutoff.toISOString(), cursor: Number(cursor), skipped: 'busy' };
+        return { removed, total, batches: ran, cutoff: new Date(cutoff).toISOString(), cursor: Number(cursor), skipped: 'busy' };
       }
       // One cutoff for the whole run, on the database clock the rows were stamped with, and the newest row it reaches.
       if (!measured) {
         measured = true;
-        cutoff = (await db.query(`SELECT clock_timestamp() - ($1::text||' milliseconds')::interval AS cutoff`, [String(retentionMs)])).rows[0].cutoff;
-        // The newest old row by two probes of the created_at index, never a sort of every old row.
-        upper = (await db.query('SELECT max(seq) AS seq FROM events WHERE created_at = (SELECT max(created_at) FROM events WHERE created_at < $1)', [cutoff])).rows[0]?.seq ?? '0';
+        ({ cutoff, boundedCutoff } = (await db.query(`SELECT clock_timestamp() - ($1::text||' milliseconds')::interval AS cutoff, clock_timestamp() - ($2::text||' milliseconds')::interval AS "boundedCutoff"`,
+          [String(retentionMs), String(boundedMs)])).rows[0]);
+        // The newest row old enough for either window, by two probes of the created_at index, never a sort of every old row.
+        upper = (await db.query('SELECT max(seq) AS seq FROM events WHERE created_at = (SELECT max(created_at) FROM events WHERE created_at < $1)', [boundedCutoff])).rows[0]?.seq ?? '0';
         cursor = (await db.query('SELECT seq FROM ledger_compaction_cursor')).rows[0]?.seq ?? '0';
       }
       end = (await db.query('SELECT max(seq) AS seq FROM (SELECT seq FROM events WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3) w', [cursor, upper, batch])).rows[0].seq;
       await db.query("SET LOCAL graphyard.ledger_compaction = 'on'");
-      const rows: { seq: string; kind: string }[] = [];
+      const rows: { seq: string; kind: string; bytes: number }[] = [];
       for (const sql of end === null ? [] : candidateSql) {
-        const seqs = (await db.query(sql, [[...routineSaveKinds], cutoff, cursor, end])).rows.map(row => row.seq as string);
-        if (seqs.length) rows.push(...(await db.query('DELETE FROM events WHERE seq = ANY($1::bigint[]) RETURNING seq, kind', [seqs])).rows);
+        const seqs = (await db.query(sql, [[...routineSaveKinds], cutoff, cursor, end, [...boundedKinds], boundedCutoff])).rows.map(row => row.seq as string);
+        if (seqs.length) rows.push(...(await db.query('DELETE FROM events WHERE seq = ANY($1::bigint[]) RETURNING seq, kind, pg_column_size(payload) AS bytes', [seqs])).rows);
       }
-      for (const row of rows) byKind[row.kind] = (byKind[row.kind] ?? 0) + 1;
+      const batchBytes: Record<string, number> = {};
+      for (const row of rows) { byKind[row.kind] = (byKind[row.kind] ?? 0) + 1; batchBytes[row.kind] = (batchBytes[row.kind] ?? 0) + Number(row.bytes); }
       if (rows.length) {
         const seqs = rows.map(row => Number(row.seq));
         await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', [options.actor ?? 'graphyard', ledgerCompactedKind,
-          JSON.stringify({ details: { removed: byKind, total: rows.length, cutoff: cutoff.toISOString(), retentionMs, firstSeq: Math.min(...seqs), lastSeq: Math.max(...seqs) } })]);
+          JSON.stringify({ details: { removed: byKind, total: rows.length, bytes: Object.values(batchBytes).reduce((sum, n) => sum + n, 0), bytesByKind: batchBytes,
+            cutoff: new Date(cutoff).toISOString(), retentionMs, firstSeq: Math.min(...seqs), lastSeq: Math.max(...seqs) } })]);
       }
       await db.query('INSERT INTO ledger_compaction_cursor(id,seq) VALUES(true,$1) ON CONFLICT (id) DO UPDATE SET seq = EXCLUDED.seq', [end ?? '0']);
       await db.query('COMMIT');
       cursor = end ?? '0';
-      for (const [kind, n] of Object.entries(byKind)) removed[kind] = (removed[kind] ?? 0) + n;
+      for (const [kind, n] of Object.entries(byKind)) { removed[kind] = (removed[kind] ?? 0) + n; bytes[kind] = (bytes[kind] ?? 0) + batchBytes[kind]; }
       total += rows.length;
     } catch (error) { await db.query('ROLLBACK').catch(() => {}); throw error; } finally { db.release(); }
     if (end === null) break;
@@ -176,7 +203,13 @@ export async function compactLedger(pool: pg.Pool, options: { retentionMs?: numb
     // loops runs never reaches the next batch back to back across the seam between runs.
     await new Promise(resolve => setTimeout(resolve, options.pauseMs ?? ledgerCompactionPauseMs));
   }
-  return { removed, total, batches: ran, cutoff: cutoff.toISOString(), cursor: Number(cursor) };
+  // The registry kinds nothing reads past a week go in the same run (GY-4005), and the run is what /healthz shows.
+  const expired = await expireEvents(pool, { pauseMs: options.pauseMs });
+  for (const [kind, n] of Object.entries(expired.removed)) { removed[kind] = (removed[kind] ?? 0) + n; bytes[kind] = (bytes[kind] ?? 0) + expired.bytes[kind]; }
+  total += expired.total;
+  const byKind = Object.fromEntries(Object.entries(removed).map(([kind, rows]) => [kind, { rows, bytes: bytes[kind] }]));
+  lastRun = { at: new Date().toISOString(), rows: total, bytes: Object.values(bytes).reduce((sum, n) => sum + n, 0), removed: byKind };
+  return { removed, total, batches: ran, cutoff: new Date(cutoff).toISOString(), cursor: Number(cursor) };
 }
 
 let freedSinceRewrite = 0;
@@ -189,7 +222,7 @@ let freedSinceRewrite = 0;
  */
 export async function expireEvents(pool: pg.Pool, options: { retentionMs?: number; batch?: number; batches?: number; pauseMs?: number; rewriteAfterBytes?: number } = {}) {
   const retentionMs = options.retentionMs ?? expiringRetentionMs, batch = options.batch ?? expiringBatch;
-  const removed: Record<string, number> = {};
+  const removed: Record<string, number> = {}, bytes: Record<string, number> = {};
   let total = 0, done = false;
   for (let ran = 0; ran < (options.batches ?? ledgerCompactionBatches) && !done; ran++) {
     const db = await pool.connect();
@@ -199,10 +232,12 @@ export async function expireEvents(pool: pg.Pool, options: { retentionMs?: numbe
       const rows = (await db.query(`DELETE FROM events WHERE seq = ANY(ARRAY(SELECT seq FROM events WHERE kind = ANY($1::text[]) AND work_id IS NULL
         AND created_at < clock_timestamp() - ($2::text||' milliseconds')::interval LIMIT $3)) RETURNING kind, pg_column_size(payload) AS bytes`, [[...expiringKinds], String(retentionMs), batch])).rows as { kind: string; bytes: number }[];
       const byKind: Record<string, number> = {};
-      for (const row of rows) { byKind[row.kind] = (byKind[row.kind] ?? 0) + 1; freedSinceRewrite += Number(row.bytes); }
-      if (rows.length) await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', ['graphyard', ledgerCompactedKind, JSON.stringify({ details: { removed: byKind, total: rows.length, retentionMs } })]);
+      const batchBytes: Record<string, number> = {};
+      for (const row of rows) { byKind[row.kind] = (byKind[row.kind] ?? 0) + 1; batchBytes[row.kind] = (batchBytes[row.kind] ?? 0) + Number(row.bytes); freedSinceRewrite += Number(row.bytes); }
+      if (rows.length) await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3)', ['graphyard', ledgerCompactedKind,
+        JSON.stringify({ details: { removed: byKind, total: rows.length, bytes: Object.values(batchBytes).reduce((sum, n) => sum + n, 0), bytesByKind: batchBytes, retentionMs } })]);
       await db.query('COMMIT');
-      for (const [kind, n] of Object.entries(byKind)) removed[kind] = (removed[kind] ?? 0) + n;
+      for (const [kind, n] of Object.entries(byKind)) { removed[kind] = (removed[kind] ?? 0) + n; bytes[kind] = (bytes[kind] ?? 0) + batchBytes[kind]; }
       total += rows.length; done = rows.length < batch;
     } catch (error) { await db.query('ROLLBACK').catch(() => {}); throw error; } finally { db.release(); }
     if (!done) await new Promise(resolve => setTimeout(resolve, options.pauseMs ?? ledgerCompactionPauseMs));
@@ -217,5 +252,5 @@ export async function expireEvents(pool: pg.Pool, options: { retentionMs?: numbe
       rewritten = true;
     } catch (error) { failed = error as Error; console.error('events table rewrite failed', failed.message); } finally { freedSinceRewrite = 0; db.release(failed ?? true); }
   }
-  return { removed, total, done, rewritten };
+  return { removed, bytes, total, done, rewritten };
 }

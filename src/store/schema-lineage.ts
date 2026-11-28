@@ -91,6 +91,8 @@ export const schemaGenerations: readonly (string | null)[] = [
   'sha256:55f9a2260431c7041b542d21f4de11f991e3bce670d472019e786ea3a40f075a',
   // GY-4061: the work index's projection (the coordination view's SQL document) removes each document's keys once and reads each tail's array once.
   'sha256:538b194731de7a5d173b0473e5488dc3de3c81eddb3892f64da766f77fc37aa2',
+  // GY-4080: the events trigger lets compaction remove github.queue and merge-writer.trial-step rows too.
+  'sha256:337ae3fdb7748d4f34cf13ddf1fb870de591bf5d82bc476a411a0483aeaf9fe9',
 ];
 /** The schema generation the code in this process expects: its table definitions' place in the lineage. */
 export const schemaVersion = schemaGenerations.length - 1;
