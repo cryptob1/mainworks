@@ -20,13 +20,15 @@ test('integration:warm-commit-takes-image-lock — warm build and commit exclude
   process.env.GRAPHYARD_BUILD_REVISION = commit;
   const images = new Set([image]), events: string[] = [], overlaps: string[] = [], unlocked: string[] = [];
   let writing = '';
-  const committing = Promise.withResolvers<void>(), building = Promise.withResolvers<void>();
+  let committed!: () => void, built!: () => void;
+  const committing = new Promise<void>(resolve => { committed = resolve; });
+  const building = new Promise<void>(resolve => { built = resolve; });
   const write = async (kind: string) => {
     if (writing) overlaps.push(`${kind} beside ${writing}`);
     if (!existsSync(join(locks, 'graphyard-local-images.lock'))) unlocked.push(kind);
     writing = kind; events.push(`${kind}:start`);
-    if (kind === 'warm commit') committing.resolve();
-    if (kind === 'deploy build') building.resolve();
+    if (kind === 'warm commit') committed();
+    if (kind === 'deploy build') built();
     await delay(250);
     events.push(`${kind}:end`); writing = '';
   };
@@ -74,9 +76,9 @@ test('integration:warm-commit-takes-image-lock — warm build and commit exclude
   try {
     const core = await install('core'), huck = await install('huck');
     const warm = ensureWarmImage({ root: '/fixture', commit, image, run, deadline: Date.now() + 25_000 });
-    await committing.promise;
+    await committing;
     const first = deployOnce(core.file, core.ports, () => {}, null);
-    await building.promise;
+    await building;
     const second = deployOnce(huck.file, huck.ports, () => {}, null);
     const results = await Promise.all([warm, first, second]);
     assert.deepEqual(overlaps, [], 'warm commit and deploy export must never overlap');
