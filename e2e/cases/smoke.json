@@ -6,6 +6,7 @@
   "target": "any",
   "required": false,
   "steps": [
+    { "kind": "command", "name": "planner evidence distinguishes candidate failures from main and keeps failure ages (GY-4083)", "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-prompt-shows-ages.test.ts tests/planner-prompt-separates-candidate-failures.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "intentional heavy-work drains and a zero builder cap keep the not-moving alarm quiet (GY-4082)", "run": "node --import tsx tests/helpers/run-tests.ts tests/not-moving-quiet-while-drained.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "warm builds and commits take turns with deploy exports; a second install reuses the tag (GY-4077)", "run": "node --import tsx tests/helpers/run-tests.ts tests/warm-commit-takes-image-lock.test.ts", "timeoutSeconds": 30 },
     { "kind": "command", "name": "a deploy holds its heavy-job slot across a lease-error retry, which runs without build cache (GY-4047)", "run": "node --import tsx tests/helpers/run-tests.ts tests/deploy-retry-holds-slot.test.ts", "timeoutSeconds": 120 },

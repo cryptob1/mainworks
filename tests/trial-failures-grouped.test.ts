@@ -33,11 +33,11 @@ test('integration:trial-failures-grouped — test files that failed trials witho
   const items = flowItems([{ id: 'a', key: 'GY-1', title: 'Change', stage: 'test', stageEnteredAt: at(100) } as any], ledger, new Map(), new Map(), now);
   const flow = flowNumbers(items, 6, now);
   assert.deepEqual(flow.trialFailures, [
-    { check: 'tests/f4.test.ts', count: 3, assertion: 'four', lastFailedAt: at(50) },
-    { check: 'tests/f1.test.ts', count: 2, assertion: 'newest line', lastFailedAt: at(80) },
-    { check: 'tests/f2.test.ts', count: 2, assertion: 'two again', lastFailedAt: at(60) },
-    { check: 'tests/f3.test.ts', count: 2, assertion: null, lastFailedAt: at(60) },
-    { check: 'tests/f5.test.ts', count: 2, assertion: 'five', lastFailedAt: at(40) },
+    { check: 'tests/f4.test.ts', count: 3, assertion: 'four', lastFailedAt: at(50), newest: { key: 'GY-1', head: 'h50', base: null } },
+    { check: 'tests/f1.test.ts', count: 2, assertion: 'newest line', lastFailedAt: at(80), newest: { key: 'GY-1', head: 'h80', base: null } },
+    { check: 'tests/f2.test.ts', count: 2, assertion: 'two again', lastFailedAt: at(60), newest: { key: 'GY-1', head: 'h60', base: null } },
+    { check: 'tests/f3.test.ts', count: 2, assertion: null, lastFailedAt: at(60), newest: { key: 'GY-1', head: 'h60', base: null } },
+    { check: 'tests/f5.test.ts', count: 2, assertion: 'five', lastFailedAt: at(40), newest: { key: 'GY-1', head: 'h40', base: null } },
   ]);
   assert.deepEqual(flow.flakyChecks, [{ check: 'tests/flaky.test.ts', count: 2, assertion: null, lastFailedAt: at(50) }]);
   const html = renderToStaticMarkup(createElement(FlowLine, { flow: { '6h': flow, '24h': flow, '7d': flow, attention: null, onboarding: [], asOf: at(0), ageSeconds: 0 } }));
@@ -66,7 +66,7 @@ test('e2e:trial-failures-grouped — with one failed trial, master status lists 
       return response.json();
     }, async () => { throw new Error('no git in the fixture'); });
     assert.ok(status.flow, `flow is shown (${status.flowError})`);
-    assert.deepEqual(status.flow['6h'].trialFailures.map(({ lastFailedAt, ...failing }) => failing), [{ check: 'tests/broken.test.cjs', count: 1, assertion: 'the change is broken' }]);
+    assert.deepEqual(status.flow['6h'].trialFailures.map(({ lastFailedAt, ...failing }) => failing), [{ check: 'tests/broken.test.cjs', count: 1, assertion: 'the change is broken', newest: { key: change.key, head: change.candidate!.sha, base: change.candidate!.baseSha } }]);
     assert.ok(status.flow['6h'].trialFailures.every(failing => Math.abs(Date.now() - Date.parse(failing.lastFailedAt)) < 280_000), `each names when it last failed: ${status.flow['6h'].trialFailures.map(failing => failing.lastFailedAt)}`);
   } finally { await where.close(); }
 });

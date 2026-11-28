@@ -24,13 +24,14 @@ const adminToken = `operator-${'a'.repeat(32)}`;
 const coordinatorToken = `coordinator-${'c'.repeat(32)}`;
 const ITEMS = 2000, EVENTS = 50_000, WHOLE_EVERY = 40, TIMELINE = 1200;
 const flowKinds = ['rework', 'merge.intent', 'merge.trial', 'merge.refused', 'merge.serve-revert'];
-// The statement as it stood before GY-3765, for the rows it returned.
+// The pre-GY-3765 query shape, with the base-tip projection added in GY-4083.
 const columns = `work_id, kind, created_at, seq,
     CASE WHEN payload ? 'work' THEN payload->'work'->>'stage' END AS stage,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'reason', payload->'details'->'intent'->>'reason')
       WHEN kind = 'merge.refused' THEN payload->>'reason' END AS reason,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'binding', payload->'details'->'intent'->>'binding') END AS binding,
     CASE WHEN kind IN ('merge.trial', 'merge.refused') THEN payload->>'head' END AS head,
+    CASE WHEN kind = 'merge.trial' THEN payload->>'baseTip' END AS base_tip,
     CASE WHEN kind = 'merge.trial' THEN payload->>'durationMs' END AS duration_ms,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
     CASE WHEN kind = 'merge.trial' THEN jsonb_build_object('flaked', payload->'flaked', 'failed', payload->'tests'->'failed', 'assertions', payload->'tests'->'assertions') END AS trial,
@@ -61,7 +62,7 @@ before(async () => {
       CASE WHEN d % ${WHOLE_EVERY} = 3 THEN
         CASE WHEN k.kind = 'rework' THEN b.works[1 + d % 32] || jsonb_build_object('details', jsonb_build_object('reason', 'Rework ' || d, 'binding', d % 2 = 0))
           ELSE b.works[1 + d % 32] END
-      WHEN k.kind IN ('merge.trial', 'merge.intent', 'merge.refused') THEN jsonb_build_object('head', md5(d::text), 'durationMs', 600000, 'reason', 'Refused ' || d)
+      WHEN k.kind IN ('merge.trial', 'merge.intent', 'merge.refused') THEN jsonb_build_object('head', md5(d::text), 'baseTip', md5('base:' || d), 'durationMs', 600000, 'reason', 'Refused ' || d)
       ELSE '{}'::jsonb END,
       now() - interval '7 days' + interval '15 minutes' + make_interval(secs => d * (7 * 86400 - 1800)::float8 / ${EVENTS})
     FROM (SELECT array_agg(i.id) AS ids FROM work_index i WHERE NOT i.settled) i, generate_series(1, ${EVENTS}) d,
