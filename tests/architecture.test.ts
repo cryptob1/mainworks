@@ -374,7 +374,8 @@ test('unit:architecture — source files never call the GitHub API or mint App i
   for (const [file, text] of await scanCheckout()) {
     // GY-3515: the owner-approved infra route creates the one repository a grant names; nothing else calls GitHub.
     if (!file.startsWith('src/') || file === 'src/infra-access.ts') continue;
-    assert.doesNotMatch(text, /api\.github\.com/, `${file} must not call api.github.com`);
+    // GY-4070: beside it, the loop's one read of GitHub's rate limit (GET /rate_limit, which GitHub does not count) for lead status; nothing else calls GitHub.
+    if (file !== 'src/daemon/github-calls.ts') assert.doesNotMatch(text, /api\.github\.com/, `${file} must not call api.github.com`);
     assert.doesNotMatch(text, /\/app\/installations\/[^/\s]+\/access_tokens/, `${file} must not request a GitHub App installation token`);
     assert.doesNotMatch(text, /mintPushToken|installationToken\s*\(/, `${file} must not mint an App installation token`);
     if (file !== 'src/install/org-deploy-keys.ts') assert.doesNotMatch(text, /\[\s*['"]api['"]\s*,/, `${file} must not call GitHub's API through gh api`);

@@ -64,6 +64,7 @@ import { benchResultsPath, benchStatus, readBenchResults } from '../bench.js';
 import { repeatedFailureAttention } from '../model/incidents.js';
 import { ownerAttentionLine } from '../check-in-author.js';
 import { readImagePulls, slowPullAttention } from '../install/image-pulls.js';
+import { githubCallsSummary } from '../daemon/github-calls.js';
 import type { LockHold, SlowQuery } from '../store/slow-queries.js';
 
 /** GY-3105: an item's whole non-routine ledger, oldest first, paged by cursor to the end; null when any page cannot be read.
@@ -306,6 +307,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
   // GY-3634: the latest trial benchmark beside the median of the previous ten on the same file list, with one attention line on >25% wall regression.
   const bench = benchStatus(readBenchResults(benchResultsPath(root)));
   const remoteRuns = readRemoteShardRuns(root);
+  // GY-4070: the GitHub API calls the loop made in the last hour by source, the limit remaining from GitHub's response headers, and the slowdown of its observation polling while the hour holds the share.
+  const github = state ? githubCallsSummary(state.github, master.run.githubCallSharePercent, now) : null;
   return {
     // GY-3778: the empty-board alarm, when standing.
     stallAlarm: state?.actions[stallAlarmKey]?.detail ?? null,
@@ -321,7 +324,9 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
       : { on: true },
     // GY-3095: the pipeline has stopped where a role cannot launch; each line names the role, the refusal, how long it has lasted and the next command.
     // GY-3204: and each application whose versionUrl lags main or fails to answer.
-    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...unconfirmedWriteAttention(state?.mergeWriter, now), ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...databaseAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
+    attention: [...signoffAttention(open, now), ...plannerDraftAttention(open), ...humanAttention, ...reworkCaps, ...leaseLosses, ...blockerAttention, ...drained, ...fixedLimitAttention, ...imbalanceAttention, ...growth, ...trialImageFault, ...unconfirmedWriteAttention(state?.mergeWriter, now), ...trialFloorAttention(), ...stopped, ...launchFailures, ...reworked, ...couldNotRunReviews, ...(cursor ? reviewLaunchAttention(open, cursor, now, reviews) : []), ...backedOff, ...unlaunchableWorkerAttention(fleet), ...unspecifiedModelAttention(fleet), ...loggedOutAttention(fleet), ...wrongModelAttention(fleet), ...checkFaultAttention(fleet), ...allowanceAttention(fleet, now), ...applicationAttention(observed), ...(declarationError ? [{ subject: 'delivery.applications', text: `Applications not observed: ${declarationError}`, next: `Fix graphyard.json delivery on ${master.baseBranch}` }] : []), ...stepFailureAttention, ...messageAttention, ...fetchRefused, ...launchBackoff, ...heldGateAttention, ...outdatedShimAttention(state?.hosts ?? []), ...connectionResetAttention(remoteRuns), ...zeroRemoteShareAttention(remoteRuns, state?.hosts), ...gateStalled, ...deployReleaseAttention(state, now), ...controlPlaneUpdateAttention(controlRecord), ...overloadAttention, ...flowAttention, ...databaseAttention, ...slowQueryAttention(slowest, now), ...lockHoldAttention(slowRead.lockHold ?? null, now), ...linkAttention, ...ownerAttention, ...(bench?.attention ? [bench.attention] : []), ...slowPullAttention(readImagePulls()), ...repeatedFailureAttention(snapshot.work, now),
+      // GY-4070: observation polling slowed at the share of the hourly GitHub limit.
+      ...(github?.slowed ? [{ subject: 'GitHub API', text: github.detail!, next: 'Nothing is owed: polling speeds up as the hour drains. To give this install more of the token, mainworks lead config githubCallSharePercent=N; the rest stays for whoever shares it' }] : []), ...(report.onboarding.fault ? [{ subject: 'e2e.serve', text: `${report.onboarding.fault} Master fault: ${master.repository} is not onboarded.`, next: 'The Master must declare the real application serve and feature map on main.' }] : [])] as (Partial<StoppedRole> & Pick<StoppedRole, 'subject' | 'text' | 'next'>)[],
     // GY-3199: the control plane's own update record — the Mainworks commit this install runs, its
     // last check and last update, the step of a failed upgrade, and the staleness the daily
     // diagnostics reports (a check over a day old, or a verified commit first seen over a day ago
@@ -396,6 +401,8 @@ export async function masterStatusReport(root: string, master: MasterConfig, mas
     batchGate: gateSummary(gateRecord),
     // GY-3833: non-blank lines in src/ and tests/ at the latest verified commit, with the seven-day change.
     codeSize: codeSizeSummary(gateRecord),
+    // GY-4070: the loop's GitHub API calls in the last hour by source, the limit remaining, and the slowdown of its observation polling at the share.
+    github,
     // GY-3399: the week's reverts beside the week's gates removed (lessons turned into code), with their items.
     thisWeek: await thisWeekReport(root, now),
     // GY-3146: what the latest verified batch changed and how to try it.

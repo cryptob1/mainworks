@@ -6,7 +6,9 @@ export { type MergeWriterState, type RevertFlight } from './merge-writer-state.j
 // Concern: the control-plane merge executor's cycle step (GY-1524) — reconcile open intents, pick the next head, run one merge beside the cycle and record what it did.
 import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { batchGateBusySlots, busyTrialSlots } from './trial-slots.js';
+import { githubApiUrl, githubCall, isGithubHttps, noteGithubCycle, readGithubRateLimit, type GithubRateLimit, type GithubCallSource } from './github-calls.js';
 import { trialHeatFault, trialSlotCount } from '../merge-writer/trial-load.js';
 import { trialAffordableFiles } from '../merge-writer/trial.js';
 import type { ChildRun } from '../child-runner.js';
@@ -90,6 +92,8 @@ export interface MergeWriterReads extends MergePorts {
   pushVerified?(commit: string): Promise<void>;
   /** Pushes the release tag with the merge writer's deploy key after successful deployment. */
   pushReleaseTag?(commit: string): Promise<string>;
+  /** GY-4070: GitHub's rate limit as the response headers of `GET /rate_limit` report it, read with the token these reads' git calls carry; null when GitHub did not answer. Absent, the remaining limit is never read. */
+  githubRateLimit?(): Promise<GithubRateLimit | null>;
   /**
    * GY-3159: launches one merge flight's trial as a detached run that survives this loop's restart
    * onto a new release. Absent (a test's substituted trial, or a reads set that never detached),
@@ -116,16 +120,20 @@ const output = (error: unknown) => { const failed = error as { stdout?: unknown;
 export const heavyTrial = <T>(key: string, onStep: ((step: string) => void) | undefined, signal: AbortSignal | undefined, trial: () => Promise<T>, until?: AbortSignal, gate?: boolean) =>
   withHeavyJob(testMergeLabel(key), trial, { onWait: () => onStep?.(waitStep(setting(slotsDirectoryVariable)!)), signal, until, reserved: gate });
 
+/** GY-4070: the loop's cursor, on which these reads count the GitHub API calls they make; `sleep` is how a slowed observation poll waits. */
+export interface GithubCallsOptions { state: Pick<DaemonState, 'github'>; sleep?: (ms: number) => Promise<void> }
+
 /**
  * The reads over the coordinator checkout `root` (its object store holds every submitted head,
  * GY-1523, and the trial commits). Git writes are the trial ref and the one leased push to
  * `origin`; a trial checkout under `base` is the only worktree made. The push child's environment
  * is `pushEnvironment`: the deploy key as GIT_SSH_COMMAND and no other credential. The loop wires
- * them in effects.ts; a test hands its own through `effects.mergeWriter`.
+ * them in effects.ts; a test hands its own through `effects.mergeWriter`. With `github` the reads
+ * count their GitHub API calls on that cursor (GY-4070), and `githubApi` is the API the limit is read from.
  */
 export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run' | 'repository'>, root: string, run: ChildRun,
   options: { base: string; record: MergePorts['record']; hold?: MergePorts['hold']; holdOpening?: MergePorts['holdOpening']; trial?: typeof runMergeTrial; environment?: NodeJS.ProcessEnv; now?: () => number;
-    itemPreviews?: Partial<ItemPreviewPorts> }): MergeWriterReads {
+    itemPreviews?: Partial<ItemPreviewPorts>; github?: GithubCallsOptions; githubApi?: string }): MergeWriterReads {
   const git = async (...args: string[]) => String(await run('git', ['-C', root, ...args]));
   const gitAs = async (args: string[], env?: Record<string, string>) => String(await run('git', ['-C', root, ...args], env ? { env: { ...(options.environment ?? process.env), ...env } } : undefined));
   const settings = mergeWriterSettings(config.run, installIdFor(config.repository));
@@ -139,10 +147,25 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`The coordinator checkout holds no ${ref} to merge onto`);
     return sha;
   };
+  // GY-4070: a git call spends the host's GitHub API limit when it carries the GitHub token. With a
+  // token or the gh login every call to the remote does; with the deploy key alone a push never does
+  // (it is SSH, the key alone) and a fetch does only when origin fetches GitHub over https, where the
+  // host's credential helper supplies the token.
+  const tokenRemote = !!(settings.tokenFile || settings.pushAuth);
+  let githubHttpsOrigin: Promise<boolean> | undefined;
+  const counted = async (source: GithubCallSource, carriesToken: boolean | Promise<boolean>) => {
+    if (options.github && await carriesToken) await githubCall(options.github.state.github, source, { sharePercent: config.run.githubCallSharePercent, now: options.now, sleep: options.github.sleep });
+  };
+  // The token git sends GitHub: the merge writer's token file, else the gh login's.
+  const githubToken = async () => settings.tokenFile
+    ? readFile(settings.tokenFile, 'utf8').then(text => text.trim() || null, () => null)
+    : Promise.resolve(run('gh', ['auth', 'token'], { timeoutMs: 15_000 })).then(text => text.trim() || null, () => null);
   return {
     baseBranch: base, parallel: settings.parallel, now: options.now ?? Date.now, record: options.record, drain: () => readHeavyDrain(heavyJobsDirectory()), ...(options.hold ? { hold: options.hold } : {}), ...(options.holdOpening ? { holdOpening: options.holdOpening } : {}),
     git: (args, env) => gitAs(args, env),
     fetch: async () => {
+      // `git remote get-url` names the URL a fetch of origin uses (its insteadOf rewrites applied) and reaches no remote.
+      await counted('observation', tokenRemote || (githubHttpsOrigin ??= git('remote', 'get-url', 'origin').then(url => isGithubHttps(url.trim()), () => false)));
       if (settings.tokenFile || settings.pushAuth) await gitAs(['fetch', '--no-tags', remote, `+refs/heads/${base}:${ref}`], pushEnvironment(settings, options.environment));
       else await git('fetch', '--no-tags', 'origin', base);
       return tip();
@@ -169,19 +192,25 @@ export function mergeWriterReads(config: Pick<MasterConfig, 'baseBranch' | 'run'
     moveTouches: (from, to, files, at) => moveTouches(args => git(...args), from, to, files, at),
     // Only git's own stale-lease wording is a rejection the executor re-reads the tip for; a remote's refusal (a branch rule, a hook) or a transport failure is thrown as it came, with git's stderr in the message (GY-2940).
     push: async (mergeSha, baseTip) => {
+      await counted('other', tokenRemote);
       try { await run('git', ['-C', root, ...pushArgs(base, baseTip, mergeSha, remote)], { env: pushEnvironment(settings, options.environment) }); return 'pushed'; }
       catch (error) { if (staleLeaseRejection(output(error))) return 'rejected'; throw pushFailureWithStderr(error); }
     },
     // GY-3199: the batch gate's own publication — the verified commit at refs/graphyard/verified, pushed with the deploy key alone like every other push.
     pushVerified: async commit => {
+      await counted('releasePublish', tokenRemote);
       await run('git', ['-C', root, 'push', remote, `${commit}:${mainworksVerifiedRef}`], { env: pushEnvironment(settings, options.environment) });
     },
     pushReleaseTag: async commit => {
+      await counted('releasePublish', tokenRemote);
       const date = new Date(Number((await git('show', '-s', '--format=%ct', commit)).trim()) * 1000);
       const tag = `v${publishedVersion(commit, date)}`;
       await run('git', ['-C', root, 'push', remote, `${commit}:refs/tags/${tag}`], { env: pushEnvironment(settings, options.environment) });
       return tag;
     },
+    // GY-4070: GitHub's remaining limit, read from its response headers with the token git sends it. Only reads that
+    // count their calls read it, and a GitHub login that answers nothing reads as no reading, never as a limit.
+    ...(options.github ? { githubRateLimit: async () => { const token = await githubToken(); return token ? readGithubRateLimit(options.githubApi ?? githubApiUrl, token, options.now?.()) : null; } } : {}),
     // The whole first-parent history, not a window of it: an intent older than any bound is still a push (AC-5).
     holds: sha => firstParentHolds(args => git(...args), ref, sha),
     // GY-3159: the merge flights' trials run detached from this process (cycle-merge-writer
@@ -909,6 +938,20 @@ async function adoptRestartedTrials(cycle: Pick<Cycle, 'state' | 'effects' | 'no
 }
 
 /**
+ * GY-4070: once a minute, the remaining limit is read again from GitHub's response headers, so status
+ * shows what the token still allows whoever shares it. GitHub is asked at most once a minute whether
+ * or not it answers, so a missing login or an outage costs one attempt a minute, never one a cycle; a
+ * GitHub that does not answer keeps the last reading.
+ */
+async function refreshGithubRateLimit(cycle: Pick<Cycle, 'state' | 'now'>, reads: Pick<MergeWriterReads, 'githubRateLimit'>) {
+  const calls = cycle.state.github, now = cycle.now();
+  if (!reads.githubRateLimit || (calls.limitAskedAt && Date.parse(calls.limitAskedAt) + 60_000 > now)) return;
+  calls.limitAskedAt = new Date(now).toISOString();
+  const reading = await reads.githubRateLimit().catch(() => null);
+  if (reading) calls.rateLimit = reading;
+}
+
+/**
  * Cycle step 6b' (right after the merge step). Without `effects.mergeWriter` it does nothing. Each cycle: the merge that settled since the last one is recorded
  * (delivered, refused, re-queued or failed), and every rework a trial failure grounds is requested
  * until the server confirms it (AC-3); then, with nothing in flight, every intent a crash left open is reconciled
@@ -920,6 +963,8 @@ export async function mergeWriterStep(cycle: Cycle) {
   const { state, effects, now, snapshot, performed } = cycle;
   if (!effects.mergeWriter) return;
   const reads = sharedTurns(state, effects.mergeWriter);
+  noteGithubCycle(state.github);
+  await refreshGithubRateLimit(cycle, reads);
   // GY-1902: item previews start, settle and end beside the cycle under any merger; a failure here never holds a merge.
   if (reads.itemPreviews) {
     let live = itemPreviews.get(state);
