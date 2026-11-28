@@ -3,8 +3,8 @@ import { useState } from 'react';
 /**
  * GY-4066: the day-one checklist on Home for a new manager. One static panel with the copy below, each page
  * it names a link to that page and its guide line a link to the owner's public guide, in a new tab. It shows
- * while this browser has not dismissed it, remembered the way web/theme.ts keeps the theme: a window with no
- * storage (private mode) just shows it again. Help links to the same guide at its top.
+ * to whoever opens Home while this browser has not dismissed it, remembered the way web/theme.ts keeps the
+ * theme: a window with no storage (private mode) just shows it again. Help links to the same guide at its top.
  */
 const KEY = 'graphyard.first-time-checklist';
 /** The owner's public guide for new factory managers. */

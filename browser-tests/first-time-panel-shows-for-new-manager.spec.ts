@@ -6,8 +6,7 @@ import { serveXterm } from './xterm';
 // e2e:first-time-panel-shows-for-new-manager — GY-4066: a manager whose browser has not dismissed the day-one
 // checklist sees it on Home, under the status line and the incident cards, with its exact copy; each page it
 // names is a link that opens that page, and its guide line opens the owner's public guide in a new tab. It never
-// shows on the first-run page, nor to a teammate. A full-page screenshot per width is kept for the product
-// reviewer's look.
+// shows on the first-run page. A full-page screenshot per width is kept for the product reviewer's look.
 
 const hour = 3_600_000;
 const at = (ago: number) => new Date(Date.now() - ago).toISOString();
@@ -63,7 +62,7 @@ const laidOut = (page: Page) => page.evaluate(() => {
   };
 });
 
-test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exact copy and working links at 1280 and 390 px; none on the first-run page or for a teammate', async ({ page }, testInfo) => {
+test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exact copy and working links at 1280 and 390 px, for a teammate too, and none on the first-run page', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   await serveXterm(page); // the Lead page's xterm.js, served locally (GY-3357)
   await page.routeWebSocket(/\/api\/terminal/, () => {});
@@ -113,14 +112,8 @@ test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exac
   await expect(page.locator('[data-first-run-step]')).toBeVisible({ timeout: 15_000 });
   await expect(panel(page)).toHaveCount(0);
 
-  // A teammate has no Tell the Lead box on Home, so the owner's checklist is not shown to them.
+  // It shows to whoever has not dismissed it on this browser: a teammate sees the same checklist.
   state.actor = teammate; state.work = [merged];
-  await page.reload();
-  await homeShown(page);
-  await expect(panel(page)).toHaveCount(0);
-
-  // The owner's Home with the checklist is the page this case leaves open.
-  state.actor = owner;
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.reload();
   await homeShown(page);

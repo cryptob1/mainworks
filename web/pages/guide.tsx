@@ -73,9 +73,9 @@ const commands: [string, string][] = [
  * flow and where each part runs as readable panels, then a folded FAQ and reference. The reference prints
  * `mainworks guide setup` and `mainworks guide infra` themselves, loaded once the page is open, so those
  * procedures keep one source. GY-4066: its first line links the owner's public guide for new factory managers,
- * and the owner's one action brings back the day-one checklist and opens Home.
+ * and its one action brings back the day-one checklist and opens Home.
  */
-export default function GuidePage({ setView, owner }: { setView(view: string): void; owner: boolean }) {
+export default function GuidePage({ setView }: { setView(view: string): void }) {
   const [media, setMedia] = useState<{ video: string; setup: string; infra: string } | null>(null);
   useEffect(() => {
     Promise.all([import('../../docs/diagrams/how-mainworks-works.mp4?url'), import('../../src/guide')])
@@ -84,7 +84,7 @@ export default function GuidePage({ setView, owner }: { setView(view: string): v
   const showAgain = () => { showChecklist(); location.hash = 'home'; setView('home'); };
   return <article className="guide">
     <PageHeader title={`How ${PRODUCT_NAME} works`} fact={`${PRODUCT_NAME} is a coding factory. You say what to build; AI agents build, check, merge and ship it, with no person in the loop.`}
-      actions={owner && <button type="button" onClick={showAgain}>Show the first-time checklist</button>}>
+      actions={<button type="button" onClick={showAgain}>Show the first-time checklist</button>}>
       New to running a factory? <a href={MANAGER_GUIDE} target="_blank" rel="noopener noreferrer">Read the factory manager guide</a>
     </PageHeader>
     <nav className="guide-contents" aria-label="On this page">

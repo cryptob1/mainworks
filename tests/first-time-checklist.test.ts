@@ -10,8 +10,8 @@ import { boardWork } from '../browser-tests/ui-board.js';
 
 // unit:first-time-panel-copy — GY-4066: the day-one checklist on Home carries the exact copy GY-4066 wrote: the
 // heading, the seven steps and the guide line, one Got it button, each named page a link to that page, and the
-// guide line a link to the public guide in a new tab. The owner with merged work sees it; the first-run page, a
-// teammate and a browser that dismissed it see none. Help shows the guide link line at its top.
+// guide line a link to the public guide in a new tab. It shows to whoever has not dismissed it, a teammate too;
+// the first-run page and a browser that dismissed it show none. Help shows the guide link line at its top.
 
 /** The owner's public guide for new factory managers. */
 const guide = 'https://claude.ai/artifact/WdyKuULnFYMx8qF5eTmFbg';
@@ -42,7 +42,7 @@ const home = (work: unknown[], actor: unknown = owner) => renderToStaticMarkup(c
   operatorAgents: [], operatorAgentsError: null, features: { validation: null, releases: null, automation: null, scenarios: null }, events: [], editingRequirements: false, setEditingRequirements: noop,
   sessionEpoch: { current: 0 }, api: async () => ({}), refresh: async () => {}, action: async () => {}, setError: noop, signOut: noop,
 } as unknown as Dashboard));
-const help = (actor: unknown) => renderToStaticMarkup(createElement(GuidePage, { setView: noop, owner: actor === owner }));
+const help = () => renderToStaticMarkup(createElement(GuidePage, { setView: noop }));
 
 /** The checklist's markup on a rendered Home, or null where none is shown. */
 const checklist = (html: string) => {
@@ -63,7 +63,7 @@ function withStorage(storage: unknown, check: () => void) {
   }
 }
 
-test('unit:first-time-panel-copy — Home shows the owner the checklist with its exact copy and links, after the status line; the first-run page and a teammate show none, and Help shows the owner one button', () => {
+test('unit:first-time-panel-copy — Home shows the checklist with its exact copy and links after the status line, to a teammate too; the first-run page shows none, and Help offers one button', () => {
   const html = home(boardWork());
   const panel = checklist(html);
   assert.ok(panel, 'the owner with merged work sees the checklist on Home');
@@ -77,18 +77,17 @@ test('unit:first-time-panel-copy — Home shows the owner the checklist with its
   assert.ok(html.indexOf('class="home-status-line"') < html.indexOf('<section class="panel first-time"'), 'under the status line and the incident cards');
 
   assert.equal(checklist(home([])), null, 'the first-run page, with no merged work, shows no checklist');
-  assert.equal(checklist(home(boardWork(), teammate)), null, 'a teammate, who has no Tell the Lead box on Home, is shown none');
-  assert.match(help(owner), /<div class="page-actions"><button type="button">Show the first-time checklist<\/button><\/div>/, 'Help offers the owner one button');
-  assert.doesNotMatch(help(teammate), /first-time checklist/, 'a teammate is offered no button for a checklist they are not shown');
+  const forTeammate = checklist(home(boardWork(), teammate));
+  assert.ok(forTeammate, 'a teammate is shown the checklist too: it shows to whoever has not dismissed it');
+  assert.equal(words(forTeammate), words(panel), 'the same checklist');
+  assert.match(help(), /<div class="page-actions"><button type="button">Show the first-time checklist<\/button><\/div>/, 'Help offers one button');
 });
 
-test('unit:first-time-panel-copy — Help shows the guide link line at its top, for everyone, opening the public guide in a new tab', () => {
-  const line = /<div class="page-heading"><div><h1>.*?<\/h1><p class="page-fact">.*?<\/p><p class="summary">New to running a factory\? <a href="https:\/\/claude\.ai\/artifact\/WdyKuULnFYMx8qF5eTmFbg" target="_blank" rel="noopener noreferrer">Read the factory manager guide<\/a><\/p>/;
-  for (const actor of [owner, teammate]) {
-    const html = help(actor);
-    assert.match(html, line, 'the guide link line sits in the page heading, under the primary fact');
-    assert.ok(html.indexOf('Read the factory manager guide') < html.indexOf('aria-label="On this page"'), 'above everything else the page shows');
-  }
+test('unit:first-time-panel-copy — Help shows the guide link line at its top, opening the public guide in a new tab', () => {
+  const html = help();
+  assert.match(html, /<div class="page-heading"><div><h1>.*?<\/h1><p class="page-fact">.*?<\/p><p class="summary">New to running a factory\? <a href="https:\/\/claude\.ai\/artifact\/WdyKuULnFYMx8qF5eTmFbg" target="_blank" rel="noopener noreferrer">Read the factory manager guide<\/a><\/p>/,
+    'the guide link line sits in the page heading, under the primary fact');
+  assert.ok(html.indexOf('Read the factory manager guide') < html.indexOf('aria-label="On this page"'), 'above everything else the page shows');
 });
 
 test('unit:first-time-panel-copy — Got it remembers the dismissal in this browser and Help forgets it; a browser with no storage shows the checklist again', () => {

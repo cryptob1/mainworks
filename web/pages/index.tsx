@@ -76,8 +76,8 @@ export const views: readonly View[] = [
   { id: 'setup', icon: '✔', label: 'Setup', section: 'settings', adminOnly: true, render: dashboard => <SetupPage status={dashboard.status} api={dashboard.api} setView={dashboard.setView}/> },
   // The project's effective delivery defaults and declared applications (GY-1901), with where the app runs (GY-3434).
   { id: 'delivery', icon: '⇉', label: 'Delivery', section: 'settings', visible: dashboard => ['admin', 'coordinator', 'reader', 'slice-lead'].includes(role(dashboard)), render: dashboard => <><DeliveryDefaults status={dashboard.status}/><CheckInOwner api={dashboard.api} status={dashboard.status}/><PublicLink api={dashboard.api} status={dashboard.status}/><WhereItRuns status={dashboard.status} now={Number.isNaN(dashboard.observedAt) ? Date.now() : dashboard.observedAt}/></> },
-  // Help (GY-3295) can bring back the owner's day-one checklist (GY-4066), so it opens Home itself.
-  { id: 'guide', icon: '?', label: 'Help', section: 'settings', render: dashboard => <GuidePage setView={dashboard.setView} owner={role(dashboard) === 'admin'}/> },
+  // Help (GY-3295) can bring back the day-one checklist (GY-4066), so it opens Home itself.
+  { id: 'guide', icon: '?', label: 'Help', section: 'settings', render: dashboard => <GuidePage setView={dashboard.setView}/> },
   { id: 'automation', icon: '◇', label: 'Operator automation', section: 'settings', advanced: true, adminOnly: true, visible: dashboard => configured(dashboard.features.automation), render: dashboard => <AutomationPage operatorAgents={dashboard.operatorAgents} operatorAgentsError={dashboard.operatorAgentsError}/> },
 ];
 
