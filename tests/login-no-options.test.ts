@@ -11,7 +11,7 @@ import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
 
 // GY-2171: `mainworks login` with no options and no GRAPHYARD_TOKEN_FILE finds the operator credential
-// the install recorded under the config home, and the human session its link opens lasts until 90 days unused.
+// the install recorded under the config home, and the human session its link opens lasts until 180 days unused.
 
 // Mints a link with no credential named, against a stub server, and returns the credential it sent and what it printed.
 async function loginWithNoOptions(root: string, configHome: string, command = loginCommand, env: Record<string, string> = {}) {
