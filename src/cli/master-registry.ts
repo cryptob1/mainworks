@@ -1,3 +1,4 @@
+import { accountCheckDiagnostics } from './account-diagnostics.js';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { MasterConfig } from '../master/profiles.js';
@@ -69,11 +70,13 @@ export async function registryCommand(master: Pick<MasterConfig, 'hostId'> & Par
     const account = current.accounts.find(entry => entry.name === name && entry.credential.host === master.hostId);
     const runtime = current.runtimes.find(entry => entry.name === account?.runtime);
     if (!account || !runtime) throw new Error(`${name} is not a registry account on ${master.hostId}; master registry lists this host's accounts`);
+    const diagnostics = await accountCheckDiagnostics(account, runtime, current.models.find(model => model.name === account.model)?.id ?? null);
     const quota = await probeRegistryAccount(current, account, runtime, { smoke: options.smoke });
     await api.write('agent-registry/observe', { host: master.hostId, observations: [{ account: name, quota }] });
-    return quota.fault ? `${name}: ${quota.fault} (quota left ${quota.state})`
+    const result = quota.fault ? `${name}: ${quota.fault} (quota left ${quota.state})`
       : quota.state === 'available' ? `${name} passed its live check`
       : `${name} ${quota.loggedIn === false ? 'is not logged in' : `is ${quota.state}`}: ${quota.reason ?? 'no reason given'}`;
+    return [result, ...diagnostics].join('\n');
   }
   if (collection === 'model' && action === 'seed') {
     const { values } = parseArgs({ args: rest, options: { reason: { type: 'string' } } });

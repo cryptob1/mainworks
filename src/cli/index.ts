@@ -1,3 +1,4 @@
+import { accountsCommands } from './accounts.js';
 import type { CliCommand } from './registry.js';
 import { installCommands } from './install.js';
 import { dbCommands } from './db.js';
@@ -26,7 +27,7 @@ import { COMMAND_NAME, PRODUCT_NAME } from '../model/product.js';
  * one module, or adds a module here; nothing else in the launcher changes.
  */
 export const commands: readonly CliCommand[] = [
-  ...installCommands, ...dbCommands, ...masterCommands, ...workCommands, ...askCommands, ...admissionAuditCommands, ...policyCommands,
+  ...accountsCommands, ...installCommands, ...dbCommands, ...masterCommands, ...workCommands, ...askCommands, ...admissionAuditCommands, ...policyCommands,
   ...deliveryCommands, ...scenarioCommands,
   ...operatorAgentCommands, ...leaseCommands, ...workspaceCommands,
   ...reviewCommands, ...guideCommands, ...versionCommands, ...upgradeCommands, ...hostCommands, ...benchCommands, ...teamAccessCommands, ...infraCommands,
