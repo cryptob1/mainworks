@@ -7,6 +7,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { plannerPrompt, recentlyDeliveredTitles } from '../src/daemon/planner.js';
 import { flowNumbers } from '../src/flow-numbers.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
+import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { runPlanner } from '../src/master/planner.js';
 import type { Work } from '../src/model.js';
 import { flowItems, type FlowReport } from '../src/server/flow.js';
@@ -47,8 +48,8 @@ function history(base: number) {
 const deliveredLine = '- GY-4063: Heal tests/stale.test.ts (merged 1h ago)';
 const sixHourFlow = '6-hour flow: 0.2 merges/h (1 merges), 0.0 attempts/h (0 attempts), first-pass yield —, trials 2, flaky 0 (0%), reverts 0.';
 const dayFlow = '24-hour flow: 0.0 merges/h (1 merges), 0.0 attempts/h (0 attempts), first-pass yield —, trials 3, flaky 0 (0%), reverts 0.';
-const sixHourFailing = 'Failing checks (6h): tests/stale.test.ts 1, last failed 5h ago (the stale line); tests/day.test.ts 1, last failed 5h ago; tests/live.test.ts 1, last failed 40m ago (the marker was not written).';
-const dayFailing = 'Failing checks (24h): tests/day.test.ts 2, last failed 5h ago; tests/stale.test.ts 1, last failed 5h ago (the stale line); tests/live.test.ts 1, last failed 40m ago (the marker was not written).';
+const sixHourFailing = 'Failing checks (6h): tests/stale.test.ts 1, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable (the stale line); tests/day.test.ts 1, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable; tests/live.test.ts 1, last failed 40m ago, candidate-only; newest GY-4100 head h3 base unavailable; latest main result unavailable (the marker was not written).';
+const dayFailing = 'Failing checks (24h): tests/day.test.ts 2, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable; tests/stale.test.ts 1, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable (the stale line); tests/live.test.ts 1, last failed 40m ago, candidate-only; newest GY-4100 head h3 base unavailable; latest main result unavailable (the marker was not written).';
 
 test(`${proof} — the prompt gives each delivered item's and each failing check's age, the 24-hour flow beside the 6-hour one`, () => {
   const now = Date.parse('2026-11-27T14:30:00Z');
@@ -69,7 +70,7 @@ test(`${proof} — the prompt gives each delivered item's and each failing check
   assert.equal(plannerPrompt({ ...input, flow24h: null }), plannerPrompt({ ...input, flow24h: undefined }), 'a null and an absent 24-hour flow read the same');
 });
 
-test(`${proof} — a planner cycle hands the session the ages and the 24-hour flow`, async () => {
+test(`integration:planner-prompt-shows-ages — a planner cycle hands the session the ages and the 24-hour flow`, async () => {
   // The cycle builds the prompt with the real clock, so the fixture's times are relative to it.
   const base = Date.now();
   const { work, six, day, week } = history(base);
@@ -97,6 +98,10 @@ test(`${proof} — a planner cycle hands the session the ages and the 24-hour fl
     workers,
   });
   const stamp = new Date(base).toISOString();
+  const main = bootstrapGate('owner/planner-prompt-shows-ages', 'main-tip');
+  main.diagnosticsAt = stamp;
+  main.diagnosticsRun = { at: stamp, outcome: 'passed', reason: null };
+  await writeGateRecord(gateRecordPath(directory), main);
   const state = emptyDaemonState(config);
   state.lock = { id: 'lock', pid: 1, host: 'planner-host', startedAt: stamp, heartbeatAt: stamp };
   state.projectMemory.brief = { markdown: 'Keep the line fed.', updatedAt: stamp, by: 'lead', why: 'seed', history: [] };
@@ -139,7 +144,7 @@ test(`${proof} — a planner cycle hands the session the ages and the 24-hour fl
   const prompt = prompts[0]!;
   assert.ok(prompt.includes(deliveredLine), `the cycle prompt says how long ago the delivered item merged:\n${prompt}`);
   assert.equal(line(prompt, '6-hour flow: '), sixHourFlow);
-  assert.equal(line(prompt, 'Failing checks (6h): '), sixHourFailing);
+  assert.equal(line(prompt, 'Failing checks (6h): '), sixHourFailing.replaceAll('result unavailable', `pass at ${stamp}`));
   assert.equal(line(prompt, '24-hour flow: '), dayFlow, `the cycle prompt gives the 24-hour flow:\n${prompt}`);
-  assert.equal(line(prompt, 'Failing checks (24h): '), dayFailing);
+  assert.equal(line(prompt, 'Failing checks (24h): '), dayFailing.replaceAll('result unavailable', `pass at ${stamp}`));
 });

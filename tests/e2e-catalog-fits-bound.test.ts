@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -212,8 +212,9 @@ test('integration:e2e-catalog-fits-bound — a shard that cannot make its worktr
     'e2e/cases/first.json': caseFile('first'), 'e2e/cases/second.json': caseFile('second'),
   } });
   writeFileSync(join(root, 'list'), 'e2e/cases/first.json\ne2e/cases/second.json\n');
-  // A clone whose git directory takes no new worktree.
-  writeFileSync(join(root, '.git', 'worktrees'), 'not a directory\n');
+  // A clone whose commit names a tree it lacks, so no checkout of it can be made.
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  rmSync(join(root, '.git', 'objects', tree.slice(0, 2), tree.slice(2)));
   const script = fileURLToPath(new URL('../scripts/e2e-shard.mjs', import.meta.url));
   const ended = await promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script, 'list', 'records', '60000'], { cwd: root })
     .then(() => null, (error: Error & { code?: number; stderr?: string }) => error);
@@ -221,5 +222,5 @@ test('integration:e2e-catalog-fits-bound — a shard that cannot make its worktr
   assert.doesNotMatch(String(ended?.stderr), /\bReferenceError\b/, 'and cleanly, not on an uncaught error of its own');
   const entries = (await readFile(join(root, 'records'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   assert.deepEqual(entries.map(entry => [entry.proof, entry.executed, entry.failed]), [['e2e:first', 0, 1], ['e2e:second', 0, 1]], `every case fails, none as a pass: ${JSON.stringify(entries)}`);
-  for (const entry of entries) assert.match(entry.failingStep, /^the shard's worktree of [0-9a-f]{12} failed: .*fatal: could not create leading directories of '\.git\/worktrees\/checkout': Not a directory$/);
+  for (const entry of entries) assert.match(entry.failingStep, new RegExp(`^the shard's worktree of [0-9a-f]{12} failed: .*Could not read ${tree}`));
 });

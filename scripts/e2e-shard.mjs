@@ -16,14 +16,15 @@ const mergeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }
 writeFileSync(written, '');
 // GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
 // where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in its
-// own worktree of the commit, as a trial's checkout is one: its own files and index, the clone's objects and packages.
-// GY-4105, GY-4111: the worktree sits in the shard's run directory beside the checkout on the host's disk:
+// own checkout of the commit: its own files and index, the clone's objects and packages.
+// GY-4114: a repository borrowing the clone's objects, not a worktree: git lists the clone's worktrees while it
+// adds one, so two shards adding at once failed reading the other's half-written .git/worktrees entry.
+// GY-4105, GY-4111: the checkout sits in the shard's run directory beside the clone on the host's disk:
 // the container's /tmp (and HOME=/tmp) is a tmpfs, where Mainworks refuses a managed worktree root (GY-88).
 const checkout = process.cwd(), scratch = mkdtempSync(join(dirname(checkout), 'e2e-shard-')), worktree = join(scratch, 'checkout');
 const git = args => execFileSync('git', args, { stdio: 'pipe' });
-/** The shard ends with its worktree, as a trial does, leaving the clone as the shim made it. */
+/** The shard ends with its checkout, as a trial does, leaving the clone as the shim made it. */
 const finish = code => {
-  try { git(['-C', checkout, 'worktree', 'remove', '--force', worktree]); } catch { /* never registered, or already gone */ }
   try { rmSync(scratch, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
   process.exit(code);
 };
@@ -34,7 +35,10 @@ const refuse = (step, error) => {
   finish(1);
 };
 try {
-  git(['worktree', 'add', '--detach', worktree, mergeSha]);
+  git(['init', '-q', worktree]);
+  const objects = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'objects'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(worktree, '.git', 'objects', 'info', 'alternates'), `${objects}\n`);
+  git(['-C', worktree, 'checkout', '-q', '--detach', mergeSha]);
   if (existsSync(join(checkout, 'node_modules'))) symlinkSync(join(checkout, 'node_modules'), join(worktree, 'node_modules'));
   process.chdir(worktree);
 } catch (error) { refuse(`the shard's worktree of ${mergeSha.slice(0, 12)}`, error); }
