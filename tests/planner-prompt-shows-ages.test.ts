@@ -47,8 +47,8 @@ function history(base: number) {
 const deliveredLine = '- GY-4063: Heal tests/stale.test.ts (merged 1h ago)';
 const sixHourFlow = '6-hour flow: 0.2 merges/h (1 merges), 0.0 attempts/h (0 attempts), first-pass yield —, trials 2, flaky 0 (0%), reverts 0.';
 const dayFlow = '24-hour flow: 0.0 merges/h (1 merges), 0.0 attempts/h (0 attempts), first-pass yield —, trials 3, flaky 0 (0%), reverts 0.';
-const sixHourFailing = 'Failing checks (6h): tests/stale.test.ts 1, last failed 5h ago (the stale line); tests/day.test.ts 1, last failed 5h ago; tests/live.test.ts 1, last failed 40m ago (the marker was not written).';
-const dayFailing = 'Failing checks (24h): tests/day.test.ts 2, last failed 5h ago; tests/stale.test.ts 1, last failed 5h ago (the stale line); tests/live.test.ts 1, last failed 40m ago (the marker was not written).';
+const sixHourFailing = 'Failing checks (6h): tests/stale.test.ts 1, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable (the stale line); tests/day.test.ts 1, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable; tests/live.test.ts 1, last failed 40m ago, candidate-only; newest GY-4100 head h3 base unavailable; latest main result unavailable (the marker was not written).';
+const dayFailing = 'Failing checks (24h): tests/day.test.ts 2, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable; tests/stale.test.ts 1, last failed 5h ago, candidate-only; newest GY-4063 head h1 base unavailable; latest main result unavailable (the stale line); tests/live.test.ts 1, last failed 40m ago, candidate-only; newest GY-4100 head h3 base unavailable; latest main result unavailable (the marker was not written).';
 
 test(`${proof} — the prompt gives each delivered item's and each failing check's age, the 24-hour flow beside the 6-hour one`, () => {
   const now = Date.parse('2026-11-27T14:30:00Z');
@@ -69,7 +69,7 @@ test(`${proof} — the prompt gives each delivered item's and each failing check
   assert.equal(plannerPrompt({ ...input, flow24h: null }), plannerPrompt({ ...input, flow24h: undefined }), 'a null and an absent 24-hour flow read the same');
 });
 
-test(`${proof} — a planner cycle hands the session the ages and the 24-hour flow`, async () => {
+test(`integration:planner-prompt-shows-ages — a planner cycle hands the session the ages and the 24-hour flow`, async () => {
   // The cycle builds the prompt with the real clock, so the fixture's times are relative to it.
   const base = Date.now();
   const { work, six, day, week } = history(base);

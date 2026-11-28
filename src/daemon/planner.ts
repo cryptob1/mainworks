@@ -2,6 +2,7 @@
 // with free builder slots (or the empty-board alarm holds for 30 minutes) and no planner draft was
 // filed in the last 2 hours, launch one headless planner session to draft up to three unreleased
 // items with why and simplest only for the Lead to sharpen or close.
+import type { GateRecord } from '../batch-gate.js';
 import type { Cycle } from './cycle.js';
 import { emptyBoardAlarmSince } from './stall-alarm.js';
 import type { Work } from '../model/work.js';
@@ -103,12 +104,29 @@ export function recentlyClosedDrafts(work: readonly Work[], now: number): string
     });
 }
 
+/** Recorded main outcomes only; an affected run's absent file is not a pass. */
+function mainCheck(check: string, main: GateRecord | null | undefined) {
+  const results: { result: 'pass' | 'fail'; at: string }[] = [];
+  for (const sweep of main?.sweeps ?? []) if (sweep.failed.includes(check)) results.push({ result: 'fail', at: sweep.at });
+  for (const flake of main?.flakes ?? []) if (flake.file === check) results.push({ result: 'fail', at: flake.at }, { result: 'pass', at: flake.at });
+  const failure = main?.diagnosticFailures?.[`test:${check}`];
+  if (failure) results.push({ result: 'fail', at: failure.at });
+  // A completed passing full diagnostic run covers the suite; a failed or thrown run does not prove this file passed.
+  if (main?.diagnosticsRun?.outcome === 'passed' && main.diagnosticsAt) results.push({ result: 'pass', at: main.diagnosticsAt });
+  const latest = results.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).at(-1);
+  return { scope: results.some(result => result.result === 'fail') ? 'also failed on main' : 'candidate-only',
+    latest: latest ? `${latest.result} at ${latest.at}` : 'result unavailable' };
+}
+
 /** GY-4069: one window's flow block: its numbers, rework causes, and failing and flaky checks, each failing check with how long ago it last failed. */
-const flowLines = (hours: number, flow: FlowNumbers | null, now: number): string[] => flow
+const flowLines = (hours: number, flow: FlowNumbers | null, now: number, main?: GateRecord | null): string[] => flow
   ? [
       `${hours}-hour flow: ${flow.mergesPerHour.toFixed(1)} merges/h (${flow.merges} merges), ${flow.attemptsPerHour.toFixed(1)} attempts/h (${flow.attempts} attempts), first-pass yield ${percent(flow.firstPassYield)}, trials ${flow.trials}, flaky ${flow.flaky} (${percent(flow.flakyRate)}), reverts ${flow.reverts}.`,
       `Rework causes (${hours}h): ${reworkCauses.map(cause => `${cause}: ${flow.rework[cause] ?? 0}`).join(', ')}.`,
-      ...(flow.trialFailures?.length ? [`Failing checks (${hours}h): ${flow.trialFailures.map(failing => `${failing.check} ${failing.count}, last failed ${formatAge(failing.lastFailedAt, now)} ago${failing.assertion ? ` (${failing.assertion})` : ''}`).join('; ')}.`] : []),
+      ...(flow.trialFailures?.length ? [`Failing checks (${hours}h): ${flow.trialFailures.map(failing => {
+        const mainResult = mainCheck(failing.check, main);
+        return `${failing.check} ${failing.count}, last failed ${formatAge(failing.lastFailedAt, now)} ago, ${mainResult.scope}; newest ${failing.newest?.key ?? 'unavailable'} head ${failing.newest?.head ?? 'unavailable'} base ${failing.newest?.base ?? 'unavailable'}; latest main ${mainResult.latest}${failing.assertion ? ` (${failing.assertion})` : ''}`;
+      }).join('; ')}.`] : []),
       ...(flow.flakyChecks?.length ? [`Flaky checks (${hours}h): ${flow.flakyChecks.map(flaky => `${flaky.check} ${flaky.count}${flaky.assertion ? ` (${flaky.assertion})` : ''}`).join('; ')}.`] : []),
     ]
   : [`${hours}-hour flow: unavailable.`, `Rework causes (${hours}h): unavailable.`];
@@ -126,9 +144,10 @@ export function plannerPrompt(context: {
   closedDrafts?: readonly string[];
   /** GY-4069: the instant the failing checks' ages are read from; now by default. */
   now?: number;
+  main?: GateRecord | null;
 }): string {
   const now = context.now ?? Date.now();
-  const flow = [...flowLines(6, context.flow6h, now), ...flowLines(24, context.flow24h ?? null, now)];
+  const flow = [...flowLines(6, context.flow6h, now, context.main), ...flowLines(24, context.flow24h ?? null, now, context.main)];
 
   const selectionLine = context.testSelection
     ? `Test selection (last ${context.testSelection.trials} trials): median ${context.testSelection.medianShareSelected} of reachable, ${context.testSelection.medianShareOfAllSelected ?? 'unavailable'} of all tests.`

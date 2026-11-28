@@ -1,3 +1,4 @@
+import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 // Concern: GY-3835 — one headless planner run on an empty board: gathers the brief, 6-hour and
 // 24-hour flow numbers, rework causes and five slowest trial test files, runs a headless session, and files at
 // most three unreleased draft items with why and simplest only (no criteria).
@@ -60,7 +61,7 @@ export async function runPlanner(
       : Array.isArray(snap?.work) ? recentlyClosedDrafts(snap.work, snapNow) : [];
     const slowestTrialFiles = slowestTrialTestFiles(root);
     const testSelection = plannerTestSelection(root);
-    const prompt = plannerPrompt({ brief, flow6h: flowReport?.['6h'] ?? null, flow24h: flowReport?.['24h'] ?? null, slowestTrialFiles, testSelection, openTitles: input.openTitles, deliveredTitles, closedDrafts });
+    const prompt = plannerPrompt({ main: readGateRecord(gateRecordPath(root)), brief, flow6h: flowReport?.['6h'] ?? null, flow24h: flowReport?.['24h'] ?? null, slowestTrialFiles, testSelection, openTitles: input.openTitles, deliveredTitles, closedDrafts });
 
     let captured = '';
     const baseExec = deps.headless ?? defaultHeadlessExec();

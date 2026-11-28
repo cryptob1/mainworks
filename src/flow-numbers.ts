@@ -16,7 +16,7 @@ type ReworkCause = typeof reworkCauses[number];
  * ends) and whether it flaked (its failing tests passed on the rerun, or failed the same way on the
  * base); a `merge.serve-revert` whether it reverted.
  */
-export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; durationMs?: number | null; flaky?: boolean; flakes?: FlakeEvent[]; failures?: FlakeEvent[]; reverted?: boolean }
+export interface FlowEvent { kind: string; at: string; stage?: string | null; reason?: string | null; binding?: string | null; head?: string | null; base?: string | null; durationMs?: number | null; flaky?: boolean; flakes?: FlakeEvent[]; failures?: FlakeEvent[]; reverted?: boolean }
 /** GY-3849: one test file that failed a trial or release check then passed on its rerun, with its first failing assertion line when the run named one. */
 export interface FlakeEvent { file: string; at: string; assertion: string | null }
 export interface FlowItem {
@@ -29,7 +29,7 @@ export interface FlowItem {
   events: FlowEvent[];
 }
 /** GY-4069: `lastFailedAt` is kept for the planner prompt, which prints it as an age. */
-type CheckCount = { check: string; count: number; assertion: string | null; lastFailedAt: string };
+type CheckCount = { newest?: { key: string; head: string | null; base: string | null }; check: string; count: number; assertion: string | null; lastFailedAt: string };
 /** Test files by how often they failed, the most first, each with its latest assertion line and when it last failed. */
 function topChecks(failures: readonly FlakeEvent[]): CheckCount[] {
   const checks = new Map<string, CheckCount>();
@@ -160,6 +160,12 @@ export function flowNumbers(items: readonly FlowItem[], hours: number, now: numb
   const reviewReasons = [...reasons].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 3);
   const flakyChecks = topChecks([...events.flatMap(event => event.flakes ?? []), ...releaseFlakes.filter(flake => inWindow(ms(flake.at)))]);
   const trialFailures = topChecks(events.flatMap(event => event.failures ?? []));
+  for (const check of trialFailures) {
+    const newest = items.flatMap(item => item.events
+      .filter(event => event.failures?.some(failure => failure.file === check.check && failure.at === check.lastFailedAt))
+      .map(event => ({ key: item.key, head: event.head ?? null, base: event.base ?? null }))).at(-1);
+    if (newest) check.newest = newest;
+  }
   // GY-3732: like merges an hour, the live station counts only merges made inside the window.
   const stays = items.flatMap(item => visits(item, now).filter(visit => visit.station === 'live' ? inWindow(visit.start) : visit.end > from).map(visit => ({ item, visit, ms: visit.end - visit.start })));
   const stations = Object.fromEntries(flowStations.map(station => {

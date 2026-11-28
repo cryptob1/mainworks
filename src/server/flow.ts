@@ -15,6 +15,7 @@ const columns = `work_id, kind, created_at, seq, stage,
       WHEN kind = 'merge.refused' THEN payload->>'reason' END AS reason,
     CASE WHEN kind = 'rework' THEN COALESCE(payload->'details'->>'binding', payload->'details'->'intent'->>'binding') END AS binding,
     CASE WHEN kind IN ('merge.trial', 'merge.refused') THEN payload->>'head' END AS head,
+    CASE WHEN kind = 'merge.trial' THEN payload->>'baseTip' END AS base_tip,
     CASE WHEN kind = 'merge.trial' THEN payload->>'durationMs' END AS duration_ms,
     CASE WHEN kind = 'merge.trial' THEN payload ? 'flaked' END AS flaked,
     CASE WHEN kind = 'merge.trial' THEN jsonb_build_object('flaked', payload->'flaked', 'failed', payload->'tests'->'failed', 'assertions', payload->'tests'->'assertions') END AS trial,
@@ -81,7 +82,7 @@ export function flowItems(work: readonly Flowed[], ledger: readonly any[], attem
         list.push({ kind: row.kind, at, reason: row.reason ?? null, head: row.head ?? null });
     } else {
       const flakes = row.flakes ?? row.trial?.flaked, failed = row.trial?.failed, assertions = row.trial?.assertions;
-      const event: FlowEvent = { kind: row.kind, at, stage: row.stage ?? null, reason: row.reason ?? null, binding: row.binding ?? null, head: row.head ?? null,
+      const event: FlowEvent = { kind: row.kind, at, stage: row.stage ?? null, reason: row.reason ?? null, binding: row.binding ?? null, head: row.head ?? null, base: row.base_tip ?? null,
         durationMs: row.duration_ms == null ? null : Number(row.duration_ms), flaky: !!row.flaked,
         ...(flakes ? { flakes: (flakes.files as string[]).map(file => ({ file, at, assertion: flakes.assertions?.[file] ?? null })) } : {}),
         ...(Array.isArray(failed) && failed.length ? { failures: (failed as string[]).map(file => ({ file, at, assertion: assertions?.[file] ?? null })) } : {}), reverted: !!row.reverted };
