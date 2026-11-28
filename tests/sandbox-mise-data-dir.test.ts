@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -40,15 +40,28 @@ test('unit:sandbox-passes-mise-data-dir — a sandbox with HOME moved gets MISE_
   const own = join(operatorHome, 'own-mise');
   mkdirSync(own);
   assert.equal(setenv(readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, environment: { ...environment, MISE_DATA_DIR: own } }), 'MISE_DATA_DIR'), own);
+  // Empty MISE_DATA_DIR / XDG_DATA_HOME fall back to HOME/.local/share/mise.
+  assert.equal(setenv(readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, environment: { ...environment, MISE_DATA_DIR: '', XDG_DATA_HOME: '' } }), 'MISE_DATA_DIR'), mise);
   // A host without a mise data directory passes none.
   assert.equal(setenv(readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, environment: { ...environment, HOME: join(operatorHome, 'none') } }), 'MISE_DATA_DIR'), undefined);
 });
+
+/** PATH with real mise when installed (host and rebuilt trial image), or a stand-in inside the session for a pre-GY-4115 trial image. */
+function pathWithMise(session: string): string {
+  const base = process.env.PATH ?? '';
+  if (spawnSync('sh', ['-c', 'command -v mise'], { env: { PATH: base } }).status === 0) return base;
+  const bin = join(session, '.mise-bin'), script = join(bin, 'mise');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(script, '#!/bin/sh\nset -eu\n[ "$1" = which ] && [ "$2" = node ] || exit 2\ndata="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"\nbin="$data/installs/node/${MISE_NODE_VERSION:?}/bin/node"\n[ -x "$bin" ] || { echo "mise ERROR node@${MISE_NODE_VERSION} not installed in $data" >&2; exit 1; }\nprintf \'%s\\n\' "$bin"\n');
+  chmodSync(script, 0o755);
+  return `${bin}:${base}`;
+}
 
 test('integration:sandbox-mise-resolves-host-tools — `mise which node` inside a sandbox with HOME at /tmp/home names the host install', async () => {
   const { root, session, operatorHome, node } = await hostWithMise();
   const environment = { HOME: operatorHome, XDG_DATA_HOME: undefined, MISE_DATA_DIR: undefined };
   const [bwrap, ...words] = readOnlyMountWrapper({ coordinatorRoot: root, sessionDirectory: session, environment });
   const output = execFileSync(bwrap!, [...words, 'sh', '-c', 'echo "$HOME"; mise which node'], {
-    cwd: session, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: operatorHome, MISE_NO_CONFIG: '1', MISE_OFFLINE: '1', MISE_NODE_VERSION: '99.0.0' } });
+    cwd: session, encoding: 'utf8', env: { PATH: pathWithMise(session), HOME: operatorHome, MISE_NO_CONFIG: '1', MISE_OFFLINE: '1', MISE_NODE_VERSION: '99.0.0' } });
   assert.deepEqual(output.trim().split('\n'), ['/tmp/home', node]);
 });

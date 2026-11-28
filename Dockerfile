@@ -41,6 +41,9 @@ RUN npm install --global @anthropic-ai/claude-code@2.1.332 opencode-ai@1.19.6
 RUN arch=$(dpkg --print-architecture | sed 's/amd64/x64/') && mkdir -p /opt/cursor-agent \
     && curl -fsSL "https://downloads.cursor.com/lab/2026.11.22-e9042b2/linux/${arch}/agent-cli-package.tar.gz" | tar --strip-components=1 -xzf - -C /opt/cursor-agent \
     && ln -s /opt/cursor-agent/cursor-agent /usr/local/bin/cursor-agent && ln -s /opt/cursor-agent/cursor-agent /usr/local/bin/agent
+# GY-4115: real mise for sandbox mise-data-dir integration and smoke checks.
+RUN arch=$(dpkg --print-architecture | sed 's/amd64/x64/') \
+    && curl -fsSL "https://github.com/jdx/mise/releases/download/v2026.11.8/mise-v2026.11.8-linux-${arch}.tar.gz" | tar -xzf - -C /usr/local/bin --strip-components=2 mise/bin/mise
 # Independent exact-math producer dependencies, immutable to the unprivileged trial.
 COPY benchmarks/hard-math/oracle/requirements.txt /opt/hard-math-requirements.txt
 RUN python3 -m venv /opt/graphyard-hard-math-oracle \
