@@ -5,11 +5,14 @@ import { serveXterm } from './xterm';
 
 // e2e:first-time-panel-shows-for-new-manager — GY-4066: a manager whose browser has not dismissed the day-one
 // checklist sees it on Home, under the status line and the incident cards, with its exact copy; each page it
-// names is a link that opens that page. It never shows on the first-run page, nor to a teammate. A full-page
-// screenshot per width is kept for the product reviewer's look.
+// names is a link that opens that page, and its guide line opens the owner's public guide in a new tab. It never
+// shows on the first-run page, nor to a teammate. A full-page screenshot per width is kept for the product
+// reviewer's look.
 
 const hour = 3_600_000;
 const at = (ago: number) => new Date(Date.now() - ago).toISOString();
+/** The owner's public guide for new factory managers. */
+const guide = 'https://claude.ai/artifact/WdyKuULnFYMx8qF5eTmFbg';
 const merged = { dependencies: [], scenarioRequirements: [], id: 'fixture-GY-1', key: 'GY-1', title: 'Earlier change', description: 'Earlier change', type: 'feature', priority: 2,
   stage: 'done', stageEnteredAt: at(hour), createdAt: at(2 * hour), ready: true, policy: { review: true, checks: ['test'] }, policyRevision: 1, revision: 1, violations: [], workspaces: [], criteria: [], evidence: [], gates: [], sessions: [], lease: null,
   delivery: { mergedAt: at(hour), mergeSha: 'a'.repeat(40) } };
@@ -33,12 +36,12 @@ const copy = {
     'Type one goal with a number into Tell the Lead below, then press Send.',
     'Use your app for ten minutes and tell the Lead what felt wrong.',
   ],
-  guide: 'The full guide is in Settings → Help.',
+  guide: `The full guide for new factory managers: ${guide}`,
 };
 /** Every page the copy names, in order: the link's text, where it goes, and the title of the page it opens. */
 const pages: [string, string, string][] = [
   ['Home', '#home', 'Home'], ['Needs you', '#needs-you', 'Needs you'], ['Work', '#work', 'Work'], ['Work', '#work', 'Work'],
-  ['Lead', '#lead', 'Lead'], ['Lead', '#lead', 'Lead'], ['Product', '#product', 'Product'], ['Help', '#guide', 'How Mainworks works'],
+  ['Lead', '#lead', 'Lead'], ['Lead', '#lead', 'Lead'], ['Product', '#product', 'Product'],
 ];
 
 const panel = (page: Page) => page.getByRole('region', { name: copy.heading, exact: true });
@@ -85,8 +88,10 @@ test('e2e:first-time-panel-shows-for-new-manager — the checklist with its exac
     await expect(checklist.getByRole('heading', { level: 2 })).toHaveText(copy.heading);
     await expect(checklist.locator(':scope > p')).toHaveText([copy.intro, copy.guide]);
     await expect(checklist.getByRole('listitem')).toHaveText(copy.steps);
-    await expect(checklist.getByRole('link')).toHaveText(pages.map(([name]) => name));
-    expect(await checklist.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual(pages.map(([, href]) => href));
+    await expect(checklist.getByRole('link')).toHaveText([...pages.map(([name]) => name), guide]);
+    expect(await checklist.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual([...pages.map(([, href]) => href), guide]);
+    // The page links stay in this tab; the guide line opens the public guide in a new one.
+    expect(await checklist.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('target')))).toEqual([...pages.map(() => null), '_blank']);
     await expect(checklist.getByRole('button')).toHaveText(['Got it']);
     expect(await laidOut(page), `the checklist at ${width} px`).toEqual({ underStatus: true, underIncidents: true, asWideAsHome: true, oneColumn: true, sideways: 0 });
     const path = `${shots}/first-time-${width}.png`;

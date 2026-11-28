@@ -1,7 +1,7 @@
 {
   "id": "first-time-panel-dismiss-and-reopen",
-  "title": "Got it hides the day-one checklist for good, and the button on Help brings it back",
-  "description": "A real browser on the built dashboard, signed in as the owner with merged work. Pressing Got it hides the checklist, and it stays hidden after a reload. Settings → Help has one Show the first-time checklist button; pressing it opens Home with the checklist shown again, and it is still shown after a reload.",
+  "title": "Got it hides the day-one checklist for good; Help shows the guide link line, and its button brings the checklist back",
+  "description": "A real browser on the built dashboard, signed in as the owner with merged work. Pressing Got it hides the checklist, and it stays hidden after a reload. Settings → Help shows the guide link line at its top, linking to the owner's public guide in a new tab, and has one Show the first-time checklist button; pressing it opens Home with the checklist shown again, and it is still shown after a reload.",
   "tags": ["dashboard"],
   "target": "any",
   "required": false,
