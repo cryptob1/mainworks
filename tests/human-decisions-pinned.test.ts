@@ -8,4 +8,8 @@ test('unit:test-browser-tests-human-decisions-spec-ts-pinned — answering survi
   const regression = await runTests({ browser: true, args: ['--config', 'tests/browser/playwright.config.ts', 'human-decisions-stale-poll'], stdio: 'pipe' });
   assert.equal(regression.code, 0, `${regression.stdout}\n${regression.stderr}`);
   assert.match(regression.stdout, /1 passed/);
+  // GY-4088: the install-name read reaching the fixture first must not be recorded as the sign-in.
+  const signIn = await runTests({ browser: true, args: ['--config', 'tests/browser/playwright.config.ts', 'human-decisions-sign-in-order'], stdio: 'pipe' });
+  assert.equal(signIn.code, 0, `${signIn.stdout}\n${signIn.stderr}`);
+  assert.match(signIn.stdout, /1 passed/);
 });
