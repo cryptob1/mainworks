@@ -28,7 +28,9 @@ import { lifecycle } from './helpers/work-lifecycle.js';
 // GY-4068: the flow numbers count a revert by its merge.serve-revert ledger row. The loop's
 // serve-revert flight writes one (settleServeRevertFlight); the batch gate's revert port wrote
 // none, so the 6-hour flow read showed reverts 0 with a gate revert inside it. A gate revert now
-// records the same row on the reverted item, beside the re-land it files.
+// records the same row on the reverted item, beside the re-land it files. The control plane
+// judges that row against its checkout's main, which a push to an explicit URL does not advance,
+// so the port fetches first; a row the control plane does not take is owed to the loop.
 
 // Every fixture item carries an E2E proof and declares the serve its trial needs.
 setRepositoryPolicy({ ...repositoryPolicy(), e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
