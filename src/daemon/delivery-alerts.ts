@@ -4,7 +4,9 @@ import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import type { Work } from '../model.js';
 import type { Cycle } from './cycle.js';
 import { message, record } from './state.js';
-import { alertsOn } from './yard-alerts.js';
+
+/** Whether the loop alerts at all: a webhook (run.alertUrl) or the factory's Slack channel (GY-4073). */
+export const alertsOn = ({ config, effects }: Pick<Cycle, 'config' | 'effects'>) => !config.forPerson && !!effects.alertWebhook && (!!config.run.alertUrl || !!effects.slackConnected?.());
 
 const short = (sha: string) => sha.slice(0, 12);
 

@@ -5,6 +5,7 @@ import { parkedOnHuman } from '../model/human-request.js';
 import { plainStage, waitingReason } from '../model/plain-stage.js';
 import { resumeExitWindowMs } from '../master/session-resume.js';
 import type { Cycle } from './cycle.js';
+import { alertsOn } from './delivery-alerts.js';
 import { record } from './effects.js';
 import { message, type DaemonState } from './state.js';
 
@@ -12,8 +13,6 @@ import { message, type DaemonState } from './state.js';
 export const alertRepeatMs = 3_600_000;
 /** The stall window before the loop alerts, `run.alertMinutes` unset (GY-3101). */
 const defaultAlertMinutes = 20;
-/** Whether the loop alerts at all: a webhook (run.alertUrl) or the factory's Slack channel (GY-4073). */
-export const alertsOn = ({ config, effects }: Pick<Cycle, 'config' | 'effects'>) => !config.forPerson && !!effects.alertWebhook && (!!config.run.alertUrl || !!effects.slackConnected?.());
 export const alertMinutesOf = (run: { alertMinutes?: number | null }) => run.alertMinutes ?? defaultAlertMinutes;
 /** The cursor key of the yard alert's one action row: `failed` while the stop stands, `done` on the all-clear. */
 const yardAlertKey = 'yard:alert';
