@@ -123,6 +123,6 @@ test('unit:tests/job-end-cleanup.test.ts — the sweep removes leftovers whose o
     ['image', 'prune', '--all', '--force', '--filter', `label=${composeImageLabel}`, '--filter', `until=${composeImageKeepHours}h`],
     ['buildx', 'prune', '--builder', trialBuilder, '--filter', 'until=24h', '--force'],
   ], 'only Mainworks\'s own preview images and trial builder\'s cache older than a day are pruned');
-  assert.ok(trialImageBuildArgs('/src').join(' ').includes(`buildx build --builder ${trialBuilder} --load`), 'trial images build on that builder');
+  assert.ok(trialImageBuildArgs('/src', '/tmp/image.tar').join(' ').includes(`buildx build --builder ${trialBuilder} --output type=docker,dest=/tmp/image.tar`), 'trial images build on that builder');
   assert.ok(removed.includes('trial build cache older than a day (2GB)'));
 });

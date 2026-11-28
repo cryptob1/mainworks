@@ -147,9 +147,14 @@ switch (args.slice(0, 2).join(' ')) {
     fs.writeFileSync(builder, '');
     break;
   case 'buildx build':
-    assert.deepEqual(args, ['buildx', 'build', ...${JSON.stringify(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : [])}, '--builder', 'mainworks-trial', '--load', '--target', 'trial', '--tag', 'mainworks-trial:local', ${JSON.stringify(join(target, root))}]);
+    assert.deepEqual(args, ['buildx', 'build', ...${JSON.stringify(process.env.MAINWORKS_BUILD_NO_CACHE === '1' ? ['--no-cache'] : [])}, '--builder', 'mainworks-trial', '--output', args[args.indexOf('--output') + 1], '--target', 'trial', '--tag', 'mainworks-trial:local', ${JSON.stringify(join(target, root))}]);
     assert.ok(fs.existsSync(builder));
     assert.equal(fs.readFileSync(${JSON.stringify(join(target, root, 'Dockerfile'))}, 'utf8'), 'FROM scratch AS trial\\nCOPY README.md /README.md\\n');
+    assert.match(args[args.indexOf('--output') + 1], /^type=docker,dest=\\/tmp\\/mainworks-image-[^/]+\\/image[.]tar$/);
+    fs.writeFileSync(args[args.indexOf('--output') + 1].slice('type=docker,dest='.length), 'image');
+    break;
+  case 'load --input':
+    assert.equal(fs.readFileSync(args[2], 'utf8'), 'image');
     fs.writeFileSync(built, '');
     break;
   default: throw new Error('Unexpected Docker command: ' + args.join(' '));
