@@ -1,4 +1,5 @@
 import { listen } from './helpers/http-server.js';
+import { patchEnv } from './helpers/env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createContext } from '../src/cli/context.js';
@@ -8,7 +9,6 @@ import { gitRepo } from './helpers/git-repo.js';
 
 test('unit:worker-verification-long-wait — verify survives six minutes before headers; timeout and unreachable stay distinct', async t => {
   const { root, head } = await gitRepo({ label: 'verification-long-wait', files: {}, message: 'fixture' });
-  const saved = { GRAPHYARD_URL: process.env.GRAPHYARD_URL, GRAPHYARD_TOKEN: process.env.GRAPHYARD_TOKEN, GRAPHYARD_TOKEN_FILE: process.env.GRAPHYARD_TOKEN_FILE };
   let mode: 'long' | 'timeout' | 'body-timeout' | 'refusal' | 'disconnect' = 'long';
   let submitted = false, verificationCalls = 0;
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
@@ -38,8 +38,7 @@ test('unit:worker-verification-long-wait — verify survives six minutes before 
     assert.deepEqual(JSON.parse(body), { epoch: 1, head });
     submitted = true; res.end('{"submitted":true}');
   });
-  process.env.GRAPHYARD_URL = url;
-  process.env.GRAPHYARD_TOKEN = 'test-token'; delete process.env.GRAPHYARD_TOKEN_FILE;
+  const restoreEnv = patchEnv({ GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'test-token', GRAPHYARD_TOKEN_FILE: undefined });
   const complete = async () => {
     const context = await createContext('complete', 'GY-1', ['1', '--head', head], false);
     context.repositoryRoot = () => root;
@@ -66,8 +65,6 @@ test('unit:worker-verification-long-wait — verify survives six minutes before 
     await assert.rejects(context.api('work/id-1/worker-verification', {}), /Control plane unreachable.*after 60 seconds/);
   } finally {
     await close();
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
+    restoreEnv();
   }
 });

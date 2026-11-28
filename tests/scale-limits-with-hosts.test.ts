@@ -1,4 +1,5 @@
 import { after, test } from 'node:test';
+import { patchEnv, withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -140,14 +141,12 @@ test('integration:scale-limits-with-hosts — a 24-core machine with ready hosts
   assert.ok(await takeHostSlot(directory, msi, 'test merge GY-4 shard 1'));
 });
 
-test('integration:scale-limits-with-hosts — a worker verification slot is freed within one loop cycle once its request finished, or its lease is gone; one with a running child or an active request is kept', { timeout: 120_000 }, async () => {
+test('integration:scale-limits-with-hosts — a worker verification slot is freed within one loop cycle once its request finished, or its lease is gone; one with a running child or an active request is kept', { timeout: 120_000 }, async t => {
   const scratch = await temporaryDirectory('verification-frees-slot'), directory = join(scratch, 'heavy-jobs'), root = join(scratch, 'repo');
   mkdirSync(directory);
   writeFileSync(join(directory, 'limit'), '4\n');
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = directory;
-  try {
-    mkdirSync(root);
+  patchEnv({ [slotsDirectoryVariable]: directory }, t);
+  mkdirSync(root);
     const { git } = await gitRepo({ root });
     git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'one');
     const head = git('rev-parse', 'HEAD');
@@ -202,9 +201,6 @@ test('integration:scale-limits-with-hosts — a worker verification slot is free
     assert.deepEqual(holding(), ['merge trial GY-10'], 'late release from a reclaimed verification slot leaves the new holder intact');
     reused.release();
     assert.deepEqual(holding(), []);
-  } finally {
-    if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous;
-  }
 });
 
 test('integration:scale-limits-with-hosts — master status shows the budget and each machine\'s cores busy and temperature, one short line each, with no internal ids', { timeout: 60_000 }, async () => {
@@ -217,12 +213,10 @@ test('integration:scale-limits-with-hosts — master status shows the budget and
     masterAgentName: 'graphyard-master-app', workers: [], credentialFile, run: {} }) as never;
   writeFileSync(join(root, '.graphyard/master.json'), JSON.stringify(master), { mode: 0o600 });
   writeMachines(directory, machines(false));
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = directory;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: directory }, async () => {
     const shown = await masterStatusReport(root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => { throw new Error('no git in the fixture'); });
     assert.equal(shown.heavyJobs.budget, '13 heavy-job slots (this machine 4, vish-msi 4, omarchypc 5)');
     assert.deepEqual(shown.heavyJobs.machines, ['this machine: 6 of 24 cores busy, 61°C', 'vish-msi: 3 of 24 cores busy, 0 shards, 58°C', 'omarchypc: 12 of 32 cores busy, 0 shards, 70°C']);
     for (const line of [shown.heavyJobs.budget, ...shown.heavyJobs.machines]) { assert.doesNotMatch(line, /gy-compute|@|:\d{4}/); assert.ok(line.length <= 80, line); }
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  });
 });

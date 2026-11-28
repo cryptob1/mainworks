@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -41,11 +42,7 @@ async function claudeHost(directory: string) {
 }
 
 /** Runs BODY with this host's own agent login (XDG_DATA_HOME) out of the way, so only the fixture is discovered. */
-async function fixtureLoginsOnly<T>(body: () => Promise<T>): Promise<T> {
-  const saved = process.env.XDG_DATA_HOME;
-  delete process.env.XDG_DATA_HOME;
-  try { return await body(); } finally { if (saved !== undefined) process.env.XDG_DATA_HOME = saved; }
-}
+const fixtureLoginsOnly = <T>(body: () => Promise<T>) => withEnv({ XDG_DATA_HOME: undefined }, body);
 
 /**
  * The control plane's own apply path: the same `applyRegistryMutation` the registry route runs,

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -70,7 +70,7 @@ syncBuiltinESMExports();
 
   const caseCwd = (await readFile(join(scratch, 'case-cwd.txt'), 'utf8')).trim();
   assert.equal(caseCwd.startsWith(resolve(fakeTmp)), false, `shard worktree was placed on tmpfs (${caseCwd})`);
-  assert.equal(dirname(dirname(caseCwd)), resolve(checkoutParent), `shard worktree should sit beside the checkout under ${checkoutParent}, got ${caseCwd}`);
+  assert.ok(caseCwd.startsWith(`${resolve(checkoutParent)}/`), `shard worktree should sit beside the checkout under ${checkoutParent}, got ${caseCwd}`);
 });
 
 test('unit:e2e-review-relaunch-after-abandon-pinned — reviewAbandonHarness closes its server and store on setup failure so node --test exits instead of hanging', { timeout: 60_000 }, async () => {
