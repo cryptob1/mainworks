@@ -12,6 +12,8 @@ import { message, type DaemonState } from './state.js';
 export const alertRepeatMs = 3_600_000;
 /** The stall window before the loop alerts, `run.alertMinutes` unset (GY-3101). */
 const defaultAlertMinutes = 20;
+/** Whether the loop alerts at all: a webhook (run.alertUrl) or the factory's Slack channel (GY-4073). */
+export const alertsOn = ({ config, effects }: Pick<Cycle, 'config' | 'effects'>) => !config.forPerson && !!effects.alertWebhook && (!!config.run.alertUrl || !!effects.slackConnected?.());
 export const alertMinutesOf = (run: { alertMinutes?: number | null }) => run.alertMinutes ?? defaultAlertMinutes;
 /** The cursor key of the yard alert's one action row: `failed` while the stop stands, `done` on the all-clear. */
 const yardAlertKey = 'yard:alert';
@@ -115,7 +117,7 @@ const yardAllClearText = (repository: string, since: string, now: number) =>
  */
 export async function yardAlertStep(cycle: Cycle) {
   const { config, state, effects, snapshot, clock, now } = cycle;
-  if (config.forPerson || !config.run.alertUrl || !effects.alertWebhook) return;
+  if (!alertsOn(cycle) || !effects.alertWebhook) return;
   const alertMs = alertMinutesOf(config.run) * 60_000, iso = (at: number) => new Date(at).toISOString();
   const stop = yardStop(state, snapshot.work, clock, alertMs);
   if (!stop) {

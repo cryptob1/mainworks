@@ -4,6 +4,7 @@ import { gateRecordPath, readGateRecord } from '../batch-gate.js';
 import type { Work } from '../model.js';
 import type { Cycle } from './cycle.js';
 import { message, record } from './state.js';
+import { alertsOn } from './yard-alerts.js';
 
 const short = (sha: string) => sha.slice(0, 12);
 
@@ -38,7 +39,7 @@ const uatFailedText = (repository: string, candidate: string, served: string | n
 export async function deliveryAlertStep(cycle: Cycle) {
   const { config, state, effects, snapshot, now } = cycle;
   const reads = effects.mergeWriter;
-  if (config.forPerson || !config.run.alertUrl || !effects.alertWebhook || !reads) return;
+  if (!alertsOn(cycle) || !effects.alertWebhook || !reads) return;
   const sent = state.deliveryAlerts;
   const send = async (text: string) => {
     try { await effects.alertWebhook!(text); }

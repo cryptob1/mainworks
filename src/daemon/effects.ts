@@ -199,6 +199,8 @@ export interface DaemonEffects {
   notify?: (state: 'ready' | 'alive') => void | Promise<void>;
   /** POSTs one plain-text line to the operator's alert webhook (GY-3101: `run.alertUrl`, any receiver that takes a body, such as an ntfy topic). Absent, no alert is sent. */
   alertWebhook?: (text: string) => Promise<void>;
+  /** GY-4073: whether the factory's Slack app is connected, so the alerts also post to its channel without run.alertUrl. */
+  slackConnected?: () => boolean;
   /** GY-3233: files a control-plane fault to the upstream install master.json's `upstream` names. Absent, no upstream is configured. */
   fileUpstream?: (input: FaultItem, key: string) => Promise<{ key?: string } | null>;
   /** GY-3274: the master lessons and product brief recorded in `.graphyard/project-memory.json`; absent, none are adopted. */
