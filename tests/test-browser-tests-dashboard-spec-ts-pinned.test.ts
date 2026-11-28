@@ -18,3 +18,17 @@ test('unit:test-browser-tests-dashboard-spec-ts-pinned — the connection-loss t
   const waits = body.match(/\{ timeout: \d+ \}|settled\)/g) ?? [];
   assert.ok(waits.length >= 4 && waits.every(wait => wait === 'settled)'), 'every connection wait allows the settled time');
 });
+
+// GY-4066: this spec's four-state test failed in a merge trial on a loaded host and passed 630 times locally.
+// Sign-in takes three answers from the runner's own route handlers (status, work-snapshot and board), and each
+// test's first wait after it allowed the 5 s default. With every answer 2 s late, as GY-3442's trace measured
+// on a loaded trial host, thirteen of the spec's tests failed that first wait; login() now waits for the
+// dashboard itself with the settled 15 s, except where a test watches the sign-in.
+test('unit:test-browser-tests-dashboard-spec-ts-pinned — sign-in waits for the dashboard with the settled time, except where a test watches the sign-in', () => {
+  const spec = readFileSync(join(process.cwd(), 'browser-tests/dashboard.spec.ts'), 'utf8');
+  assert.match(spec, /const live = \{ timeout: 15_000 \};/, 'the spec names the settled wait for a page load');
+  assert.match(spec, /if \(dashboard\) await expect\(page\.locator\('header\.main-top-bar'\)\)\.toBeVisible\(live\);\n\}/, 'login ends by waiting for the dashboard');
+  const watched = spec.match(/login\(page, '[^']*', \{ dashboard: false \}\)/g) ?? [];
+  assert.equal(watched.length, 3, 'only the refused token and the two reads the tests hold open are watched by their tests');
+  assert.equal((spec.match(/login\(page, (?!'[^']*', \{ dashboard: false \}\))[^)]*\)/g) ?? []).length, 0, 'a sign-in with a token of its own says it is watched');
+});

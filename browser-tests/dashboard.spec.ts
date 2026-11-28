@@ -31,7 +31,18 @@ async function fixture(page: Page, role = 'admin', extra: Record<string, unknown
 // the candidate links rather than a button wrapped around them.
 const cardSelect = (page: Page) => page.getByRole('link', { name: /Browser fixture.*GY-1/ });
 
-async function login(page: Page, value = 'browser-fixture') { await page.getByLabel('Access token').fill(value); await page.getByRole('button', { name: 'Open control plane' }).click(); }
+/** A page load waits this long: on a loaded trial host the runner's own route handlers answer seconds late (GY-3442), and sign-in takes three of their answers. */
+const live = { timeout: 15_000 };
+/**
+ * Signs in and waits for the dashboard. GY-4066: this spec's merge trial failed a first wait after sign-in on
+ * the 5 s default, so the wait lives here, where every test's sign-in passes through. A sign-in the test watches
+ * itself (a refused token, a read it holds open) is judged while the page still verifies and returns at once.
+ */
+async function login(page: Page, value = 'browser-fixture', { dashboard = true }: { dashboard?: boolean } = {}) {
+  await page.getByLabel('Access token').fill(value);
+  await page.getByRole('button', { name: 'Open control plane' }).click();
+  if (dashboard) await expect(page.locator('header.main-top-bar')).toBeVisible(live);
+}
 // The one navigation (GY-161): the sidebar holds Work, Lead, Workers, Tests and
 // Settings; the other pages are sub-page links under one of them. On a phone the sidebar folds into
 // a Menu button. An open work item is a page of its own, left with "← Back".
@@ -223,12 +234,12 @@ test('the work page shows one count row, the filters, each filtering to exactly 
 
 test('invalid login remains on login; whitespace is trimmed and loading never claims empty work', async ({ page }) => {
   const state = await fixture(page);
-  await login(page, 'invalid');
+  await login(page, 'invalid', { dashboard: false });
   await expect(page.getByRole('alert')).toHaveText('That token was not accepted');
   await expect(page.getByLabel('Access token')).toBeVisible();
   await expect(workHeading(page)).toHaveCount(0);
   await expect(page.getByText('GitHub is not connected', { exact: false })).toHaveCount(0);
-  state.pause = true; await login(page, '  browser-fixture  ');
+  state.pause = true; await login(page, '  browser-fixture  ', { dashboard: false });
   await expect(page.getByRole('status')).toContainText('Verifying');
   // Each paused request takes 500 ms, so a loaded run needs longer than the default wait.
   await expect(workHeading(page)).toBeVisible({ timeout: 15_000 });
@@ -373,7 +384,7 @@ test('a delayed post-create refresh cannot restore the signed-out session or lea
   let rejectLogin!: () => void;
   const rejected = new Promise<void>(resolve => { rejectLogin = resolve; });
   await page.route('**/api/status', async route => { await rejected; return route.fulfill({ status: 401, json: { error: 'Rejected' } }); });
-  await login(page, 'invalid');
+  await login(page, 'invalid', { dashboard: false });
   await expect(page.getByRole('status')).toContainText('Verifying');
   await expect(workHeading(page)).toHaveCount(0);
   rejectLogin();
