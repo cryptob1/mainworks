@@ -1,0 +1,12 @@
+{
+  "id": "slack-instruction-reaches-the-lead",
+  "title": "A Slack message reaches the Lead and its answer posts back in the thread",
+  "description": "Against a stand-in Slack Socket Mode server on 127.0.0.1: `mainworks lead slack connect` stores the piped app and bot tokens with mode 0600 and prints nothing; a message in the bound channel from the owner becomes a Lead message with the Slack display name as its source, the loop's real cycle wakes the Lead with it once, and the Lead's `lead reply` posts back in that Slack thread. A person not allowed is ignored with one line, and a reserved decision goes to Needs you with buttons only the owner may answer.",
+  "tags": ["cli", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "a channel message wakes the Lead once and its reply posts in the Slack thread", "run": "node --import tsx tests/helpers/run-tests.ts tests/slack-instruction-reaches-the-lead.test.ts", "timeoutSeconds": 300 },
+    { "kind": "command", "name": "a non-allowed person is ignored with one line and a reserved decision goes to Needs you", "run": "node --import tsx tests/helpers/run-tests.ts tests/slack-socket-mode.test.ts", "timeoutSeconds": 300 }
+  ]
+}

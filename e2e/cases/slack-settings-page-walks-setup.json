@@ -1,0 +1,11 @@
+{
+  "id": "slack-settings-page-walks-setup",
+  "title": "Settings › Slack walks the owner from the manifest to a connected channel",
+  "description": "A real control plane serves the built dashboard and talks to a stand-in Slack (Web API and Socket Mode) on 127.0.0.1. On Settings › Slack the owner sees the Create the Slack app step with its link and Copy manifest button, pastes a bot token where the app-level token goes and reads one line saying what to fix, pastes the right tokens into masked fields and reads who it connected as, picks the one channel the bot was invited to and the people by name with the owner first, and saves. The loop's pass keeps the setup in the install directory with mode 0600 and connects; the page then shows Connected to #factory with the last message and Disconnect, every step Done, at 1280 px and 390 px with no horizontal scroll.",
+  "tags": ["dashboard", "api"],
+  "target": "any",
+  "required": false,
+  "steps": [
+    { "kind": "command", "name": "Settings › Slack walks the owner from token entry to Connected at 1280 px and 390 px", "run": "npm run test:browser -- browser-tests/slack-settings-page-walks-setup.spec.ts", "timeoutSeconds": 300 }
+  ]
+}
