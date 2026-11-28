@@ -34,7 +34,7 @@ test('integration:not-moving-quiet-while-drained', async t => {
   const wakes: string[] = [];
   const effects: DaemonEffects = {
     snapshot: async () => ({ work, now: new Date(clock).toISOString(), workerVerifications: [{ key: 'GY-3', host: 'host', state: 'queued' }] }),
-    flow: async () => deriveNotMoving(work, clock),
+    flow: async () => ({ notMoving: deriveNotMoving(work, clock).notMoving.map(item => item.key === 'GY-1' ? { ...item, owner: 'nobody' as const } : item) }),
     registry: async () => ({ runtimes: [], accounts: [], sessions: [], roles: [{ name: 'worker', accounts: [], concurrency: cap }] }) as any,
     agents: () => [{ name: 'master', pane_id: 'pM', agent_status: 'idle' }],
     credentials: async () => ({}), closeSession: () => {}, dispatch: async () => ({}), persist: async () => {},
@@ -67,10 +67,15 @@ test('integration:not-moving-quiet-while-drained', async t => {
     workFixture({ key: 'GY-4', stage: 'review', stageEnteredAt: stale }),
     workFixture({ key: 'GY-5', stage: 'build', stageEnteredAt: stale, lease: { owner: 'builder', epoch: 1, expiresAt: new Date(clock + 120 * min).toISOString() } }),
     workFixture({ key: 'GY-6', stage: 'ready', stageEnteredAt: stale }),
+    workFixture({ key: 'GY-7', stage: 'test', stageEnteredAt: stale, mergeLedger: {
+      key: 'GY-7', state: 'intent', head: null, baseTip: null, mergeSha: null, risk: null,
+      intentAt: stale, pushedAt: null, observedTip: null, refusal: null, events: 1,
+    } }),
   );
   await runCycle(config, state, effects, () => clock);
   assert.equal(wakes.length, 4);
   assert.match(wakes[3]!, /GY-4/, 'a drain does not hide a stalled review');
   assert.match(wakes[3]!, /GY-5/, 'a zero launch cap does not hide an existing builder');
+  assert.match(wakes[3]!, /GY-7/, 'a drain does not hide an already running trial');
   assert.doesNotMatch(wakes[3]!, /GY-[1236] /, 'only intentionally paused work stays quiet');
 });

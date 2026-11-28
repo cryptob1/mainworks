@@ -85,8 +85,10 @@ export function masterCauses(work: readonly Work[], actions: DaemonState['action
   const heldKeys = new Set(open.filter(isHeldWithReason).map(item => item.key));
   const activeNotMoving = notMoving.filter(item => {
     if (heldKeys.has(item.key)) return false;
-    if (paused.heavy && (item.owner === 'the merge step' || paused.checks?.includes(item.key))) return false;
     const workItem = open.find(work => work.key === item.key);
+    const waitingForTrial = (item.stage === 'test' || item.owner === 'the merge step')
+      && !workItem?.blocker && !workItem?.reworkRequested && workItem?.mergeLedger?.state !== 'intent';
+    if (paused.heavy && (waitingForTrial || paused.checks?.includes(item.key))) return false;
     const waitingForBuilder = workItem && !workItem.blocker && !workItem.hold && !workItem.finishedBlockerHead
       && ['ready', 'build'].includes(workItem.stage) && !workItem.sessions?.some(session => session.state === 'running')
       && !(workItem.lease && Date.parse(workItem.lease.expiresAt) > now);
