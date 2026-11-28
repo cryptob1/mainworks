@@ -6,7 +6,7 @@ import { server } from '../src/server.js';
 import type { Principal } from '../src/model.js';
 import type { Store } from '../src/store.js';
 import { slackCommand } from '../src/cli/master/slack.js';
-import { runSlackBridge, slackAlertsOn, slackSettingsFile } from '../src/master/slack.js';
+import { runSlackBridge, slackAlertsOn, slackManifest, slackSettingsFile } from '../src/master/slack.js';
 import { messageCauses } from '../src/daemon/master-stalled-delivery.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -48,6 +48,7 @@ test('integration:slack-socket-mode-instruction-round-trip — connect stores to
   assert.equal((await stat(slackSettingsFile(directory))).mode & 0o777, 0o600, 'the tokens are stored with mode 0600');
   const stored = JSON.parse(await readFile(slackSettingsFile(directory), 'utf8'));
   assert.deepEqual({ ...stored, appToken: !!stored.appToken, botToken: !!stored.botToken }, { appToken: true, botToken: true, channel: 'C0FACTORY', owner: 'UOWNER', people: [] }, 'bound to one channel, allowing only the owner');
+  assert.deepEqual(JSON.parse(await readFile('integrations/slack/manifest.json', 'utf8')), slackManifest('Mainworks'), 'the README\'s manifest is the one Settings › Slack copies, with Socket Mode on');
   assert.equal(slackAlertsOn(directory), true, 'the existing alerts post to the channel once Slack is connected');
 
   // 2. The loop's bridge holds one outbound Socket Mode connection; no port of its own is opened.

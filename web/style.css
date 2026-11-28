@@ -689,3 +689,4 @@ header.main-top-bar{height:auto;min-height:60px;display:flex;flex-wrap:wrap;alig
 .show-more{display:block;margin:var(--space-3) auto}
 .infra-actions{list-style:none;margin:0;padding:0;display:grid;gap:4px}.infra-actions li{font-size:var(--type-small);overflow-wrap:anywhere;min-width:0}.infra-actions time{color:var(--text-3);font-size:11px}
 .slack-steps{list-style:none;padding:0;margin:12px 0;display:grid;gap:12px}.slack-step h3{margin:0 0 6px;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.slack-step label{display:block;margin:8px 0;overflow-wrap:anywhere}.slack-step label.inline{display:inline-flex;gap:6px;margin:4px 12px 4px 0}.slack-step input[type=password],.slack-step select{display:block;width:100%;max-width:100%;box-sizing:border-box;margin-top:4px}.slack-step fieldset{border:0;padding:0;margin:8px 0;min-width:0}
+.slack-step select{margin-bottom:8px}

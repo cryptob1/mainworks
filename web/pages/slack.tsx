@@ -14,7 +14,7 @@ const minutesAgo = (at: string, now: number) => Math.max(0, Math.round((now - Da
 /** One numbered step with its done or not-done mark. */
 function Step({ n, title, done, children }: { n: number; title: string; done: boolean; children: React.ReactNode }) {
   return <li className="panel slack-step" aria-label={title} data-done={done ? 'yes' : 'no'}>
-    <h3>{n}. {title} <span className={done ? 'green' : 'muted'}>{done ? 'Done' : 'Not done'}</span></h3>
+    <h3>{n}. {title} <span className={`badge ${done ? 'badge-shipped' : 'badge-backlog'}`}>{done ? 'Done' : 'Not done'}</span></h3>
     {children}
   </li>;
 }
@@ -42,7 +42,7 @@ export function SlackPage({ api, observedAt }: Pick<Dashboard, 'api' | 'observed
   return <section aria-label="Slack" className="slack-page">
     <h2>Slack</h2>
     <p>Let people talk to the Lead from one Slack channel. The factory dials out to Slack; nothing on your network opens.</p>
-    {line && <p role={line.ok ? 'status' : 'alert'} aria-label="Slack result" className={line.ok ? 'green' : 'amber'}>{line.text}</p>}
+    {line && <p role={line.ok ? 'status' : 'alert'} aria-label="Slack result" className={line.ok ? undefined : 'amber'}>{line.text}</p>}
     <ol className="slack-steps">
       <Step n={1} title="Create the Slack app" done={tokensDone}>
         <p>Open <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">api.slack.com/apps</a>, choose From a manifest, pick your workspace and paste the manifest. It turns Socket Mode on.</p>
@@ -58,15 +58,15 @@ export function SlackPage({ api, observedAt }: Pick<Dashboard, 'api' | 'observed
         </form>
       </Step>
       <Step n={3} title="Pick the channel" done={connected || view.waiting}>
-        {!view.tokens ? <p className="muted">Connect the tokens first.</p>
-          : channels.length ? <label>Channel
-            <select value={channel} onChange={event => setChannel(event.target.value)}><option value="">Choose a channel</option>{channels.map(entry => <option key={entry.id} value={entry.id}>#{entry.name}</option>)}</select></label>
+        {!view.tokens ? <p className="muted">{connected ? `Bound to #${view.loop!.channelName ?? view.loop!.channel}. To change it, paste the tokens again.` : 'Connect the tokens first.'}</p>
+          : channels.length ? <><label htmlFor="slack-channel">Channel</label>
+            <select id="slack-channel" value={channel} onChange={event => setChannel(event.target.value)}><option value="">Choose a channel</option>{channels.map(entry => <option key={entry.id} value={entry.id}>#{entry.name}</option>)}</select></>
           : <p>The app is in no channel yet. In Slack, type /invite @{view.tokens.bot} in the channel, then press Connect again.</p>}
       </Step>
       <Step n={4} title="Choose who may talk to the Lead" done={connected || view.waiting}>
-        {!view.tokens ? <p className="muted">Connect the tokens first.</p> : <>
-          <label>You, the owner
-            <select value={owner} onChange={event => setOwner(event.target.value)}><option value="">Choose yourself</option>{view.tokens.people.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+        {!view.tokens ? <p className="muted">{connected ? 'To change who may talk to the Lead, paste the tokens again.' : 'Connect the tokens first.'}</p> : <>
+          <label htmlFor="slack-owner">You, the owner</label>
+          <select id="slack-owner" value={owner} onChange={event => setOwner(event.target.value)}><option value="">Choose yourself</option>{view.tokens.people.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select>
           <fieldset><legend>Also allowed</legend>
             {view.tokens.people.filter(person => person.id !== owner).map(person => <label key={person.id} className="inline"><input type="checkbox" checked={people.includes(person.id)} onChange={event => setPeople(event.target.checked ? [...people, person.id] : people.filter(id => id !== person.id))}/> {person.name}</label>)}
           </fieldset>
