@@ -28,11 +28,12 @@ export interface FlowItem {
   attempts: { claimedAt: string; endedAt: string | null; end: string | null }[];
   events: FlowEvent[];
 }
-type CheckCount = { check: string; count: number; assertion: string | null };
-/** Test files by how often they failed, the most first, each with its latest assertion line. */
+/** GY-4069: `lastFailedAt` is kept for the planner prompt, which prints it as an age. */
+type CheckCount = { check: string; count: number; assertion: string | null; lastFailedAt: string };
+/** Test files by how often they failed, the most first, each with its latest assertion line and when it last failed. */
 function topChecks(failures: readonly FlakeEvent[]): CheckCount[] {
   const checks = new Map<string, CheckCount>();
-  for (const { file, assertion } of [...failures].sort((a, b) => ms(a.at) - ms(b.at))) checks.set(file, { check: file, count: (checks.get(file)?.count ?? 0) + 1, assertion });
+  for (const { file, assertion, at } of [...failures].sort((a, b) => ms(a.at) - ms(b.at))) checks.set(file, { check: file, count: (checks.get(file)?.count ?? 0) + 1, assertion, lastFailedAt: at });
   return [...checks.values()].sort((a, b) => b.count - a.count).slice(0, 5);
 }
 interface StationWait { median: number; p90: number; samples: number; oldest: { key: string; title: string; minutes: number; waiting: boolean } }

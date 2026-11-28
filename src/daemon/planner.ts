@@ -5,6 +5,7 @@
 import type { Cycle } from './cycle.js';
 import { emptyBoardAlarmSince } from './stall-alarm.js';
 import type { Work } from '../model/work.js';
+import { formatAge } from '../model/duration.js';
 import { percent, reworkCauses, type FlowNumbers } from '../flow-numbers.js';
 import { readTestSelections, testSelectionSummary } from '../merge-writer/test-selection.js';
 import { readTrialTimings, slowestTrialFiles } from '../merge-writer/trial-timings.js';
@@ -72,7 +73,7 @@ export const plannerTestSelection = (root: string): PlannerTestSelection =>
 const deliveredAt = (item: Pick<Work, 'delivery' | 'observation' | 'stageEnteredAt' | 'updatedAt'>) =>
   Date.parse(item.delivery?.mergedAt ?? item.observation?.mergedAt ?? item.stageEnteredAt ?? item.updatedAt);
 
-/** GY-3845: keys and titles of items delivered in the last seven days, newest first. */
+/** GY-3845: keys and titles of items delivered in the last seven days with how long ago each merged (GY-4069), newest first. */
 export function recentlyDeliveredTitles(work: readonly Work[], now: number): string[] {
   return work
     .filter(item => {
@@ -81,7 +82,7 @@ export function recentlyDeliveredTitles(work: readonly Work[], now: number): str
       return Number.isFinite(at) && now - at <= deliveredWindowMs;
     })
     .sort((a, b) => deliveredAt(b) - deliveredAt(a))
-    .map(item => `${item.key}: ${item.title}`);
+    .map(item => `${item.key}: ${item.title} (merged ${formatAge(deliveredAt(item), now)} ago)`);
 }
 
 const closedAt = (item: Pick<Work, 'closure' | 'stageEnteredAt' | 'updatedAt'>) =>
@@ -102,24 +103,32 @@ export function recentlyClosedDrafts(work: readonly Work[], now: number): string
     });
 }
 
-/** Builds the headless planner prompt from the product brief, 6-hour flow numbers, rework causes, testSelection shares, five slowest trial test files, open items, recently delivered items and recently closed planner drafts. */
+/** GY-4069: one window's flow block: its numbers, rework causes, and failing and flaky checks, each failing check with how long ago it last failed. */
+const flowLines = (hours: number, flow: FlowNumbers | null, now: number): string[] => flow
+  ? [
+      `${hours}-hour flow: ${flow.mergesPerHour.toFixed(1)} merges/h (${flow.merges} merges), ${flow.attemptsPerHour.toFixed(1)} attempts/h (${flow.attempts} attempts), first-pass yield ${percent(flow.firstPassYield)}, trials ${flow.trials}, flaky ${flow.flaky} (${percent(flow.flakyRate)}), reverts ${flow.reverts}.`,
+      `Rework causes (${hours}h): ${reworkCauses.map(cause => `${cause}: ${flow.rework[cause] ?? 0}`).join(', ')}.`,
+      ...(flow.trialFailures?.length ? [`Failing checks (${hours}h): ${flow.trialFailures.map(failing => `${failing.check} ${failing.count}, last failed ${formatAge(failing.lastFailedAt, now)} ago${failing.assertion ? ` (${failing.assertion})` : ''}`).join('; ')}.`] : []),
+      ...(flow.flakyChecks?.length ? [`Flaky checks (${hours}h): ${flow.flakyChecks.map(flaky => `${flaky.check} ${flaky.count}${flaky.assertion ? ` (${flaky.assertion})` : ''}`).join('; ')}.`] : []),
+    ]
+  : [`${hours}-hour flow: unavailable.`, `Rework causes (${hours}h): unavailable.`];
+
+/** Builds the headless planner prompt from the product brief, 6-hour and 24-hour flow numbers, rework causes, testSelection shares, five slowest trial test files, open items, recently delivered items and recently closed planner drafts. */
 export function plannerPrompt(context: {
   brief: string | null;
   flow6h: FlowNumbers | null;
+  /** GY-4069: the day's numbers, printed beside the 6-hour ones. */
+  flow24h?: FlowNumbers | null;
   slowestTrialFiles: readonly { file: string; seconds: number }[];
   testSelection?: PlannerTestSelection;
   openTitles: readonly string[];
   deliveredTitles?: readonly string[];
   closedDrafts?: readonly string[];
+  /** GY-4069: the instant the failing checks' ages are read from; now by default. */
+  now?: number;
 }): string {
-  const flowLines = context.flow6h
-    ? [
-        `6-hour flow: ${context.flow6h.mergesPerHour.toFixed(1)} merges/h (${context.flow6h.merges} merges), ${context.flow6h.attemptsPerHour.toFixed(1)} attempts/h (${context.flow6h.attempts} attempts), first-pass yield ${percent(context.flow6h.firstPassYield)}, trials ${context.flow6h.trials}, flaky ${context.flow6h.flaky} (${percent(context.flow6h.flakyRate)}), reverts ${context.flow6h.reverts}.`,
-        `Rework causes (6h): ${reworkCauses.map(cause => `${cause}: ${context.flow6h!.rework[cause] ?? 0}`).join(', ')}.`,
-        ...(context.flow6h.trialFailures?.length ? [`Failing checks (6h): ${context.flow6h.trialFailures.map(failing => `${failing.check} ${failing.count}${failing.assertion ? ` (${failing.assertion})` : ''}`).join('; ')}.`] : []),
-        ...(context.flow6h.flakyChecks?.length ? [`Flaky checks (6h): ${context.flow6h.flakyChecks.map(flaky => `${flaky.check} ${flaky.count}${flaky.assertion ? ` (${flaky.assertion})` : ''}`).join('; ')}.`] : []),
-      ]
-    : ['6-hour flow: unavailable.', 'Rework causes (6h): unavailable.'];
+  const now = context.now ?? Date.now();
+  const flow = [...flowLines(6, context.flow6h, now), ...flowLines(24, context.flow24h ?? null, now)];
 
   const selectionLine = context.testSelection
     ? `Test selection (last ${context.testSelection.trials} trials): median ${context.testSelection.medianShareSelected} of reachable, ${context.testSelection.medianShareOfAllSelected ?? 'unavailable'} of all tests.`
@@ -143,7 +152,7 @@ export function plannerPrompt(context: {
 
   return [
     'You are a headless planner session. Ready work is low or empty while builder slots are free.',
-    'Draft at most 3 small, high-leverage work items from the product brief, 6-hour flow numbers, rework causes and slowest trial test files for the Lead to sharpen and release.',
+    'Draft at most 3 small, high-leverage work items from the product brief, 6-hour and 24-hour flow numbers, rework causes and slowest trial test files for the Lead to sharpen and release.',
     'Respond with ONLY a JSON array of 1 to 3 objects. Each object must have:',
     '- "title": short imperative title (max 200 chars)',
     '- "why": one sentence on how it helps users (max 300 chars)',
@@ -154,7 +163,7 @@ export function plannerPrompt(context: {
     'Product brief:',
     context.brief?.trim() || '(no product brief recorded)',
     '',
-    ...flowLines,
+    ...flow,
     selectionLine,
     '',
     'Five slowest trial test files:',
