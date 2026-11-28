@@ -15,6 +15,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 import { repositoryPolicy, setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { apiOk } from './helpers/api.js';
+import { patchEnv } from './helpers/env.js';
 
 // The item this test files carries an e2e proof, so the policy in force says how a head is served for
 // it; the policy is read once per process, and nothing reads it ahead of this line.
@@ -40,7 +41,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
   const engine = new Engine(store, 120, 'owner/project');
   engine.gitRunner = gitRunnerFor(repo); engine.baseBranch = 'main';
   // The install's checkout: the root the control plane reads heads from.
-  const rootBefore = process.env.GRAPHYARD_REPOSITORY_ROOT; process.env.GRAPHYARD_REPOSITORY_ROOT = repo;
+  const restoreRoot = patchEnv({ GRAPHYARD_REPOSITORY_ROOT: repo });
   const { url, close } = await listen(server(engine, [
     { id: 'operator', role: 'admin', sessionKind: 'human', token: 'operator' }, { id: 'claude-builder-7', role: 'worker', token: 'builder' },
     { id: 'graphyard-merge-writer', role: 'coordinator', token: 'coordinator' }] as never));
@@ -120,7 +121,7 @@ test('e2e:task-shows-evidence — the control plane serves a task\'s trial timin
     await call('coordinator', 'usage', { rows: [usage('run-2', 'claude-opus-5-5', 5)] });
     assert.deepEqual((await call('operator', `costs?work=${filed.key}`)).builder, { account: 'claude-a', model: 'claude-opus-5-5', accountModel: 'claude-sonnet-5-5', differs: true });
     assert.equal('builder' in await call('operator', 'costs'), false);
-  } finally { await close(); await store.close(); if (rootBefore === undefined) delete process.env.GRAPHYARD_REPOSITORY_ROOT; else process.env.GRAPHYARD_REPOSITORY_ROOT = rootBefore; }
+  } finally { await close(); await store.close(); restoreRoot(); }
 });
 
 test('e2e:task-shows-evidence — each test shard\'s end reports the trial\'s counts so far and its slowest file so far', async () => {

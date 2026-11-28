@@ -11,6 +11,7 @@ import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js
 import { cycleUntil, pipelineWorld, worldLoop } from './helpers/pipeline-world.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3866: an item's trial selects only the tests importing a changed file directly (one hop), its
 // bound proofs and the static rules; the release check's sweep still runs the transitive importers.
@@ -69,7 +70,7 @@ test('integration:trial-one-hop-selection — an item trial selects the direct i
   assert.deepEqual(report.testSelection.medianShareOfAll, { before: '40%', after: '10%' });
 });
 
-test('e2e:trial-one-hop-selection — on a running test install a one-file change selects only its direct importers, its proofs and the static rules', { timeout: 300_000 }, async () => {
+test('e2e:trial-one-hop-selection — on a running test install a one-file change selects only its direct importers, its proofs and the static rules', { timeout: 300_000 }, async t => {
   const runner = `const { appendFileSync, readFileSync } = require('node:fs');
 const after = name => process.argv[process.argv.indexOf(name) + 1];
 const files = readFileSync(after('--files-from'), 'utf8').split('\\n').filter(Boolean);
@@ -101,8 +102,7 @@ console.log('1..' + n);
       },
     }),
   };
-  const priorNodePath = process.env.NODE_PATH;
-  process.env.NODE_PATH = [join(repositoryRoot, 'node_modules'), priorNodePath].filter(Boolean).join(':');
+  patchEnv({ NODE_PATH: [join(repositoryRoot, 'node_modules'), process.env.NODE_PATH].filter(Boolean).join(':') }, t);
   const where = await pipelineWorld('trial-one-hop-selection', extra);
   try {
     const loop = worldLoop(where, { gate: false });
@@ -112,7 +112,6 @@ console.log('1..' + n);
     const files: string[] = [...(rows[0]?.payload.files ?? [])].sort();
     assert.deepEqual(files, ['tests/direct.test.ts', 'tests/proof.test.ts', ...staticRuleTests].sort(), 'direct importer, proof and static rules only');
   } finally {
-    if (priorNodePath === undefined) delete process.env.NODE_PATH; else process.env.NODE_PATH = priorNodePath;
     await where.close();
   }
 });

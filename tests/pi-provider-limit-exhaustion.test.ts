@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectRuntimeExhaustion } from '../src/master/runtime-prompt.js';
 import { runtimeAdapter } from '../src/master/runtimes.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-1817: a pi worker whose provider answered `429 code 1310 Weekly/Monthly Limit Exhausted`
 // was read as ordinarily idle. pi now has its own entry in the provider limit catalogs, and its
@@ -26,9 +27,7 @@ const resetAt = new Date(observedAt + ((47 * 60 + 17) * 60 + 35) * 1000).toISOSt
 
 test('unit:pi-provider-limit-exhaustion — pi\'s 429 code 1310 "Weekly/Monthly Limit Exhausted" is its provider saying the account is spent, and its zone-less reset is read in Beijing time', () => {
   // The loop host is not in the provider's zone: the reset must not drift by the host's offset.
-  const zone = process.env.TZ;
-  process.env.TZ = 'Asia/Kolkata';
-  try {
+  withEnv({ TZ: 'Asia/Kolkata' }, () => {
     const at = Date.parse('2026-10-15T01:10:00Z');
     const signal = detectRuntimeExhaustion(piPane, 'pi', at);
     assert.ok(signal, 'the 1310 notice is an exhaustion');
@@ -53,5 +52,5 @@ test('unit:pi-provider-limit-exhaustion — pi\'s 429 code 1310 "Weekly/Monthly 
       '  ⎿ tmp disk quota is exhausted (a known local issue). Clearing the tsx cache, then rerunning.',
       'The 429 code 1310 handling resets at 2026-10-17 08:27:35 in the test I just added',
     ]) assert.equal(detectRuntimeExhaustion(prose, 'pi', at), null, prose);
-  } finally { if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone; }
+  });
 });

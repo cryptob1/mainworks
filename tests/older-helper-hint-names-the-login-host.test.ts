@@ -7,6 +7,7 @@ import type { ChildRun } from '../src/child-runner.js';
 import { addHost, readHostReadings, readHosts } from '../src/hosts.js';
 import { outdatedShimAttention } from '../src/merge-writer/remote-shards.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3836 AC-2: The older-helper attention line and `host add`'s no-terminal message name a login
 // target: the USER@HOST the machine was added with when recorded, otherwise the HostName the
@@ -112,18 +113,14 @@ test(`${proof} — recorded login USER@HOST is preferred over current user, and 
     'Host alpha-compute\n  HostName alpha\n  Port 2222\n  User gy-compute\n',
     { mode: 0o600 },
   );
-  const savedHome = process.env.HOME;
-  process.env.HOME = sshHome;
-  try {
+  withEnv({ HOME: sshHome }, () => {
     const [direct] = outdatedShimAttention([{ host: 'gy-compute@alpha-compute', away: false, older: true }]);
     assert.ok(
       direct!.text.includes(`mainworks host add ${userInfo().username}@alpha in a terminal`),
       `real ssh -G resolves alpha-compute to alpha: ${direct!.text}`,
     );
     assert.doesNotMatch(direct!.next, /alpha-compute/);
-  } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
-  }
+  });
 
   // Verify readHosts preserves login field.
   const hosts = await readHosts(file);

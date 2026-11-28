@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { deployOnce, deployRecordPath, controlPlaneRecordPath, readControlPlaneRecord } from '../src/deploy-watch.js';
 import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 const previous = 'a'.repeat(40), next = 'b'.repeat(40), blob = `sha256:042822a3${'c'.repeat(56)}`;
 // GY-4052: isolate the image lock from the host's real lock and sibling tests in the same smoke step.
@@ -35,10 +36,8 @@ for (const failure of ['lease does not exist: not found', 'failed to ingest']) {
 test('integration:deploy-build-recovers-from-bad-blob — recovery passes --no-cache to both Docker builds without pruning host resources', async () => {
   const { composeAdapter } = await import('../src/install/adapters.js');
   const root = await temporaryDirectory('bad-blob-docker');
-  const saved = process.env.MAINWORKS_BUILD_NO_CACHE;
   const commands: string[][] = [];
-  process.env.MAINWORKS_BUILD_NO_CACHE = '1';
-  try {
+  await withEnv({ MAINWORKS_BUILD_NO_CACHE: '1' }, async () => {
     await composeAdapter.provision({
       sourceRoot: root, image: 'mainworks-local:bbbbbbbbbbbb',
       transport: {
@@ -53,7 +52,5 @@ test('integration:deploy-build-recovers-from-bad-blob — recovery passes --no-c
     assert.equal(builds.length, 2);
     assert.ok(builds.every(args => args.includes('--no-cache')));
     assert.ok(commands.filter(args => args[0] === 'docker').every(args => !args.some(arg => ['prune', 'rm', 'rmi', 'remove'].includes(arg))));
-  } finally {
-    if (saved === undefined) delete process.env.MAINWORKS_BUILD_NO_CACHE; else process.env.MAINWORKS_BUILD_NO_CACHE = saved;
-  }
+  });
 });

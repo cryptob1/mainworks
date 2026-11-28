@@ -10,6 +10,7 @@ import { readRemoteShardRuns, readShardHosts } from '../../src/merge-writer/remo
 import { trialHarness } from '../../src/merge-writer/trial-container.js';
 import { runTrial } from '../../src/merge-writer/trial.js';
 import type { HostReading } from '../../src/merge-writer/remote-shards.js';
+import { patchEnv } from './env.js';
 import { temporaryDirectory } from './temp-dirs.js';
 import { buildPreGy3914Shim, shardHosts, shardRepository, type ShardHostsFixture } from './shard-hosts.js';
 
@@ -75,14 +76,7 @@ SSH_ORIGINAL_COMMAND="$last" exec "$shim"
     if (command === 'node' && args[0] === 'scripts/select.mjs') return tests.join('\n');
     return defaultChildRun(command, args, { ...options, env });
   };
-  const saved = { image: process.env.GRAPHYARD_TRIAL_IMAGE, modules: process.env.GRAPHYARD_STANDIN_NODE_MODULES, path: process.env.PATH };
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
-  process.env.GRAPHYARD_STANDIN_NODE_MODULES = join(repository, 'node_modules');
-  process.env.PATH = `${hosts.bin}:${process.env.PATH}`;
-  const restore = () => {
-    for (const [name, value] of [['GRAPHYARD_TRIAL_IMAGE', saved.image], ['GRAPHYARD_STANDIN_NODE_MODULES', saved.modules], ['PATH', saved.path]] as const)
-      if (value === undefined) delete process.env[name]; else process.env[name] = value;
-  };
+  const restore = patchEnv({ GRAPHYARD_TRIAL_IMAGE: image, GRAPHYARD_STANDIN_NODE_MODULES: join(repository, 'node_modules'), PATH: `${hosts.bin}:${process.env.PATH}` });
 
   /** One merge trial of the repository's head with `proofs`, the hosts `targets` read with `adjust` applied (ready, 8 free cores and cool by default). */
   const trial = async (targets: string[], proofs: string[], adjust: (reading: HostReading) => Partial<HostReading> = () => ({})) => {

@@ -6,13 +6,12 @@ import { migrateHerdr } from '../src/herdr-migration.js';
 import { installRequestFromArgs, redeployArguments } from '../src/install/index.js';
 import { readInstallRecord } from '../src/install/secrets.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 test('e2e:upgrade-private-herdr-install — a pre-GY-3212 private-Herdr install restarts onto the head, migrates to the main Herdr and drops herdrInstance from every record', async () => {
   const root = await temporaryDirectory('private-herdr-root'), home = await temporaryDirectory('private-herdr-home');
   const configRoot = join(home, '.config/graphyard'), installDir = join(configRoot, 'acme-app');
-  const previous = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = configRoot;
-  try {
+  await withEnv({ GRAPHYARD_CONFIG_HOME: configRoot }, async () => {
     // The records a pre-GY-3212 release wrote for an install on its own Herdr server.
     const instance = { configHome: join(configRoot, 'acme-app/herdr'), session: 'gy-9a4de6' };
     const unit = join(home, '.config/systemd/user/graphyard-herdr-acme-app.service');
@@ -65,7 +64,5 @@ test('e2e:upgrade-private-herdr-install — a pre-GY-3212 private-Herdr install 
     const args = redeployArguments(record!, 'mainworks-local:next');
     assert.ok(!args.includes('--herdr-instance'));
     assert.deepEqual(args.slice(args.indexOf('--workers'), args.indexOf('--workers') + 2), ['--workers', '1']);
-  } finally {
-    if (previous === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previous;
-  }
+  });
 });

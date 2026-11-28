@@ -20,6 +20,7 @@ import { registryFixture } from './helpers/registry-fixture.js';
 import { hostname } from 'node:os';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { patchEnv } from './helpers/env.js';
 // Time-bomb allowance (GY-1694): every 2030-01-01 instant is judged at a 2030 `now`/observedAt the test passes (localNow pinned where the probe runs); the lone new Date() status call carries no fixture instant.
 
 const launcher = fileURLToPath(new URL('../bin/graphyard.mjs', import.meta.url));
@@ -130,10 +131,10 @@ function registryDispatch(runtimes: string[]) {
   return { dispatch, runs };
 }
 
-test('dispatch starts one headless run under watch with the instruction as its own request and the worker\'s own credential only; never Herdr', async () => {
+test('dispatch starts one headless run under watch with the instruction as its own request and the worker\'s own credential only; never Herdr', async t => {
   const { dispatch, runs } = registryDispatch(['codex']);
   const root = await repository(); const credentialDirectory = await temporaryDirectory('master-credentials');
-  const previousToken = process.env.GRAPHYARD_TOKEN; process.env.GRAPHYARD_TOKEN = coordinatorToken;
+  patchEnv({ GRAPHYARD_TOKEN: coordinatorToken }, t);
   try {
     const credential = join(credentialDirectory, 'worker.token'); await writeFile(credential, workerToken, { mode: 0o600 });
     await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch);
@@ -153,7 +154,6 @@ test('dispatch starts one headless run under watch with the instruction as its o
     const dependency = work({ id: 'dependency', key: 'GY-41', stage: 'build' });
     await assert.rejects(dispatch(root, work({ stage: 'ready', lease: null, submission: null, candidate: null, mergeAuthorization: null, dependencies: [dependency.id] }), profile, { allWork: [dependency] }), /unfinished dependencies/);
   } finally {
-    if (previousToken === undefined) delete process.env.GRAPHYARD_TOKEN; else process.env.GRAPHYARD_TOKEN = previousToken;
     await rm(root, { recursive: true, force: true }); await rm(credentialDirectory, { recursive: true, force: true });
   }
 });
@@ -270,7 +270,7 @@ test('worker preparation claims and creates the assigned worktree from the curre
     await setupMaster(root, { url: 'https://graphyard.example', token: coordinatorToken, cliPath: launcher, credentialDirectory }, coordinatorStatus as typeof fetch);
     await saveWorkerProfile(root, { name: 'launch', principal: 'worker-a', agentName: 'eng-a', mode: 'launch', kind: 'codex', credentialFile: credential }, async () => ({ actor: { id: 'worker-a', role: 'worker' } }));
     const base = 'c'.repeat(40);
-    const previousRequestId = process.env.GRAPHYARD_REQUEST_ID; process.env.GRAPHYARD_REQUEST_ID = 'outer-dispatch-retry';
+    const restoreRequestId = patchEnv({ GRAPHYARD_REQUEST_ID: 'outer-dispatch-retry' });
     const prepared = await prepareWorkerLaunch(root, 'GY-42', 'launch', (command, args, options) => {
       calls.push({ args, options });
       if (command === 'git') return args[0] === 'rev-parse' ? `${base}\n` : '';
@@ -278,7 +278,7 @@ test('worker preparation claims and creates the assigned worktree from the curre
     });
     assert.equal(prepared.epoch, 4); assert.equal(prepared.path, join(root, 'assigned')); assert.deepEqual(calls[0].args.slice(0, 5), ['fetch', '--quiet', '--no-tags', 'origin', '+refs/heads/main:refs/remotes/origin/main']); assert.equal(calls[2].args[1], 'claim'); assert.equal(calls[3].args[1], 'worktree'); assert.equal(calls[3].args[4], base);
     assert.equal(calls[2].options.env.GRAPHYARD_TOKEN, undefined); assert.equal(calls[2].options.env.GRAPHYARD_TOKEN_FILE, credential); assert.equal(calls[2].options.env.GRAPHYARD_REQUEST_ID, undefined);
-    if (previousRequestId === undefined) delete process.env.GRAPHYARD_REQUEST_ID; else process.env.GRAPHYARD_REQUEST_ID = previousRequestId;
+    restoreRequestId();
     const failed: string[][] = [];
     await assert.rejects(prepareWorkerLaunch(root, 'GY-42', 'launch', (command, args) => {
       failed.push(args);

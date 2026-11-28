@@ -15,6 +15,7 @@ import { startPostgres } from './helpers/postgres.js';
 import { releaseBeforeNewestGeneration } from './helpers/release-before-newest-generation.js';
 import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3538: `mainworks upgrade` backs up the database with the running release's CLI before it moves
 // the checkout, so a target at a newer schema generation never runs the backup against the older database.
@@ -116,18 +117,14 @@ test('integration:upgrade-backup-before-checkout — the backup runs first, on t
     try { await seeding.query(`INSERT INTO events(actor,kind,payload) SELECT 'seed','test.large',jsonb_build_object('blob',repeat(md5(i::text),3200)) FROM generate_series(1,4000) i`); }
     finally { await seeding.end(); }
     const large = { ...inputsFor(repositoryRoot, newer, current, join(directory, 'backups', 'large.json'), schema + 1), current: checkoutRelease(repositoryRoot) };
-    const heap = process.env.NODE_OPTIONS;
-    process.env.NODE_OPTIONS = `${heap ?? ''} --max-old-space-size=256`.trim();
-    try {
+    await withEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=256`.trim() }, async () => {
       await liveEffects(large, join(directory, 'upgrade.json')).run(upgradePlan(large).steps.find(step => step.id === 'backup')!);
       assert.ok(statSync(large.backupFile).size > 400_000_000, 'the ledger is larger than the backup\'s heap');
       const verified = JSON.parse(cliRun(repositoryRoot, current, 'db', 'verify', large.backupFile));
       assert.equal(verified.valid, true); assert.equal(verified.rows.events, 4000);
       const back = JSON.parse(cliRun(repositoryRoot, restored, 'db', 'restore', large.backupFile));
       assert.equal(back.counts.events, 4000, 'the restore read the file back');
-    } finally {
-      if (heap === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = heap;
-    }
+    });
   } finally { await cluster.stop(); }
 });
 

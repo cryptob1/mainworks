@@ -8,6 +8,7 @@ import { slotsDirectoryVariable, withHeavyJob } from '../src/master/verification
 import type { ChildRun } from '../src/child-runner.js';
 import { deployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 const previous = 'a'.repeat(40), next = 'b'.repeat(40), blob = `sha256:1766afdf${'d'.repeat(56)}`;
 // GY-4052: isolate the image lock from the host's real lock.
@@ -21,9 +22,7 @@ test('integration:deploy-retry-holds-slot — a reclaim pass during a lease-erro
     if ((args[0] === 'image' && args[1] === 'rm') || args[0] === 'buildx') pruned.push(args.join(' '));
     return '';
   };
-  const saved = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = slots;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: slots }, async () => {
     let reclaim = null as Promise<Reclaimed> | null, serving = previous;
     const builds: boolean[] = [];
     const ports = deployPorts(next, previous, {
@@ -51,7 +50,5 @@ test('integration:deploy-retry-holds-slot — a reclaim pass during a lease-erro
     assert.equal(status?.commit, next);
     assert.match(status?.retried ?? '', /retried once without build cache/);
     assert.ok(status?.retried?.includes(blob), 'status names the blob');
-  } finally {
-    if (saved === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = saved;
-  }
+  });
 });

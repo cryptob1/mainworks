@@ -14,6 +14,7 @@ import { checkoutRelease } from '../src/release.js';
 import { startPostgres } from './helpers/postgres.js';
 import { git as gitIn, gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3524: `mainworks upgrade` backs up the install's own database, read from its recorded deploy
 // settings, so an agent identity that cannot read DATABASE_URL can still run it.
@@ -39,11 +40,7 @@ async function localInstall() {
   return { directory, password, cluster };
 }
 
-const withoutDatabaseUrl = async <T>(body: () => Promise<T>) => {
-  const saved = process.env.DATABASE_URL;
-  delete process.env.DATABASE_URL;
-  try { return await body(); } finally { if (saved !== undefined) process.env.DATABASE_URL = saved; }
-};
+const withoutDatabaseUrl = <T>(body: () => Promise<T>) => withEnv({ DATABASE_URL: undefined }, body);
 
 const inputsFor = (overrides: Partial<UpgradeInputs>): UpgradeInputs => ({ cliRoot: new URL('..', import.meta.url).pathname, repoRoot: '/work/app', current: { version: '2026.10.16', revision: 'a'.repeat(40), released: true },
   target: { version: '2026.10.17', revision: 'b'.repeat(40), schema: 4 }, databaseSchema: 4, install: localRecord, url: 'http://127.0.0.1:4999', backupFile: '/unused', cliChanges: [], databaseUrl: null, ...overrides });

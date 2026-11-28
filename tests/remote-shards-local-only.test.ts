@@ -7,6 +7,7 @@ import { localOnlyTestPattern, remoteableTestFile, splitLocalOnlyTests, type Hos
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3612: database and browser tests run on remote shards too (each shard container starts the shared
 // warm Postgres cluster and ships Chromium in the trial image). Only tests that need the Docker socket
@@ -75,9 +76,7 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
   const reading = (name: string, cores: number, busy: number): HostReading => ({ name, cores, busy, steal: 0, celsius: 60, limit: 92, away: false });
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const withoutBrowser = await runTrial({
       root, base: await temporaryDirectory('no-browser-base'), mergeSha: sha, changedFiles: files, timeoutMs: 240_000, cores: 2, run: run(false), retries: 0,
       remote: { hosts: ['gy-compute@box'], read: async () => [reading('vishrog', 2, 2), reading('gy-compute@box', 8, 0)] },
@@ -97,5 +96,5 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     assert.equal(withBrowser.build, 'pass', withBrowser.logTail);
     const afterLines = (await readFile(answers, 'utf8')).split('\n').filter(Boolean).slice(lines.length).map(line => JSON.parse(line) as { file: string; remote: boolean });
     assert.ok(afterLines.filter(line => browserFiles.includes(line.file)).every(line => line.remote), `browser files ran remotely when image ships browser: ${JSON.stringify(afterLines)}`);
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE; else process.env.GRAPHYARD_TRIAL_IMAGE = previous; }
+  });
 });

@@ -8,6 +8,7 @@ import { heavyJobBudget, hostShardRoom, slotsDirectoryVariable, takeHostSlot, wr
 import { HostBusyError, runShardsOnHosts, type PlacedHost } from '../src/merge-writer/remote-shards.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3706: one shard per six cores left the hosts idle while this machine carried the trial. A host
 // takes shards while its busy cores plus the shards placed there stay under its cores less two;
@@ -77,11 +78,9 @@ test('unit:host-accepts-shards-by-free-cores — master status shows each host\'
   const master = masterConfigSchema.parse({ version: 1, url: 'https://graphyard.example', cliPath: process.execPath, repository: 'acme/app', baseBranch: 'main', hostId: 'loop-host',
     masterAgentName: 'graphyard-master-app', workers: [], credentialFile, run: {} }) as never;
   writeFileSync(join(root, '.graphyard/master.json'), JSON.stringify(master), { mode: 0o600 });
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = directory;
   const status = (now: Date) => masterStatusReport(root, master, async () => ({ work: [], now: now.toISOString() }), async () => { throw new Error('no git in the fixture'); });
   const imbalance = (attention: { subject: string; text: string }[]) => attention.filter(line => line.subject === 'shard placement');
-  try {
+  await withEnv({ [slotsDirectoryVariable]: directory }, async () => {
     const start = new Date();
     writeMachines(directory, machines(3, 30), start);
     const held = [await takeHostSlot(directory, msi, 'test merge GY-5 shard 1', 'acme/app'), await takeHostSlot(directory, msi, 'test merge GY-5 shard 2', 'acme/app')];
@@ -97,5 +96,5 @@ test('unit:host-accepts-shards-by-free-cores — master status shows each host\'
     writeMachines(directory, machines(3, 10), later);
     assert.deepEqual(imbalance((await status(later)).attention), []);
     for (const slot of held) slot?.release();
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  });
 });

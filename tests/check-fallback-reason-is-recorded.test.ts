@@ -11,6 +11,7 @@ import { trialRunFiles, trialRunsDirectory } from '../src/merge-writer/trial-run
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardRepository } from './helpers/shard-hosts.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3704: a check with services that falls back from a compute host to this machine records why in
 // the run's steps.jsonl, and master status shows the host's last fallback beside its load line until
@@ -46,15 +47,14 @@ test('unit:check-fallback-reason-is-recorded — a host whose SSH fails leaves i
   const records = readFileSync(steps, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
   assert.deepEqual(records, [{ check: 'db', host: target, fallback: `host ${target} dropped a shard: ${stderr}`, at: '2026-11-22T07:00:00.000Z' }]);
 
-  const heavy = join(await temporaryDirectory('fallback-reason-heavy'), 'heavy-jobs'), previous = process.env[slotsDirectoryVariable];
+  const heavy = join(await temporaryDirectory('fallback-reason-heavy'), 'heavy-jobs');
   writeMachines(heavy, [{ name: 'this machine', local: true, away: false, cores: 24, busy: 2, celsius: null }, { name: target, away: false, cores: 8, busy: 1, celsius: null }]);
   const master = { url: 'http://127.0.0.1:5', repository: 'owner/fixture', credentialFile: join(heavy, 'coordinator.token'), hostId: 'yard-box', baseBranch: 'main', workers: [], run: { intervalSeconds: 30 } } as unknown as MasterConfig;
   const machines = async () => (await masterStatusReport(repository.root, master, async () => ({ work: [], now: new Date().toISOString() }), async () => '')).heavyJobs.machines;
-  process.env[slotsDirectoryVariable] = heavy;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: heavy }, async () => {
     assert.deepEqual(await machines(), ['this machine: 2 of 24 cores busy',
       `box: 1 of 8 cores busy, 0 shards · last check fell back to this machine at 2026-11-22T07:00:00.000Z: host ${target} dropped a shard: ${stderr}`]);
     appendFileSync(steps, `${JSON.stringify({ check: 'db', host: target, at: '2026-11-22T07:10:00.000Z' })}\n`);
     assert.deepEqual(await machines(), ['this machine: 2 of 24 cores busy', 'box: 1 of 8 cores busy, 0 shards'], 'a check that next runs there clears it');
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  });
 });

@@ -7,6 +7,7 @@ import { gitDeployPorts } from './helpers/deploy-ports.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-2942: each install's deploy watcher uses its own checkout and checks health against the
 // deployed commit's release, so two installs on one host no longer roll each other back.
@@ -53,9 +54,7 @@ test('unit:deploy-health-expects-deployed-commit — a checkout whose HEAD anoth
 test('unit:deploy-unit-has-own-checkout — the deploy unit names a checkout under its install\'s own directory, never the operator\'s source checkout, and two installs on one host get two', async () => {
   const { deployUnitText } = await import('../src/install/loop-unit.js');
   const home = await temporaryDirectory('deploy-unit-home'), source = await temporaryDirectory('deploy-unit-source');
-  const previous = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = home;
-  try {
+  withEnv({ GRAPHYARD_CONFIG_HOME: home }, () => {
     const checkouts = ['owner/one', 'owner/two'].map(repository => {
       const text = deployUnitText({ root: source, cliPath: join(source, 'bin', 'graphyard.mjs'), repository });
       const checkout = /^ExecStart=.* upgrade --watch --checkout (\S+)$/m.exec(text)?.[1];
@@ -66,5 +65,5 @@ test('unit:deploy-unit-has-own-checkout — the deploy unit names a checkout und
       return checkout;
     });
     assert.notEqual(checkouts[0], checkouts[1], 'each install deploys from its own checkout');
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previous; }
+  });
 });

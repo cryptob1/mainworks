@@ -12,6 +12,7 @@ import { installLoopSupervisor } from '../src/install/loop-unit.js';
 import { localDirectory } from '../src/onboarding.js';
 import { stateDirectory } from '../src/install/layout.js';
 import { listen } from './helpers/http-server.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3711: a fresh install takes the Mainworks names (~/.config/mainworks, .mainworks, mainworks-*
 // units); an install that already has the legacy ones keeps them, with nothing moved.
@@ -35,9 +36,8 @@ test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks name
     if (request.url === '/api/work/GY-1') return response.end(JSON.stringify({ id: 'work-1', key: 'GY-1', epoch: 1, stage: 'build' }));
     response.statusCode = 404; response.end(JSON.stringify({ error: 'Not found' }));
   });
-  const savedHome = process.env.HOME;
   const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(GRAPHYARD|MAINWORKS)_/.test(name)));
-  for (const name of Object.keys(process.env)) if (/^(GRAPHYARD|MAINWORKS)_CONFIG_HOME$/.test(name)) delete process.env[name];
+  const restoreEnv = patchEnv({ HOME: process.env.HOME, GRAPHYARD_CONFIG_HOME: undefined, MAINWORKS_CONFIG_HOME: undefined });
   const status = (cwd: string, home: string) => exec(process.execPath, [cli, 'status', 'GY-1', '--json'], { cwd, env: { ...clean, HOME: home, XDG_CONFIG_HOME: join(home, '.config') } })
     .then(r => ({ code: 0, ...r }), (error: any) => ({ code: error.code as number, stdout: String(error.stdout), stderr: String(error.stderr) }));
   const connection = (token: string) => JSON.stringify({ url, cliPath: cli, hostId: 'layout-host', token: token.repeat(40) });
@@ -101,4 +101,4 @@ test('e2e:mainworks-install-layout — a fresh home gets only the Mainworks name
     const again = await status(oldRoot, oldHome);
     assert.equal(again.code, 0, `status still runs after the upgrade: ${again.stderr}`);
     assert.ok(relative(oldHome, oldDirectory).startsWith('.config/graphyard'));
-  } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; await close(); } });
+  } finally { restoreEnv(); await close(); } });

@@ -7,10 +7,11 @@ import { readRemoteShardRuns, readShardHosts, remoteShardSummary } from '../src/
 import { runTrial } from '../src/merge-writer/trial.js';
 import { shardHosts, shardRepository, sshdHost } from './helpers/shard-hosts.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { patchEnv } from './helpers/env.js';
 
 // Real SSH from a user namespace: root-owned system includes look foreign, but the trial's
 // generated config still resolves its user alias, port and key and reaches the restricted shim.
-test('integration:remote-ssh-confined — shards reach the shim with foreign-owned system includes; a remote failure survives in master status', { timeout: 180_000 }, async () => {
+test('integration:remote-ssh-confined — shards reach the shim with foreign-owned system includes; a remote failure survives in master status', { timeout: 180_000 }, async t => {
   const image = 'mainworks-trial:confined-ssh';
   const hosts = await shardHosts('remote-ssh-confined', ['loopback'], { [image]: `sha256:${'98f889ed5f9e'.repeat(6).slice(0, 64)}` });
   const server = await sshdHost(hosts.root, hosts.shim, hosts.home('loopback'), join(hosts.root, 'hosts', 'loopback', 'bin'), hosts.bin);
@@ -32,8 +33,7 @@ const at = name => process.argv[process.argv.indexOf(name) + 1];
 if (process.cwd().includes('/.graphyard/runs/') && existsSync(${JSON.stringify(fail)})) { console.error('remote fixture: forced shard failure'); process.exit(137); }
 for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(Boolean)) appendFileSync(at('--durations'), JSON.stringify({ file, passed: true, durationMs: 1 }) + '\\n');
 ` });
-  const previous = { HOME: process.env.HOME, GRAPHYARD_TRIAL_IMAGE: process.env.GRAPHYARD_TRIAL_IMAGE };
-  process.env.HOME = home; process.env.GRAPHYARD_TRIAL_IMAGE = image;
+  patchEnv({ HOME: home, GRAPHYARD_TRIAL_IMAGE: image }, t);
   const run: ChildRun = async (program, args, options) => {
     if (program === 'npm') return '';
     if (program === 'node' && args[0] === 'scripts/select.mjs') return files.join('\n');
@@ -60,6 +60,5 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     assert.ok(failed.logTail?.includes(away.reason!));
   } finally {
     server.kill();
-    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }
 });

@@ -7,6 +7,7 @@ import { healthRoutes } from '../src/server/routes/health.js';
 import { masterConfigSchema } from '../src/master/profiles.js';
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-4005: core's database reached 9.99 GB of its 10 GB bound with nothing saying so. Past 80% of the
 // bound /healthz and master status each show one line: used, bound, the largest table and the action.
@@ -20,12 +21,10 @@ async function healthz(used: number) {
     release: () => {},
   };
   const pool = { waitingCount: 0, idleCount: 1, connect: async () => client, query: client.query };
-  const previous = process.env.MAINWORKS_DATABASE_MAX_BYTES;
-  process.env.MAINWORKS_DATABASE_MAX_BYTES = String(bound);
-  try {
+  return withEnv({ MAINWORKS_DATABASE_MAX_BYTES: String(bound) }, async () => {
     const services = { engine: { store: { pool } }, build: { commit: 'c'.repeat(40), protocol: 1 } } as any;
     return await healthRoutes.routes[0].handle({ services, url: new URL('http://plane/healthz'), send: () => { throw new Error('no 503 expected'); } } as any, []) as any;
-  } finally { if (previous === undefined) delete process.env.MAINWORKS_DATABASE_MAX_BYTES; else process.env.MAINWORKS_DATABASE_MAX_BYTES = previous; }
+  });
 }
 
 test('unit:health-warns-at-80-percent-of-database-bound — past 80% of the bound /healthz and master status show one line with used, bound, the largest table and the action; at or under it they show none', async () => {

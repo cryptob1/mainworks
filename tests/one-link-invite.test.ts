@@ -13,6 +13,7 @@ import { servedInstall, servedNode } from './helpers/served-install.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { until } from './helpers/until.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3514: Invite gives one link on the install's Funnel address; it opens once, on any device, within
 // the days the owner picked; a teammate's session is short and renews with use; revoking ends it at
@@ -158,9 +159,7 @@ test('e2e:one-link-invite — Invite gives exactly one link on the install\'s Fu
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('one-link-master-home', join(checkout, '.graphyard'));
-  const savedHome = process.env.HOME;
-  process.env.HOME = home;
-  try {
+  await withEnv({ HOME: home }, async () => {
     const root = join(home, 'code', 'project'), configHome = join(home, '.config', 'graphyard'), installDir = join(configHome, 'project-install');
     await gitRepo({ root, files: { 'README.md': 'tracked\n' }, message: 'seed' });
     const secret = 'operator-admin-credential-'.padEnd(48, 'x');
@@ -188,5 +187,5 @@ test('e2e:one-link-invite — Invite gives exactly one link on the install\'s Fu
     assert.ok(!output.includes('CHECKOUT-WRITTEN') && readFileSync(join(root, 'README.md'), 'utf8') === 'tracked\n', `the checkout is unwritable: ${output}`);
     assert.ok(!output.includes('HOME-WRITTEN') && !existsSync(join(home, 'outside.txt')), `the home is unwritable: ${output}`);
     assert.ok(output.includes('GRAPHYARD-WRITTEN') && output.includes('OWN-TOKEN'), `the master keeps .graphyard and its own token: ${output}`);
-  } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
+  });
 });

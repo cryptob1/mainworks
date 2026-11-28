@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { withDatabase } from './helpers/postgres.js';
 import { Engine } from '../src/engine.js';
 import { supervise } from '../src/session-watch.js';
+import { withEnv } from './helpers/env.js';
 
 const proof = 'integration:session-prep-failure-falls-back';
 test(`${proof} — warm image failure starts the same attempt here and keeps the host out of session placement for 30 minutes`, async () => {
@@ -93,13 +94,11 @@ exit 42
     if (command === 'ssh') return '';
     return defaultChildRun(command, args, options);
   };
-  const previous = process.env.PATH;
-  process.env.PATH = `${bin}:${previous}`;
   let local = false;
   const localRan = join(directory, 'local-command');
   let printed = '';
   const sink = { write(text: string) { printed += text; return true; } } as NodeJS.WritableStream;
-  try {
+  await withEnv({ PATH: `${bin}:${process.env.PATH}` }, async () => {
     const code = await runRemoteSession({ target, worktree: root, homes: [], cli: join(directory, 'cli'), argv: [process.execPath, '-e', 'process.exit(0)'],
       localArgv: [process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(localRan)}, 'local confinement and flags'); process.exit(0)`],
       env: {}, run, hostsFile: file, onLocal: () => { local = true; }, output: sink, errors: sink });
@@ -108,7 +107,7 @@ exit 42
     assert.equal(existsSync(localRan), failure !== 'agent', 'fallback uses the launcher-supplied local command');
     assert.match(printed, failure === 'image load' ? /image load failed/ : /helper Docker launch failed/);
     assert.equal(Boolean(await sessionCooldown(target, file)), failure !== 'agent');
-  } finally { process.env.PATH = previous; }
+  });
 });
 
 test(`${proof} — the supervisor keeps the claimed epoch and records no failed attempt while the fallback agent runs`, { timeout: 30_000 }, async () => {

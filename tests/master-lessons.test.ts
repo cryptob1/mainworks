@@ -17,6 +17,7 @@ import { workerPrompt } from '../src/master/dispatch.js';
 import { emptyProjectMemory, masterLessons, recordNoteInMemory, reconcileMasterMemory } from '../src/model/project-memory.js';
 import { readProjectMemory, recordedMasterMemory } from '../src/project-memory.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3274: the master keeps durable lessons in project memory. `master lesson add` stores one the
 // next master launch prompt contains; a lesson added `--for workers` appears in a worker's prompt
@@ -30,7 +31,7 @@ const lessonDeps = (actors: Record<string, { id: string; role: string }>, clock 
   now: () => clock.at,
 });
 
-test('e2e:master-lessons — lesson add stores a lesson the next master launch prompt contains; a --for workers lesson reaches worker prompts and a plain one does not', { timeout: 180_000 }, async () => {
+test('e2e:master-lessons — lesson add stores a lesson the next master launch prompt contains; a --for workers lesson reaches worker prompts and a plain one does not', { timeout: 180_000 }, async t => {
   const scratch = await temporaryDirectory('master-lessons');
   const root = await realpath(await temporaryDirectory('checkout', scratch)), homes = await temporaryDirectory('accounts', scratch);
   const credentials = await temporaryDirectory('coordinator', scratch);
@@ -105,8 +106,7 @@ test('e2e:master-lessons — lesson add stores a lesson the next master launch p
   // The next master launch prompt contains them, after the role text and before the handover.
   // The fixture process stands inside its own boundary already (its Herdr never builds one), so the
   // launcher needs no fresh namespace probe here — the same marker a real master session carries.
-  const confinement = masterConfinementVariable, hadConfinement = process.env[confinement];
-  process.env[confinement] = 'master';
+  patchEnv({ [masterConfinementVariable]: 'master' }, t);
   try {
     const launched = await launchMasterSession(root, config, { agents: [], available: true }, 'Handover: continue from master status.', run,
       { registry: client, quota: false, smoke: async () => ({ ok: true, error: null }) });
@@ -119,7 +119,6 @@ test('e2e:master-lessons — lesson add stores a lesson the next master launch p
     assert.ok(request.indexOf('dedicated Mainworks master agent') < request.indexOf('Master lessons'), 'the lessons come after the role text that names AGENTS.md');
     assert.equal(result.id, launched.continuity!.current.nativeId, 'the launch really ran the fixture runtime');
   } finally {
-    if (hadConfinement === undefined) delete process.env[confinement]; else process.env[confinement] = hadConfinement;
     await stop();
   }
 

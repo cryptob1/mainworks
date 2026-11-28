@@ -12,6 +12,7 @@ import type { Principal } from '../src/model.js';
 import { defaultRepositoryPolicy } from '../src/model/repository-policy.js';
 import { setRepositoryPolicy } from '../src/model-boundary/repository-policy.js';
 import { api } from './helpers/api.js';
+import { withEnv } from './helpers/env.js';
 // GY-2965: the fixtures create items carrying e2e: proofs, so this process declares the serve the trial would use.
 setRepositoryPolicy({ ...defaultRepositoryPolicy, e2e: { pendingOutcomes: 'non-blocking', serve: { command: 'true', url: 'http://127.0.0.1:9', readySeconds: 1 } } });
 
@@ -272,10 +273,7 @@ test('rollback HTTP routes derive authority from the credential and appear in de
   // Collector, builder, observer, promoter and both executors hold producer
   // credentials and count toward the review/proof agent limit the server
   // enforces at boot; raise the configurable limit for this roster.
-  const configuredReviewers = process.env.GRAPHYARD_MAX_REVIEWERS; process.env.GRAPHYARD_MAX_REVIEWERS = '6';
-  let http: ReturnType<typeof server>;
-  try { http = server(engine, principals.map(p => ({ ...p, token: `${p.id}-token-${'x'.repeat(32)}` }))); }
-  finally { if (configuredReviewers === undefined) delete process.env.GRAPHYARD_MAX_REVIEWERS; else process.env.GRAPHYARD_MAX_REVIEWERS = configuredReviewers; }
+  const http = withEnv({ GRAPHYARD_MAX_REVIEWERS: '6' }, () => server(engine, principals.map(p => ({ ...p, token: `${p.id}-token-${'x'.repeat(32)}` }))));
   const { url } = await listen(http, t);
   const call = (actor: Principal, path: string, body?: unknown) => api(url, `${actor.id}-token-${'x'.repeat(32)}`, path, { body, key: id() });
   assert.equal((await call(worker, 'delivery/rollback', rollbackRequest(f, one, 2))).status, 403);

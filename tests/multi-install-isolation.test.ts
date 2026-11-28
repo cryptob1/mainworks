@@ -13,6 +13,7 @@ import { masterHarness } from '../src/master/harness.js';
 import * as supervisorModule from '../src/install/loop-unit.js';
 import { installLoopSupervisor, loopUnitText } from '../src/install/loop-unit.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 /**
  * GY-1441: several installations on one host. The greenfield pilot (2026-10-07) ran a second
@@ -145,13 +146,11 @@ test('unit:unit-names-fail-closed — with no units.json, a legacy-named unit th
   // The pilot records nothing yet: every reader refuses rather than return production's names.
   assert.throws(() => readInstallUnits(pilot, unitDirectory, home), refusal(production));
   assert.throws(() => loopUnitOf(pilot, unitDirectory, home), refusal(production));
-  const environment = { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
-  process.env.XDG_CONFIG_HOME = join(home, '.config');
-  try {
+  withEnv({ XDG_CONFIG_HOME: join(home, '.config') }, () => {
     assert.throws(() => readInstallUnits(pilot), refusal(production), 'the default reader reads the host\'s own unit directory');
     assert.throws(() => loopUnitOf(pilot), refusal(production));
     assert.equal(readInstallUnits(production).master, legacyLoopUnit, 'production keeps its legacy names for backward compatibility');
-  } finally { if (environment.XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = environment.XDG_CONFIG_HOME; }
+  });
   // The executor template alone running another checkout refuses as well, naming it.
   const executorOnly = join(home, 'executor-only');
   await mkdir(executorOnly, { recursive: true });

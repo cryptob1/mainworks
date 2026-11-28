@@ -12,6 +12,7 @@ import { detachedLaunch, runContainment, runFiles, sessionLaunch } from '../src/
 import { supervise, systemdContainment } from '../src/session-watch.js';
 import { trialContainerLaunch } from '../src/merge-writer/trial-container.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-4006: with MAINWORKS_RESERVED_CPUS set, everything Mainworks starts on the host stays off those
 // CPUs: session and trial scopes (AllowedCPUs, and the affinity that holds where the user manager has
@@ -39,11 +40,7 @@ const composeServices = () => composePreviewConfig({ services: { web: { image: '
   { project: composeProjectName('GY-4006', 'test'), service: 'web', port: 8080, bounds: composeBounds(), variables: {}, owner: { pid: process.pid } as never });
 
 /** Runs `body` with the host setting (`undefined`: none), then puts the caller's back. */
-async function withReserved<T>(value: string | undefined, body: () => T): Promise<T> {
-  const before = process.env.MAINWORKS_RESERVED_CPUS;
-  if (value === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = value;
-  try { return await body(); } finally { if (before === undefined) delete process.env.MAINWORKS_RESERVED_CPUS; else process.env.MAINWORKS_RESERVED_CPUS = before; }
-}
+const withReserved = <T>(value: string | undefined, body: () => T): Promise<T> => withEnv({ MAINWORKS_RESERVED_CPUS: value }, async () => body());
 
 test(`${proof} — launch properties keep session, trial and check launches off reserved CPUs`, () => withReserved(reserved, () => {
   const scopes = [

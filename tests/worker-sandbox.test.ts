@@ -19,6 +19,7 @@ import { git, gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
 import { workFixture } from './helpers/work-fixture.js';
 import { listen } from './helpers/http-server.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-134: a Codex worker could not write its worktree's own Git admin directory, so the mandatory
 // `mainworks sync` failed at `git fetch` and the item presented as a ready-gate refusal.
@@ -177,8 +178,7 @@ test('integration:sandbox-probe-inside-confinement-fails-launch — the sandbox 
   // A bubblewrap on PATH whose namespace probe succeeds, so the launch builds its read-only mount wrapper.
   const bin = join(fixture.root, 'bin'); await mkdir(bin);
   const bwrap = join(bin, 'bwrap'); await writeFile(bwrap, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  const path = process.env.PATH;
-  process.env.PATH = `${bin}${delimiter}${path}`;
+  const restorePath = patchEnv({ PATH: `${bin}${delimiter}${process.env.PATH}` });
   try {
     const probes: string[][] = [], released: number[] = [], worker = recordedRuns();
     const prepare = async () => ({ epoch: 3, path: fixture.worktree, base: 'c'.repeat(40) });
@@ -220,7 +220,7 @@ test('integration:sandbox-probe-inside-confinement-fails-launch — the sandbox 
     // A runtime with no sandbox of its own is probed inside the confinement too, not from the launcher.
     const shell: SandboxExec = (cmd, words) => { assert.equal(cmd, bwrap); assert.equal(words[4], '/bin/sh'); throw Object.assign(new Error('failed'), { stdout: `unwritable\t${fixture.gitDir}\tsh: Read-only file system\n`, stderr: '' }); };
     assert.throws(() => verifyWorkerSandbox({ kind: 'claude', args: [], confinement: wrapper }, fixture.worktree, writablePaths(workerPaths(fixture.worktree)), shell), (error: any) => error instanceof WorkerSandboxError && error.path === fixture.gitDir);
-  } finally { process.env.PATH = path; await fixture.cleanup(); }
+  } finally { restorePath(); await fixture.cleanup(); }
 });
 
 async function fakeServer(item: () => any, blocked: any[]) {

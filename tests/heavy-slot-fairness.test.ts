@@ -10,6 +10,7 @@ import { acquireVerificationSlot, gateSlot, heldSlots, hostHeavyJobsDirectory, s
 import { masterStatusReport } from '../src/cli/master-status.js';
 import { masterConfigSchema, type MasterConfig } from '../src/master/profiles.js';
 import { until } from './helpers/until.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3487: several installs share one host's heavy-job slots. One install held every slot, release
 // after release, because its own older waiters were always at the head of the queue, and another
@@ -99,13 +100,11 @@ test('e2e:heavy-slot-fairness — two installs\' loops on one host submit merge 
     version: 1, url: 'https://graphyard.example', credentialFile: '/outside/coordinator.token', cliPath: '/bin/graphyard',
     repository: 'acme/app', baseBranch: 'main', githubAppId: 1234, hostId: 'loop-host', masterAgentName: 'graphyard-master-fairness', workers: [],
   }) as MasterConfig;
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = directory;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: directory }, async () => {
     const report = await masterStatusReport(await temporaryDirectory('heavy-slot-fairness-status'), master, async () => ({ work: [], now: new Date().toISOString() }), async () => { throw new Error('no git in the fixture'); });
     assert.equal(report.heavyJobs.limit, 2);
     assert.deepEqual([...new Set(report.heavyJobs.holders.map(holder => holder.project))].sort(), ['acme/app', 'acme/site'], 'master status lists holders from both installs');
-  } finally { if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous; }
+  });
 
   writeFileSync(go, '');
   for (const job of jobs) assert.equal(await job.closed, 0, job.stderr());
