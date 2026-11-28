@@ -375,7 +375,8 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
   const active = buildingWarmImagesV1.get(tag);
   if (active) return active;
-  const build = (async (): Promise<string> => {
+  const build = withHostLock(imageLock, async (): Promise<string> => {
+    if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
     if (lock === null) { await local('docker', ['tag', input.image, tag]); return tag; }
     const name = `graphyard-warm-${randomUUID().slice(0, 8)}`, install = 'mkdir -p /deps && cd /deps && tar -xf - && HOME=/tmp npm ci --ignore-scripts --no-audit --no-fund >/dev/null && ' + linkNativeLibraries;
     try {
@@ -383,7 +384,7 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
       await commitCheckedWarmImage(local, name, tag);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
     return tag;
-  })();
+  }, { holder: 'a warm test image build' });
   buildingWarmImagesV1.set(tag, build);
   try { return await build; } finally { buildingWarmImagesV1.delete(tag); }
 }
@@ -392,6 +393,7 @@ async function ensureWarmImageV1(input: { root: string; sha: string; image: stri
  * GY-3627: build the warm image at most once for `(image, lockfile, commit)`, holding `/deps/node_modules`,
  * that commit's `dist/cli.mjs` and `dist/server.mjs`, and a filled Node compile cache pointed at by
  * `NODE_COMPILE_CACHE`. Concurrent callers for the same tag share the single build.
+ * GY-4077: warm builds and commits take the host image lock used by deploys and image sends.
  */
 export async function ensureWarmImage(input: { root: string; commit: string; image: string; run: ChildRun; deadline: number }): Promise<{ tag: string; built: boolean }> {
   const remaining = () => Math.max(1_000, input.deadline - Date.now());
@@ -402,9 +404,15 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
   if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return { tag, built: false };
   const active = buildingWarmImages.get(tag);
   if (active) return active;
-  const build = (async (): Promise<{ tag: string; built: boolean }> => {
+  const build = withHostLock(imageLock, async (): Promise<{ tag: string; built: boolean }> => {
+    // Another install may have finished this tag while we waited for its export.
+    if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return { tag, built: false };
     const hasBuiltEntry = await local('git', ['-C', input.root, 'cat-file', '-e', `${input.commit}:bin/built-entry.mjs`]).then(() => true, () => false);
-    if (lock === null && !hasBuiltEntry) { await local('docker', ['tag', input.image, tag]); return { tag, built: true }; }
+    if (lock === null && !hasBuiltEntry) {
+      await local('docker', ['tag', input.image, tag]);
+      await pruneWarmImageFamily(tag, local);
+      return { tag, built: true };
+    }
     const name = `graphyard-warm-${randomUUID().slice(0, 8)}`;
     const script = [
       'set -e',
@@ -419,8 +427,9 @@ export async function ensureWarmImage(input: { root: string; commit: string; ima
       await local('sh', ['-c', `set -o pipefail 2>/dev/null; git -C ${shellQuote(input.root)} archive ${shellQuote(input.commit)} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(input.image)} -c ${shellQuote(script)}`]);
       await commitCheckedWarmImage(local, name, tag, ['--change', `ENV NODE_COMPILE_CACHE=${warmCompileCacheDirectory}`]);
     } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
+    await pruneWarmImageFamily(tag, local);
     return { tag, built: true };
-  })().then(async result => { await pruneWarmImageFamily(tag, local); return result; });
+  }, { holder: 'a warm test image build' });
   buildingWarmImages.set(tag, build);
   try { return await build; } finally { buildingWarmImages.delete(tag); }
 }
@@ -832,14 +841,16 @@ async function catalogImage(input: { root: string; commit: string; baseTip?: str
   // the tag's last part is the warm image's commit (v2), and a v1 warm image is fixed per lockfile.
   const key = createHash('sha256').update(`${await local('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image])}\n${release}`).digest('hex');
   const { hash } = await lockfileHash(local, input.root, input.commit), tag = warmImageTag(key, hash, input.version === 'v1' ? undefined : parseWarmImageTag(warm)?.commit ?? input.commit);
-  if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
-  const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
-  try {
-    await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
-    await local('docker', ['commit', name, tag]);
-  } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
-  await pruneWarmImageFamily(tag, local);
-  return tag;
+  return withHostLock(imageLock, async () => {
+    if (await local('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]).then(() => true, () => false)) return tag;
+    const name = `mainworks-catalog-${randomUUID().slice(0, 8)}`, files = ['src', 'bin', 'scripts/e2e-shard.mjs', 'package.json'];
+    try {
+      await local('sh', ['-c', `set -o pipefail 2>/dev/null; tar -cf - -C ${shellQuote(source)} ${files.join(' ')} -C ${shellQuote(dirname(harnessModules))} ${shellQuote(basename(harnessModules))} | docker run -i --name ${name} ${warmBuildDockerFlags()} --entrypoint /bin/sh ${shellQuote(warm)} -c ${shellQuote('mkdir -p /warm/harness && tar -xf - -C /warm/harness && chmod -R a+rX /warm/harness')}`]);
+      await local('docker', ['commit', name, tag]);
+    } finally { await local('docker', ['rm', '-f', name]).catch(() => {}); }
+    await pruneWarmImageFamily(tag, local);
+    return tag;
+  }, { holder: 'a warm catalog image build' });
 }
 
 /**
