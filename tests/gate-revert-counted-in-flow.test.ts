@@ -8,7 +8,7 @@ import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import { mergeWriterStep, type MergeWriterReads } from '../src/daemon/cycle-merge-writer.js';
 import type { Cycle } from '../src/daemon/cycle.js';
 import type { DaemonEffects } from '../src/daemon/effects.js';
-import { daemonStateSchema } from '../src/daemon/state.js';
+import { boundDaemonState, daemonStateSchema, type DaemonState } from '../src/daemon/state.js';
 import { Engine } from '../src/engine.js';
 import type { Principal, Work } from '../src/model.js';
 import { mergeRecordKey, type MergeRecordEvent, type MergeTrialRun } from '../src/merge-writer/executor.js';
@@ -50,7 +50,7 @@ before(async () => {
 after(async () => { await store?.close(); });
 
 /** The ledger's record through the control plane's own merge-record handler, as the loop's coordinator writes it. */
-const recordOnPlane = (item: Work, event: MergeRecordEvent) => recordMergeEvent({ engine } as unknown as Services, writer, item.id, event, mergeRecordKey(item, event));
+const recordOnPlane = (item: Parameters<MergeWriterReads['record']>[0], event: MergeRecordEvent) => recordMergeEvent({ engine } as unknown as Services, writer, item.id, event, mergeRecordKey(item, event));
 
 /** The merge.serve-revert row a gate revert of `mergeSha` from the gated `tip` writes, its instant aside. */
 const row = (tip: string, mergeSha: string, revertSha: string) => ({ serve: tip, mergeSha, outcome: 'reverted', revertSha, reason: null, reland: 'GY-9000', failingCase: check, failingStep: null, failingReason: `the batch gate's check ${check} failed` });
@@ -101,19 +101,19 @@ async function world(record: MergeWriterReads['record']) {
   return { origin, verified, mergeSha, tip, work, reads, filed };
 }
 
-/** The gate over `world`: its checks answer by commit, the landing breaking `check`, which passes on the verified base. */
-const gate = (world: Awaited<ReturnType<typeof world>>, state?: Parameters<typeof batchGatePorts>[3]) => {
-  const ports = { ...batchGatePorts(world.reads, [world.work], () => null, state), checkpoint: async () => {},
-    run: async (commit: string, checks: readonly string[]) => checks.map(entry => entry === 'affected' ? check : entry).filter(entry => entry === check && commit !== world.verified) };
+/** The gate over a `world`: its checks answer by commit, the landing breaking `check`, which passes on the verified base. It answers the revert's commit. */
+const gate = (yard: Awaited<ReturnType<typeof world>>, state?: DaemonState) => {
+  const ports = { ...batchGatePorts(yard.reads, [yard.work], () => null, state), checkpoint: async () => {},
+    run: async (commit: string, checks: readonly string[]) => checks.map(entry => entry === 'affected' ? check : entry).filter(entry => entry === check && commit !== yard.verified) };
   return async () => {
-    const outcome = await runGate(ports, bootstrapGate(repository, world.verified));
+    const outcome = await runGate(ports, bootstrapGate(repository, yard.verified));
     assert.equal(outcome.outcome, 'reverted', JSON.stringify(outcome));
     const revertSha = outcome.outcome === 'reverted' ? outcome.revertSha : '';
-    assert.equal(outcome.tip, world.tip);
-    assert.equal(git(world.origin, 'rev-parse', 'main'), revertSha, 'the revert is pushed onto main');
-    assert.equal(git(world.origin, 'rev-parse', 'main^'), world.tip, 'on the gated tip');
-    assert.equal(git(world.origin, 'log', '-1', '--format=%s', 'main'), `Revert "Merge ${world.work.key}: change"`);
-    assert.deepEqual(world.filed, [`gate-reland:${world.mergeSha}`], 'the re-land is filed once, under its key');
+    assert.equal(outcome.tip, yard.tip);
+    assert.equal(git(yard.origin, 'rev-parse', 'main'), revertSha, 'the revert is pushed onto main');
+    assert.equal(git(yard.origin, 'rev-parse', 'main^'), yard.tip, 'on the gated tip');
+    assert.equal(git(yard.origin, 'log', '-1', '--format=%s', 'main'), `Revert "Merge ${yard.work.key}: change"`);
+    assert.deepEqual(yard.filed, [`gate-reland:${yard.mergeSha}`], 'the re-land is filed once, under its key');
     return revertSha;
   };
 };
@@ -154,9 +154,10 @@ test('integration:gate-revert-counted-in-flow — a record the control plane doe
   // The revert rides as a receipt the ledger has not acknowledged, as one an older loop left does.
   const [owed] = state.mergeWriter.serveRevert?.reverts ?? [];
   assert.ok(owed, 'the refused record is owed to the loop');
-  const { at, ...receipt } = owed;
-  assert.deepEqual(receipt, { recorded: false, culprit: yard.work.key, ...row(yard.tip, yard.mergeSha, revertSha) });
+  const { at, ...receipt } = owed, { outcome: _outcome, reason: _reason, ...landed } = row(yard.tip, yard.mergeSha, revertSha);
+  assert.deepEqual(receipt, { recorded: false, culprit: yard.work.key, ...landed });
   assert.ok(Number.isFinite(Date.parse(at)), `the receipt carries its instant: ${at}`);
+  assert.deepEqual(boundDaemonState(state).mergeWriter.serveRevert?.reverts, [owed], "the loop's persisted state keeps the receipt until the ledger acknowledges it");
 
   // The loop's next merge-writer step writes it, and the flow counts the revert once.
   await mergeWriterStep({ state, effects: { mergeWriter: yard.reads, persist: async () => {} } as unknown as DaemonEffects, now: Date.now,

@@ -11,11 +11,11 @@ import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert, type ServeRevertPorts } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
 import { HostDroppedError, localOnlyTestPattern, realFreeCores, remoteableTestFile, type HostReading } from '../merge-writer/remote-shards.js';
-import { heavyTrial, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
+import { heavyTrial, oweServeRevertRecord, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
 import type { Cycle } from './cycle.js';
 import { actionLine } from './run.js';
-import { actionDetailMax, message, storeAction } from './state.js';
+import { actionDetailMax, message, storeAction, type DaemonState } from './state.js';
 import { batchGateFlights as flights, busyTrialSlots } from './trial-slots.js';
 import { holdingMergePushes } from './gate-revert-hold.js';
 import { fileLoopFault, gateFiledItem, readProjectCapabilities, repairedProof } from './control-plane.js';
@@ -320,8 +320,8 @@ async function recordRepaired(record: GateRecord, work: readonly Work[], attest:
   }
 }
 
-/** The gate's ports over the merge writer's reads. */
-export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null, state?: object): GatePorts & { diagnose: DiagnosePort } {
+/** The gate's ports over the merge writer's reads; `state` is the loop's, which holds its merge pushes during a revert and keeps a revert record the control plane did not take. */
+export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<MergeWriterReads['git']> }, work: readonly Work[], trusted: () => string | null = () => null, state?: DaemonState): GatePorts & { diagnose: DiagnosePort } {
   const git = reads.git;
   // GY-3973: the work a run holds predates its own filings, so an item these ports filed is open to them until a later cycle's work says otherwise.
   const filed = new Set<string>();
@@ -409,15 +409,19 @@ export function batchGatePorts(reads: MergeWriterReads & { git: NonNullable<Merg
       const pushed = await trialAndPushRevert({ trial, push: reads.push }, { revertSha: current, files, baseTip: tip, culpritKey: landing.item.key, mergeSha: landing.sha, onStep, startMs: reads.revertStartMs });
       if ('held' in pushed) return { held: pushed.held };
       if ('retry' in pushed) return { retry: pushed.retry, ...(pushed.retry === baseStillFails ? { revertSha: current } : {}) };
+      // GY-4068: the control plane judges a revert record against its checkout's refs/remotes/origin/<base>, which a push to an
+      // explicit URL leaves where it was: main is fetched first, as a merge is before it is reconciled. A fetch that fails here
+      // costs only the record below: the push already stands, and a refused record is owed to the loop.
+      await reads.fetch().catch(() => null);
       const failingCase = check.startsWith('e2e:') ? check.slice(4) : null, failingReason = `the batch gate's check ${check} failed`;
       for (const entry of all) {
         const reland = relandItemFor(entry.item, { serve: gated, failingCase: failingCase ?? check, failingStep: null, failingReason, mergeSha: entry.sha, baseBranch: reads.baseBranch });
         // A build or test failure names no case: the re-land carries the original criteria alone.
         const filed = (await reads.createWork?.(failingCase ? reland : { ...reland, criteria: entry.item.criteria.map(({ id, text, proofs }) => ({ id, text, proofs: [...proofs] })) }, `gate-reland:${entry.sha}`).catch(() => null))?.key ?? null;
         // GY-4068: the revert goes on the reverted item's ledger as a loop serve revert's does (settleServeRevertFlight), so the flow numbers count it.
-        // The push already stands, so a record the control plane refuses ends the run no more than a refused filing does.
-        await reads.record(entry.item, { kind: 'serve-revert', serve: gated, mergeSha: entry.sha, outcome: 'reverted', revertSha: current, reason: null, reland: filed,
-          failingCase: failingCase ?? check, failingStep: null, failingReason, at: new Date(reads.now()).toISOString() }).catch(() => null);
+        const receipt = { serve: gated, mergeSha: entry.sha, revertSha: current, reland: filed, failingCase: failingCase ?? check, failingStep: null, failingReason, at: new Date(reads.now()).toISOString() };
+        // The push already stands, so the run goes on whatever the control plane answers; a record it does not take is owed to the loop, which writes it again.
+        await reads.record(entry.item, { kind: 'serve-revert', outcome: 'reverted', reason: null, ...receipt }).catch(() => oweServeRevertRecord(state, { culprit: entry.item.key, ...receipt }));
       }
       return { revertSha: current };
     }),
