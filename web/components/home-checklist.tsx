@@ -5,8 +5,10 @@ import { useState } from 'react';
  * it names a link to that page and its guide line a link to the owner's public guide, in a new tab. It shows
  * to whoever opens Home while this browser has not dismissed it, remembered the way web/theme.ts keeps the
  * theme: a window with no storage (private mode) just shows it again. Help links to the same guide at its top.
+ * GY-4071: the key says mainworks. A new name a person could read says Mainworks (GY-3872); the older
+ * graphyard.* keys stay only because open sessions already hold them.
  */
-const KEY = 'graphyard.first-time-checklist';
+const KEY = 'mainworks.first-time-checklist';
 /** The owner's public guide for new factory managers. */
 export const MANAGER_GUIDE = 'https://claude.ai/artifact/WdyKuULnFYMx8qF5eTmFbg';
 
