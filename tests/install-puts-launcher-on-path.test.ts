@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { appendFile, chmod, mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import pg from 'pg';
 import { applyInstall, buildPlan, prepareInstall } from '../src/install/index.js';
 import { cliReleasePath, currentCliPath, userLauncherPath, writeUserLauncher } from '../src/install/cli-release.js';
+import { freeLoopbackPort } from '../src/install/local.js';
+import { LOCAL_USER, localPaths, postgresBinaries, startCluster } from '../src/install/local-runtime.js';
+import { liveServersUnder } from '../src/postgres-stop.js';
 import { harness, REPOSITORY } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
@@ -111,5 +116,60 @@ test(`${proof} — install --plan lists the launcher; install puts mainworks on 
     );
   } finally {
     await h.cleanup();
+  }
+});
+
+test('integration:install-cleanup-stops-postgres-first — harness cleanup stops local Postgres and waits for it to exit before removing directories', async () => {
+  const h = await harness({ provider: 'local' });
+  const paths = localPaths(join(h.configHome, 'owner-project'));
+  const password = 'test-cleanup-password';
+  await mkdir(paths.postgres, { recursive: true, mode: 0o700 });
+  await writeFile(paths.passwordFile, `${password}\n`, { mode: 0o600 });
+  const binaries = await postgresBinaries();
+  execFileSync(binaries.initdb, [
+    `--pgdata=${paths.data}`, '--auth=scram-sha-256', `--username=${LOCAL_USER}`,
+    `--pwfile=${paths.passwordFile}`, '--encoding=UTF8', '--locale=C', '--no-sync',
+  ], { stdio: 'ignore' });
+  await appendFile(join(paths.data, 'postgresql.auto.conf'), 'fsync = off\n');
+  const port = await freeLoopbackPort();
+  const cluster = await startCluster(paths, port, binaries);
+
+  // Actively write relation files into the data directory so removing configHome while Postgres is
+  // still running races with file creation and fails with ENOTEMPTY.
+  let writing = true;
+  const clients = await Promise.all(Array.from({ length: 4 }, async () => {
+    const client = new pg.Client({ host: '127.0.0.1', port, user: LOCAL_USER, password, database: 'postgres' });
+    client.on('error', () => {});
+    await client.connect();
+    return client;
+  }));
+  const started = clients.map(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>(r => { resolve = r; });
+    return { promise, resolve };
+  });
+  const writers = clients.map((client, worker) => (async () => {
+    try {
+      for (let i = 0; writing; i++) {
+        await client.query(`CREATE TABLE w_${worker}_${i} (x int); DROP TABLE w_${worker}_${i};`);
+        if (i === 0) started[worker].resolve();
+      }
+    } catch {
+      started[worker].resolve();
+      // Expected once cleanup stops Postgres with fast shutdown.
+    } finally {
+      await client.end().catch(() => {});
+    }
+  })());
+  await Promise.all(started.map(s => s.promise));
+
+  try {
+    await h.cleanup();
+    assert.deepEqual(liveServersUnder(h.configHome), [], 'local Postgres exited before cleanup returned');
+    assert.equal(existsSync(h.configHome), false, 'configHome was removed after Postgres stopped');
+  } finally {
+    writing = false;
+    await Promise.allSettled(writers);
+    await cluster.stop();
   }
 });
