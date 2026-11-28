@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runTests } from './helpers/run-tests.js';
 
-test('unit:test-browser-tests-human-decisions-spec-ts-pinned — answering survives a delayed pre-answer poll', async () => {
+test('unit:test-browser-tests-human-decisions-spec-ts-pinned — answering survives a delayed pre-answer poll, and the install-name read is not taken for the sign-in', async () => {
   const suite = await runTests({ browser: true, args: ['browser-tests/human-decisions.spec.ts', '--workers=2'], stdio: 'pipe' });
   assert.equal(suite.code, 0, `${suite.stdout}\n${suite.stderr}`);
   const regression = await runTests({ browser: true, args: ['--config', 'tests/browser/playwright.config.ts', 'human-decisions-stale-poll'], stdio: 'pipe' });

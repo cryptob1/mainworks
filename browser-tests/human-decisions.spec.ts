@@ -19,7 +19,7 @@ async function fixture(page: Page, options: { refuseAnswers?: boolean } = {}) {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname, method = route.request().method();
     // The link is the credential: the one route reached without a token, and it opens a human session.
-    if (path === '/api/sign-in') { posted.push({ path, body: route.request().postDataJSON() }); return route.fulfill({ json: { token: 'browser-human', actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, expiresAt: '2026-01-01T14:00:00Z' } }); }
+    if (path === '/api/sign-in') { if (method === 'POST') posted.push({ path, body: route.request().postDataJSON() }); return route.fulfill({ json: { token: 'browser-human', actor: { id: 'operator', role: 'admin', sessionKind: 'human' }, expiresAt: '2026-01-01T14:00:00Z' } }); }
     if (route.request().headers().authorization !== 'Bearer browser-human') return route.fulfill({ status: 401, json: { error: 'Rejected' } });
     if (method === 'POST') {
       const body = route.request().postDataJSON(); posted.push({ path, body });
@@ -40,6 +40,10 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 812 
   test(`the operator signs in from the link and answers a money request with one click at ${viewport.width} px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const posted = await fixture(page);
+    // GY-4088: the install-name read (GET /api/sign-in) and the code's redemption race; the redemption waits for the read, so the read lands first every run.
+    let installRead!: () => void;
+    const read = new Promise<void>(resolve => { installRead = resolve; });
+    await page.route('**/api/sign-in', async route => { if (route.request().method() === 'GET') installRead(); else await read; return route.fallback(); });
     await page.goto('/#sign-in=one-time-code-from-mainworks-login&work');
     // Signed in without typing a token; the code leaves the address bar at once.
     await expect(page.getByRole('button', { name: 'Every request and answer →' })).toBeVisible();
