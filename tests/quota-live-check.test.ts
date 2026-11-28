@@ -95,6 +95,8 @@ test('quota-live-check: only each login’s live request holds it, across instal
 });
 
 
+// The dynamically imported fixture calls setupMaster: its managed worktrees require durable
+// storage, so this test and its E2E case must stay off memory-backed remote test containers.
 test('quota-live-check: quoted output from a real worker does not hold a passing login', async () => {
   const { headlessWorkers } = await import('./helpers/headless-workers.js');
   const workers = await headlessWorkers('quota-live-worker');
