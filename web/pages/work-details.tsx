@@ -59,7 +59,7 @@ export function ProductReviewPanel({ item, token }: { item: Work; token: string 
   return <section className="panel" aria-label="Product review"><h2>Product review <small>{review ? productWords[review.verdict] : 'not reviewed yet'}</small></h2>
     {review ? <>
       <p data-review-line>{friendlyName(review.reviewer) ?? 'The reviewer'} reviewed {bindsHead ? 'this version' : item.candidate ? 'an earlier version; the current one is reviewed again unless only non-UI files changed' : 'it'}, {formatAge(review.at, Date.now())} ago.</p>
-      {review.findings && <p className="product-findings" style={{ whiteSpace: 'pre-wrap' }}>{review.findings}</p>}
+      {review.findings && <details className="product-findings-fold"><summary>Reviewer's notes</summary><p className="product-findings" style={{ whiteSpace: 'pre-wrap' }}>{review.findings}</p></details>}
       {review.screenshots.length > 0 && <div className="product-screenshots">{review.screenshots.map(shot => <ProductScreenshot key={`${review.sha}:${review.at}:${shot}`} item={item} name={shot} token={token}/>)}</div>}
     </> : <p className="muted">A user-facing feature is product-reviewed before it merges: a reviewer walks the head's preview — or the served app against the head's diff where no preview runs — and approves it, asks for changes, or rejects it.</p>}
   </section>;

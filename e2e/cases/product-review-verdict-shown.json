@@ -142,6 +142,12 @@
     },
     {
       "kind": "browser",
+      "name": "unfold the reviewer's notes, where the findings fold",
+      "action": "click",
+      "text": "Reviewer's notes"
+    },
+    {
+      "kind": "browser",
       "name": "the findings the reviewer gave are shown",
       "action": "expectText",
       "text": "The export button hides the summary a reader came for",
