@@ -66,8 +66,7 @@ test('e2e:trial-failures-grouped — with one failed trial, master status lists 
       return response.json();
     }, async () => { throw new Error('no git in the fixture'); });
     assert.ok(status.flow, `flow is shown (${status.flowError})`);
-    const [{ lastFailedAt, ...failing }] = status.flow['6h'].trialFailures;
-    assert.deepEqual([failing], [{ check: 'tests/broken.test.cjs', count: 1, assertion: 'the change is broken' }]);
-    assert.ok(Math.abs(Date.now() - Date.parse(lastFailedAt!)) < 280_000, `lastFailedAt is when the trial failed: ${lastFailedAt}`);
+    assert.deepEqual(status.flow['6h'].trialFailures.map(({ lastFailedAt, ...failing }) => failing), [{ check: 'tests/broken.test.cjs', count: 1, assertion: 'the change is broken' }]);
+    assert.ok(status.flow['6h'].trialFailures.every(failing => Math.abs(Date.now() - Date.parse(failing.lastFailedAt)) < 280_000), `each names when it last failed: ${status.flow['6h'].trialFailures.map(failing => failing.lastFailedAt)}`);
   } finally { await where.close(); }
 });

@@ -90,8 +90,7 @@ test('tests/flaky.test.cjs passes unless broken', () => {
       return response.json();
     }, async () => { throw new Error('no git in the fixture'); });
     assert.ok(status.flow, `flow is shown (${status.flowError})`);
-    const [{ lastFailedAt, ...flaky }] = status.flow['6h'].flakyChecks;
-    assert.deepEqual([flaky], [{ check: 'tests/flaky.test.cjs', count: 1, assertion: 'the marker was not written' }]);
-    assert.ok(Math.abs(Date.now() - Date.parse(lastFailedAt!)) < 280_000, `lastFailedAt is when the release check flaked: ${lastFailedAt}`);
+    assert.deepEqual(status.flow['6h'].flakyChecks.map(({ lastFailedAt, ...flaky }) => flaky), [{ check: 'tests/flaky.test.cjs', count: 1, assertion: 'the marker was not written' }]);
+    assert.ok(status.flow['6h'].flakyChecks.every(flaky => Math.abs(Date.now() - Date.parse(flaky.lastFailedAt)) < 280_000), `each names when it last failed: ${status.flow['6h'].flakyChecks.map(flaky => flaky.lastFailedAt)}`);
   } finally { await where.close(); }
 });

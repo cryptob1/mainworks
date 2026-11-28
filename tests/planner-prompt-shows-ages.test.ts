@@ -53,15 +53,8 @@ const dayFailing = 'Failing checks (24h): tests/day.test.ts 2, last failed 5h ag
 test(`${proof} — the prompt gives each delivered item's and each failing check's age, the 24-hour flow beside the 6-hour one`, () => {
   const now = Date.parse('2026-11-27T14:30:00Z');
   const { work, six, day } = history(now);
-  const prompt = plannerPrompt({
-    brief: 'Keep the line fed.',
-    flow6h: six,
-    flow24h: day,
-    slowestTrialFiles: [],
-    openTitles: [],
-    deliveredTitles: recentlyDeliveredTitles(work, now),
-    now,
-  });
+  const input = { brief: 'Keep the line fed.', flow6h: six, flow24h: day, slowestTrialFiles: [], openTitles: [], deliveredTitles: recentlyDeliveredTitles(work, now), now } as const;
+  const prompt = plannerPrompt(input);
 
   assert.ok(prompt.includes(deliveredLine), `the delivered item says how long ago it merged:\n${prompt}`);
   assert.equal(line(prompt, '6-hour flow: '), sixHourFlow);
@@ -71,6 +64,9 @@ test(`${proof} — the prompt gives each delivered item's and each failing check
   // Beside: the day's block (its flow, rework causes and failing checks) follows the 6-hour one directly.
   const lines = prompt.split('\n');
   assert.equal(lines.indexOf(dayFlow), lines.indexOf(sixHourFlow) + 3, 'the 24-hour flow sits right after the 6-hour block');
+  // The prompt stays a pure function of its inputs: the same inputs render byte-identical, and a 24-hour input that adds nothing (null or absent) changes nothing.
+  assert.equal(plannerPrompt(input), prompt, 'the same inputs render byte-identical');
+  assert.equal(plannerPrompt({ ...input, flow24h: null }), plannerPrompt({ ...input, flow24h: undefined }), 'a null and an absent 24-hour flow read the same');
 });
 
 test(`${proof} — a planner cycle hands the session the ages and the 24-hour flow`, async () => {
