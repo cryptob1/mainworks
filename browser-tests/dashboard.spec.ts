@@ -1,5 +1,10 @@
 import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { boardFromStatus } from '../src/model/board';
+import { VERIFY_TIMEOUT_MS } from '../web/pages/login';
+
+// GY-4066: a sign-in may take as long as the page itself allows it (VERIFY_TIMEOUT_MS), so each test's
+// budget covers one sign-in and the test after it.
+test.describe.configure({ timeout: 2 * VERIFY_TIMEOUT_MS });
 
 // GET /api/board (GY-200): the Work page renders the groups the server serves. The fixture builds it
 // with the server's own module over the snapshot the page is served, read back through the page's
@@ -31,17 +36,17 @@ async function fixture(page: Page, role = 'admin', extra: Record<string, unknown
 // the candidate links rather than a button wrapped around them.
 const cardSelect = (page: Page) => page.getByRole('link', { name: /Browser fixture.*GY-1/ });
 
-/** A page load waits this long: on a loaded trial host the runner's own route handlers answer seconds late (GY-3442), and sign-in takes three of their answers. */
-const live = { timeout: 15_000 };
 /**
- * Signs in and waits for the dashboard. GY-4066: this spec's merge trial failed a first wait after sign-in on
- * the 5 s default, so the wait lives here, where every test's sign-in passes through. A sign-in the test watches
- * itself (a refused token, a read it holds open) is judged while the page still verifies and returns at once.
+ * Signs in and waits for the dashboard, for as long as the page allows the sign-in itself: on a loaded trial
+ * host the runner's own route handlers answer seconds late (GY-3442), and sign-in takes three of their answers.
+ * GY-4066: this spec's four-state test failed its first wait that way in a merge trial, so the wait lives
+ * here, where every sign-in passes. A sign-in its test watches itself (a refused token, a read it holds open)
+ * is judged while the page still verifies and returns at once.
  */
 async function login(page: Page, value = 'browser-fixture', { dashboard = true }: { dashboard?: boolean } = {}) {
   await page.getByLabel('Access token').fill(value);
   await page.getByRole('button', { name: 'Open control plane' }).click();
-  if (dashboard) await expect(page.locator('header.main-top-bar')).toBeVisible(live);
+  if (dashboard) await expect(page.locator('header.main-top-bar')).toBeVisible({ timeout: VERIFY_TIMEOUT_MS });
 }
 // The one navigation (GY-161): the sidebar holds Work, Lead, Workers, Tests and
 // Settings; the other pages are sub-page links under one of them. On a phone the sidebar folds into
