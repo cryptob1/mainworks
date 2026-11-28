@@ -24,7 +24,7 @@ import { localEnvironment } from '../app-environments.js';
 import { featureMapCaseId } from '../app-feature-check.js';
 
 /** One host's reading: cores, cores busy (1-minute load), the share of CPU stolen, and its hottest CPU sensor against the heat limit. */
-export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean; /** GY-3804: the verbs this host's shim probe listed, so trials choose v1 or v2 calls per host. */ verbs?: readonly string[] }
+export interface HostReading { name: string; cores: number; busy: number; steal: number; celsius: number | null; limit: number; away: boolean; reason?: string; /** GY-3645: its shim runs a check's Compose services. */ compose?: boolean; /** GY-4111: its probe says the confined runtime sandbox works there. */ sandbox?: boolean; /** GY-3804: the verbs this host's shim probe listed, so trials choose v1 or v2 calls per host. */ verbs?: readonly string[] }
 
 /** The targets of the hosts `mainworks host add` recorded; none when it recorded none. */
 export const shardHosts = async () => (await readHosts().catch(() => [])).map(host => host.target);
@@ -137,7 +137,7 @@ export async function readShardHosts(targets: readonly string[], run: ChildRun, 
     // This machine always takes shards: an unreadable reading here means only that its Docker or sensors did not answer.
     if (!probe.ok) return { name, cores: target ? 0 : cores, busy: 0, steal: 0, celsius: null, limit: trialHotCelsius, away: target !== null, ...(target ? { reason: probe.reason } : {}) };
     const verbs = target ? probeShimVerbs(probe) : undefined;
-    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(verbs && (!supportsWarmImageV2(verbs) || !supportsCheckImages(verbs) || !supportsRunShardNonce(verbs)) ? { verbs } : {}) };
+    return { name, cores: probe.cores ?? cores, busy: probe.load ?? 0, steal: probe.stat?.total ? probe.stat.steal / probe.stat.total : 0, celsius: probe.celsius, limit: trialHotCelsius, away: false, ...(target && probe.compose ? { compose: true } : {}), ...(target && probe.sandbox ? { sandbox: true } : {}), ...(verbs && (!supportsWarmImageV2(verbs) || !supportsCheckImages(verbs) || !supportsRunShardNonce(verbs)) ? { verbs } : {}) };
   })); } finally { if (!transport) await ssh.close(); }
 }
 
@@ -884,7 +884,8 @@ export async function catalogHosts(input: { root: string; commit: string; baseTi
 
 /**
  * GY-4002: whether a trial's case may run on a test machine: its file is on the head, it runs in the
- * local environment, declares no secrets (the trial withholds them from hosts), is bound to no Compose
+ * local environment, declares no secrets (the trial withholds them from hosts), needs no confined
+ * runtime sandbox (tag `sandbox`, GY-4111: a trial reads no host's sandbox), is bound to no Compose
  * application (only this machine gives it Docker), and neither it nor a test it names needs what
  * only this machine has (localOnlyTestPattern, as the daily catalog splits its cases).
  */
@@ -894,7 +895,7 @@ export async function hostableTrialCase(worktree: string, name: string): Promise
   try { text = await readFile(join(worktree, 'e2e/cases', `${name}.json`), 'utf8'); } catch { return false; }
   let definition: ReturnType<typeof parseCase>;
   try { definition = parseCase(`e2e/cases/${name}.json`, text); } catch { return false; }
-  if (definition.environment !== localEnvironment || definition.secrets.length || definition.tags.some(tag => tag === 'compose' || tag === 'fixture')) return false;
+  if (definition.environment !== localEnvironment || definition.secrets.length || definition.tags.some(tag => tag === 'compose' || tag === 'fixture' || tag === 'sandbox')) return false;
   const declared = declaredServe(worktree);
   const application = declared.applications.find(entry => entry.id === declared.bindings[name]) ?? (declared.serve ? null : declared.applications.length === 1 ? declared.applications[0]! : null);
   if (application?.kind === 'compose') return false;

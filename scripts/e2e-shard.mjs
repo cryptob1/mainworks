@@ -6,8 +6,7 @@
 // cannot make its worktree or build marks its cases host failures, so a trial runs them on the coordinator.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { runTrialE2eCases } from '../src/merge-writer/e2e-trial.ts';
 import { buildArgv, packageManager } from '../src/package-manager.ts';
 
@@ -18,7 +17,9 @@ writeFileSync(written, '');
 // GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
 // where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in its
 // own worktree of the commit, as a trial's checkout is one: its own files and index, the clone's objects and packages.
-const checkout = process.cwd(), scratch = mkdtempSync(join(tmpdir(), 'e2e-shard-')), worktree = join(scratch, 'checkout');
+// GY-4111: the worktree sits in the shard's run directory, on the host's disk: the container's /tmp is a tmpfs,
+// where Mainworks refuses a managed worktree root (GY-88) and the suite's fixtures under the checkout would sit too.
+const checkout = process.cwd(), scratch = mkdtempSync(join(dirname(checkout), 'e2e-shard-')), worktree = join(scratch, 'checkout');
 const git = args => execFileSync('git', args, { stdio: 'pipe' });
 /** The shard ends with its worktree, as a trial does, leaving the clone as the shim made it. */
 const finish = code => {

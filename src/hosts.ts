@@ -272,7 +272,7 @@ export function parseHostProbe(text: string) {
   const temps = [...text.matchAll(/^temp (\S+) (\d+)$/gm)].filter(match => cpuSensorNames.includes(match[1]!)).map(match => Math.floor(Number(match[2]) / 1000));
   const user = /^user (\d+) ?(.*)$/m.exec(text);
   const verbs = /^verbs (.*)$/m.exec(text)?.[1]?.split(' ').filter(Boolean) ?? null;
-  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, migrated: /^migrated 1$/m.test(text), compose: /^compose \S/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: tempMedian ?? (temps.length ? Math.max(...temps) : null), stat: cpuStatTotals(text),
+  return { shim: /^shim ([0-9a-f]{64})$/m.exec(text)?.[1] ?? null, verbs, migrated: /^migrated 1$/m.test(text), compose: /^compose \S/m.test(text), sandbox: /^sandbox 1$/m.test(text), cores: number(/^cores (\d+)$/m), load: number(/^load ([\d.]+)$/m), runs: number(/^runs\s+(\d+)$/m), celsius: tempMedian ?? (temps.length ? Math.max(...temps) : null), stat: cpuStatTotals(text),
     /** GY-4008: turbo or boost off now; null on a CPU with neither. */
     turboOff: /^turbo-off ([01])$/m.exec(text) ? /^turbo-off 1$/m.test(text) : null,
     uid: user ? Number(user[1]) : null, groups: user ? user[2]!.split(/\s+/).filter(Boolean) : [] };

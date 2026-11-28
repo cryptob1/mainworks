@@ -46,6 +46,8 @@ export const hostProbeScript = [
   'head -n 1 /proc/stat',
   `_s=; _i=0; while [ $_i -lt 5 ]; do _m=; for d in /sys/class/hwmon/hwmon*; do n=$(cat "$d/name" 2>/dev/null); for t in "$d"/temp*_input; do [ -r "$t" ] || continue; v=$(cat "$t" 2>/dev/null); [ $_i -eq 0 ] && echo "temp $n $v"; case "$n" in ${cpuSensorNames.join('|')}) case "$v" in ''|*[!0-9]*) ;; *) v=$((v / 1000)); [ -z "$_m" ] || [ "$v" -gt "$_m" ] && _m=$v ;; esac ;; esac; done; done; [ -n "$_m" ] || break; _s="$_s$_m\\n"; _i=$((_i + 1)); [ $_i -lt 5 ] && sleep "\${GRAPHYARD_PROBE_SAMPLE_SECONDS:-0.5}"; done; [ -n "$_s" ] && echo "temp-median $(printf "$_s" | sort -n | sed -n "$(((_i + 1) / 2))p")"`,
   'echo "runs $(docker ps -q --filter name=^mainworks-trial- | wc -l)"',
+  // GY-4111: whether this user may make the user and mount namespaces the confined runtime sandbox (bwrap) needs.
+  'unshare -Urm true >/dev/null 2>&1 && echo "sandbox 1"',
   // GY-4008: whether turbo (intel_pstate) or boost (cpufreq) is off now; no line on a CPU with neither.
   turboProbeLine,
 ].join('\n');

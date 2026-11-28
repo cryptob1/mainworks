@@ -197,7 +197,7 @@ async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<Merge
   try {
     const ready = [...remote?.hosts ?? []].sort((a, b) => realFreeCores(b) - realFreeCores(a));
     const lanes = ready.flatMap(host => Array<typeof host>(hostLanes(host)).fill(host));
-    const here: string[] = [], roaming: string[] = [], provisioned = new Set<string>(), weighs: Record<string, number> = {};
+    const here: string[] = [], roaming: string[] = [], sandboxed: string[] = [], provisioned = new Set<string>(), weighs: Record<string, number> = {};
     // A case bound to a Compose application needs Docker, which only this machine gives it.
     let compose = new Set<string>();
     // GY-3542's timing baseline: a case weighs its start and the recorded time of the tests it names, as a trial's shards weigh their files.
@@ -216,20 +216,26 @@ async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<Merge
       weighs[proof] = 5_000 + named.reduce((sum, file) => sum + (durations[file] ?? median), 0);
       const environment = /"environment"/.test(text);
       if (compose.has(proof) || environment || localOnlyTestPattern.test(text) || !tests.every(remoteableTestFile)) here.push(proof);
+      // GY-4111: a case tagged `sandbox` needs the confined runtime sandbox, so only a host whose probe says it works there takes it.
+      else if (/"tags"\s*:\s*\[[^\]]*"sandbox"/.test(text)) sandboxed.push(proof);
       else roaming.push(proof);
       // GY-3296: a named environment is provisioned around one trial, so its cases share a lane.
       if (environment) provisioned.add(proof);
     }
     // With no test machine every case runs here.
     if (!lanes.length) { here.push(...roaming); roaming.length = 0; }
+    const sandboxLanes = lanes.flatMap((host, index) => host.sandbox ? [index] : []);
+    if (!sandboxLanes.length) here.push(...sandboxed);
     const local = dealCases(here, Math.min(lanesHere, Math.max(1, Math.ceil(here.length / laneCases))), weighs, provisioned).filter(group => group.length);
     const shards = dealCases(roaming, lanes.length, weighs);
+    if (sandboxLanes.length) dealCases(sandboxed, sandboxLanes.length, weighs).forEach((group, index) => shards[sandboxLanes[index]!]!.push(...group));
     const failure = (detail: string): CatalogRun => ({ failed: ['e2e-catalog'], details: { 'e2e-catalog': detail }, outputs: {} });
     const none: CatalogRun & CatalogShard & { ms: number } = { host: 'none', cases: 0, ms: 0, failed: [], details: {}, outputs: {} };
     const dropped = new Set<string>(), started = reads.now();
     const onHost = async (index: number): Promise<CatalogRun & CatalogShard & { ms: number }> => {
       const group = shards[index]!, reasons: string[] = [];
-      for (const host of [lanes[index]!, ...ready.filter(other => other !== lanes[index])]) {
+      const sandbox = group.some(proof => sandboxed.includes(proof));
+      for (const host of [lanes[index]!, ...ready.filter(other => other !== lanes[index] && (other.sandbox || !sandbox))]) {
         if (dropped.has(host.name)) continue;
         try {
           const ran = await remote!.run(host.name, index + 1, group);

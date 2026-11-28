@@ -27,11 +27,12 @@ const text = (file: string) => readFileSync(join(root, file), 'utf8');
 const catalog = readdirSync(join(root, 'e2e/cases')).filter(name => name.endsWith('.json')).map(name => name.slice(0, -5));
 const delivery = JSON.parse(text('graphyard.json')).delivery ?? {};
 const compose = new Set((delivery.applications ?? []).filter((application: { kind: string }) => application.kind === 'compose').map((application: { id: string }) => application.id));
-/** The cases only this machine can run: one bound to a Compose application, or one whose text or tests name what a test machine lacks. */
+/** The cases only this machine can run: one bound to a Compose application, one whose text or tests name what a test machine lacks,
+ * or one tagged `sandbox` while no host's probe says the sandbox works there (GY-4111), as here. */
 const named = (caseText: string) => (caseText.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? []).map(file => { try { return text(file); } catch { return ''; } });
 const pinned = new Set(catalog.filter(id => {
   const caseText = text(`e2e/cases/${id}.json`);
-  return compose.has(delivery.cases?.[id]) || localOnlyTestPattern.test([caseText, ...named(caseText)].join('\n'));
+  return compose.has(delivery.cases?.[id]) || localOnlyTestPattern.test([caseText, ...named(caseText)].join('\n')) || JSON.parse(caseText).tags?.includes('sandbox');
 }).map(id => `e2e:${id}`));
 const seconds = (cases: readonly string[]) => cases.reduce((sum, proof) => sum + 5 + (pinned.has(proof) ? 14.7 : 3.6), 0);
 
