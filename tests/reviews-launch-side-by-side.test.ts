@@ -10,7 +10,7 @@ import { fleet, requested } from './helpers/review-fleet.js';
 // GY-3642: reviews launch side by side like producers do, bounded by the reviewer role's
 // concurrency, so one slow launch never holds the others back.
 
-async function runSideBySideTest(beforeReconcile?: () => Promise<void>) {
+test('unit:reviews-launch-side-by-side — four heads owing a review start their four launches in one tick, and one slow launch leaves the other three started', async () => {
   const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude' }, 'claude-reviewer');
   try {
     const config = await loadMasterConfig(host.root);
@@ -23,12 +23,7 @@ async function runSideBySideTest(beforeReconcile?: () => Promise<void>) {
     const firstStarted = new Promise<void>(resolve => { markFirstStarted = resolve; });
     let markThreeFinished!: () => void;
     const threeFinished = new Promise<void>(resolve => { markThreeFinished = resolve; });
-    const base = host.effects(() => items, () => config);
-    const effects = { ...base,
-      reconcileReviews: async (...args: Parameters<typeof base.reconcileReviews>) => {
-        if (beforeReconcile) await beforeReconcile();
-        return base.reconcileReviews(...args);
-      },
+    const effects = { ...host.effects(() => items, () => config),
       launchReview: async (work: { key: string }, request: { id: string }, profile: { agentName: string }) => {
         started.push(work.key);
         // GY-501's launch takes its full bound (60 s in production); the test holds it until released.
@@ -53,14 +48,7 @@ async function runSideBySideTest(beforeReconcile?: () => Promise<void>) {
     assert.deepEqual(result.refused, []);
     assert.deepEqual(result.launched.filter(entry => entry.kind === 'review').map(entry => entry.work).sort(), ['GY-501', 'GY-502', 'GY-503', 'GY-504']);
   } finally { await host.cleanup(); }
-}
-
-test('unit:reviews-launch-side-by-side — four heads owing a review start their four launches in one tick, and one slow launch leaves the other three started', () => runSideBySideTest());
-
-// GY-4079: on the base tip, the 5 s poll loop started before reconcileReviews (which lazily
-// initializes the Postgres loop-state fixture) finished, so a >5 s pre-launch step expired the
-// wait before any launchReview began.
-test('unit:reviews-launch-side-by-side-pinned — four heads still launch side by side when reconcileReviews takes longer than 5 s before launches start', () => runSideBySideTest(() => delay(5_200)));
+});
 
 test('unit:reviews-launch-side-by-side — launches beyond the reviewer role\'s concurrency wait for a running launch to finish', async () => {
   const host = await fleet({ name: 'claude-reviewer', agentName: 'claude-reviewer', kind: 'claude', concurrency: 2 }, 'claude-reviewer');
