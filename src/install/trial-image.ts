@@ -6,6 +6,7 @@ import { localTransport, shellQuote } from './transport.js';
 import { appArmorEnabled, trialAppArmorLoadCommand, trialAppArmorProfile, trialAppArmorProfilePath, trialAppArmorProfileText } from '../merge-writer/trial-apparmor.js';
 import { setting } from '../setting.js';
 import { timedPull } from './image-pulls.js';
+import { retryImagePipe } from './image-build.js';
 
 /** GY-3188: trial images build on Mainworks's own builder, so its cache is pruned without touching another project's. */
 export const trialBuilder = 'mainworks-trial';
@@ -37,10 +38,7 @@ export const provisionTrialImage = async (ctx: Pick<AdapterContext, 'transport' 
       await ctx.transport.exec('docker', trialImageBuildArgs(ctx.sourceRoot, `${directory}/image.tar`), { timeout: 1_800_000 });
       await ctx.transport.exec('docker', ['load', '--input', `${directory}/image.tar`], { timeout: 1_800_000 });
     };
-    try { await buildAndLoad(); } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('io: read/write on closed pipe')) throw error;
-      await buildAndLoad();
-    }
+    await retryImagePipe(buildAndLoad);
   } finally {
     await ctx.transport.exec('rm', ['-rf', directory], { allowFailure: true });
   }
