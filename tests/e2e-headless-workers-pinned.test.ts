@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { caseTestsRemoteable, hostableTrialCase } from '../src/merge-writer/remote-shards.js';
+import { caseTestsRemoteable, hostableTrialCase, splitLocalOnlyTests } from '../src/merge-writer/remote-shards.js';
 
 // GY-4099: the headless-workers case failed on a test machine in its first half second. Its test files
 // call setupMaster through tests/helpers/headless-workers.ts, and a managed worktree root needs durable
@@ -10,6 +11,8 @@ const repo = join(import.meta.dirname, '..');
 
 test('unit:e2e-headless-workers-pinned — a case whose tests reach setupMaster through a helper stays on the coordinator', async () => {
   assert.equal(await hostableTrialCase(repo, 'headless-workers'), false, 'headless-workers needs durable managed worktrees');
+  const matrix = ['tests/headless-workers.test.ts', 'tests/headless-workers-registry-kinds.test.ts'];
+  assert.deepEqual((await splitLocalOnlyTests(matrix, file => readFile(join(repo, file), 'utf8'))).localOnly, matrix, 'a merge trial keeps the matrix files on this machine too');
   const files: Record<string, string> = {
     'tests/a.test.ts': "import { fixture } from './helpers/fixture.js';\n",
     'tests/helpers/fixture.ts': 'await setupMaster(root, {});\n',

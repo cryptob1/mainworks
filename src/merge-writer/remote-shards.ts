@@ -85,17 +85,20 @@ export const hostSafeMarker = '// mainworks: runs on a test machine; its local-o
 /** Whether a test file's text may run on a remote shard: it names none of the local-only words, or carries hostSafeMarker. */
 export const remoteableTestFile = (text: string) => text.includes(hostSafeMarker) || !localOnlyTestPattern.test(text);
 /**
- * GY-4099: whether the test files a case names may run on a test machine, each read with the
- * tests/helpers modules it imports: a helper may need what only this machine has (headless-workers
- * calls setupMaster through tests/helpers/headless-workers.ts).
+ * GY-4099: whether a test file may run on a test machine, read with the tests/helpers modules it
+ * imports: a helper may need what only this machine has (headless-workers calls setupMaster through
+ * tests/helpers/headless-workers.ts). A file that cannot be read stays here.
  */
+export async function testFileRemoteable(file: string, read: (file: string) => Promise<string>): Promise<boolean> {
+  const text = await read(file).catch(() => null);
+  if (text === null) return false;
+  const helpers = [...text.matchAll(/from '\.\/(helpers\/[\w.-]+)\.js'/g)].map(match => `tests/${match[1]}.ts`);
+  const sources = [text, ...await Promise.all(helpers.map(helper => read(helper).catch(() => '')))];
+  return sources.every(remoteableTestFile);
+}
+/** GY-4099: whether every test file a case names may run on a test machine (testFileRemoteable); a path that names no file here (browser-tests/…) holds nothing back. */
 export async function caseTestsRemoteable(files: readonly string[], read: (file: string) => Promise<string>): Promise<boolean> {
-  for (const file of files) {
-    const text = await read(file).catch(() => '');
-    const helpers = [...text.matchAll(/from '\.\/(helpers\/[\w.-]+)\.js'/g)].map(match => `tests/${match[1]}.ts`);
-    for (const source of [text, ...await Promise.all(helpers.map(helper => read(helper).catch(() => '')))])
-      if (!remoteableTestFile(source)) return false;
-  }
+  for (const file of files) if (!await testFileRemoteable(file, path => read(path).catch(() => ''))) return false;
   return true;
 }
 
@@ -130,8 +133,8 @@ export async function splitLocalOnlyTests(
   let browserChecked: boolean | undefined = typeof options.remoteBrowser === 'boolean' ? options.remoteBrowser : undefined;
   let browserLocalOnly = false;
   for (const file of files) {
-    const text = await read(file).catch(() => null);
-    if (text === null || !remoteableTestFile(text)) { localOnly.push(file); continue; }
+    if (!await testFileRemoteable(file, read)) { localOnly.push(file); continue; }
+    const text = await read(file).catch(() => '');
     if (options.remoteBrowser !== undefined && isBrowserTestFile(file, text)) {
       if (browserChecked === undefined) browserChecked = await (options.remoteBrowser as () => Promise<boolean>)();
       if (!browserChecked) { localOnly.push(file); browserLocalOnly = true; continue; }
