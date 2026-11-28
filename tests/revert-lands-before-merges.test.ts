@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { bootstrapGate, runGate, type GateRecord } from '../src/batch-gate.js';
 import { batchGatePorts } from '../src/daemon/cycle-batch-gate.js';
 import * as writer from '../src/daemon/cycle-merge-writer.js';
+import { daemonStateSchema } from '../src/daemon/state.js';
 import type { MergeTrialRun } from '../src/merge-writer/executor.js';
 import type { Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
@@ -49,7 +50,8 @@ test('integration:revert-lands-before-merges — merges that would push while th
   git(base, 'clone', '-q', origin, coordinator);
 
   const pushes: { sha: string; result: 'pushed' | 'rejected' }[] = [];
-  const state = {}, held: (string[] | null)[] = [];
+  // The loop's state: its merge pushes wait on it while the gate holds a revert pending.
+  const state = daemonStateSchema.parse({ version: 1, url: 'https://graphyard.example', repository }), held: (string[] | null)[] = [];
   let writerPushes: Promise<unknown> = Promise.resolve();
   const reads = {
     baseBranch: 'main', now: Date.now,
@@ -74,6 +76,7 @@ test('integration:revert-lands-before-merges — merges that would push while th
       return passing;
     },
     createWork: async () => ({ key: 'GY-3' }),
+    record: async () => undefined,
   } as unknown as writer.MergeWriterReads & { git: NonNullable<writer.MergeWriterReads['git']> };
   const record: GateRecord = bootstrapGate(repository, verified);
   const ports = { ...batchGatePorts(reads, [culprit], () => null, state), checkpoint: async () => {},

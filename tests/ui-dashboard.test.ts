@@ -215,7 +215,7 @@ test('unit:ui-item-first-screen — an item page says on its first screen what s
     assert.equal(nextActor(refused, group, NOW).who, 'Master agent', reason);
     assert.match(firstScreen(itemPage(base.key, dashboard({ work: refusedBoard }))), /Next:<\/span> <strong>Master agent<\/strong>/, reason);
   }
-  const guide = visibleWords(markup(createElement(GuidePage)));
+  const guide = visibleWords(markup(createElement(GuidePage, { setView: () => {} })));
   // GY-3295: the guide is the newcomer's Docs page; its FAQ and reference stay folded.
   assert.ok(guide.length < 550, `the guide is ${guide.length} words`);
 });

@@ -595,6 +595,18 @@ type ServeRevertCycle = Pick<Cycle, 'state' | 'effects' | 'now' | 'snapshot' | '
 /** The loop's persisted serve-revert state, created on first use. */
 const serveRevertState = (state: DaemonState) => state.mergeWriter.serveRevert ??= { lastVerified: null, reverts: [], held: null, retry: null, answered: null };
 
+/** One revert the loop keeps: a pushed revert and the serve it answered (merge-writer-state.ts `serveRevert.reverts`). */
+type RevertReceipt = NonNullable<MergeWriterState['serveRevert']>['reverts'][number];
+
+/**
+ * GY-4068: a revert the batch gate pushed whose `merge.serve-revert` record the control plane did
+ * not take. It rides as an unrecorded receipt, which mergeWriterStep records again, each cycle,
+ * until the item's ledger holds it. Without a loop state nothing keeps it.
+ */
+export function oweServeRevertRecord(state: DaemonState | undefined, owed: Omit<RevertReceipt, 'recorded'>): void {
+  if (state) serveRevertState(state).reverts.push({ recorded: false, ...owed });
+}
+
 /**
  * Settles a serve-revert flight: the pushed revert is recorded owing its re-land
  * (`fileOwedRelands` files it this same cycle), a held revert is kept with its reason for master
