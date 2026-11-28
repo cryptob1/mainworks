@@ -1,13 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { generateKeyPairSync } from 'node:crypto';
-import { rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeTransport, type BundleFileRecord, type Transport } from '../src/install/transport.js';
 import type { InstallDependencies } from '../src/install/index.js';
 import type { Provider } from '../src/install/types.js';
 import { ensureDeployKey } from '../src/install/deploy-key.js';
+import { stopServersUnder } from '../src/postgres-stop.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 
 export const REPOSITORY = 'owner/project';
@@ -112,6 +113,20 @@ export function deployedRoster(transport: ReturnType<typeof fakeTransport>): { i
 /** `cat` answering from FILES, what the installer wrote to the fixture's transport, as a real machine would. */
 export const catFrom = (files: () => Map<string, BundleFileRecord>) => ({ match: 'cat /', result: (line: string) => files().get(line.slice(4))?.content ?? { stdout: '', stderr: 'No such file', code: 1 } });
 
+async function stopPid(pidFile: string, timeoutMs = 60_000) {
+  let pid: number;
+  try { pid = Number((await readFile(pidFile, 'utf8')).trim()); }
+  catch (error: any) { if (error.code === 'ENOENT') return; throw error; }
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  try { process.kill(pid, 'SIGTERM'); } catch (error: any) { if (error.code === 'ESRCH') return; throw error; }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch (error: any) { if (error.code === 'ESRCH') return; throw error; }
+    await new Promise(accept => setTimeout(accept, 25));
+  }
+  throw new Error(`Process ${pid} from ${pidFile} did not exit within ${timeoutMs}ms`);
+}
+
 export async function harness(options: HarnessOptions): Promise<Harness> {
   const repository = options.repository ?? REPOSITORY;
   const reused = !!(options.root && options.configHome);
@@ -164,7 +179,13 @@ export async function harness(options: HarnessOptions): Promise<Harness> {
     root, configHome, transport, state, requests, deps,
     commandLines: () => transport.commands.map(command => [command.program, ...command.args].join(' ')),
     allCommandLines: () => transport.commands.map(command => [command.program, ...command.args].join(' ')),
-    cleanup: async () => { if (reused) return; await rm(root, { recursive: true, force: true }); await rm(configHome, { recursive: true, force: true }); },
+    cleanup: async () => {
+      if (reused) return;
+      await stopPid(join(configHome, installId, 'local-server.pid'));
+      if (!stopServersUnder(resolve(configHome))) throw new Error(`Postgres under ${configHome} did not stop before cleanup`);
+      await rm(root, { recursive: true, force: true });
+      await rm(configHome, { recursive: true, force: true });
+    },
   };
 }
 
