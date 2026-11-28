@@ -7,6 +7,7 @@ import type { DaemonEffects } from '../src/daemon/effects.js';
 import { plannerPrompt, recentlyDeliveredTitles } from '../src/daemon/planner.js';
 import { flowNumbers } from '../src/flow-numbers.js';
 import { masterConfigSchema, type MasterConfig, type WorkerProfile } from '../src/master/profiles.js';
+import { bootstrapGate, gateRecordPath, writeGateRecord } from '../src/batch-gate.js';
 import { runPlanner } from '../src/master/planner.js';
 import type { Work } from '../src/model.js';
 import { flowItems, type FlowReport } from '../src/server/flow.js';
@@ -97,6 +98,10 @@ test(`integration:planner-prompt-shows-ages — a planner cycle hands the sessio
     workers,
   });
   const stamp = new Date(base).toISOString();
+  const main = bootstrapGate('owner/planner-prompt-shows-ages', 'main-tip');
+  main.diagnosticsAt = stamp;
+  main.diagnosticsRun = { at: stamp, outcome: 'passed', reason: null };
+  await writeGateRecord(gateRecordPath(directory), main);
   const state = emptyDaemonState(config);
   state.lock = { id: 'lock', pid: 1, host: 'planner-host', startedAt: stamp, heartbeatAt: stamp };
   state.projectMemory.brief = { markdown: 'Keep the line fed.', updatedAt: stamp, by: 'lead', why: 'seed', history: [] };
@@ -139,7 +144,7 @@ test(`integration:planner-prompt-shows-ages — a planner cycle hands the sessio
   const prompt = prompts[0]!;
   assert.ok(prompt.includes(deliveredLine), `the cycle prompt says how long ago the delivered item merged:\n${prompt}`);
   assert.equal(line(prompt, '6-hour flow: '), sixHourFlow);
-  assert.equal(line(prompt, 'Failing checks (6h): '), sixHourFailing);
+  assert.equal(line(prompt, 'Failing checks (6h): '), sixHourFailing.replaceAll('result unavailable', `pass at ${stamp}`));
   assert.equal(line(prompt, '24-hour flow: '), dayFlow, `the cycle prompt gives the 24-hour flow:\n${prompt}`);
-  assert.equal(line(prompt, 'Failing checks (24h): '), dayFailing);
+  assert.equal(line(prompt, 'Failing checks (24h): '), dayFailing.replaceAll('result unavailable', `pass at ${stamp}`));
 });
