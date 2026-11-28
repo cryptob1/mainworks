@@ -33,10 +33,12 @@ before(async () => {
 });
 after(() => { for (const [name, value] of [['GRAPHYARD_TRIAL_IMAGE', previous.image], [slotsDirectoryVariable, previous.slots]] as const) if (value === undefined) delete process.env[name]; else process.env[name] = value; });
 
+// GY-4112: one heat sample per probe, not five 0.5 s apart; each probe cost 2.6 s of sleep on a machine with sensors.
+const probeOnce = { GRAPHYARD_PROBE_SAMPLE_SECONDS: '0' };
 const run: ChildRun = async (command, args, options) => {
   if (command === 'npm') return '';
   if (command === 'node' && args[0] === 'scripts/select.mjs') return files.join('\n');
-  return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` }, ...(command === 'node' ? { wrapper: undefined } : {}) });
+  return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, ...probeOnce, PATH: `${hosts.bin}:${process.env.PATH}` }, ...(command === 'node' ? { wrapper: undefined } : {}) });
 };
 // GY-3952: an older release's helper lacks a verb this release speaks (receive-image:4); only that makes the loop update it.
 const lacking = hostShimVerbs.filter(verb => verb !== 'receive-image:4').join(' ');
@@ -101,7 +103,7 @@ test(`${proof} — a host prepared by the printed script takes the update as gy-
   const prepared = await fakeHosts('host-shim-self-update-prepared', [{ name: 'box' }]);
   const older = { script: hostShimScript.replace(hostShimDigest, 'a'.repeat(64)).replace(' receive-image:4', ''), digest: 'a'.repeat(64) };
   await prepared.prepare('box', { shim: older });
-  const hostRun: ChildRun = (command, args, options) => defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${prepared.bin}:${process.env.PATH}` } });
+  const hostRun: ChildRun = (command, args, options) => defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, ...probeOnce, PATH: `${prepared.bin}:${process.env.PATH}` } });
   const read = async (update: boolean) => (await readHostReadings([], { file, run: hostRun, local: 'here', update })).find(reading => reading.host === target)!;
   assert.equal((await read(false)).older, true);
   assert.equal((await read(true)).older, undefined);

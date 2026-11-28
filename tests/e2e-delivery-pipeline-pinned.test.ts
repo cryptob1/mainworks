@@ -2,12 +2,15 @@ import { test } from 'node:test';
 import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { defaultChildRun, type ChildRun } from '../src/child-runner.js';
 // @ts-expect-error the scripts are plain ESM without declarations
 import { deliveryFixture, scratchTrial } from '../scripts/e2e-delivery-fixture.mjs';
+// @ts-expect-error the scripts are plain ESM without declarations
+import { startE2eServe } from '../scripts/e2e-serve.mjs';
 
 // GY-3196: the scheduled diagnostics run e2e:delivery-pipeline inside a trial whose network is
 // unshared. The case's own scratch trial then ran the secret scan, whose binary is a download, and
@@ -35,4 +38,38 @@ test('unit:e2e-delivery-pipeline-pinned — the delivery case\'s scratch trial p
     globalThis.fetch = savedFetch;
     restoreEnv();
   }
+});
+
+// GY-4109: scripts/e2e-serve.mjs used to write .graphyard/e2e-serve-PORT.json only after
+// startLocalRuntime returned. Once /healthz?ready answered 200, e2e:delivery-pipeline could run
+// before that file existed and fail with ENOENT. The seed file must be on disk before the control
+// plane starts serving.
+test('unit:e2e-delivery-pipeline-pinned — e2e-serve writes its port seed file before the control plane starts serving', async () => {
+  const cwd = await temporaryDirectory('e2e-serve-seed-before-listen');
+  const port = 4391;
+  const seedPath = join(cwd, '.graphyard', `e2e-serve-${port}.json`);
+  const databaseUrl = 'postgres://graphyard:warm@127.0.0.1:5432/graphyard';
+  type Seed = { databaseUrl?: string; delivery?: { root?: string; origin?: string; workerToken?: string; coordinatorToken?: string } };
+  const observed: { seed: Seed | null } = { seed: null };
+  const started = await startE2eServe({
+    port, cwd, token: 'e2e-test-token',
+    copyCluster: async () => {},
+    startPreviews: () => ({ stop: async () => {} }),
+    serve: async () => {
+      observed.seed = JSON.parse(await readFile(seedPath, 'utf8')) as Seed;
+      return { close: async () => {} };
+    },
+    startRuntime: async (_directory: string, options: { serve: (env: Record<string, string>) => Promise<{ close(): Promise<void> }> }) => {
+      const served = await options.serve({ PORT: String(port), HOST: '127.0.0.1', DATABASE_URL: databaseUrl });
+      return { url: `http://127.0.0.1:${port}`, databaseUrl, cluster: { port: 5432, process: null, stop: async () => {} }, stop: () => served.close() };
+    },
+  });
+  try {
+    assert.ok(observed.seed, 'seed file must already exist when the control plane starts serving');
+    assert.equal(observed.seed.databaseUrl, databaseUrl);
+    assert.ok(observed.seed.delivery?.root && observed.seed.delivery?.origin && observed.seed.delivery?.workerToken && observed.seed.delivery?.coordinatorToken);
+  } finally {
+    await started.stop();
+  }
+  assert.equal(existsSync(seedPath), false, 'stopping e2e-serve removes its seed file');
 });

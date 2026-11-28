@@ -29,7 +29,12 @@ const delivery = JSON.parse(text('graphyard.json')).delivery ?? {};
 const compose = new Set((delivery.applications ?? []).filter((application: { kind: string }) => application.kind === 'compose').map((application: { id: string }) => application.id));
 /** The cases only this machine can run: one bound to a Compose application, one whose text or tests name what a test machine lacks,
  * or one tagged `sandbox` while no host's probe says the sandbox works there (GY-4111), as here. */
-const named = (caseText: string) => (caseText.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? []).map(file => { try { return text(file); } catch { return ''; } });
+const read = (file: string) => { try { return text(file); } catch { return ''; } };
+// GY-4099: a named test is read with the tests/helpers modules it imports, as placement reads it.
+const named = (caseText: string) => (caseText.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? []).flatMap(file => {
+  const source = read(file);
+  return [source, ...[...source.matchAll(/from '\.\/(helpers\/[\w.-]+)\.js'/g)].map(match => read(`tests/${match[1]}.ts`))];
+});
 const pinned = new Set(catalog.filter(id => {
   const caseText = text(`e2e/cases/${id}.json`);
   return compose.has(delivery.cases?.[id]) || localOnlyTestPattern.test([caseText, ...named(caseText)].join('\n')) || JSON.parse(caseText).tags?.includes('sandbox');
