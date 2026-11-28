@@ -40,8 +40,8 @@ function history(base: number) {
     trial('id-GY-4100', 3, 40, ['tests/live.test.ts'], { 'tests/live.test.ts': 'the marker was not written' }),
   ];
   const items = flowItems([delivered, open], ledger, new Map(), new Map(), base);
-  const window = (hours: number) => flowNumbers(items, hours, base);
-  return { work: [delivered, open] as Work[], six: window(6), day: window(24), week: window(168) };
+  const flow = (hours: number) => flowNumbers(items, hours, base);
+  return { work: [delivered, open] as Work[], six: flow(6), day: flow(24), week: flow(168) };
 }
 
 const deliveredLine = '- GY-4063: Heal tests/stale.test.ts (merged 1h ago)';
@@ -96,15 +96,15 @@ test(`${proof} — a planner cycle hands the session the ages and the 24-hour fl
     masterAgentName: 'master',
     workers,
   });
-  const clock = new Date(base).toISOString();
+  const stamp = new Date(base).toISOString();
   const state = emptyDaemonState(config);
-  state.lock = { id: 'lock', pid: 1, host: 'planner-host', startedAt: clock, heartbeatAt: clock };
-  state.projectMemory.brief = { markdown: 'Keep the line fed.', updatedAt: clock, by: 'lead', why: 'seed', history: [] };
-  const report: FlowReport = { asOf: clock, ageSeconds: 0, onboarding: [], attention: null, '6h': six, '24h': day, '7d': week };
+  state.lock = { id: 'lock', pid: 1, host: 'planner-host', startedAt: stamp, heartbeatAt: stamp };
+  state.projectMemory.brief = { markdown: 'Keep the line fed.', updatedAt: stamp, by: 'lead', why: 'seed', history: [] };
+  const report: FlowReport = { asOf: stamp, ageSeconds: 0, onboarding: [], attention: null, '6h': six, '24h': day, '7d': week };
 
   const prompts: string[] = [];
   const effects: DaemonEffects = {
-    snapshot: async () => ({ work, now: clock }),
+    snapshot: async () => ({ work, now: stamp }),
     agents: () => [{ name: 'master', pane_id: 'pM', agent_status: 'idle' }],
     credentials: async () => Object.fromEntries(workers.map(w => [w.name, { available: true, reason: null }])),
     closeSession: () => {},
@@ -117,7 +117,7 @@ test(`${proof} — a planner cycle hands the session the ages and the 24-hour fl
     planner: input =>
       runPlanner(directory, config, input, {
         flow: async () => report,
-        workSnapshot: async () => ({ work, now: clock }),
+        workSnapshot: async () => ({ work, now: stamp }),
         select: async () => ({
           account: { name: 'planner-acct', kind: 'claude', environment: {} } as any,
           health: null,
