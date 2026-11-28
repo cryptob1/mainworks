@@ -6,6 +6,7 @@
   "target": "any",
   "required": false,
   "steps": [
+    { "kind": "command", "name": "account check distinguishes own-key references from overrides; health shows concise reasons and readable resets (GY-4122)", "run": "node --import tsx tests/helpers/run-tests.ts tests/account-check-like-loop.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "review and worker sandboxes with HOME moved resolve the host's mise tools read-only (GY-4115)", "run": "node --import tsx tests/helpers/run-tests.ts tests/sandbox-mise-tools.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "each install has an inbox the Lead and caretaker can read, and mainworks brief delivers a file and prompts the Lead (GY-4126)", "run": "node --import tsx tests/helpers/run-tests.ts tests/brief-delivers-to-inbox.test.ts", "timeoutSeconds": 120 },
     { "kind": "command", "name": "planner evidence distinguishes candidate failures from main and keeps failure ages (GY-4083)", "run": "node --import tsx tests/helpers/run-tests.ts tests/planner-prompt-shows-ages.test.ts tests/planner-prompt-separates-candidate-failures.test.ts", "timeoutSeconds": 120 },
