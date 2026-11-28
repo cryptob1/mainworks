@@ -10,7 +10,7 @@ import { notCovered, servedPreviewCases } from '../merge-writer/served-previews.
 import { onboardingCase } from '../onboarding-time.js';
 import { baseStillFails, relandItemFor, revertMergeCommit, serveLandings, serveRangeCommits, trialAndPushRevert, type ServeRevertPorts } from '../merge-writer/serve-revert.js';
 import { gateTrialKey, trialStartOwner, trialStartWaiting } from '../merge-writer/trial-load.js';
-import { HostDroppedError, localOnlyTestPattern, realFreeCores, remoteableTestFile, type HostReading } from '../merge-writer/remote-shards.js';
+import { HostDroppedError, caseTestsRemoteable, localOnlyTestPattern, realFreeCores, type HostReading } from '../merge-writer/remote-shards.js';
 import { heavyTrial, oweServeRevertRecord, trialShareAllowance, type MergeWriterReads } from './cycle-merge-writer.js';
 import { criterionProofs, e2eProofsOf, openFlakyItem } from '../merge-writer/executor.js';
 import type { Cycle } from './cycle.js';
@@ -212,10 +212,9 @@ async function shardedCatalog(reads: MergeWriterReads & { git: NonNullable<Merge
     for (const proof of cases) {
       const text = await reads.git(['show', `${commit}:e2e/cases/${proof.slice(4)}.json`]).catch(() => '');
       const named = [...new Set(text.match(/tests\/[\w./-]+\.[cm]?[jt]s/g) ?? [])];
-      const tests = await Promise.all(named.map(file => reads.git(['show', `${commit}:${file}`]).catch(() => '')));
       weighs[proof] = 5_000 + named.reduce((sum, file) => sum + (durations[file] ?? median), 0);
       const environment = /"environment"/.test(text);
-      if (compose.has(proof) || environment || localOnlyTestPattern.test(text) || !tests.every(remoteableTestFile)) here.push(proof);
+      if (compose.has(proof) || environment || localOnlyTestPattern.test(text) || !await caseTestsRemoteable(named, file => reads.git(['show', `${commit}:${file}`]))) here.push(proof);
       else roaming.push(proof);
       // GY-3296: a named environment is provisioned around one trial, so its cases share a lane.
       if (environment) provisioned.add(proof);
