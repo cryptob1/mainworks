@@ -1,7 +1,8 @@
 // Deployment artifacts stay at their original paths for processes that already loaded them.
 // Only current moves; neither the source tree nor node_modules of a published CLI is rebuilt.
+import { randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { chmod, copyFile, mkdir, readFile, readdir, readlink, rename, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, readFile, readdir, readlink, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import type { ChildRun } from '../child-runner.js';
@@ -13,6 +14,7 @@ import { recordCommit, recordedCommit } from '../release.js';
 // GY-3214: the paths and the create-once step live in plain JavaScript, which the published npm package runs before any dependency is installed.
 import { cliReleasePath, currentCliPath, installLauncherPath, prepareCliRelease } from '../../bin/cli-release.mjs';
 import { stateDirectory } from './layout.js';
+import { systemdCommandLineWords } from './units.js';
 export { cliReleasePath, currentCliPath, installLauncherPath, prepareCliRelease };
 
 /** Release launchers need the same stable, credential-free mount as the legacy launcher. */
@@ -59,6 +61,59 @@ export async function writeInstallLauncher(installDir: string): Promise<string |
   await symlink(wanted, staging);
   await rename(staging, launcher);
   return launcher;
+}
+
+const withinPath = (path: string, parent: string) => path === parent || path.startsWith(`${parent}/`);
+
+/**
+ * GY-4124: ensure an install has its own pinned CLI launcher under `installDir`, never another
+ * install's. When `installDir` already serves a published release, writes its stable launcher;
+ * when it has none yet and `fallbackCliPath` belongs to another install (or another install's
+ * `cli-releases` store), copies that release into `installDir`'s own store and publishes it there.
+ */
+export async function ensureInstallLauncher(installDir: string, fallbackCliPath?: string): Promise<string | null> {
+  const existing = await writeInstallLauncher(installDir);
+  if (existing || !fallbackCliPath) return existing;
+  const ownDir = resolve(installDir);
+  const configHome = resolve(dirname(ownDir));
+  const named = realPath(fallbackCliPath) ?? resolve(fallbackCliPath);
+  const foreign = !withinPath(named, ownDir) && (withinPath(named, configHome) || releaseOfPath(named) !== null);
+  if (!foreign) return null;
+  const sourceLauncher = resolvedLauncher(fallbackCliPath) ?? named;
+  const sourceRoot = dirname(dirname(sourceLauncher));
+  if (!existsSync(join(sourceRoot, 'bin', 'graphyard.mjs'))) return null;
+  const commit = releaseOfPath(sourceRoot) ?? cliCommit(sourceRoot) ?? recordedCommit(sourceRoot) ?? 'pinned';
+  const target = cliReleasePath(ownDir, commit);
+  if (!existsSync(join(target, 'bin', 'graphyard.mjs'))) {
+    await mkdir(dirname(target), { recursive: true });
+    const staging = `${target}.${randomUUID()}.tmp`;
+    try {
+      await cp(sourceRoot, staging, {
+        recursive: true,
+        verbatimSymlinks: true,
+        filter: src => basename(src) !== '.git',
+      });
+      await unlink(join(staging, '.graphyard', 'cli-current')).catch(() => {});
+      await unlink(join(staging, '.mainworks', 'cli-current')).catch(() => {});
+      await rename(staging, target).catch(async (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST' && error.code !== 'ENOTEMPTY') throw error;
+        await rm(staging, { recursive: true, force: true });
+      });
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
+  }
+  const current = currentCliPath(ownDir);
+  await mkdir(dirname(current), { recursive: true });
+  const next = `${current}.${randomUUID()}.tmp`;
+  await symlink(target, next);
+  await rename(next, current);
+  await mkdir(stateDirectory(target), { recursive: true });
+  const pointer = join(stateDirectory(target), 'cli-current');
+  await unlink(pointer).catch(() => {});
+  await symlink(current, pointer);
+  return writeInstallLauncher(ownDir);
 }
 
 /** Publish after health. The legacy build path remains loadable, including on the first handover. */
@@ -114,14 +169,39 @@ export function unitLauncherFault(input: { unit: string; launcher: string | null
   return null;
 }
 
+/** Paths named by ExecStart in any systemd user service unit on this machine (GY-4124). */
+async function unitReferencedPaths(unitDirectory?: string): Promise<string[]> {
+  const home = process.env.HOME?.trim() || homedir();
+  const dir = unitDirectory ?? join(process.env.XDG_CONFIG_HOME?.trim() || join(home, '.config'), 'systemd', 'user');
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const paths: string[] = [];
+  for (const entry of entries) {
+    if ((!entry.isFile() && !entry.isSymbolicLink()) || !entry.name.endsWith('.service')) continue;
+    const text = await readFile(join(dir, entry.name), 'utf8').catch(() => '');
+    for (const match of text.matchAll(/^ExecStart=(.+)$/gm)) {
+      const line = match[1]!.replace(/%%|%h/g, specifier => specifier === '%%' ? '%' : home);
+      for (const word of systemdCommandLineWords(line)) {
+        if (!word.startsWith('/')) continue;
+        paths.push(resolve(word));
+        const real = realPath(word);
+        if (real) paths.push(real);
+        const resolved = resolvedLauncher(word);
+        if (resolved) paths.push(resolved);
+      }
+    }
+  }
+  return paths;
+}
+
 /**
  * GY-3334: removes the install's release copies nothing uses. Kept: the one served, every one readied
  * after it (a deploy in flight or a failed tip), the newest readied before it (the previous release),
- * and any a live process names. A copy goes only through `git worktree remove` in the checkout whose
- * worktree entry points back at it, so no other entry is touched and nothing is pruned; a copy whose
- * owner cannot be established (a clone, a broken link) or whose removal fails stays, answered in `left`.
+ * any a live process names, and (GY-4124) any a systemd unit on this machine names. A copy goes only
+ * through `git worktree remove` in the checkout whose worktree entry points back at it, so no other
+ * entry is touched and nothing is pruned; a copy whose owner cannot be established (a clone, a broken
+ * link) or whose removal fails stays, answered in `left`.
  */
-export async function sweepCliReleases(directory: string, run: ChildRun, procRoot = '/proc') {
+export async function sweepCliReleases(directory: string, run: ChildRun, procRoot = '/proc', unitDirectory?: string) {
   const swept = { removed: [] as string[], bytes: 0, left: [] as string[] };
   const store = dirname(cliReleasePath(directory, 'x'));
   let serving: string;
@@ -132,9 +212,9 @@ export async function sweepCliReleases(directory: string, run: ChildRun, procRoo
   const served = copies.find(copy => copy.path === serving);
   if (!served) return swept;
   const previous = copies.filter(copy => copy.at < served.at).sort((a, b) => b.at - a.at)[0];
-  const live = livePaths(procRoot);
+  const referenced = [...livePaths(procRoot), ...(await unitReferencedPaths(unitDirectory))];
   for (const copy of copies) {
-    if (copy.at >= served.at || copy === previous || live.some(path => path === copy.path || path.startsWith(`${copy.path}/`))) continue;
+    if (copy.at >= served.at || copy === previous || referenced.some(path => path === copy.path || path.startsWith(`${copy.path}/`))) continue;
     const link = /^gitdir: (.+)$/m.exec(await readFile(join(copy.path, '.git'), 'utf8').catch(() => ''))?.[1]?.trim();
     const entry = link && resolve(copy.path, link);
     const back = entry && await readFile(join(entry, 'gitdir'), 'utf8').then(text => realpathSync(resolve(entry, text.trim())), () => null);
