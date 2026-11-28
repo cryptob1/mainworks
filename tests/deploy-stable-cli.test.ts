@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { cp, mkdir, readdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
@@ -98,10 +99,8 @@ test('integration:deploy-stable-cli — real CLI loading survives delayed instal
     else { apiCalls++; response.end(JSON.stringify({ fixture: true, commit: served })); }
   });
   await writeFile(join(directory, 'install.json'), JSON.stringify({ version: 1, installId: 'owner-project', repository: 'owner/project', provider: 'compose', baseBranch: 'main', createdAt: 'now', updatedAt: 'now' }));
-  const previousHome = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = configHome;
   // GY-4003: the handover window is a minute; three seconds keeps the true-mismatch case short.
-  process.env.GRAPHYARD_RELEASE_HANDOVER_MS = '3000';
+  const restoreEnv = patchEnv({ GRAPHYARD_CONFIG_HOME: configHome, GRAPHYARD_RELEASE_HANDOVER_MS: '3000' });
   let releaseInstall!: () => void, started!: () => void, releaseBuild!: () => void, buildStarted!: () => void;
   let waitForInstall = Promise.resolve(), installStarted = Promise.resolve(), failInstall = false, unhealthy: string | null = null;
   let waitForBuild = Promise.resolve();
@@ -201,7 +200,6 @@ test('integration:deploy-stable-cli — real CLI loading survives delayed instal
     await pending?.catch(() => {});
     for (const session of sessions.values()) await session.close();
     await close();
-    if (previousHome === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previousHome;
-    delete process.env.GRAPHYARD_RELEASE_HANDOVER_MS;
+    restoreEnv();
   }
 });

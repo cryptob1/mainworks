@@ -27,6 +27,8 @@ export function demand(value: unknown, message: string, status = 409): asserts v
  * as transient; one carrying this code is the control plane's own answer that the item is gone.
  */
 export const unknownWorkCode = 'work-not-found';
+/** GY-4072: the 401 body's code when a presented token is unknown or expired, the one answer on which the dashboard drops its stored session. */
+export const sessionExpiredCode = 'session_expired';
 export function demandWork<T>(work: T | undefined | null): asserts work is T {
   if (!work) throw new Refusal('Work item not found', 404, { code: unknownWorkCode });
 }

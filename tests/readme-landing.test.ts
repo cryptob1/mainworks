@@ -17,7 +17,7 @@ test('unit:tests/readme-landing.test.ts — README is the approved landing page 
   for (const name of ['AI coding agents', 'Claude Code', 'Codex']) assert.ok(intro.includes(name), `the opening names ${name}`);
 
   const sections = [...readme.matchAll(/^## (.+)$/gm)].map(match => match[1]);
-  assert.deepEqual(sections, ['Why this exists', 'What it looks like', 'How it works', 'Try it', 'How fast is it?', 'What to run it on', 'Is it safe to let agents do this?', 'Learn more']);
+  assert.deepEqual(sections, ['Why this exists', 'What it looks like', 'How it works', 'Try it', 'How fast is it?', 'What to run it on', 'Is it safe to let agents do this?', 'Work with a factory from Slack', 'Learn more']);
 
   assert.doesNotMatch(readme, /render\.mjs|ffmpeg|makegif/, 'README carries no re-render commands');
   assert.ok(existsSync(new URL('docs/walkthrough.md', root)));

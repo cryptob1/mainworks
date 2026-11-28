@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withEnv } from './helpers/env.js';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
@@ -38,14 +39,7 @@ async function scratchRepository(label: string) {
 }
 
 /** Runs BODY with GRAPHYARD_CONFIG_HOME on the scratch config home, so no real install record is read. */
-async function withConfigHome<T>(configHome: string, body: () => Promise<T>): Promise<T> {
-  const previous = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = configHome;
-  try { return await body(); } finally {
-    if (previous === undefined) delete process.env.GRAPHYARD_CONFIG_HOME;
-    else process.env.GRAPHYARD_CONFIG_HOME = previous;
-  }
-}
+const withConfigHome = <T>(configHome: string, body: () => Promise<T>) => withEnv({ GRAPHYARD_CONFIG_HOME: configHome }, body);
 
 const onboardingFiles = async (root: string) => {
   await writeFile(join(root, 'AGENTS.md'), '# Coordination\n');

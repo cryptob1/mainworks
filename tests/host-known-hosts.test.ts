@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -33,7 +34,7 @@ function optionValue(args: readonly string[], key: string): string | null {
   return null;
 }
 
-test('unit:host-add-records-key-in-machine-folder — host add, host list probes and shard connections share machine/known_hosts with accept-new, work with no ~/.ssh, and refuse a changed key in one line', async () => {
+test('unit:host-add-records-key-in-machine-folder — host add, host list probes and shard connections share machine/known_hosts with accept-new, work with no ~/.ssh, and refuse a changed key in one line', async t => {
   const root = await temporaryDirectory('host-known-hosts');
   const config = join(root, 'config');
   const home = join(root, 'empty-home');
@@ -42,9 +43,7 @@ test('unit:host-add-records-key-in-machine-folder — host add, host list probes
   await rm(join(home, '.ssh'), { recursive: true, force: true });
   assert.equal(existsSync(join(home, '.ssh')), false);
 
-  const saved = { HOME: process.env.HOME, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME };
-  process.env.HOME = home;
-  process.env.GRAPHYARD_CONFIG_HOME = config;
+  patchEnv({ HOME: home, GRAPHYARD_CONFIG_HOME: config }, t);
 
   const expectedKnownHosts = join(config, 'machine', 'known_hosts');
   assert.equal(hostKnownHostsFile(), expectedKnownHosts);
@@ -104,9 +103,8 @@ test('unit:host-add-records-key-in-machine-folder — host add, host list probes
     return '';
   };
 
-  try {
-    // 1. First host add with no ~/.ssh succeeds and records the key in <config>/machine/known_hosts.
-    const added = await addHost('gy-compute@100.88.105.12:2222', { run });
+  // 1. First host add with no ~/.ssh succeeds and records the key in <config>/machine/known_hosts.
+  const added = await addHost('gy-compute@100.88.105.12:2222', { run });
     assert.equal(added.added, true);
     assert.equal(existsSync(join(home, '.ssh')), false, 'no ~/.ssh was needed or created');
     assert.equal((await readFile(expectedKnownHosts, 'utf8')).trim(), `[100.88.105.12]:2222 ${hostKey}`);
@@ -193,8 +191,4 @@ test('unit:host-add-records-key-in-machine-folder — host add, host list probes
     const [landlockDirs] = JSON.parse(landlockArg!) as [string[], string[]];
     assert.ok(!landlockDirs.includes(expectedKnownHosts), 'known_hosts file is not passed to Landlock directory rules');
     assert.ok(!landlockDirs.includes(hostsFile(config)), 'hosts.json file is not passed to Landlock directory rules');
-  } finally {
-    if (saved.HOME === undefined) delete process.env.HOME; else process.env.HOME = saved.HOME;
-    if (saved.GRAPHYARD_CONFIG_HOME === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = saved.GRAPHYARD_CONFIG_HOME;
-  }
 });

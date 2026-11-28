@@ -42,7 +42,7 @@ import { type DaemonEffects, record } from './effects.js';
 import { mergeWriterStep, snapshotLedger } from './cycle-merge-writer.js';
 import type { MergeWriterState } from './merge-writer-state.js';
 import { awaitsMerge } from '../model/merge-queue.js';
-import { heavyJobLimit, heavyJobsDirectory } from '../master/verification-slots.js';
+import { heavyJobLimit, heavyJobsDirectory, readHeavyDrain } from '../master/verification-slots.js';
 import { batchGateStep } from './cycle-batch-gate.js';
 import { benchStep } from '../bench.js';
 import { lessonsToCode } from './lessons-to-code.js';
@@ -160,6 +160,7 @@ export interface Cycle {
    * pane for them; absent when it refused none.
    */
   checkoutTrustRefused?: ReadonlySet<string>;
+  buildersPaused?: boolean;
   /** The loop's journal line writer: steps that settle beside the cycle log through it (GY-3141). */
   log: (line: string) => void;
 }
@@ -689,6 +690,7 @@ async function dispatchStep(cycle: Cycle) {
   // the worker profiles, each under an identity the control plane mints, the first cycle it is short.
   const registry = effects.registry ? await effects.registry().catch(() => null) : null;
   const allowed = workersAllowed(config, registry);
+  cycle.buildersPaused = registry?.roles.find(role => role.name === 'worker')?.concurrency === 0;
   if (registry && effects.growWorkers) try {
     const added = await effects.growWorkers(config, allowed);
     if (added.length) await note(cycle, `workers:${allowed}`, 'config', null, 'done', `Added worker profile${added.length === 1 ? '' : 's'} ${added.map(profile => profile.name).join(', ')}: the registry worker role allows ${allowed} workers`);
@@ -1094,7 +1096,7 @@ async function masterSession(cycle: Cycle, open: Work[]) {
   // keeps the messages already delivered, so none is delivered twice.
   const messages = config.forPerson ? [] : await Promise.resolve(effects.masterMessages?.() ?? []).catch(() => null);
   const notMoving = config.forPerson ? [] : (await Promise.resolve(effects.flow?.() ?? null).catch(() => null))?.notMoving ?? [];
-  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
+  const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving, { heavy: !!readHeavyDrain(heavyJobsDirectory()), builders: cycle.buildersPaused, checks: cycle.snapshot.workerVerifications?.filter(job => job.state === 'queued' && job.host === config.hostId).map(job => job.key) }), ...(await sessions.pendingCauses?.(open) ?? []), ...messageCauses(messages ?? [], config.cliPath, config.peers?.map(peer => peer.name) ?? [])];
   const current = new Set(causes.map(cause => cause.key));
   if (!messages) for (const key of Object.keys(state.master.subjects)) if (key.startsWith('message:')) current.add(key);
   // A retrial temporarily replaces its refusal with an intent. Keep the same base's wake
@@ -1249,7 +1251,7 @@ function submitMasterLaunch(cycle: Cycle, open: Work[], recoveryError?: string, 
       try {
         await endPreviousMasterSessions(cycle, closedPane);
         const notMoving = config.forPerson ? [] : (await Promise.resolve(effects.flow?.() ?? null).catch(() => null))?.notMoving ?? [];
-        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving), ...(await sessions.pendingCauses?.(open) ?? [])];
+        const causes = [...masterCauses(open, state.actions, state.failureRuns, cycle.now(), notMoving, { heavy: !!readHeavyDrain(heavyJobsDirectory()), builders: cycle.buildersPaused, checks: cycle.snapshot.workerVerifications?.filter(job => job.state === 'queued' && job.host === config.hostId).map(job => job.key) }), ...(await sessions.pendingCauses?.(open) ?? [])];
         const { recoveryFailures, ...oldMaster } = state.master;
         const failures = recoveryError ? [...recoveryFailures, { at: new Date(cycle.now()).toISOString(), error: recoveryError, master: oldMaster }] : recoveryFailures;
         const previous = recoveryError ? null : state.master.continuity;
