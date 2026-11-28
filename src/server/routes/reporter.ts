@@ -37,7 +37,9 @@ export const masterMessageRoutes = defineRoutes('master-messages', [
     const { actor, services } = context;
     const input = message.parse(await parseJson(context, 20_000));
     // A reporter or the operator messages the Master; the Master itself records only what it sent a peer, and the loop what a Slack person sent.
-    demand(input.to ? actor.role === 'coordinator' || actor.role === 'admin' : actor.role === 'reporter' || actor.role === 'admin' || (actor.role === 'coordinator' && !!input.source), input.to ? 'Only the Master records a message it sent a peer' : 'Only a reporter or the operator messages the Master', 403);
+    // A source speaks with the owner's authority (Slack people the owner allows), so only the loop names one.
+    demand(!input.source || actor.role === 'coordinator', 'Only the loop\'s Slack app names a message\'s source', 403);
+    demand(input.to ? actor.role === 'coordinator' || actor.role === 'admin' : actor.role === 'reporter' || actor.role === 'admin' || !!input.source, input.to ? 'Only the Master records a message it sent a peer' : 'Only a reporter or the operator messages the Master', 403);
     return services.engine.store.transaction(db => once(db, actor, context.idempotencyKey(), { command: 'master.message', ...input }, async () => {
       const row = (await db.query('INSERT INTO events(work_id,actor,kind,payload) VALUES(NULL,$1,$2,$3) RETURNING seq', [actor.id, messageKind, JSON.stringify(input)])).rows[0];
       return { id: Number(row.seq), sent: true, next: 'Read the Master\'s reply with mainworks messages' };

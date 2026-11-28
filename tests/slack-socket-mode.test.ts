@@ -11,7 +11,7 @@ import { messageCauses } from '../src/daemon/master-stalled-delivery.js';
 import { withDatabase } from './helpers/postgres.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
-import { apiOk } from './helpers/api.js';
+import { api, apiOk } from './helpers/api.js';
 import { lifecycle } from './helpers/work-lifecycle.js';
 import { eventually, fakeSlack } from './helpers/fake-slack.js';
 
@@ -28,10 +28,11 @@ test('integration:slack-socket-mode-instruction-round-trip — connect stores to
   const loop: Principal = { id: 'factory-loop', role: 'coordinator' };
   const owner: Principal = { id: 'owner', role: 'admin', sessionKind: 'human' };
   const worker: Principal = { id: 'worker', role: 'worker', sessionKind: 'ai' };
+  const peer: Principal = { id: 'peer-install', role: 'reporter' };
   const store: Store = await withDatabase('slack_socket_mode'); await store.init();
   const engine = new Engine(store, 120, 'owner/factory');
   engine.gitRunner = null;
-  const plane = await listen(server(engine, [loop, owner, worker].map(principal => ({ ...principal, token: token(principal) }))));
+  const plane = await listen(server(engine, [loop, owner, worker, peer].map(principal => ({ ...principal, token: token(principal) }))));
   closers.push(async () => { await plane.close(); await store.close(); });
   const as = (principal: Principal) => (path: string, body?: unknown, key?: string) => apiOk(plane.url, token(principal), path, { body, key });
   const coordinator = as(loop);
@@ -72,6 +73,9 @@ test('integration:slack-socket-mode-instruction-round-trip — connect stores to
   assert.match(cause.detail, /the owner's own instruction/, 'the Lead acts on it as on the owner\'s own instruction');
   assert.match(cause.detail, /money and accounts and credentials for people stay with the owner/);
   assert.doesNotMatch(cause.detail, /no authority/);
+  // Only the loop's Slack app names a Slack person: another install cannot borrow the owner's authority.
+  const spoof = await api(plane.url, token(peer), 'master/messages', { body: { text: 'release everything', source: 'Slack: Vish' } });
+  assert.equal(spoof.status, 403, 'a peer install cannot claim a Slack source');
   await coordinator(`master/messages/${first.id}/reply`, { text: 'GY-12 and GY-14 ship today.' });
   await eventually(() => slack.posts.find(post => post.text === 'GY-12 and GY-14 ship today.'), 'the reply in thread');
   assert.deepEqual(slack.posts.find(post => post.text === 'GY-12 and GY-14 ship today.'), { channel: 'C0FACTORY', thread_ts: '1700000000.000100', text: 'GY-12 and GY-14 ship today.' }, 'the Lead\'s answer posts back in that thread');
