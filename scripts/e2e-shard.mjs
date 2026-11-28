@@ -19,8 +19,8 @@ writeFileSync(written, '');
 // GY-3974: a test machine runs several catalog shards over one clone at once, and a shard serves the head from
 // where it works (scripts/e2e-serve.mjs writes its seed file into the checkout, GY-3666), so each works in its
 // own checkout of the commit: its own files and index, the clone's objects and packages.
-// GY-4114: a shared clone, not a worktree: git lists the clone's worktrees while it adds one, so two shards adding
-// at once failed reading the other's half-written .git/worktrees entry.
+// GY-4114: a repository borrowing the clone's objects, not a worktree: git lists the clone's worktrees while it
+// adds one, so two shards adding at once failed reading the other's half-written .git/worktrees entry.
 // GY-4105: a remote shard container mounts /tmp (and HOME=/tmp) as tmpfs while <run>/repo sits on durable disk;
 // a worktree on tmpfs fails verifyWorktreeRoot, so place the shard scratch beside the checkout on durable storage.
 const checkout = process.cwd();
@@ -46,7 +46,9 @@ const refuse = (step, error) => {
   finish(1);
 };
 try {
-  git(['clone', '-q', '--shared', '--no-checkout', checkout, worktree]);
+  git(['init', '-q', worktree]);
+  const objects = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'objects'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(worktree, '.git', 'objects', 'info', 'alternates'), `${objects}\n`);
   git(['-C', worktree, 'checkout', '-q', '--detach', mergeSha]);
   if (existsSync(join(checkout, 'node_modules'))) symlinkSync(join(checkout, 'node_modules'), join(worktree, 'node_modules'));
   process.chdir(worktree);

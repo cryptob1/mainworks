@@ -221,5 +221,5 @@ test('integration:e2e-catalog-fits-bound — a shard that cannot make its worktr
   assert.doesNotMatch(String(ended?.stderr), /\bReferenceError\b/, 'and cleanly, not on an uncaught error of its own');
   const entries = (await readFile(join(root, 'records'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   assert.deepEqual(entries.map(entry => [entry.proof, entry.executed, entry.failed]), [['e2e:first', 0, 1], ['e2e:second', 0, 1]], `every case fails, none as a pass: ${JSON.stringify(entries)}`);
-  for (const entry of entries) assert.match(entry.failingStep, /^the shard's worktree of [0-9a-f]{12} failed: .*fatal: unable to parse commit [0-9a-f]{40}$/);
+  for (const entry of entries) assert.match(entry.failingStep, new RegExp(`^the shard's worktree of [0-9a-f]{12} failed: .*Could not read ${tree}`));
 });
