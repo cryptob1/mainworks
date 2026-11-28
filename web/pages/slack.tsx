@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Dashboard } from './dashboard';
+import { PageHeader } from '../components/page-layout';
 
 interface Person { id: string; name: string }
 interface SlackView {
@@ -35,13 +36,14 @@ export function SlackPage({ api, observedAt }: Pick<Dashboard, 'api' | 'observed
   const act = (path: string, body: unknown, ok: (next: SlackView) => string) => api(path, body).then((next: SlackView) => { setView(next); setLine({ text: ok(next), ok: true }); }, (error: Error) => setLine({ text: error.message, ok: false }));
   const connect = () => act('slack/connect', { appToken, botToken }, next => { setAppToken(''); setBotToken(''); return `Connected to ${next.tokens!.team} as @${next.tokens!.bot}.`; });
   const save = () => act('slack/channel', { channel, owner, people }, () => 'Saved. The loop connects within a minute.');
-  if (!view) return <section className="panel" aria-label="Slack"><h2>Slack</h2><p>{line?.text ?? 'Loading…'}</p></section>;
-  const connected = !!view.loop?.connected && !view.waiting;
+  const connected = !!view?.loop?.connected && !view.waiting;
+  const header = <PageHeader title="Slack" fact={!view ? 'Reading the Slack setup…' : `${[!!view.tokens || connected, !!view.tokens || connected, connected || view.waiting, connected || view.waiting, connected].filter(Boolean).length} of 5 steps done.`}>
+    Let people talk to the Lead from one Slack channel. The factory dials out to Slack; nothing on your network opens.</PageHeader>;
+  if (!view) return <section aria-label="Slack" className="slack-page">{header}{line && <p role="alert" className="amber">{line.text}</p>}</section>;
   const tokensDone = !!view.tokens || connected;
   const channels = view.tokens?.channels ?? [];
   return <section aria-label="Slack" className="slack-page">
-    <h2>Slack</h2>
-    <p>Let people talk to the Lead from one Slack channel. The factory dials out to Slack; nothing on your network opens.</p>
+    {header}
     {line && <p role={line.ok ? 'status' : 'alert'} aria-label="Slack result" className={line.ok ? undefined : 'amber'}>{line.text}</p>}
     <ol className="slack-steps">
       <Step n={1} title="Create the Slack app" done={tokensDone}>
@@ -61,7 +63,7 @@ export function SlackPage({ api, observedAt }: Pick<Dashboard, 'api' | 'observed
         {!view.tokens ? <p className="muted">{connected ? `Bound to #${view.loop!.channelName ?? view.loop!.channel}. To change it, paste the tokens again.` : 'Connect the tokens first.'}</p>
           : channels.length ? <><label htmlFor="slack-channel">Channel</label>
             <select id="slack-channel" value={channel} onChange={event => setChannel(event.target.value)}><option value="">Choose a channel</option>{channels.map(entry => <option key={entry.id} value={entry.id}>#{entry.name}</option>)}</select></>
-          : <p>The app is in no channel yet. In Slack, type /invite @{view.tokens.bot} in the channel, then press Connect again.</p>}
+          : <p>The app is in no channel yet. In Slack, type /invite @{view.tokens.bot} in the channel, then press Refresh channels. <button type="button" onClick={() => void act('slack/channels', {}, next => next.tokens!.channels.length ? 'Channels refreshed.' : `Still no channel: type /invite @${next.tokens!.bot} in the channel first.`)}>Refresh channels</button></p>}
       </Step>
       <Step n={4} title="Choose who may talk to the Lead" done={connected || view.waiting}>
         {!view.tokens ? <p className="muted">{connected ? 'To change who may talk to the Lead, paste the tokens again.' : 'Connect the tokens first.'}</p> : <>

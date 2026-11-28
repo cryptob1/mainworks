@@ -9,7 +9,7 @@ import LiveTerminal, { type TerminalHandle } from '../components/live-terminal';
 import { MoreDetails, PageHeader } from '../components/page-layout';
 import { goalOrder, heldLine, leadFeed, ledgerKinds, notMovingLine, steerers, type FeedDecision, type HeldRow, type LedgerRow, type NotMovingRow, type RegistryRow, type TypedLine } from '../lead-feed';
 
-type Message = { id: number; from: string; to?: string; thread: string; text: string; at: string; replies: { id: number; by: string; text: string; at: string }[] };
+type Message = { id: number; from: string; to?: string; source?: string; thread: string; text: string; at: string; replies: { id: number; by: string; text: string; at: string }[] };
 type Entry = { id: number; who: string; text: string; at: string };
 type MasterTab = 'conversation' | 'live' | 'history' | 'messages';
 
@@ -22,8 +22,9 @@ function masterTabFromHash(hash: string): MasterTab {
 export function messageThreads(messages: Message[]) {
   const threads = new Map<string, { peer: string; entries: Entry[] }>();
   for (const message of messages) {
-    const thread = threads.get(message.thread) ?? { peer: message.to ?? message.from, entries: [] };
-    thread.entries.push({ id: message.id, who: message.to ? 'Lead' : message.from, text: message.text, at: message.at },
+    const from = message.source ?? message.from;
+    const thread = threads.get(message.thread) ?? { peer: message.to ?? from, entries: [] };
+    thread.entries.push({ id: message.id, who: message.to ? 'Lead' : from, text: message.text, at: message.at },
       ...message.replies.map(reply => ({ id: reply.id, who: 'Lead', text: reply.text, at: reply.at })));
     threads.set(message.thread, thread);
   }

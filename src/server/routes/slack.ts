@@ -67,6 +67,14 @@ export const slackRoutes = defineRoutes('slack', [
     stateOf(context.services).checked = await checkTokens(appToken, botToken);
     return view(context.services);
   } },
+  // After /invite in Slack: read the channels again with the bot token already checked.
+  { method: 'POST', path: '/api/slack/channels', async handle({ actor, services }) {
+    owner(actor);
+    const state = stateOf(services);
+    demand(state.checked, 'Connect the tokens first', 409);
+    state.checked = await checkTokens(state.checked!.appToken, state.checked!.botToken);
+    return view(services);
+  } },
   { method: 'POST', path: '/api/slack/channel', async handle(context) {
     owner(context.actor);
     const input = z.object({ channel: z.string().regex(/^[A-Z0-9]+$/), owner: z.string().regex(/^[A-Z0-9]+$/), people: z.array(z.string().regex(/^[A-Z0-9]+$/)).max(500) }).strict().parse(await parseJson(context, 40_000));
@@ -80,7 +88,7 @@ export const slackRoutes = defineRoutes('slack', [
   } },
   { method: 'POST', path: '/api/slack/disconnect', async handle({ actor, services }) {
     owner(actor);
-    Object.assign(stateOf(services), { checked: null, handoff: null, disconnect: true });
+    Object.assign(stateOf(services), { checked: null, handoff: null, disconnect: true, loop: null });
     return view(services);
   } },
   // The loop's pass: it reports its connection and collects a new setup or a disconnect, once.
@@ -88,7 +96,8 @@ export const slackRoutes = defineRoutes('slack', [
     demand(context.actor.role === 'coordinator', 'Only the loop collects the Slack setup', 403);
     const report = loopReport.parse(await parseJson(context, 4_000));
     const state = stateOf(context.services), settings = state.handoff, disconnect = state.disconnect;
-    state.loop = { ...report, at: new Date().toISOString() };
+    // The pass that collects a disconnect still reports the old connection; it is already gone to the owner.
+    state.loop = disconnect ? null : { ...report, at: new Date().toISOString() };
     if (settings) state.checked = null;
     state.handoff = null; state.disconnect = false;
     return { settings, disconnect };

@@ -17,8 +17,10 @@ const appToken = `xapp-1-${'a'.repeat(40)}`, botToken = `xoxb-1-${'b'.repeat(40)
 // then the status line with the last message — at 1280 px and 390 px with no horizontal scroll.
 test('e2e:slack-settings-page-walks-setup — Settings › Slack walks the owner from the manifest and tokens to Connected, with one wrong-token line, at 1280 and 390 px', async ({ browser }) => {
   test.setTimeout(120_000);
+  // The bot starts in no channel: the owner invites it after Connect and refreshes the list.
+  const factory = { id: 'C0FACTORY', name: 'factory', is_member: false };
   const slack = await fakeSlack({ appToken, botToken, names: { UOWNER: 'Vish', UFRIEND: 'Ada' },
-    channels: [{ id: 'C0FACTORY', name: 'factory', is_member: true }, { id: 'C0RANDOM', name: 'random', is_member: false }] });
+    channels: [factory, { id: 'C0RANDOM', name: 'random', is_member: false }] });
   const site = await temporaryDirectory('slack-settings');
   await symlink(process.env.GRAPHYARD_BROWSER_DIST!, join(site, 'dist'));
   const directory = await temporaryDirectory('install', site);
@@ -59,6 +61,12 @@ test('e2e:slack-settings-page-walks-setup — Settings › Slack walks the owner
     await expect(page.getByLabel(/App-level token/)).toHaveValue('', { timeout: 1_000 });
     await expect(step('Paste the two tokens')).toContainText('Done');
 
+    // No channel yet: the hint names /invite, and Refresh channels reads the list again without the tokens.
+    await expect(step('Pick the channel')).toContainText('type /invite @mainworks in the channel, then press Refresh channels');
+    factory.is_member = true;
+    await step('Pick the channel').getByRole('button', { name: 'Refresh channels' }).click();
+    await expect(page.getByRole('status', { name: 'Slack result' })).toHaveText('Channels refreshed.', settled);
+
     // Only the channel the bot was invited to is offered; people by name, the owner first.
     const channel = page.getByRole('combobox', { name: 'Channel', exact: true });
     await expect(channel.locator('option')).toHaveText(['Choose a channel', '#factory']);
@@ -90,6 +98,12 @@ test('e2e:slack-settings-page-walks-setup — Settings › Slack walks the owner
     await expect(small.getByRole('status', { name: 'Slack status' })).toContainText('Connected to #factory', settled);
     expect(await small.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), 'no horizontal page scroll at 390 px').toBe(true);
     await small.screenshot({ path: 'test-results/screenshots/after/slack-settings-390.png', fullPage: true });
+    // Disconnect: the page stops claiming a connection at once, before the loop's next pass.
+    await small.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(small.getByRole('status', { name: 'Slack status' })).toHaveText('Not connected.', settled);
+    await expect(small.getByRole('listitem', { name: 'Connected' })).toContainText('Not done');
+    await loopPass();
+    await expect(small.getByRole('status', { name: 'Slack status' })).toHaveText('Not connected.', settled);
     await phone.close();
   } finally {
     stopping.abort(); await bridge;

@@ -22,6 +22,7 @@ import { gitRepo } from './helpers/git-repo.js';
 import { listen } from './helpers/http-server.js';
 import { apiOk } from './helpers/api.js';
 import { eventually, fakeSlack } from './helpers/fake-slack.js';
+import { messageThreads } from '../web/pages/master.js';
 
 // GY-4073: the instruction round trip as the owner sets it up. The real `mainworks lead slack connect`
 // stores the tokens; the loop's Slack app carries a channel message to the Lead; the loop's real cycle
@@ -63,6 +64,8 @@ test('e2e:slack-instruction-reaches-the-lead — lead slack connect binds a chan
   slack.message({ channel: 'C0FACTORY', user: 'UOWNER', text: 'File an item to add dark mode and release it', ts: '1700000100.000100' });
   const message = await eventually(async () => (await api('master/messages')).messages[0], 'the Lead message');
   assert.equal(message.source, 'Slack: Vish');
+  // Lead › Messages names the Slack person, never the loop's identity.
+  assert.deepEqual(messageThreads([message]).map(thread => [thread.peer, thread.entries[0]!.who]), [['Slack: Vish', 'Slack: Vish']]);
   const config = await loadMasterConfig(root), state = emptyDaemonState(config), inputs: string[] = [];
   const effects: DaemonEffects = {
     snapshot: () => api('work-snapshot'), agents: () => [{ name: config.masterAgentName, pane_id: 'factory:master', agent: 'claude', agent_status: 'idle' }],
