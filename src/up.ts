@@ -751,7 +751,7 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
     // through the install, master init and master autonomy, and the loop starts a fresh cursor.
     // An identity the plane still lists (revoked, say) is no fresh database, and is left to master autonomy's own refusal;
     // a refused identity whose absence no listing confirmed leaves the state untouched, so a later run judges it again.
-    if (!state.reissue?.length && deps.credentialAnswers && await planeAnswers()) {
+    if (!state.reissue?.length && deps.credentialAnswers) {
       const admin = await deps.operatorToken?.(state.operatorTokenFile ?? null).catch(() => null) ?? null;
       const answers = await deps.credentialAnswers(admin).catch((error: any) => {
         deps.emit({ kind: 'note', text: `The recorded credentials could not be checked against the control plane (${String(error?.message ?? error).split('\n')[0].slice(0, 300)}), so nothing is judged stale on this run.` });
@@ -1029,14 +1029,9 @@ export async function runUp(request: UpRequest, deps: UpDependencies): Promise<U
       return applied;
     });
 
-    // GY-1859: a recorded master-loop step says an earlier run finished setup, not that the loop
-    // still runs this CLI's code — the install this check exists for is one whose earlier run
-    // recorded the step while its loop served an earlier checkout. So the recorded step is re-opened
-    // whenever the units read as other code, and the step below runs again instead of printing the
-    // same false green. A reading that failed proves nothing either way, so it re-opens the step too,
-    // which then fails naming why rather than standing green on code it never read.
-    // A reading that was rejected, or came back empty, is a failed reading too: it judged nothing.
-    // Only a run with no reader at all keeps the step as recorded.
+    // GY-1859 / GY-4123: the master-loop step runs every time and reads what the units run; a loop on
+    // this CLI's code is left alone, one on other code is replaced, and a reading that failed, was
+    // rejected or came back empty fails the step naming why rather than standing green on code it never read.
     const readLoopCode = async () => {
       if (!deps.loopCode) return null;
       const read = await deps.loopCode().then(answer => answer ?? 'no reading came back', (error: any) => String(error?.message ?? error).split('\n')[0].slice(0, 400) || 'the reading was rejected');
