@@ -85,7 +85,7 @@ test('e2e:events-retention-bounded — one retention pass over 200,000 events de
   for (const { kind, bytes } of sizes) assert.ok(bytes < rowBytes[kind], `the average ${kind} row is ${bytes} bytes, over ${rowBytes[kind]}`);
 
   // The plans a batch runs: candidate reads stay inside the seq window, and the delete goes by primary key.
-  const window = [['heartbeat'], new Date(Date.now() - ledgerRetentionMs), '0', String(ledgerCompactionBatch)];
+  const cutoff = new Date(Date.now() - ledgerRetentionMs), window = [['heartbeat'], cutoff, '0', String(ledgerCompactionBatch), ['heartbeat'], cutoff];
   for (const sql of candidateSql) console.log(`candidate plan:\n${(await store.pool.query(`EXPLAIN ${sql}`, window)).rows.map(row => row['QUERY PLAN']).join('\n')}`);
   const deletePlan = (await store.pool.query('EXPLAIN DELETE FROM events WHERE seq = ANY($1::bigint[])', [['1', '2', '3']])).rows.map(row => row['QUERY PLAN']).join('\n');
   console.log(`delete plan:\n${deletePlan}`);

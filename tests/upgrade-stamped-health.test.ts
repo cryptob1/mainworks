@@ -100,12 +100,13 @@ async function servedHealth(port: number) {
  */
 async function composeInstall(cliRoot: string, image: string, workdir: string, port: number, docker: ReturnType<typeof localDocker>) {
   const script = join(await temporaryDirectory('upgrade-stamped-script'), 'install.mjs');
+  const archive = await temporaryDirectory('upgrade-stamped-archive');
   await writeFile(script, `import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 const [adapters, image, workdir, port] = process.argv.slice(2);
 const { composeAdapter } = await import(adapters);
 const calls = [];
-const transport = { description: 'recorded docker', async putFile(path, content) { await mkdir(dirname(path), { recursive: true }); await writeFile(path, content); }, async exec(program, args) { calls.push([program, args]); return { code: 0, stdout: '', stderr: '' }; } };
+const transport = { description: 'recorded docker', async putFile(path, content) { await mkdir(dirname(path), { recursive: true }); await writeFile(path, content); }, async exec(program, args) { calls.push([program, args]); return { code: 0, stdout: program === 'mktemp' ? ${JSON.stringify(archive)} : '', stderr: '' }; } };
 const ctx = { image, sourceRoot: process.cwd(), transport, workdir, port: Number(port), installId: 'gate', databasePassword: 'unused' };
 await composeAdapter.provision(ctx, { database: true, app: true });
 await composeAdapter.setEnv(ctx, [{ name: 'GRAPHYARD_PRINCIPALS', value: JSON.stringify([{ id: 'admin', role: 'admin', token: 'a'.repeat(32) }]), secret: true }]);
@@ -115,7 +116,12 @@ process.stdout.write(JSON.stringify(calls));
   const { GRAPHYARD_VERSION: _v, GRAPHYARD_BUILD_REVISION: _r, GRAPHYARD_BUILD_SHA: _s, ...env } = process.env;
   const calls = JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', script, new URL(`file://${join(cliRoot, 'src/install/adapters.ts')}`).href, image, workdir, String(port)], { cwd: cliRoot, env, encoding: 'utf8' })) as [string, string[]][];
   for (const [program, args] of calls) {
-    if (program === 'rm') {
+    if (program === 'mktemp') {
+      assert.deepEqual(args, ['-d', '/tmp/mainworks-image-XXXXXX']);
+    } else if (program === 'rm' && args[0] === '-rf') {
+      assert.deepEqual(args, ['-rf', archive], 'only the export archive is removed');
+      await rm(archive, { recursive: true, force: true });
+    } else if (program === 'rm') {
       // Trial-image provisioning removes its stale pull marker on the install host.
       assert.deepEqual(args, ['-f', pulledTrialImageFile(cliRoot)]);
       await rm(pulledTrialImageFile(cliRoot), { force: true });

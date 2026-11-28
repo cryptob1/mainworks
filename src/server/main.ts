@@ -12,7 +12,7 @@ import { ProductionWatch, observationLine, productionProvider, startProductionWa
 import { configuredGeneratedFiles } from '../generated-files.js';
 import { generatedFilesVariable } from '../install/generated-files.js';
 import { pruneReceipts, receiptPruneIntervalMs } from '../store/receipts.js';
-import { compactLedger, configuredLedgerRetentionMs, expireEvents, ledgerCompactionIntervalMs } from '../store/compaction.js';
+import { compactLedger, configuredLedgerRetentionMs, ledgerCompactionIntervalMs } from '../store/compaction.js';
 import { processControlPlaneJob } from './control-plane-observation.js';
 import { setting } from '../setting.js';
 
@@ -111,7 +111,7 @@ export async function main(options: MainOptions = {}) {
     }
     handle(req, res);
   });
-  let receiptsPrunedAt = 0, ledgerCompactedAt = 0, eventsExpiredAt = 0;
+  let receiptsPrunedAt = 0, ledgerCompactedAt = 0;
   const stopPlaneBeat = await engine.startPlaneBeat(); // the gap since the previous process ticked is on the record before the first heartbeat is answered (GY-1791)
   const reconciliation = startReconciliation(async step => {
     if (!ready) { await step('startup', () => runStartup()); if (!ready) return; }
@@ -120,10 +120,9 @@ export async function main(options: MainOptions = {}) {
     await step('engine.reconcile', () => engine.reconcile()); await step('delivery.sweep', () => delivery.sweep());
     // Bounded, on the pool, never under the coordination lock: receipts past the replay window go.
     if (Date.now() - receiptsPrunedAt >= receiptPruneIntervalMs) { receiptsPrunedAt = Date.now(); await step('pruneReceipts', () => pruneReceipts(store.pool).catch(error => { console.error('receipt pruning failed', error instanceof Error ? error.message : 'unknown'); return 0; })); }
-    // Routine ledger rows past the retention window go in bounded, audited batches (store/compaction.ts).
+    // Routine ledger rows past the retention window go in bounded, audited batches (store/compaction.ts); the run
+    // also expires the week-old registry kinds (GY-4005) and records what it removed for /healthz (GY-4080).
     if (Date.now() - ledgerCompactedAt >= ledgerCompactionIntervalMs) { ledgerCompactedAt = Date.now(); await step('compactLedger', () => compactLedger(store.pool, { retentionMs: configuredLedgerRetentionMs() }).catch(error => { console.error('ledger compaction failed', error instanceof Error ? error.message : 'unknown'); return null; })); }
-    // GY-4005: and rows of the high-volume kinds nothing reads past a day go after a week, in small batches.
-    if (Date.now() - eventsExpiredAt >= ledgerCompactionIntervalMs) { eventsExpiredAt = Date.now(); await step('expireEvents', () => expireEvents(store.pool).catch(error => { console.error('event retention failed', error instanceof Error ? error.message : 'unknown'); return null; })); }
   }, 2000);
   http.listen(options.port ?? Number(process.env.PORT ?? 4310), options.host ?? process.env.HOST ?? '127.0.0.1', () => console.log(`Mainworks listening on port ${(http.address() as AddressInfo).port}`));
   await once(http, 'listening');

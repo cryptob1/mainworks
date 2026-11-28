@@ -1,0 +1,8 @@
+{
+  "id": "compose-deploy-survives-image-export-pipe-error",
+  "title": "Compose deploy survives one image export pipe failure",
+  "description": "Exercise archive export/load through a process stand-in without host Docker access; serve the new tip after one trial-image or server-image closed-pipe failure, and retain Docker diagnostics for other or repeated errors.",
+  "target": "any",
+  "required": false,
+  "steps": [{ "kind": "command", "name": "compose image export and deploy", "run": "node --import tsx tests/helpers/run-tests.ts tests/compose-deploy-survives-image-export-pipe-error.test.ts", "timeoutSeconds": 600 }]
+}
