@@ -49,3 +49,9 @@ test('unit:knip-clean — HTTP test servers use the shared listen helper', () =>
   });
   assert.deepEqual(inline, [], 'HTTP test servers with inline listen setup');
 });
+
+// GY-4113: tests save and restore process.env through tests/helpers/env.ts instead of inline try/finally blocks.
+test('unit:knip-clean — tests restore process.env through tests/helpers/env.ts', () => {
+  const restore = /\bfinally\s*\{[^}]*(?:process\.env(?:\.[A-Za-z0-9_]+|\[[^\]]+\])\s*=|Object\.assign\(process\.env)/;
+  assert.deepEqual(readdirSync(join(root, 'tests'), { encoding: 'utf8' }).filter(p => p.endsWith('.test.ts') && restore.test(readFileSync(join(root, 'tests', p), 'utf8'))), []);
+});

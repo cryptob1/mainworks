@@ -6,15 +6,15 @@ import { join } from 'node:path';
 import { applyTailnetCommand, readTailnet, runUp, tailscaleMissingNote, type UpDependencies } from '../src/up.js';
 import { fakeTailscale } from './helpers/fake-tailscale.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3294: one machine, many installs, one port each.
 
 async function up(root: string, port: number, machineDir: string, path: string) {
   await mkdir(root, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: root });
-  const previous = process.env.PATH, notes: string[] = [];
-  process.env.PATH = path;
-  try {
+  const notes: string[] = [];
+  return withEnv({ PATH: path }, async () => {
     const dependencies = {
       root, emit: (event: { kind: string; text?: string }) => { if (event.kind === 'note') notes.push(event.text!); }, now: Date.now, sleep: async () => {},
       serverUrl: async () => `http://127.0.0.1:${port}`, masterToken: async () => null, status: async () => null, publishOnboarding: async () => null,
@@ -23,7 +23,7 @@ async function up(root: string, port: number, machineDir: string, path: string) 
     } as unknown as UpDependencies;
     const result = await runUp({ repository: `owner/install-${port}` } as Parameters<typeof runUp>[0], dependencies);
     return { reachableUrl: result.reachableUrl, notes };
-  } finally { process.env.PATH = previous; }
+  });
 }
 
 test('unit:tests/one-click-team-access.test.ts — up serves each install on its own port by default, idempotently, and carries on without Tailscale', async () => {

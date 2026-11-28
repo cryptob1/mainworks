@@ -11,12 +11,13 @@ import type { MasterConfig } from '../src/master/profiles.js';
 import { servedInstall } from './helpers/served-install.js';
 import { harness } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3850: the owner commits are authored by is one install setting: install records it from the
 // installer's git config and shows it in --plan, `mainworks config owner "NAME" EMAIL` changes it with
 // history, and an install with none shows one attention line naming that command. A re-run guesses nothing.
 
-test('integration:owner-attribution-setting — install records the owner from git config and shows it in the plan; config owner changes it with history; none shows one attention line', async () => {
+test('integration:owner-attribution-setting — install records the owner from git config and shows it in the plan; config owner changes it with history; none shows one attention line', async t => {
   // install --plan shows the owner from the installer's git config; --apply records it on a first install.
   const fixture = await harness({ provider: 'compose', serverUrl: 'http://127.0.0.1:4310', extraResponses: [
     { match: 'git config --global user.name', result: 'Ada Lovelace\n' }, { match: 'git config --global user.email', result: 'ada@example.com\n' }] });
@@ -45,8 +46,7 @@ test('integration:owner-attribution-setting — install records the owner from g
   } finally { await fixture.cleanup(); }
 
   const install = await servedInstall('owner_attribution');
-  const previousToken = process.env.MAINWORKS_TOKEN;
-  process.env.MAINWORKS_TOKEN = install.operator;
+  patchEnv({ MAINWORKS_TOKEN: install.operator }, t);
   try {
     // None recorded: commits are authored Mainworks, and master status shows one attention line naming the command.
     assert.equal((await install.call('/api/owner')).body.owner, null);
@@ -81,7 +81,6 @@ test('integration:owner-attribution-setting — install records the owner from g
     assert.equal(refused.status, 403);
     assert.equal((await install.call('/api/owner')).body.owner.name, 'Grace Hopper');
   } finally {
-    if (previousToken === undefined) delete process.env.MAINWORKS_TOKEN; else process.env.MAINWORKS_TOKEN = previousToken;
     await install.close();
   }
 });

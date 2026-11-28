@@ -11,6 +11,7 @@ import type { MasterConfig } from '../src/master/profiles.js';
 import type { Observation, Work } from '../src/model.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { withEnv } from './helpers/env.js';
 // Time-bomb allowance (GY-1694): boundAt and the 2026-10-08 fixture instants are past and handed explicitly as seen/now to the registry and evaluate; new Date() only stamps stub snapshots.
 
 /**
@@ -185,15 +186,13 @@ test('unit:supervised-no-identity-collapse — up --local hands the operator\'s 
   const { runUp } = await import('../src/up.js');
   const { recordSupervision, loadStoredMasterConfig } = await import('../src/master/config.js');
   // Every child up --local runs: none is given the gh credential, on its arguments, stdin or environment.
-  const previous = process.env.GH_TOKEN;
-  process.env.GH_TOKEN = GH_TOKEN;
-  try {
+  await withEnv({ GH_TOKEN }, async () => {
     const w: World = { calls: [], installed: false, loop: false, supervised: 0 };
     const result = await runUp(await localRequest(), dependencies(w, await temporaryDirectory('supervised-identity'), []));
     assert.equal(result.exitCode, 0, result.next);
     for (const call of w.calls) assert.ok(!JSON.stringify(call).includes(GH_TOKEN) && !JSON.stringify(call).includes(OPERATOR), `no child carries the operator's GitHub identity: ${call.args.join(' ')}`);
     assert.ok(!w.calls.some(call => call.args[0] === 'master' && ['worker', 'reviewer', 'producer', 'autonomy'].includes(call.args[1])), 'no role credential is minted');
-  } finally { if (previous === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = previous; }
+  });
   // master.json gains only the login's name: no profile, credential file or identity is added or changed.
   const stored = await storedConfig('supervised-collapse');
   const before = await loadStoredMasterConfig(stored.root);

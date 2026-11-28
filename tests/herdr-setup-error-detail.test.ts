@@ -7,6 +7,7 @@ import { readToken } from '../src/install/secrets.js';
 import { harness, REPOSITORY } from './install-harness.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { patchEnv } from './helpers/env.js';
 
 /**
  * GY-3270: a Herdr command a repository setup step runs that fails is reported with Herdr's own
@@ -17,8 +18,7 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
   // The stub herdr the setup step finds on PATH: every invocation fails the same way.
   const bin = await temporaryDirectory('herdr-stub');
   await writeFile(join(bin, 'herdr'), `#!/bin/sh\necho 'plugin mainworks is disabled' >&2\nexit 1\n`, { mode: 0o755 });
-  const wasPath = process.env.PATH;
-  process.env.PATH = `${bin}:${wasPath}`;
+  const restorePath = patchEnv({ PATH: `${bin}:${process.env.PATH}` });
 
   // The control plane the apply's summary reads is the harness's fetch; repository and master
   // setup reach their server with a real fetch, so one loopback HTTP server answers /api/status
@@ -49,4 +49,4 @@ test('e2e:herdr-setup-error-detail — a stub herdr that exits 1 printing "plugi
     assert.equal(summary.profiles.repository.connected, false, 'the repository step failed');
     assert.match(line, /herdr plugin --help exited 1\b/, `the step line names the Herdr command and its exit code: ${line}`);
     assert.ok(line.includes('plugin mainworks is disabled'), `the step line carries Herdr's own error: ${line}`);
-  } finally { process.env.PATH = wasPath; await close(); await fixture.cleanup(); } });
+  } finally { restorePath(); await close(); await fixture.cleanup(); } });

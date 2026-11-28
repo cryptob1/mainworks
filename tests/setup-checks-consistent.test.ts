@@ -12,6 +12,7 @@ import * as setup from '../src/setup-from-zero.js';
 import { setupFromZeroChecks, setupSteps } from '../src/setup-from-zero.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 /**
  * GY-1412 AC-2 (pilot gaps G6, G7, G10, G11): install preflight checks the gh scopes each provider
@@ -46,9 +47,7 @@ test('unit:setup-checks-consistent — install preflight needs only the repo sco
 test('unit:setup-checks-consistent — onboarding proposes credential paths under GRAPHYARD_CONFIG_HOME and leaves credentials to install', async () => {
   const root = await repository({ 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) });
   const configHome = await temporaryDirectory('setup-checks-config');
-  const previous = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = configHome;
-  try {
+  await withEnv({ GRAPHYARD_CONFIG_HOME: configHome }, async () => {
     const proposal = buildProposal(await collectScanInput(root), { repository: 'owner/scratch', runtimes: ['codex'] });
     const file = proposal.profiles.workers[0].credentialFile;
     assert.equal(file, join(configHome, 'workers', 'codex-primary.token'));
@@ -56,7 +55,7 @@ test('unit:setup-checks-consistent — onboarding proposes credential paths unde
     await applyProposal(root, proposal, { url: 'http://127.0.0.1:4310' });
     await assert.rejects(stat(file), { code: 'ENOENT' }, 'init never mints credentials');
     await assert.rejects(stat(join(root, '.graphyard/principals.json')), { code: 'ENOENT' });
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previous; }
+  });
 });
 
 test('unit:setup-checks-consistent — a reachable plane with no credential is reported as reachable, credential missing', async () => {

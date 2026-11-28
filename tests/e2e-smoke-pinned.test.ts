@@ -13,14 +13,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { controlPlaneRecordPath, readControlPlaneRecord } from '../src/deploy-watch.js';
 import { imageLock, withHostLock } from '../src/host-lock.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 const file = fileURLToPath(new URL('./two-installs-deploy-builds-take-turns.test.ts', import.meta.url));
 
 test('unit:e2e-smoke-pinned — the take-turns step passes while another install holds the host image lock', { timeout: 90_000 }, async () => {
   const [locks, scratch] = await Promise.all([temporaryDirectory('smoke-pinned-locks'), temporaryDirectory('smoke-pinned-tmp')]);
-  const saved = process.env.MAINWORKS_LOCK_ROOT;
-  process.env.MAINWORKS_LOCK_ROOT = locks;
-  try {
+  await withEnv({ MAINWORKS_LOCK_ROOT: locks }, async () => {
     const { NODE_TEST_CONTEXT: _, ...environment } = process.env;
     let output = '';
     let exited!: Promise<number | null>;
@@ -37,7 +36,5 @@ test('unit:e2e-smoke-pinned — the take-turns step passes while another install
       while (!done && !huckWaits()) await delay(50);
     }, { holder: 'another install' });
     assert.equal(await exited, 0, output);
-  } finally {
-    if (saved === undefined) delete process.env.MAINWORKS_LOCK_ROOT; else process.env.MAINWORKS_LOCK_ROOT = saved;
-  }
+  });
 });

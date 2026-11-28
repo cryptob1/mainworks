@@ -7,6 +7,7 @@ import { realFreeCores, remoteableTestFile, runShardsOnHosts, splitLocalOnlyTest
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3419: test files that need the database, Docker, nested confinement or a browser are local-only (GY-3522):
 // a shard on an added host has none of them, so such a file there would
@@ -65,10 +66,8 @@ process.exit(failed ? 1 : 0);
     if (command === 'node' && args[0] === 'scripts/tests.mjs') return defaultChildRun(command, args, { ...options, wrapper: undefined });
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
   const timings: string[] = [];
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const result = await runTrial({ root, base: await temporaryDirectory('local-only-base'), mergeSha: sha, changedFiles: files, timeoutMs: 90_000, cores: 2, run, retries: 0, onTiming: step => timings.push(step),
       remote: { hosts: ['gy-compute@box'], read: async () => [reading('vishrog', 2, 0), reading('gy-compute@box', 8, 0)] } });
     assert.equal(result.build, 'pass', result.logTail);
@@ -78,7 +77,7 @@ process.exit(failed ? 1 : 0);
     assert.ok(lines.filter(line => line.file.includes('uses-docker')).every(line => !line.remote), 'every local-only file ran on this machine');
     assert.ok(lines.some(line => line.remote), 'and other files still went to the host');
     assert.ok(timings.some(step => /^tests: shard \d+ on gy-compute@box$/.test(step)), timings.join(', '));
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE; else process.env.GRAPHYARD_TRIAL_IMAGE = previous; }
+  });
 });
 
 test(`${proof} — placement still prefers the host with the most real free CPU for shards that may roam`, async () => {

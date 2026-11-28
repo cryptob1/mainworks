@@ -8,6 +8,7 @@ import { autonomyContract } from '../src/autonomy.js';
 import { evidencePayloadSchema } from '../src/runner/payloads.js';
 import { piArgs, piRunner } from '../src/runner/pi.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-169: the Mainworks Pi extension (integrations/pi). One test per proof it produces:
 // unit:pi-mainworks-tools (AC-2), unit:pi-session-autonomous (AC-4), unit:pi-destructive-guard (AC-5).
@@ -20,11 +21,9 @@ const H = 'a'.repeat(40), B = 'b'.repeat(40);
  * test when it is touched, and every prompt-shaped call is recorded.
  */
 function load(role?: string) {
-  const previous = process.env.GRAPHYARD_PI_ROLE;
-  if (role === undefined) delete process.env.GRAPHYARD_PI_ROLE; else process.env.GRAPHYARD_PI_ROLE = role;
   const tools = new Map<string, ToolDefinition>(), handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>(), prompted: string[] = [];
   const api: ExtensionApi = { registerTool: tool => { tools.set(tool.name, tool); }, on: (event, handler) => { handlers.set(event, [...handlers.get(event) ?? [], handler]); } };
-  try { mainworks(api); } finally { if (previous === undefined) delete process.env.GRAPHYARD_PI_ROLE; else process.env.GRAPHYARD_PI_ROLE = previous; }
+  withEnv({ GRAPHYARD_PI_ROLE: role }, () => mainworks(api));
   const ui = new Proxy({}, { get: (_target, name) => { prompted.push(String(name)); return () => { throw new Error(`the extension asked the user through ui.${String(name)}`); }; } });
   const ctx = (cwd: string) => ({ cwd, hasUI: false, ui });
   const emit = async (event: string, payload: any, cwd = process.cwd()) => { let answer: unknown; for (const handler of handlers.get(event) ?? []) answer = await handler(payload, ctx(cwd)) ?? answer; return answer; };

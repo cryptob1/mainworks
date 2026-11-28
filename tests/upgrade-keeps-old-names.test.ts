@@ -31,6 +31,7 @@ import { server } from '../src/server.js';
 import { Store } from '../src/store.js';
 import { listen } from './helpers/http-server.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3594: an install created before the rename keeps running after it deploys, with no manual
 // step. The old layout is seeded in a temporary home — the config directory ~/.config/graphyard,
@@ -118,9 +119,7 @@ const running = () => liveRuns().filter(entry => entry.role === 'worker').map(en
 
 test('integration:upgrade-keeps-old-names — an install from before the rename keeps its config directory, loop unit, trial image and worktree paths: status and one dispatch succeed after the upgrade', async () => {
   const home = await temporaryDirectory('upgrade-keeps-old-names-home');
-  const saved = { HOME: process.env.HOME, GRAPHYARD_CONFIG_HOME: process.env.GRAPHYARD_CONFIG_HOME, GRAPHYARD_TRIAL_IMAGE: process.env.GRAPHYARD_TRIAL_IMAGE };
-  process.env.HOME = home; delete process.env.GRAPHYARD_CONFIG_HOME; delete process.env.GRAPHYARD_TRIAL_IMAGE;
-  try {
+  await withEnv({ HOME: home, GRAPHYARD_CONFIG_HOME: undefined, GRAPHYARD_TRIAL_IMAGE: undefined }, async () => {
     // The old layout: the install record under ~/.config/graphyard, the legacy loop unit running this checkout, and the trial image under its old tag.
     const oldConfig = join(home, '.config', 'graphyard', 'owner-project');
     await mkdir(oldConfig, { recursive: true });
@@ -170,7 +169,5 @@ esac
     await writeFile(join(runtimeHome, 'release-GY-9911'), '');
     for (let tries = 0; tries < 600 && running().length; tries++) await new Promise(resolve => setTimeout(resolve, 50));
     assert.deepEqual(running(), []);
-  } finally {
-    for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
-  }
+  });
 });

@@ -7,6 +7,7 @@ import { localOnlyTestPattern, readRemoteShardRuns, remoteShardSummary, remoteab
 import { runTrial } from '../src/merge-writer/trial.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3522: the local-only word list named every network word (url, http, server, fetch, connect…),
 // which kept nine test files in ten on this machine while the added hosts idled. It names only what
@@ -57,9 +58,7 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
   const reading = (name: string, cores: number, busy: number): HostReading => ({ name, cores, busy, steal: 0, celsius: 60, limit: 92, away: false });
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const result = await runTrial({ root, base: await temporaryDirectory('pattern-narrow-base'), mergeSha: sha, changedFiles: files, timeoutMs: 240_000, cores: 2, run, retries: 0,
       remote: { hosts: ['gy-compute@box'], read: async () => [reading('vishrog', 2, 2), reading('gy-compute@box', 8, 0)] } });
     assert.deepEqual({ build: result.build, failed: result.tests.failed, files: result.tests.files }, { build: 'pass', failed: [], files: files.length }, result.logTail);
@@ -69,5 +68,5 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     const status = remoteShardSummary(readRemoteShardRuns(root))!;
     assert.ok(status.latest.remote > status.latest.shards / 2, `most shards ran remotely: ${JSON.stringify(status.latest)}`);
     assert.deepEqual(status.hosts.map(host => [host.name, host.state]), [['vishrog', 'ready'], ['gy-compute@box', 'ready']]);
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE; else process.env.GRAPHYARD_TRIAL_IMAGE = previous; }
+  });
 });

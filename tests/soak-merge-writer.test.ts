@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { acquireVerificationSlot, heldVariable, slotsDirectoryVariable } from '../src/master/verification-slots.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { workFixture } from './helpers/work-fixture.js';
+import { patchEnv } from './helpers/env.js';
 
 /**
  * GY-1524: the control-plane merge executor over a simulated day of the real loop's cycles, in the
@@ -258,11 +259,10 @@ test('unit:soak-merge-writer-concurrent — GY-3120: the simulated day with thre
   assert.deepEqual(state.mergeWriter.reworks, [], 'no rework is still owed');
 });
 
-test('unit:soak-merge-writer-pinned — GY-3617: with every heavy-job slot on the host held by another run, the simulated day still trials heads at once and delivers them; its in-process trials never wait on the host', { timeout: 60_000 }, async () => {
+test('unit:soak-merge-writer-pinned — GY-3617: with every heavy-job slot on the host held by another run, the simulated day still trials heads at once and delivers them; its in-process trials never wait on the host', { timeout: 60_000 }, async t => {
   const slots = join(await temporaryDirectory('soak-merge-writer-slots'), 'heavy-jobs');
   await mkdir(slots, { recursive: true }); await writeFile(join(slots, 'limit'), '1\n');
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = slots;
+  patchEnv({ [slotsDirectoryVariable]: slots }, t);
   const other = await acquireVerificationSlot({ directory: slots, label: 'another run on this host' });
   try {
     let now = start;
@@ -283,6 +283,5 @@ test('unit:soak-merge-writer-pinned — GY-3617: with every heavy-job slot on th
     assert.ok(world.snapshot().filter(item => item.stage === 'done').length > 10, 'and delivered');
   } finally {
     other.release();
-    if (previous === undefined) delete process.env[slotsDirectoryVariable]; else process.env[slotsDirectoryVariable] = previous;
   }
 });

@@ -10,6 +10,7 @@ import { pushEnvironment } from '../src/merge-writer/executor.js';
 import { fetchRefusalLine } from '../src/daemon/cycle-batch-gate.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3470: Huck's confined coordinator fetched its base branch mainworks-main over SSH and ssh
 // refused before dialling anything: "Bad owner or permissions on
@@ -29,8 +30,7 @@ async function confinedFixture(run: (fixture: { spawn: (script: string) => Retur
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('confined-git-ssh-home', join(checkout, '.graphyard'));
-  const savedHome = process.env.HOME;
-  process.env.HOME = home;
+  const restoreHome = patchEnv({ HOME: home });
   try {
     const realSsh = execFileSync('sh', ['-c', 'command -v ssh'], { encoding: 'utf8' }).trim();
     // The origin: a bare repository whose non-default base branch carries the project's check.
@@ -76,7 +76,7 @@ async function confinedFixture(run: (fixture: { spawn: (script: string) => Retur
       { encoding: 'utf8', timeout: 120_000, killSignal: 'SIGKILL', env });
     await run({ spawn });
   } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+    restoreHome();
     rmSync(home, { recursive: true, force: true });
   }
 }

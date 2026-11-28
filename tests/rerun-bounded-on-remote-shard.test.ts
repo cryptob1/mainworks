@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { defaultChildRun } from '../src/child-runner.js';
 import { remoteShardSession } from '../src/merge-writer/remote-shards.js';
 import { git, shardHosts, shardRepository } from './helpers/shard-hosts.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3577: a remote shard's container has a read-only root; only its run directory, /tmp and /run
 // are writable. The pre-submit rerun made its scratch in /var/tmp alone, so on a compute host it
@@ -25,8 +26,7 @@ test('integration:rerun-bounded-on-remote-shard — tests/complete-rerun-bounded
   const repository = await shardRepository('rerun-bounded-repo', [], { 'package.json': JSON.stringify({ name: 'fixture', type: 'module' }), [file]: readFileSync(join(source, file), 'utf8') });
   for (const path of ['src', 'tests/helpers']) symlinkSync(join(source, path), join(repository.root, path));
   git(repository.root, 'add', '-A'); git(repository.root, 'commit', '-qm', 'link the sources');
-  const previous = process.env.PATH;
-  process.env.PATH = `${hosts.bin}:${previous}`;
+  const restorePath = patchEnv({ PATH: `${hosts.bin}:${process.env.PATH}` });
   const session = remoteShardSession({ root: repository.root, sha: git(repository.root, 'rev-parse', 'HEAD'), image, run: defaultChildRun, deadline: Date.now() + 150_000 });
   try {
     // Node's test runner runs the file; the record says the shard reached its verdict.
@@ -34,5 +34,5 @@ test('integration:rerun-bounded-on-remote-shard — tests/complete-rerun-bounded
       process.execPath, import.meta.resolve('tsx'), file, records], 2);
     assert.equal(ended.ok, true, ended.out);
     for (const name of ['unit:complete-rerun-runs-only-failing-files', 'unit:complete-rerun-killed-at-bound']) assert.ok(ended.out.includes(`✔ ${name}`), ended.out);
-  } finally { await session.close(); process.env.PATH = previous; }
+  } finally { await session.close(); restorePath(); }
 });

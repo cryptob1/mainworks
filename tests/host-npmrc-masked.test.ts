@@ -8,6 +8,7 @@ import { coordinatorConfinement, credentialMaskFor, sessionMountNamespaceWorks, 
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3248: the GY-3228 mask left the host user's package-manager credentials readable, so a
 // confined worker could print the owner's npm publish token from ~/.npmrc. Under real bubblewrap,
@@ -17,13 +18,12 @@ import { git, gitRepo } from './helpers/git-repo.js';
 const secret = 'npm-publish-secret-'.padEnd(48, 'x');
 const hostProbe: MaskProbe = (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
-test('e2e:host-npmrc-masked — under real bwrap a confined worker cannot read ~/.npmrc or its siblings and npm install of a public package in its worktree still succeeds', async () => {
+test('e2e:host-npmrc-masked — under real bwrap a confined worker cannot read ~/.npmrc or its siblings and npm install of a public package in its worktree still succeeds', async t => {
   // The fixture HOME lives in this checkout: the sandbox replaces /tmp with its own scratch.
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('host-npmrc-home', join(checkout, '.graphyard'));
-  const savedHome = process.env.HOME;
-  process.env.HOME = home;
+  patchEnv({ HOME: home }, t);
   try {
     const root = join(home, 'code', 'project'), worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1');
     await gitRepo({ root, files: { '.gitignore': '.graphyard/\nnode_modules/\n', 'package.json': JSON.stringify({ name: 'fixture', version: '1.0.0', private: true }) }, message: 'seed' });
@@ -56,7 +56,6 @@ test('e2e:host-npmrc-masked — under real bwrap a confined worker cannot read ~
     for (const path of credentials) assert.ok(ran.stdout.includes(`DENIED ${path}\n`), `the worker cannot read ${path}: ${output.slice(-800)}`);
     assert.ok(ran.stdout.includes('NPM-INSTALL-OK') && existsSync(join(worktree, 'node_modules', 'is-number', 'package.json')), `npm install still succeeds: ${output.slice(-800)}`);
   } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
     rmSync(home, { recursive: true, force: true });
   }
 });

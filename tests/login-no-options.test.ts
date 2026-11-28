@@ -9,6 +9,7 @@ import { HumanSignIn, signInSessionTtlMs } from '../src/server/auth.js';
 import { signInDatabase } from './helpers/sign-in-database.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { listen } from './helpers/http-server.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-2171: `mainworks login` with no options and no GRAPHYARD_TOKEN_FILE finds the operator credential
 // the install recorded under the config home, and the human session its link opens lasts until 180 days unused.
@@ -21,16 +22,13 @@ async function loginWithNoOptions(root: string, configHome: string, command = lo
     response.setHeader('Content-Type', 'application/json');
     response.end(request.url === '/api/sign-in-links' ? JSON.stringify({ code: 'one-time-code-0123456789', principal: 'acme-widget-operator', expiresAt: '2026-10-19T00:10:00Z' }) : '{}');
   });
-  const names = ['GRAPHYARD_URL', 'GRAPHYARD_CONFIG_HOME', 'GRAPHYARD_REPOSITORY_ROOT', 'GRAPHYARD_TOKEN', 'GRAPHYARD_TOKEN_FILE', 'PATH'] as const;
-  const saved = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  const restoreEnv = patchEnv({ GRAPHYARD_TOKEN: undefined, GRAPHYARD_TOKEN_FILE: undefined, ...env, GRAPHYARD_URL: serverUrl, GRAPHYARD_CONFIG_HOME: configHome, GRAPHYARD_REPOSITORY_ROOT: root });
   try {
-    for (const name of names) if (name !== 'PATH') delete process.env[name];
-    Object.assign(process.env, env, { GRAPHYARD_URL: serverUrl, GRAPHYARD_CONFIG_HOME: configHome, GRAPHYARD_REPOSITORY_ROOT: root });
     const printed: any[] = [];
     const context = await createContext('login', undefined, [], false);
     await command.run({ ...context, print: value => printed.push(value) }, undefined);
     return { seen, printed: printed[0], base: process.env.GRAPHYARD_URL! };
-  } finally { for (const name of names) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name]; await close(); } }
+  } finally { restoreEnv(); await close(); } }
 
 async function checkout(upJson?: object) {
   const root = await temporaryDirectory('login-repo');

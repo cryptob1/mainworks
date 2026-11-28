@@ -9,6 +9,7 @@ import { sessionConfinement } from '../src/master/launch.js';
 import { runtimeLoginHomes } from '../src/master/profiles.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3303: hwd-backend's Muse sessions exited at once — "failed to create session lock directory
 // for session …: Read-only file system" — because the confinement kept the host's XDG data
@@ -32,14 +33,12 @@ const fakeMuse = [
   'shift 0; for p in "$@"; do case "$p" in write:*) if (: > "${p#write:}") 2>/dev/null; then echo "WRITABLE ${p#write:}"; else echo "UNWRITABLE ${p#write:}"; fi;; read:*) if test -r "${p#read:}"; then echo "READABLE ${p#read:}"; else echo "DENIED ${p#read:}"; fi;; esac; done',
 ].join('\n');
 
-test('e2e:muse-writable-session-state — a confined Muse worker and reviewer lock and persist their session under the account\'s XDG data directory (default, explicit, account home), while unrelated host directories stay unwritable and another account unreadable', async () => {
+test('e2e:muse-writable-session-state — a confined Muse worker and reviewer lock and persist their session under the account\'s XDG data directory (default, explicit, account home), while unrelated host directories stay unwritable and another account unreadable', async t => {
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   // The fixture HOME lives in this checkout, not the host's tmpdir, which the sandbox replaces.
   const home = await temporaryDirectory('muse-session-home', join(checkout, '.graphyard'));
-  const saved = { HOME: process.env.HOME, XDG_DATA_HOME: process.env.XDG_DATA_HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
-  process.env.HOME = home;
-  delete process.env.XDG_DATA_HOME; delete process.env.XDG_CONFIG_HOME;
+  patchEnv({ HOME: home, XDG_DATA_HOME: undefined, XDG_CONFIG_HOME: undefined }, t);
   try {
     const { root, git } = await gitRepo({ root: join(home, 'code', 'project'), files: { '.gitignore': '.graphyard/\n' }, message: 'seed' });
     const worktree = join(root, '.graphyard', 'worktrees', 'gy-1-1'), reviewCheckout = join(home, 'managed', 'review-gy-1');
@@ -85,7 +84,6 @@ test('e2e:muse-writable-session-state — a confined Muse worker and reviewer lo
       }
     }
   } finally {
-    for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
     rmSync(home, { recursive: true, force: true });
   }
 });

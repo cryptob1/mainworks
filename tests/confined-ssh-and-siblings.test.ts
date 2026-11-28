@@ -8,6 +8,7 @@ import { coordinatorConfinement, credentialMaskFor, sessionMountNamespaceWorks, 
 import { prepareConfinedGitPaths } from '../src/master/launch.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3384: confined sessions ran with a scratch HOME while /etc/ssh/ssh_config.d held files the
 // user namespace reads as nobody-owned, so ssh refused to start — "Bad owner or permissions" —
@@ -19,13 +20,12 @@ import { git, gitRepo } from './helpers/git-repo.js';
 
 const hostProbe: MaskProbe = (command, args) => execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
-test('e2e:confined-ssh-and-siblings — under real bwrap a confined worker runs ssh -G localhost, reads only the sibling the repository declares, and cannot write it', async () => {
+test('e2e:confined-ssh-and-siblings — under real bwrap a confined worker runs ssh -G localhost, reads only the sibling the repository declares, and cannot write it', async t => {
   // The fixture HOME lives in this checkout: the sandbox replaces /tmp with its own scratch.
   const checkout = dirname(dirname(fileURLToPath(import.meta.url)));
   mkdirSync(join(checkout, '.graphyard'), { recursive: true });
   const home = await temporaryDirectory('confined-ssh-home', join(checkout, '.graphyard'));
-  const savedHome = process.env.HOME;
-  process.env.HOME = home;
+  patchEnv({ HOME: home }, t);
   try {
     const parent = join(home, 'code', 'da'), root = join(parent, 'project');
     // The repository declares one sibling readable; the other stays unlisted.
@@ -67,7 +67,6 @@ test('e2e:confined-ssh-and-siblings — under real bwrap a confined worker runs 
     assert.ok(!output.includes('unlisted-secret'), 'no unlisted sibling content is reachable');
     assert.ok(ran.stdout.includes('ROOT-READABLE\n'), `the project's own checkout stays readable: ${output.slice(-800)}`);
   } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
     rmSync(home, { recursive: true, force: true });
   }
 });

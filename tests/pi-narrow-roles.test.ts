@@ -16,6 +16,7 @@ import type { FilesystemProbe } from '../src/install/worktree-root.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { gitRepo } from './helpers/git-repo.js';
 import { registryFixture } from './helpers/registry-fixture.js';
+import { patchEnv } from './helpers/env.js';
 import { workFixture } from './helpers/work-fixture.js';
 
 // GY-169 AC-3, proof integration:pi-narrow-roles. The master config selects the runtime of each
@@ -124,7 +125,7 @@ test('integration:pi-narrow-roles the master config selects each narrow role\'s 
 
 test('integration:pi-narrow-roles with pi selected the unit proof producer runs headless, its evidence is submitted as the producer principal, and the session record keeps the run', async () => {
   const { root, scenario, posted, fetcher, bin, cleanup } = await installation({ producer: 'pi' });
-  const path = process.env.PATH; process.env.PATH = `${bin}:${path}`;
+  const restorePath = patchEnv({ PATH: `${bin}:${process.env.PATH}` });
   try {
     const proofs = ['unit:pi-mainworks-tools', 'unit:pi-destructive-guard'];
     const item = work('GY-89', 'unit', proofs);
@@ -168,7 +169,7 @@ test('integration:pi-narrow-roles with pi selected the unit proof producer runs 
     assert.equal(ledger.producers[0].state, 'completed');
     assert.match(ledger.producers[0].resolution!, /trusted evidence failed for unit:pi-destructive-guard/);
     assert.equal(existsSync(launched.checkout), false);
-  } finally { process.env.PATH = path; await cleanup(); }
+  } finally { restorePath(); await cleanup(); }
 });
 
 test('integration:pi-narrow-roles without the setting, and for non-unit proof groups, the roles launch in Herdr as today', async () => {

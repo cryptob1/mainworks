@@ -11,12 +11,13 @@ import { registryCommand } from '../src/cli/master-registry.js';
 import { applyRegistryMutation } from '../src/model-boundary/registry.js';
 import { emptyRegistry, proposedRuntimes, type AgentRegistry } from '../src/model/registry.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-3242: after `master registry account remove a`, `master environments --apply` takes a out of
 // every launch profile, deletes a profile left with no account and reports both changes.
-test('e2e:environments-drop-removed-account — environments --apply drops a removed registry account from every profile', async () => {
+test('e2e:environments-drop-removed-account — environments --apply drops a removed registry account from every profile', async t => {
   const root = await temporaryDirectory('drop-account'), credentials = await temporaryDirectory('drop-account-credentials'), environments = await temporaryDirectory('drop-account-envs');
-  const previous = process.env.GRAPHYARD_AGENT_ENVIRONMENTS; process.env.GRAPHYARD_AGENT_ENVIRONMENTS = environments;
+  patchEnv({ GRAPHYARD_AGENT_ENVIRONMENTS: environments }, t);
   try {
     execFileSync('git', ['init', '-q', root]);
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], { cwd: root });
@@ -46,7 +47,6 @@ test('e2e:environments-drop-removed-account — environments --apply drops a rem
     assert.deepEqual(applied.profiles.map(change => [change.profile, change.action, change.accounts, change.dropped]),
       [['review-pair', 'accounts', ['b'], ['a']], ['review-solo', 'removed', [], ['a']]], 'the apply output lists both changes');
   } finally {
-    if (previous === undefined) delete process.env.GRAPHYARD_AGENT_ENVIRONMENTS; else process.env.GRAPHYARD_AGENT_ENVIRONMENTS = previous;
     for (const directory of [root, credentials, environments]) await rm(directory, { recursive: true, force: true });
   }
 });

@@ -9,6 +9,7 @@ import { runChild } from '../src/child-runner.js';
 import { releaseHeldBranch, releaseUnderFailure, reserveReleasingHold } from '../src/master/branch-release.js';
 import { workspaceCommands } from '../src/cli/workspace.js';
 import type { CliContext } from '../src/cli/context.js';
+import { patchEnv } from './helpers/env.js';
 
 // GY-1059: the follow-ups of GY-860's review. A revert or squash merge a stale attempt worktree
 // is stopped inside is ended without moving the branch; the record keeps untracked contents and a
@@ -116,9 +117,9 @@ test('unit:worktree-hold-followups — a refused failure release is reported as 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('unit:worktree-hold-followups — the worktree command end to end: a held branch is preserved with the reservation and the worktree is built; a failure releases under its own key', async () => {
+test('unit:worktree-hold-followups — the worktree command end to end: a held branch is preserved with the reservation and the worktree is built; a failure releases under its own key', async t => {
   const root = await host();
-  const previous = { cwd: process.cwd(), request: process.env.GRAPHYARD_REQUEST_ID };
+  const previousCwd = process.cwd();
   try {
     git(root, 'remote', 'add', 'origin', 'https://github.com/owner/project.git');
     const old = attemptWorktree(root, 'GY-885', 1);
@@ -141,7 +142,7 @@ test('unit:worktree-hold-followups — the worktree command end to end: a held b
       return { calls, printed, outcome };
     };
     process.chdir(root);
-    process.env.GRAPHYARD_REQUEST_ID = 'retry-1';
+    patchEnv({ GRAPHYARD_REQUEST_ID: 'retry-1' }, t);
     // The held branch is the item's own: epoch 1's worktree holds it mid-rebase, and epoch 1 is allocated again under a new path.
     git(root, 'worktree', 'move', old.path, sessionPath(root, 'GY-885', 9));
     const moved = sessionPath(root, 'GY-885', 9);
@@ -165,8 +166,7 @@ test('unit:worktree-hold-followups — the worktree command end to end: a held b
     assert.deepEqual(failed.calls.map(call => [call.path.split('/').at(-1), call.requestId]), [['workspace', 'retry-1:worktree-workspace'], ['release', 'retry-1:worktree-release']]);
     assert.ok(existsSync(resolve(sessionPath(root, 'GY-886', 1), 'occupied')));
   } finally {
-    process.chdir(previous.cwd);
-    if (previous.request === undefined) delete process.env.GRAPHYARD_REQUEST_ID; else process.env.GRAPHYARD_REQUEST_ID = previous.request;
+    process.chdir(previousCwd);
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -7,6 +7,7 @@ import { trialHotCelsius } from '../src/merge-writer/trial-load.js';
 import { hostShimDigest } from '../src/host-shim.js';
 import { temporaryDirectory } from './helpers/temp-dirs.js';
 import { shardHosts, shardRepository } from './helpers/shard-hosts.js';
+import { withEnv } from './helpers/env.js';
 
 // GY-3412: a trial's shards are placed across hosts from one reading of each — free cores, CPU steal
 // and the hottest sensor. Each shard goes to the host with the most real free CPU under its heat limit,
@@ -107,10 +108,8 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     if (command === 'node' && args[0] === 'scripts/tests.mjs') return defaultChildRun(command, args, { ...options, wrapper: undefined });
     return defaultChildRun(command, args, { ...options, env: { ...process.env, ...options?.env, PATH: `${hosts.bin}:${process.env.PATH}` } });
   };
-  const previous = process.env.GRAPHYARD_TRIAL_IMAGE;
-  process.env.GRAPHYARD_TRIAL_IMAGE = image;
   const timings: string[] = [];
-  try {
+  await withEnv({ GRAPHYARD_TRIAL_IMAGE: image }, async () => {
     const result = await runTrial({ root, base: await temporaryDirectory('remote-placement-base'), mergeSha: sha, changedFiles: files, timeoutMs: 90_000, cores: 2, run, retries: 0, onTiming: step => timings.push(step),
       remote: { hosts: ['gy-compute@box'], read: async () => [reading('vishrog', 2, 0), reading('gy-compute@box', 8, 0)] } });
     assert.equal(result.build, 'pass', result.logTail);
@@ -121,5 +120,5 @@ for (const file of readFileSync(at('--files-from'), 'utf8').split('\\n').filter(
     assert.match(remoteShardSummary(readRemoteShardRuns(root))!.hosts.at(-1)!.reason ?? '', /box shard output before it died/);
     assert.equal(record!.remote, 0, 'every shard finally ran on this machine');
     assert.deepEqual(remoteShardSummary(readRemoteShardRuns(root))!.hosts.map(host => [host.name, host.state]), [['vishrog', 'ready'], ['gy-compute@box', 'away']]);
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_TRIAL_IMAGE; else process.env.GRAPHYARD_TRIAL_IMAGE = previous; }
+  });
 });
