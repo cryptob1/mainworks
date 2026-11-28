@@ -75,6 +75,9 @@ interface UpWorld {
 const world = (readings: (LoopCodeReading | null)[], over: Partial<UpWorld> = {}): UpWorld =>
   ({ calls: [], initAnswers: [], loopRunning: true, readings, ...over });
 
+/** GY-4123: every step reruns its idempotent command; these are the calls that rewrite or restart the loop. */
+const loopCalls = (w: UpWorld) => w.calls.filter(call => call.args[0] === 'master' && (call.args[1] === 'restart' || call.args.includes('--replace-supervisor')));
+
 function dependencies(root: string, events: UpEvent[], w: UpWorld): UpDependencies {
   let clock = 0;
   return {
@@ -88,8 +91,11 @@ function dependencies(root: string, events: UpEvent[], w: UpWorld): UpDependenci
     publishOnboarding: async () => null,
     signIn: async () => `${SERVER}/#sign-in=${'c'.repeat(43)}`,
     operatorToken: async () => 'o'.repeat(40),
-    installDirectory: () => '/install/acme-shop',
-    ensureDeployKey: async () => '/install/acme-shop/deploy',
+    installDirectory: () => join(root, 'install'),
+    ensureDeployKey: async () => join(root, 'install', 'deploy'),
+    // GY-4123: the earlier steps' real results answer: the plane, the repository and its fetch.
+    controlPlaneAnswers: async () => true,
+    gh: async () => ({ code: 0, stdout: '{}' }), git: async () => ({ code: 0, stdout: '', stderr: '' }),
     cli: async (args, options = {}) => {
       w.calls.push({ args, ...(options.stdin !== undefined ? { stdin: options.stdin } : {}) });
       if (args[0] === 'master' && args[1] === 'restart') w.loopRunning = true;
@@ -106,6 +112,8 @@ const request = (): UpRequest => ({ repository: 'acme/shop', provider: 'compose'
 async function resumedRoot(label: string) {
   const root = await temporaryDirectory(label);
   await mkdir(join(root, '.graphyard'), { recursive: true });
+  // GY-4123: master init's real result, which the host-supervisor step reads.
+  await writeFile(join(root, '.graphyard', 'master.json'), JSON.stringify({ url: SERVER }));
   await writeFile(join(root, '.graphyard', 'up.json'), JSON.stringify({
     version: 1, repository: 'acme/shop', provider: 'compose', merger: 'control-plane', noHerdr: false, goal: null,
     completed: ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'merger-setting', 'master-autonomy', 'onboarding', 'accounts', 'harness'],
@@ -117,6 +125,8 @@ async function resumedRoot(label: string) {
 async function recordedRoot(label: string) {
   const root = await temporaryDirectory(label);
   await mkdir(join(root, '.graphyard'), { recursive: true });
+  // GY-4123: master init's real result, which the host-supervisor step reads.
+  await writeFile(join(root, '.graphyard', 'master.json'), JSON.stringify({ url: SERVER }));
   await writeFile(join(root, '.graphyard', 'up.json'), JSON.stringify({
     version: 1, repository: 'acme/shop', provider: 'compose', merger: 'control-plane', noHerdr: false, goal: null,
     completed: ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'merger-setting', 'master-autonomy', 'onboarding', 'accounts', 'harness', 'master-loop', 'goal'],
@@ -181,7 +191,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   const current = world([cleanReading()]);
   const currentRun = await runUp(request(), dependencies(currentRoot, [], current));
   assert.equal(currentRun.exitCode, 0, currentRun.next);
-  assert.deepEqual(current.calls, [], 'a loop on this commit is neither rewritten nor restarted');
+  assert.deepEqual(loopCalls(current), [], 'a loop on this commit is neither rewritten nor restarted');
 
   // The checklist not yet green still starts the loop, as before this check existed.
   const freshLoopRoot = await resumedRoot('mainworks-up-loop-fresh');
@@ -198,7 +208,7 @@ test('unit:up-replaces-loop-on-other-code — the master-loop step rewrites a lo
   const noTokenRun = await runUp(request(), { ...dependencies(noTokenRoot, [], noToken), masterToken: async () => null });
   assert.equal(noTokenRun.exitCode, 2, noTokenRun.next);
   assert.match(noTokenRun.next, /master init --token-stdin --replace-supervisor/);
-  assert.deepEqual(noToken.calls, [], 'nothing is rewritten without the credential to do it');
+  assert.deepEqual(loopCalls(noToken), [], 'nothing is rewritten without the credential to do it');
 
   // The loop never reports this CLI's commit: the step fails naming both, instead of going green.
   const neverRoot = await resumedRoot('mainworks-up-loop-never');
@@ -335,7 +345,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   const settled = world([cleanReading()]);
   const settledRun = await runUp(request(), dependencies(settledRoot, [], settled));
   assert.equal(settledRun.exitCode, 0, settledRun.next);
-  assert.deepEqual(settled.calls, [], 'a recorded master-loop whose loop runs this checkout is left recorded and skipped');
+  assert.deepEqual(loopCalls(settled), [], 'a master-loop whose loop runs this checkout is left alone: nothing rewrites or restarts it');
 
   // A reading that failed proves nothing either way: the recorded step is re-opened and fails naming
   // why, never left green on code nobody read, and nothing is rewritten or restarted on it.
@@ -345,7 +355,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   const unreadableRun = await runUp(request(), dependencies(unreadableRoot, [], unreadable));
   assert.equal(unreadableRun.exitCode, 1, unreadableRun.next);
   assert.match(unreadableRun.next, /^master-loop: .*could not be read: units\.json is corrupt/);
-  assert.deepEqual(unreadable.calls.filter(call => call.args[0] === 'master'), [], 'a failed reading rewrites and restarts nothing');
+  assert.deepEqual(loopCalls(unreadable), [], 'a failed reading rewrites and restarts nothing');
   const reopened = JSON.parse(await readFile(join(unreadableRoot, '.graphyard', 'up.json'), 'utf8'));
   assert.ok(!reopened.completed.includes('master-loop'), 'the step a failed reading re-opened is not recorded done');
 
@@ -355,7 +365,7 @@ test('unit:up-reopens-a-recorded-master-loop-step — a rerun whose up.json alre
   const freshRun = await runUp(request(), dependencies(freshRoot, [], fresh));
   assert.equal(freshRun.exitCode, 1, freshRun.next);
   assert.match(freshRun.next, /could not be read: units\.json is corrupt/);
-  assert.deepEqual(fresh.calls.filter(call => call.args[0] === 'master'), [], 'nothing restarts on a reading that judged nothing');
+  assert.deepEqual(loopCalls(fresh), [], 'nothing restarts on a reading that judged nothing');
 });
 
 test('unit:up-waits-for-the-loop-own-commit — the post-restart wait goes green only on a succeeded reading whose loop reported this CLI\'s commit; a failed or erroring reading, or a cursor with no commit, polls to a failure naming which', async () => {
@@ -560,7 +570,7 @@ test('unit:up-rejected-reading-never-green — a loop-code reading that was reje
     const run = await runUp(request(), { ...dependencies(root, events, w), loopCode: rejecting(w) });
     assert.equal(run.exitCode, 1, `${label}: ${run.next}`);
     assert.match(run.next, /^master-loop: what the install's loop unit runs could not be read: ssh: connect to host acme-host port 22: Connection refused/, label);
-    assert.deepEqual(w.calls.filter(call => call.args[0] === 'master'), [], `${label}: a rejected reading rewrites and restarts nothing`);
+    assert.deepEqual(loopCalls(w), [], `${label}: a rejected reading rewrites and restarts nothing`);
     const state = JSON.parse(await readFile(join(root, '.graphyard', 'up.json'), 'utf8'));
     assert.ok(!state.completed.includes('master-loop'), `${label}: the step is not recorded done on a rejected reading`);
   }
@@ -570,12 +580,12 @@ test('unit:up-rejected-reading-never-green — a loop-code reading that was reje
   const emptyRun = await runUp(request(), dependencies(emptyRoot, [], empty));
   assert.equal(emptyRun.exitCode, 1, emptyRun.next);
   assert.match(emptyRun.next, /could not be read: no reading came back/);
-  // With no reader at all, the recorded step stands as an earlier run left it.
+  // With no reader at all, a running loop is left as an earlier run left it.
   const noReaderRoot = await recordedRoot('mainworks-up-loop-no-reader');
   const noReader = world([cleanReading()]);
   const noReaderRun = await runUp(request(), { ...dependencies(noReaderRoot, [], noReader), loopCode: undefined });
   assert.equal(noReaderRun.exitCode, 0, noReaderRun.next);
-  assert.deepEqual(noReader.calls, [], 'without a reader the recorded step is skipped as before');
+  assert.deepEqual(loopCalls(noReader), [], 'without a reader a running loop is neither rewritten nor restarted');
 });
 
 test('unit:up-validates-the-checkout-it-installs — the clean-checkout preflight judges this CLI\'s checkout, the one the loop is rewritten onto, never the obsolete checkout master.json still records', async () => {

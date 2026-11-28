@@ -94,7 +94,10 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
     stopLoop: async () => { stops++; await stopLoop(); return { unit: null }; },
     publishOnboarding: async () => null,
     // The repository exists: the control-plane merger's preflight creates it only when missing.
-    gh: async () => ({ code: 0, stdout: '{}' }), git: async () => ({ code: 0, stdout: '', stderr: '' })
+    gh: async () => ({ code: 0, stdout: '{}' }), git: async () => ({ code: 0, stdout: '', stderr: '' }),
+    // GY-4123: the plane answers its health check; only a re-issue installs it again.
+    controlPlaneAnswers: async () => true,
+    installDirectory: () => join(credentials, 'install'), ensureDeployKey: async () => join(credentials, 'install', 'deploy-key'),
   });
   const request: UpRequest = { repository: 'acme/shop', provider: 'compose', agent: false, master: 'claude' };
   const count = (command: string) => { const [first, second] = command.split(' '); return calls.filter(args => args[0] === first && (first === 'install' ? args.includes(second) : args[1] === second)).length; };
@@ -147,7 +150,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
   const quiet: UpEvent[] = [];
   const again = await runUp(request, deps(quiet));
   assert.equal(again.exitCode, 0, again.next);
-  assert.deepEqual(calls.slice(settled.calls).filter(args => args[0] === 'install' || ['init', 'autonomy', 'restart'].includes(args[1])), []);
+  assert.deepEqual(calls.slice(settled.calls).filter(args => (args[0] === 'install' && args.includes('--apply')) || ['init', 'autonomy', 'restart'].includes(args[1])), []);
   assert.equal(await credential(), settled.operator);
   assert.equal(plane.agents.length, settled.agents);
   assert.equal((await archives()).length, 1);
@@ -161,7 +164,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
   const kept = { calls: calls.length, operator: await credential() };
   const afterRevoke = await runUp(request, deps(revoked));
   assert.equal(afterRevoke.exitCode, 0, afterRevoke.next);
-  assert.deepEqual(calls.slice(kept.calls).filter(args => args[0] === 'install' || ['init', 'autonomy', 'restart'].includes(args[1])), []);
+  assert.deepEqual(calls.slice(kept.calls).filter(args => (args[0] === 'install' && args.includes('--apply')) || ['init', 'autonomy', 'restart'].includes(args[1])), []);
   assert.equal(await credential(), kept.operator);
   assert.equal(stops, 1); assert.equal((await archives()).length, 1);
   assert.ok(revoked.some(event => event.kind === 'note' && /refused the recorded operator-agent credential \(401\) but still lists the identity: its database is not fresh/.test(event.text)), JSON.stringify(revoked));
@@ -173,7 +176,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
     admin = !noAdmin; listingFails = fails;
     const blind: UpEvent[] = [], kept = { calls: calls.length, state: await upState() };
     await runUp(request, deps(blind));
-    assert.deepEqual(calls.slice(kept.calls).filter(args => args[0] === 'install' || ['init', 'autonomy', 'restart'].includes(args[1])), []);
+    assert.deepEqual(calls.slice(kept.calls).filter(args => (args[0] === 'install' && args.includes('--apply')) || ['init', 'autonomy', 'restart'].includes(args[1])), []);
     assert.equal((await upState()).reissue ?? null, null); assert.deepEqual((await upState()).completed, kept.state.completed);
     assert.equal((await upState()).goal ?? null, kept.state.goal ?? null); assert.equal((await upState()).onboardingWork ?? null, kept.state.onboardingWork ?? null);
     assert.ok(blind.some(event => event.kind === 'note' && /refused the recorded operator-agent credential \(401\), but its operator-agent listing could not be read/.test(event.text) && why.test(event.text)), JSON.stringify(blind));
@@ -182,7 +185,7 @@ test('unit:reinstall-fresh-database — up re-issues the coordinator and operato
   admin = true; listingFails = false;
   const recovered: UpEvent[] = [], kept2 = calls.length;
   assert.equal((await runUp(request, deps(recovered))).exitCode, 0);
-  assert.deepEqual(calls.slice(kept2).filter(args => args[0] === 'install' || ['init', 'autonomy', 'restart'].includes(args[1])), []);
+  assert.deepEqual(calls.slice(kept2).filter(args => (args[0] === 'install' && args.includes('--apply')) || ['init', 'autonomy', 'restart'].includes(args[1])), []);
   assert.ok(recovered.some(event => event.kind === 'note' && /still lists the identity: its database is not fresh/.test(event.text)), JSON.stringify(recovered));
 });
 

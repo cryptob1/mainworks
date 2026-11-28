@@ -65,13 +65,15 @@ function dependencies(root: string, events: UpEvent[], w: UpWorld, over: Partial
       serving: { onboarding: { onboarded: true, fault: null, features: [] } },
   setup: { protection: 'checks', loop: true },
     }),
-    // No pull request is ever read: any gh invocation fails the run.
-    gh: async () => { throw new Error('gh ran during up'); },
+    // No pull request is ever read: a gh pr or pulls call fails the run. GY-4123: preflight still views the repository.
+    gh: async args => { if (args[0] === 'pr' || args.some(arg => /pulls/.test(arg))) throw new Error('gh read a pull request during up'); return { code: 0, stdout: '{}' }; },
+    git: async () => ({ code: 0, stdout: '', stderr: '' }), ensureDeployKey: async () => '/install/acme-shop/deploy-key',
+    controlPlaneAnswers: async () => true, operatorToken: async () => 'a'.repeat(40),
     publishOnboarding: async () => ({ commit: COMMIT }),
     fileOnboarding: async () => ({ key: 'GY-1' }),
     work: async () => { w.reads++; return [w.work.length > 1 ? w.work.shift() : w.work[0]]; },
     signIn: async () => `${SERVER}/#sign-in=${'s'.repeat(43)}`,
-    installDirectory: () => '/install/acme-shop',
+    installDirectory: () => join(root, 'install'),
     cli: async args => ({ code: 0, stdout: args.includes('--apply') && args[0] === 'init' ? '{"delivery":{"workflows":[]}}' : '{}' }),
     loopCode: async () => cleanReading(),
     ...over,

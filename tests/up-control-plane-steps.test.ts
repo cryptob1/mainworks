@@ -25,7 +25,7 @@ test('unit:up-control-plane-steps — up parses one request shape and plans exac
 
   // The one step list: the deploy key sits between the host supervisor and master autonomy, and
   // no step creates an App, serves a manifest or drives a browser.
-  assert.deepEqual(upSteps, ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'master-autonomy', 'onboarding', 'accounts', 'harness', 'master-loop']);
+  assert.deepEqual(upSteps, ['preflight', 'control-plane', 'host-supervisor', 'deploy-key', 'dependencies', 'master-autonomy', 'onboarding', 'accounts', 'harness', 'master-loop']);
   assert.ok(upSteps.indexOf('deploy-key') > upSteps.indexOf('host-supervisor') && upSteps.indexOf('deploy-key') < upSteps.indexOf('master-autonomy'));
   for (const step of upSteps) assert.ok(!/app|manifest|browser/i.test(step), step);
 
@@ -54,7 +54,7 @@ function dependencies(root: string, events: UpEvent[]): UpDependencies {
     publishOnboarding: async () => null,
     // The control plane is the merge writer: the repository exists and the deploy key is registered.
     gh: async () => ({ code: 0, stdout: '{}' }), git: async () => ({ code: 0, stdout: '', stderr: '' }),
-    installDirectory: () => join(root, 'install'), ensureDeployKey: async () => 'registered',
+    installDirectory: () => join(root, 'install'), ensureDeployKey: async () => 'registered', npmCi: async () => ({ code: 0, command: 'npm ci' }),
     async cli(args) {
       if (args[0] === 'install' && args.includes('--plan')) return { code: 0, stdout: JSON.stringify({ preflight: [{ name: 'GitHub CLI', ok: true }] }) };
       return { code: 0, stdout: '{}' };
