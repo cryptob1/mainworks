@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import { batchGateBusySlots, busyTrialSlots } from './trial-slots.js';
-import { githubApiUrl, githubCall, isGithubHttps, readGithubRateLimit, type GithubRateLimit, type GithubCallSource } from './github-calls.js';
+import { githubApiUrl, githubCall, isGithubHttps, noteGithubCycle, readGithubRateLimit, type GithubRateLimit, type GithubCallSource } from './github-calls.js';
 import { trialHeatFault, trialSlotCount } from '../merge-writer/trial-load.js';
 import { trialAffordableFiles } from '../merge-writer/trial.js';
 import type { ChildRun } from '../child-runner.js';
@@ -948,6 +948,7 @@ export async function mergeWriterStep(cycle: Cycle) {
   const { state, effects, now, snapshot, performed } = cycle;
   if (!effects.mergeWriter) return;
   const reads = sharedTurns(state, effects.mergeWriter);
+  noteGithubCycle(state.github);
   await refreshGithubRateLimit(cycle, reads);
   // GY-1902: item previews start, settle and end beside the cycle under any merger; a failure here never holds a merge.
   if (reads.itemPreviews) {

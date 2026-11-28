@@ -62,6 +62,12 @@ function githubSlowWaitMs(calls: GithubCalls, sharePercent = defaultGithubCallSh
   return maxWaitMs;
 }
 
+/** The most the polls of one cycle wait together, well under a cycle step's timeout; past it a poll goes through. */
+const githubStepWaitBudgetMs = 20_000;
+const stepWaits = new WeakMap<GithubCalls, number>();
+/** A new cycle: its polls' waits start from nothing. */
+export function noteGithubCycle(calls: GithubCalls) { stepWaits.delete(calls); }
+
 /**
  * One GitHub API call of `source`, counted on the cursor. An observation poll first waits out the
  * share (`githubSlowWaitMs`), and the wait is recorded on the cursor while it stands; a merge push
@@ -70,9 +76,11 @@ function githubSlowWaitMs(calls: GithubCalls, sharePercent = defaultGithubCallSh
 export async function githubCall(calls: GithubCalls, source: GithubCallSource, options: { sharePercent?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): Promise<void> {
   const now = options.now ?? Date.now, clock = now();
   if (source === 'observation') {
-    const waitMs = githubSlowWaitMs(calls, options.sharePercent, clock);
+    const waited = stepWaits.get(calls) ?? 0;
+    const waitMs = Math.min(githubSlowWaitMs(calls, options.sharePercent, clock), Math.max(0, githubStepWaitBudgetMs - waited));
     if (waitMs > 0) {
       calls.slowed = { since: calls.slowed?.since ?? iso(clock), waited: (calls.slowed?.waited ?? 0) + 1 };
+      stepWaits.set(calls, waited + waitMs);
       await (options.sleep ?? delay)(waitMs);
     }
   }

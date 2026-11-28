@@ -87,6 +87,13 @@ test('integration:github-calls-counted-and-bounded — observation polling slows
     assert.equal(waits.length, 1, "polling slows once core's calls in the hour reach its share");
     assert.ok(waits[0]! > 0 && waits[0]! <= 10_000, `a slowed poll waits for the hour to drain, at most ten seconds: ${waits[0]}`);
     assert.ok(elapsed >= 300, `the slowed poll waited before it reached GitHub: ${Math.round(elapsed)} ms`);
+    assert.equal(await reads.fetch(), f.baseTip);
+    assert.deepEqual(waits, [10_000, 10_000], 'the next poll of the cycle waits out the hour too');
+    await reads.fetch();
+    assert.deepEqual(waits, [10_000, 10_000], 'past twenty seconds of waiting in one cycle a poll goes through, so no step runs past its timeout on these waits');
+    await step(state, reads);
+    await reads.fetch();
+    assert.equal(waits.length, 3, 'a new cycle waits again');
   } finally { await github.close(); }
 });
 
