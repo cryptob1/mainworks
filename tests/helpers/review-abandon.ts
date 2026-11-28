@@ -32,21 +32,31 @@ const now = () => new Date().toISOString();
 const launcher = fileURLToPath(new URL('../../bin/graphyard.mjs', import.meta.url));
 
 export async function reviewAbandonHarness(name: string) {
-  const store: Store = await withDatabase(name); await store.init();
-  const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
-  const { url, close: closeHttp } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }]));
-  await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
-  const scratch = await temporaryDirectory(name, join(process.cwd(), '.graphyard'));
-  const { root, git, head: base } = await gitRepo({ root: await temporaryDirectory('coordinator', scratch), files: { 'README.md': 'Named spec file.' } });
-  const bin = await temporaryDirectory('bin', scratch);
-  git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); git('update-ref', 'refs/remotes/origin/main', base);
-  await writeFile(join(root, 'Dockerfile'), 'export const flag = "held";');
-  git('add', '.'); git('commit', '-qm', 'head');
-  const head = git('rev-parse', 'HEAD'); git('checkout', '-q', base);
-  await setupMaster(root, { url, token: coordinatorToken, cliPath: launcher, credentialDirectory: await temporaryDirectory('credentials', scratch), herdrWorkspace: 'w', run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
-  const hostId = (await loadMasterConfig(root)).hostId;
+  const store: Store = await withDatabase(name);
+  let closeHttp: (() => Promise<void>) | undefined;
+  let url!: string, scratch!: string, root!: string, bin!: string, base!: string, head!: string, hostId!: string;
   const registry = new AgentRegistry(store);
-  await saveReviewerProfile(root, { name: 'reviewer', agentName: 'independent-reviewer', kind: 'claude', agentArgs: [] });
+  try {
+    await store.init();
+    const engine = new Engine(store, 120, 'owner/project'); engine.gitRunner = null;
+    ({ url, close: closeHttp } = await listen(server(engine, [{ ...coordinator, token: coordinatorToken }])));
+    await mkdir(join(process.cwd(), '.graphyard'), { recursive: true });
+    scratch = await temporaryDirectory(name, join(process.cwd(), '.graphyard'));
+    const repo = await gitRepo({ root: await temporaryDirectory('coordinator', scratch), files: { 'README.md': 'Named spec file.' } });
+    root = repo.root; base = repo.head;
+    bin = await temporaryDirectory('bin', scratch);
+    repo.git('remote', 'add', 'origin', 'https://github.com/owner/project.git'); repo.git('update-ref', 'refs/remotes/origin/main', base);
+    await writeFile(join(root, 'Dockerfile'), 'export const flag = "held";');
+    repo.git('add', '.'); repo.git('commit', '-qm', 'head');
+    head = repo.git('rev-parse', 'HEAD'); repo.git('checkout', '-q', base);
+    await setupMaster(root, { url, token: coordinatorToken, cliPath: launcher, credentialDirectory: await temporaryDirectory('credentials', scratch), herdrWorkspace: 'w', run: { worktreeRoot: await temporaryDirectory('checkouts', scratch) } });
+    hostId = (await loadMasterConfig(root)).hostId;
+    await saveReviewerProfile(root, { name: 'reviewer', agentName: 'independent-reviewer', kind: 'claude', agentArgs: [] });
+  } catch (error) {
+    await closeHttp?.();
+    await store.close();
+    throw error;
+  }
 
   const stored = async (id: string) => (await store.pool.query('SELECT document FROM work_items WHERE id=$1', [id])).rows[0].document as Work;
   const mutate = async (path: string, body: unknown) => {
@@ -133,6 +143,6 @@ console.log(JSON.stringify({ verdict: 'APPROVE', body: 'Reviewed head ${head} ag
   }
 
   const cursor = async () => emptyDispatchCursor(await loadMasterConfig(root));
-  const close = async () => { await closeHttp(); await store.close(); };
+  const close = async () => { await closeHttp?.(); await store.close(); };
   return { root, configure, insertReviewItem, recordFailures, tick, masterReview, settled, stored, cursor, close };
 }
