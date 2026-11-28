@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { masterStatusReport } from '../src/cli/master-status.js';
@@ -38,9 +39,7 @@ test(`${proof} — status shows smoothed per-host heat and counts checks and sha
 
   assert.equal(heatFallbacksInLastHour(readHeatFallbacks(root), now), 4);
 
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = heavy;
-  try {
+  await withEnv({ [slotsDirectoryVariable]: heavy }, async () => {
     writeMachines(heavy, [
       { name: 'this machine', local: true, away: false, cores: 8, busy: 2, celsius: 60 },
       { name: 'gy-compute@vish-msi:2222', away: false, cores: 24, busy: 3, celsius: probed.celsius },
@@ -65,8 +64,5 @@ test(`${proof} — status shows smoothed per-host heat and counts checks and sha
       'vish-msi: 3 of 24 cores busy, 0 shards, 78°C',
     ]);
     assert.equal(status.heavyJobs.heatFallbacksLastHour, 4);
-  } finally {
-    if (previous === undefined) delete process.env[slotsDirectoryVariable];
-    else process.env[slotsDirectoryVariable] = previous;
-  }
+  });
 });

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -104,13 +105,10 @@ test('watch refuses the wrong workspace and uses a fresh heartbeat key despite c
   } finally { await close(); await rm(cwd, { recursive: true, force: true }); }
 });
 
-test('implementation subprocesses do not inherit Mainworks server credentials', async () => {
-  const previous = process.env.GRAPHYARD_PRINCIPALS;
-  process.env.GRAPHYARD_PRINCIPALS = 'test-only-server-credential';
-  try {
-    const code = await supervise(process.execPath, ['-e', "process.exit(process.env.GRAPHYARD_PRINCIPALS === undefined ? 0 : 1)"], 1, async () => renewal(), { graceMs: 25 });
-    assert.equal(code, 0);
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_PRINCIPALS; else process.env.GRAPHYARD_PRINCIPALS = previous; }
+test('implementation subprocesses do not inherit Mainworks server credentials', async t => {
+  patchEnv({ GRAPHYARD_PRINCIPALS: 'test-only-server-credential' }, t);
+  const code = await supervise(process.execPath, ['-e', "process.exit(process.env.GRAPHYARD_PRINCIPALS === undefined ? 0 : 1)"], 1, async () => renewal(), { graceMs: 25 });
+  assert.equal(code, 0);
 });
 
 
@@ -150,16 +148,13 @@ test('supervisor stops a worker when renewal hangs beyond the granted lease', as
   assert.equal(code, 1); assert.equal(count, 3); assert.ok(performance.now() - started < 2000);
 });
 
-test('Muse remains inside the common supervisor and is terminated on lease loss without server credentials', async () => {
-  const previous = process.env.GRAPHYARD_PRINCIPALS;
-  process.env.GRAPHYARD_PRINCIPALS = 'operator-and-producer-fixture';
+test('Muse remains inside the common supervisor and is terminated on lease loss without server credentials', async t => {
+  patchEnv({ GRAPHYARD_PRINCIPALS: 'operator-and-producer-fixture' }, t);
   let renewals = 0;
-  try {
-    const museFixture = "if(process.env.GRAPHYARD_PRINCIPALS)process.exit(9);process.on('SIGTERM',()=>{});setInterval(()=>{},20)";
-    const code = await supervise(process.execPath, ['-e', museFixture], 12,
-      async () => ++renewals === 1 ? { ...renewal(200), lease: { ...renewal(200).lease, epoch: 12 } } : Promise.reject(Object.assign(new Error('lease epoch superseded'), { confirmedRefusal: true })), { intervalMs: 25, graceMs: 50 });
-    assert.equal(code, 1); assert.equal(renewals, 2);
-  } finally { if (previous === undefined) delete process.env.GRAPHYARD_PRINCIPALS; else process.env.GRAPHYARD_PRINCIPALS = previous; }
+  const museFixture = "if(process.env.GRAPHYARD_PRINCIPALS)process.exit(9);process.on('SIGTERM',()=>{});setInterval(()=>{},20)";
+  const code = await supervise(process.execPath, ['-e', museFixture], 12,
+    async () => ++renewals === 1 ? { ...renewal(200), lease: { ...renewal(200).lease, epoch: 12 } } : Promise.reject(Object.assign(new Error('lease epoch superseded'), { confirmedRefusal: true })), { intervalMs: 25, graceMs: 50 });
+  assert.equal(code, 1); assert.equal(renewals, 2);
 });
 
 test('supervisor kills surviving descendants even after their group leader exits successfully', async () => {

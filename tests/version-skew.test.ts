@@ -8,6 +8,7 @@
 // version wrote through read and write, so a rollback or a held-CLI snapshot neither fails nor
 // silently drops what a newer version recorded.
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -149,7 +150,6 @@ test('unit:version-skew — an unstamped CLI on a dated checkout takes its relea
 });
 
 test('unit:version-skew — an Invalid input answer from a server at a different version is reported as the skew message, and a same-version one is not', async t => {
-  const savedUrl = process.env.GRAPHYARD_URL, savedToken = process.env.GRAPHYARD_TOKEN, savedVersion = process.env.GRAPHYARD_VERSION;
   let healthzReads = 0;
   const { url } = await listen((request, response) => {
     response.setHeader('Content-Type', 'application/json');
@@ -163,11 +163,8 @@ test('unit:version-skew — an Invalid input answer from a server at a different
     response.statusCode = 400;
     return response.end(JSON.stringify({ error: 'Invalid input', issues: [{ path: ['work'], message: 'older shape' }] }));
   }, t);
-  try {
-    process.env.GRAPHYARD_URL = url;
-    process.env.GRAPHYARD_TOKEN = 'test-only';
-    process.env.GRAPHYARD_VERSION = '1.0.0';
-    // The gate's own read could not name a release, the request met Invalid input, and the re-read names the other version: the skew, by its name.
+  patchEnv({ GRAPHYARD_URL: url, GRAPHYARD_TOKEN: 'test-only', GRAPHYARD_VERSION: '1.0.0' }, t);
+  // The gate's own read could not name a release, the request met Invalid input, and the re-read names the other version: the skew, by its name.
     const unreadable = await createContext('status', 'GY-1', [], false);
     await assert.rejects(unreadable.api('work/GY-1'), /CLI 1\.0\.0 and server 9\.9\.0 differ: run mainworks upgrade/);
     // The gate read this CLI's own release, the server moved to another before the request, and its Invalid input is reported as that move.
@@ -176,11 +173,6 @@ test('unit:version-skew — an Invalid input answer from a server at a different
     // A same-version server's Invalid input is the validation answer it always was.
     const same = await createContext('status', 'GY-1', [], false);
     await assert.rejects(same.api('work/GY-1'), (error: any) => { assert.equal(error.status, 400); assert.match(error.message, /Invalid input/); assert.doesNotMatch(error.message, /differ: run mainworks upgrade/); return true; });
-  } finally {
-    if (savedUrl === undefined) delete process.env.GRAPHYARD_URL; else process.env.GRAPHYARD_URL = savedUrl;
-    if (savedToken === undefined) delete process.env.GRAPHYARD_TOKEN; else process.env.GRAPHYARD_TOKEN = savedToken;
-    if (savedVersion === undefined) delete process.env.GRAPHYARD_VERSION; else process.env.GRAPHYARD_VERSION = savedVersion;
-  }
 });
 
 test('unit:state-files-forward-tolerant — master.json reads and writes an unknown top-level and nested field back unchanged', async () => {

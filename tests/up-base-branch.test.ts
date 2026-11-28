@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withEnv } from './helpers/env.js';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -64,9 +65,7 @@ test('unit:tests/up-base-branch.test.ts — up passes --base-branch to install; 
   await writeFile(join(root, 'AGENTS.md'), '# Coordination\n');
   await writeFile(join(root, '.gitignore'), '.graphyard/\n');
   await writeFile(join(root, 'graphyard.json'), '{}\n');
-  const previous = process.env.GRAPHYARD_CONFIG_HOME;
-  process.env.GRAPHYARD_CONFIG_HOME = configHome;
-  try {
+  await withEnv({ GRAPHYARD_CONFIG_HOME: configHome }, async () => {
     const run = (program: string, args: string[], env?: Record<string, string>) => {
       assert.equal(program, 'git', 'the installed branch needs no GitHub default-branch lookup');
       return execFileSync(program, args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
@@ -76,8 +75,5 @@ test('unit:tests/up-base-branch.test.ts — up passes --base-branch to install; 
     assert.equal(git('rev-parse', `${published.commit}^`), baseTip);
     assert.equal(git('show', `${published.commit}:release.txt`), 'release only');
     assert.deepEqual(await publishOnboarding(root, request.repository, run), published, 'rerun publishes the same head');
-  } finally {
-    if (previous === undefined) delete process.env.GRAPHYARD_CONFIG_HOME;
-    else process.env.GRAPHYARD_CONFIG_HOME = previous;
-  }
+  });
 });

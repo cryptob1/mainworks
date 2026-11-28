@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -142,8 +143,7 @@ test(`${proof} — a verification start that must wait prints the reason through
   });
   const shown: { at: number; line: string }[] = [];
   t.mock.method(console, 'error', (line: unknown) => { shown.push({ at: Date.now(), line: String(line) }); });
-  const saved = { url: process.env.GRAPHYARD_URL, token: process.env.GRAPHYARD_TOKEN, file: process.env.GRAPHYARD_TOKEN_FILE };
-  process.env.GRAPHYARD_URL = url; process.env.GRAPHYARD_TOKEN = worker.token; delete process.env.GRAPHYARD_TOKEN_FILE;
+  const restoreEnv = patchEnv({ GRAPHYARD_URL: url, GRAPHYARD_TOKEN: worker.token, GRAPHYARD_TOKEN_FILE: undefined });
   try {
     const context = await createContext('verify', work.key, [], false);
     context.repositoryRoot = () => root;
@@ -160,10 +160,7 @@ test(`${proof} — a verification start that must wait prints the reason through
     assert.equal(await host.started(), 1, 'the waiting verification never reached Docker');
     assert.equal(occupant.child.exitCode, null, 'the running trial is untouched');
   } finally {
-    process.env.GRAPHYARD_URL = saved.url; process.env.GRAPHYARD_TOKEN = saved.token;
-    if (saved.file !== undefined) process.env.GRAPHYARD_TOKEN_FILE = saved.file;
-    if (saved.url === undefined) delete process.env.GRAPHYARD_URL;
-    if (saved.token === undefined) delete process.env.GRAPHYARD_TOKEN;
+    restoreEnv();
     await host.close();
   }
 });

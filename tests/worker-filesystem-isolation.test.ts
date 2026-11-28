@@ -17,6 +17,7 @@ import { startMaster } from '../src/master/harness.js';
 import { runtimeLoginHomes } from '../src/master/profiles.js';
 import { startedAtOnce } from './helpers/launch-shell.js';
 import { git, gitRepo } from './helpers/git-repo.js';
+import { patchEnv, withEnv } from './helpers/env.js';
 
 async function fixture(maskedCoordinator = false) {
   // Outside /tmp: these protected files remain visible through the read-only host mount.
@@ -208,11 +209,9 @@ test('integration:worker-control-socket-isolation — host Docker, systemd and c
   await new Promise<void>(resolve => runtimeServer.listen(runtimeSocket, resolve));
   const herdrServer = createServer(connection => { reached++; connection.end('host pane executor'); });
   await new Promise<void>(resolve => herdrServer.listen(herdrSocket, resolve));
-  const oldRuntime = process.env.XDG_RUNTIME_DIR, oldDocker = process.env.DOCKER_HOST;
+  const restoreEnv = patchEnv({ XDG_RUNTIME_DIR: sockets, DOCKER_HOST: `unix://${socket}` });
   try {
-    process.env.XDG_RUNTIME_DIR = sockets;
     targetHerdr(herdr);
-    process.env.DOCKER_HOST = `unix://${socket}`;
     // Construct wrappers after publishing a nonstandard host command endpoint.
     const wrappers = [readOnlyMountWrapper({ coordinatorRoot: f.root, sessionDirectory: f.worktree, secretsBus: null }),
       headlessConfinementWrapper(f.root, f.worktree), (await masterSessionConfinement('claude', f.root, {}, [herdrHome])).wrapper,
@@ -263,8 +262,7 @@ test('integration:worker-control-socket-isolation — host Docker, systemd and c
     assert.equal(reached, 0, 'no host command executor received a connection');
     assert.ok(existsSync(socket), 'the host socket itself survives');
   } finally {
-    if (oldRuntime === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = oldRuntime;
-    if (oldDocker === undefined) delete process.env.DOCKER_HOST; else process.env.DOCKER_HOST = oldDocker;
+    restoreEnv();
     await new Promise<void>(resolve => server.close(() => resolve()));
     await new Promise<void>(resolve => runtimeServer.close(() => resolve()));
     await new Promise<void>(resolve => herdrServer.close(() => resolve()));
@@ -365,17 +363,13 @@ test('integration:worker-control-socket-isolation — declared TCP host executor
   const endpoint = `tcp://127.0.0.1:${address.port}`;
   try {
     for (const variable of ['DOCKER_HOST', 'CONTAINER_HOST', 'BUILDKIT_HOST']) {
-      const previous = process.env[variable];
-      try {
-        process.env[variable] = endpoint;
+      await withEnv({ [variable]: endpoint }, async () => {
         const refusal = /host command endpoint that filesystem mounts cannot isolate/;
         assert.throws(() => readOnlyMountWrapper({ coordinatorRoot: f.root, sessionDirectory: f.worktree }), refusal);
         assert.throws(() => headlessConfinementWrapper(f.root, f.worktree), refusal);
         assert.throws(() => trialConfinement([f.config], [f.worktree]), refusal);
         await assert.rejects(masterSessionConfinement('registered', f.root), refusal);
-      } finally {
-        if (previous === undefined) delete process.env[variable]; else process.env[variable] = previous;
-      }
+      });
       assert.throws(() => trialConfinement([f.config], [f.worktree], undefined, [], { [variable]: endpoint }),
         /host command endpoint that filesystem mounts cannot isolate/);
       for (const extra of [{ environment: { [variable]: endpoint } }, { env: { [variable]: endpoint } }]) {
@@ -422,14 +416,10 @@ for (const kind of ['codex', 'claude'] as const) for (const inherited of [false,
   await setupMaster(f.root, { url: 'https://graphyard.example', token: 'fixture-token-'.padEnd(40, 'x'),
     cliPath: join(process.cwd(), 'bin/graphyard.mjs'), credentialDirectory: f.config },
     async () => new Response(JSON.stringify({ actor: { id: 'master', role: 'coordinator' }, repository: 'owner/project', baseBranch: 'main', githubAppId: 1234 })));
-  const previous = { HOME: process.env.HOME, PATH: process.env.PATH, [variable]: process.env[variable] };
   let launched = 0;
   const environment: Record<string, string> = { PATH: `${bin}:${process.env.PATH}` };
-  try {
-    process.env.HOME = f.home;
-    // accountLaunch selects the install process PATH, then reapplies it after shell startup.
-    process.env.PATH = environment.PATH;
-    if (inherited) process.env[variable] = login; else delete process.env[variable];
+  // accountLaunch selects the install process PATH, then reapplies it after shell startup.
+  await withEnv({ HOME: f.home, PATH: environment.PATH, [variable]: inherited ? login : undefined }, async () => {
     await startMaster(f.root, kind, [], [], async (_program, args) => {
       if (args[0] === 'tab' && args[1] === 'create') {
         args.forEach((word, index) => {
@@ -451,11 +441,7 @@ for (const kind of ['codex', 'claude'] as const) for (const inherited of [false,
     assert.equal(launched, 1);
     assert.equal(readFileSync(join(login, 'state'), 'utf8'), 'updated');
     assert.equal(readFileSync(join(f.home, 'sentinel'), 'utf8'), 'protected\n');
-  } finally {
-    for (const [name, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[name]; else process.env[name] = value;
-    }
-  }
+  });
 });
 
 for (const homeVariable of ['CUSTOM_AGENT_HOME', 'HOME', 'XDG_CACHE_HOME']) test(`integration:worker-home-deletion-regression — a registered master runtime preserves assigned ${homeVariable} while sibling accounts stay read-only`, async () => {
@@ -542,9 +528,8 @@ test('integration:worker-control-socket-isolation — assigning runtime HOME sti
   let reached = 0;
   const server = createServer(connection => { reached++; connection.end(); });
   await new Promise<void>(resolve => server.listen(socket, resolve));
-  const previous = process.env.HOME;
+  const restoreHome = patchEnv({ HOME: f.home });
   try {
-    process.env.HOME = f.home;
     const environment = { HOME: f.runtime };
     const wrapper = headlessConfinementWrapper(f.root, f.worktree, undefined, f.mask, environment);
     run(wrapper, f.worktree, process.execPath, ['-e', `
@@ -556,7 +541,7 @@ test('integration:worker-control-socket-isolation — assigning runtime HOME sti
     `], environment);
     assert.equal(reached, 0);
   } finally {
-    if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;
+    restoreHome();
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });

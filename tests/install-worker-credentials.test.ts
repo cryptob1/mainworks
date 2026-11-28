@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { patchEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -59,9 +60,7 @@ const installRecordBody = (installId: string, repository: string, principals: { 
 test('unit:environments-reads-only-own-install-credentials — with two installs on one host home, master environments for the second install reads only its own install directory (the shared workers folder is never scanned, so none of the other install\'s files is refused) and writes one worker profile per logged-in launch account once the install\'s credentials exist', async () => {
   const home = await temporaryDirectory('worker-credentials-home');
   const environments = await temporaryDirectory('worker-credentials-accounts');
-  const previousHome = process.env.GRAPHYARD_CONFIG_HOME, previousEnvironments = process.env.GRAPHYARD_AGENT_ENVIRONMENTS;
-  process.env.GRAPHYARD_CONFIG_HOME = home;
-  process.env.GRAPHYARD_AGENT_ENVIRONMENTS = environments;
+  const restoreEnv = patchEnv({ GRAPHYARD_CONFIG_HOME: home, GRAPHYARD_AGENT_ENVIRONMENTS: environments });
   try {
     // Two logged-in launch accounts on the host: one per runtime, so the profiles spread over both.
     await account(environments, 'claude-a', 'claude', 'claude-a-oauth-token');
@@ -127,8 +126,7 @@ test('unit:environments-reads-only-own-install-credentials — with two installs
     // The main install's credentials are untouched.
     assert.equal(await readFile(sharedToken, 'utf8'), tokenValue('main-install-worker-1'));
   } finally {
-    if (previousHome === undefined) delete process.env.GRAPHYARD_CONFIG_HOME; else process.env.GRAPHYARD_CONFIG_HOME = previousHome;
-    if (previousEnvironments === undefined) delete process.env.GRAPHYARD_AGENT_ENVIRONMENTS; else process.env.GRAPHYARD_AGENT_ENVIRONMENTS = previousEnvironments;
+    restoreEnv();
     await rm(home, { recursive: true, force: true });
     await rm(environments, { recursive: true, force: true });
   }

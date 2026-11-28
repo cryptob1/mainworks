@@ -1,4 +1,5 @@
 import { after, before, test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -59,13 +60,7 @@ const queuedEntry = (index: number) => ({
 const withSlotsLimit = async <T>(limit: number, body: () => Promise<T>): Promise<T> => {
   const dir = await temporaryDirectory('heavy-jobs-limit');
   await writeFile(join(dir, 'limit'), `${limit}\n`);
-  const previous = process.env[slotsDirectoryVariable];
-  process.env[slotsDirectoryVariable] = dir;
-  try { return await body(); }
-  finally {
-    if (previous === undefined) delete process.env[slotsDirectoryVariable];
-    else process.env[slotsDirectoryVariable] = previous;
-  }
+  return withEnv({ [slotsDirectoryVariable]: dir }, body);
 };
 
 before(async () => {

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { withEnv } from './helpers/env.js';
 import assert from 'node:assert/strict';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -58,9 +59,7 @@ test('unit:gy-1158-finding-2 — do not treat unrelated local auth or process.en
   // Home with unrelated auth.json without zai keys
   await writeFile(join(dir, 'auth.json'), JSON.stringify({ otherProvider: { key: 'secret' } }));
 
-  const savedEnv = process.env.ZAI_API_KEY;
-  process.env.ZAI_API_KEY = 'host-wide-zai-key';
-  try {
+  await withEnv({ ZAI_API_KEY: 'host-wide-zai-key' }, async () => {
     const health = await checkAgentEnvironment({
       name: 'pi-test',
       kind: 'pi' as any,
@@ -68,10 +67,7 @@ test('unit:gy-1158-finding-2 — do not treat unrelated local auth or process.en
     }, { quota: false });
 
     assert.equal(health.loggedIn, false, 'unrelated auth.json and host process.env do not mark pi account logged in');
-  } finally {
-    if (savedEnv !== undefined) process.env.ZAI_API_KEY = savedEnv;
-    else delete process.env.ZAI_API_KEY;
-  }
+  });
 });
 
 test('unit:gy-1158-finding-4 — reconcile stale exhausted observations per plan by preferring newest observation', () => {

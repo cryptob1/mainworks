@@ -47,7 +47,7 @@ test('integration:flaky-checks-grouped — each failing file of a trial\'s TAP k
   const entry = (name: string, file: string, error: string, indent = '') => [`not ok 1 - ${name}`, '  ---', `  location: '/checkout/${file}:3:1'`, ...error.split('\n'), '  ...'].map(line => indent + line).join('\n');
   const tap = [entry('inner', 'tests/a.test.ts', "  error: '1 == 2'", '    '), entry('outer', 'tests/a.test.ts', "  error: '1 subtest failed'"),
     entry('b', 'tests/b.test.ts', '  error: |-\n    Expected values to be equal:\n    \n    3 !== 4'), entry('other', 'tests/c.test.ts', "  error: 'unasked'")].join('\n');
-  assert.deepEqual(executor.assertionsByFile(tap, ['tests/a.test.ts', 'tests/b.test.ts']), { 'tests/a.test.ts': '1 == 2', 'tests/b.test.ts': 'Expected values to be equal:' });
+  assert.deepEqual(executor.assertionsByFile(tap, ['tests/a.test.ts', 'tests/b.test.ts']), { 'tests/a.test.ts': '1 == 2', 'tests/b.test.ts': 'Expected values to be equal:\n\n3 !== 4' });
 });
 
 test('integration:flaky-checks-grouped — a release check records each test file its rerun, or its trial\'s own rerun, passed', async () => {

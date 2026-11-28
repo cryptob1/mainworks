@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type MergeReconciled, type MergeLedgerEvent, type MergeLedgerState, mergeLedgerKinds, mergeTrialStepKind, mergeTrialKind, mergeLedgerFlakeLimit } from '../model/merge-ledger.js';
+import { type MergeReconciled, type MergeLedgerEvent, type MergeLedgerState, mergeLedgerKinds, mergeTrialStepKind, mergeTrialKind, mergeLedgerFlakeLimit, trialAssertionBound } from '../model/merge-ledger.js';
 const sha = z.string().trim().regex(/^[0-9a-f]{40}$/i).transform(value => value.toLowerCase());
 const instant = z.string().refine(value => Number.isFinite(Date.parse(value)), 'an ISO 8601 instant');
 
@@ -39,7 +39,7 @@ const mergeTrialStepSchema = z.object({ head: sha, step: z.string().min(1).max(1
  * merge commit, and the failing cases the rerun did not repeat, none of them the item's proofs.
  */
 export const trialFlakedSchema = z.object({ files: z.array(z.string().max(500)).max(100), tests: z.array(z.string().max(500)).max(100),
-  /** GY-3849: the first failing assertion line of each flaked file whose output names one, by file. */ assertions: z.record(z.string().max(500), z.string().max(500)).optional(), at: instant }).strict();
+  /** GY-3849, GY-4089: the failing assertion message (with newlines) of each flaked file whose output names one, by file. */ assertions: z.record(z.string().max(500), z.string().max(trialAssertionBound)).optional(), at: instant }).strict();
 
 const parsed = <T>(schema: z.ZodType<T>, payload: unknown): T | null => { const result = schema.safeParse(payload); return result.success ? result.data : null; };
 /** A `merge.reconciled` row the delivery path wrote before the ledger (engine.ts): its merge commit sits under `details`. */

@@ -1,4 +1,5 @@
 import { claimFixture, settleFixture } from './helpers/action-fixtures.js';
+import { patchEnv } from './helpers/env.js';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -67,11 +68,9 @@ function evaluations() {
   return { evaluated, restore: () => { delete hooked.reconcileItem; } };
 }
 
-test('unit:reconcile-full-ms-default-and-bounds — the default configuration full-evaluates no more often than every 300 s, and GRAPHYARD_RECONCILE_FULL_MS still overrides it within its bounds', () => {
-  const environment = process.env.GRAPHYARD_RECONCILE_FULL_MS;
-  try {
-    delete process.env.GRAPHYARD_RECONCILE_FULL_MS;
-    assert.equal(configuredReconcileFullMs(), 300_000, 'the default full-evaluation interval is 300 s');
+test('unit:reconcile-full-ms-default-and-bounds — the default configuration full-evaluates no more often than every 300 s, and GRAPHYARD_RECONCILE_FULL_MS still overrides it within its bounds', t => {
+  patchEnv({ GRAPHYARD_RECONCILE_FULL_MS: undefined }, t);
+  assert.equal(configuredReconcileFullMs(), 300_000, 'the default full-evaluation interval is 300 s');
     assert.equal(configuredReconcileFullMs('5000'), 5000, 'the environment overrides inside the bounds');
     assert.equal(configuredReconcileFullMs('2000'), 2000, 'the floor stands');
     assert.equal(configuredReconcileFullMs('300000'), 300000, 'the ceiling stands');
@@ -80,10 +79,6 @@ test('unit:reconcile-full-ms-default-and-bounds — the default configuration fu
     assert.equal(configuredReconcileFullMs('soon'), 300_000, 'a non-number takes the default');
     process.env.GRAPHYARD_RECONCILE_FULL_MS = '7000';
     assert.equal(configuredReconcileFullMs(), 7000, 'the environment is still read');
-  } finally {
-    if (environment === undefined) delete process.env.GRAPHYARD_RECONCILE_FULL_MS;
-    else process.env.GRAPHYARD_RECONCILE_FULL_MS = environment;
-  }
 });
 
 test('unit:reconcile-evaluates-item-when-due — a lease expiring at T wakes its item at the first pass at or after T and no pass before it, and an item with no time-bounded input is never evaluated as due', { timeout: 120_000 }, async () => {
